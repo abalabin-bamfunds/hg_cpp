@@ -139,37 +139,62 @@ log_("book={}", book, "__level__"_n = "debug");
 ```
 
 Disabled levels skip data capture. Enabled messages capture their data during
-graph evaluation and format it on Quill's logging thread. Logging can finish
-after graph execution returns. Backend formatting errors follow Quill's error
-handling. Call `bg::logging::flush()` to wait for queued messages.
+graph evaluation and format it on a logging thread. Logging can finish after
+graph execution returns. Call `bg::logging::flush()` to wait for queued messages.
 
-C++ applications configure logging at startup with `<bg/logging.hpp>`.
-`initialize(sinks, pattern_options, backend_options)` accepts Quill's sink,
-`PatternFormatterOptions`, and `BackendOptions` types. The options are optional;
-an empty sink list selects stdout. The default pattern includes time, level,
-logger name, message, and any MDC fields. Time uses local wall time with
-microsecond precision. Thread ID and source location are omitted.
+C++ nodes log ordinary values through `<bg/logging.hpp>`:
 
 ```cpp
 #include <bg/logging.hpp>
-#include <quill/Frontend.h>
-#include <quill/sinks/FileSink.h>
 
-auto sink = quill::Frontend::create_or_get_sink<quill::FileSink>("graph.log");
-auto* logger = bg::logging::initialize(
-    {sink}, quill::PatternFormatterOptions{"%(time) %(log_level) %(message)", "%H:%M:%S.%Qus"});
-logger->set_log_level(quill::LogLevel::Debug);
+// Inside a node's evaluation function:
+bg::log::debug("received {} items", count);
+bg::log::warning("missing key {}", key);
 ```
 
-Call `initialize` before accessing BG's logger or starting Quill's backend.
-Late or repeated initialization throws `std::logic_error`. Without explicit
-initialization, BG selects stdout unless it adopts an existing `bg` logger.
-Quill's default backend options apply when BG starts the backend.
-`bg::logging::logger()` returns the same borrowed logger for runtime level
-changes. Quill owns it; keep it registered while BG can use it.
+These functions use the same logger and level filter as `log_`. They accept
+`{fmt}` format strings with positional arguments. Borrowing `fmt::arg` wrappers
+are not supported. Arguments are copied or moved into the queued message and formatted on
+the logging thread. String views and C strings are copied into owning strings.
+Nonprintable bytes in messages are escaped as `\xNN`.
+Other view types retain their borrowed data; keep that data and the formatters
+available until queued messages have been released. Use `log_` to capture time
+series ticks. Disabled calls skip argument capture; C++ still
+evaluates the argument expressions.
 
-Applications that already manage Quill can create a logger named `"bg"` through
-Quill before accessing BG's logger. BG adopts that logger.
+Applications configure logging before its first use:
+
+```cpp
+#include <bg/logging.hpp>
+
+bg::logging::initialize({
+    .level = bg::logging::Level::debug,
+    .file = "graph.log"
+});
+bg::logging::set_level(bg::logging::Level::info);
+```
+
+`initialize` accepts `bg::logging::Config`. Its fields are:
+
+| Field | Default | Meaning |
+| --- | --- | --- |
+| `level` | `Level::info` | Minimum severity; `Level::off` disables logging |
+| `file` | Empty | Nonempty appends to a file instead of console output |
+| `std_err` | `false` | Selects stderr when `file` is empty; otherwise stdout |
+| `pattern` | `{time} LOG_{level:<9} {logger:<12} {message}` | Output fields and literal text |
+| `time_pattern` | `%H:%M:%S.%Qus` | Timestamp format; `%Qms`, `%Qus`, `%Qns` select fractional precision |
+| `utc` | `false` | Selects UTC instead of local wall time |
+
+The pattern supports `{time}`, `{level}`, `{logger}`, and `{message}`, with
+optional width and alignment specifications. Each field can appear once.
+Doubled braces produce literal braces. The logger name is `bg`. The default omits thread ID and source location
+and uses microsecond timestamps. Invalid patterns throw `std::invalid_argument`.
+
+Logging initializes with these defaults on first use if `initialize` was not
+called. Late or repeated initialization throws `std::logic_error`.
+`set_level`, `level`, and `enabled` control or query the runtime level.
+Accepted levels are `trace`, `debug`, `info`, `warning`, `error`, `critical`, and
+`off`. Backend errors are reported to stderr.
 
 <!-- runnable-example -->
 ::::::{tab-set}

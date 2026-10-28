@@ -244,7 +244,8 @@ endif()
 
 catch_discover_tests(bg_library_tests DISCOVERY_MODE PRE_TEST)
 
-add_executable(bg_logging_initialization_tests library/logging_initialization_test.cpp)
+# Each test case runs in a separate process because BG logging initialization is process-wide.
+add_executable(bg_logging_initialization_tests library/logging_initialization_test.cpp library/logging_api_test.cpp)
 target_link_libraries(bg_logging_initialization_tests PRIVATE bg::bg Catch2::Catch2WithMain)
 if(WIN32)
     add_custom_command(

@@ -8,8 +8,6 @@ if(@BG_BUNDLE_FMT@)
 else()
     find_dependency(fmt CONFIG REQUIRED)
 endif()
-find_dependency(quill CONFIG REQUIRED)
-
 set(bg_python_FOUND FALSE)
 if("python" IN_LIST bg_FIND_COMPONENTS AND @BG_BUILD_PYTHON@)
     find_dependency(Python 3.12 COMPONENTS Interpreter Development.Module Development.SABIModule)

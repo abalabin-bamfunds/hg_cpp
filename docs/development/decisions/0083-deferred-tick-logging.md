@@ -1,6 +1,7 @@
 # Deferred tick logging
 
-Status: accepted
+Status: accepted; public configuration superseded by
+[BG logging facade](0084-bg-logging-facade.md)
 
 ## Context
 

@@ -17,10 +17,6 @@
 #include <fmt/chrono.h>
 #include <fmt/format.h>
 
-#include <quill/DeferredFormatCodec.h>
-#include <quill/LogMacros.h>
-#include <quill/bundled/fmt/format.h>
-
 #include <cstddef>
 #include <deque>
 #include <memory_resource>
@@ -88,28 +84,6 @@ std::string format_record(const LogRecord &record);
 
 } // namespace bg::operators::details::log_detail
 
-namespace quill {
-
-template <> struct Codec<bg::operators::details::log_detail::LogRecord>
-    : DeferredFormatCodec<bg::operators::details::log_detail::LogRecord> {};
-
-} // namespace quill
-
-template <> struct fmtquill::formatter<bg::operators::details::log_detail::LogRecord> {
-    constexpr auto parse(fmtquill::format_parse_context &context) {
-        const auto it = context.begin();
-        if (it != context.end() && *it != '}') {
-            throw fmtquill::format_error{"log record formatting does not accept format specifiers"};
-        }
-        return it;
-    }
-
-    auto format(const bg::operators::details::log_detail::LogRecord &value, fmtquill::format_context &context) const {
-        const auto result = bg::operators::details::log_detail::format_record(value);
-        return fmtquill::format_to(context.out(), "{}", result);
-    }
-};
-
 template <> struct fmt::formatter<bg::operators::details::log_detail::SkippedTick> {
     constexpr auto parse(fmt::format_parse_context &context) {
         const auto it = context.begin();
@@ -136,38 +110,39 @@ using log_detail::SkippedTick;
 
 allocator logging_allocator() noexcept { return allocator{*std::pmr::new_delete_resource()}; }
 
-quill::LogLevel parse_log_level(std::string_view value) {
+bg::logging::Level parse_log_level(std::string_view value) {
     if (value == "trace") {
-        return quill::LogLevel::TraceL1;
+        return bg::logging::Level::trace;
     }
     if (value == "debug") {
-        return quill::LogLevel::Debug;
+        return bg::logging::Level::debug;
     }
     if (value == "info") {
-        return quill::LogLevel::Info;
+        return bg::logging::Level::info;
     }
     if (value == "warning") {
-        return quill::LogLevel::Warning;
+        return bg::logging::Level::warning;
     }
     if (value == "error") {
-        return quill::LogLevel::Error;
+        return bg::logging::Level::error;
     }
     if (value == "critical") {
-        return quill::LogLevel::Critical;
+        return bg::logging::Level::critical;
     }
     if (value == "off") {
-        return quill::LogLevel::None;
+        return bg::logging::Level::off;
     }
     throw std::invalid_argument{"__level__ must be trace, debug, info, warning, error, critical, or off"};
 }
 
-template <auto... Properties> quill::LogLevel log_level(const In<TSB<FORMAT_NAMED>, Properties...> &named) {
+template <auto... Properties>
+bg::logging::Level log_level(const In<TSB<FORMAT_NAMED>, Properties...> &named) {
     for (auto index = std::size_t{}; index < named.size(); ++index) {
         if (named.item_name(index).text() == "__level__") {
             return parse_log_level(named[index].template as<TS<string>>().value_view().value());
         }
     }
-    return quill::LogLevel::Info;
+    return bg::logging::Level::info;
 }
 
 RequirementResult require_log_level(const WiringArguments &arguments) {
@@ -302,15 +277,13 @@ struct log_overloads {
 
         void evaluate(EvaluationContext *context) const {
             const auto level = log_level(named);
-            if (level == quill::LogLevel::None) {
+            if (!bg::logging::enabled(level)) {
                 return;
             }
-            auto *logger = bg::logging::logger();
-            if (!logger->should_log_statement(level)) {
-                return;
-            }
-            QUILL_LOG_DYNAMIC(logger, level, "{}",
-                               capture_record(pattern, positional, named, context->evaluation_time()));
+            auto record = capture_record(pattern, positional, named, context->evaluation_time());
+            bg::logging::details::submit(level, [record = std::move(record)] {
+                return log_detail::format_record(record);
+            });
         }
     };
 
@@ -335,19 +308,16 @@ struct log_overloads {
 
         void evaluate(EvaluationContext *context) const {
             const auto level = log_level(named);
-            if (level == quill::LogLevel::None || value.last_updated() != context->evaluation_time() ||
+            if (!bg::logging::enabled(level) || value.last_updated() != context->evaluation_time() ||
                 !value.modified()) {
-                return;
-            }
-
-            auto *logger = bg::logging::logger();
-            if (!logger->should_log_statement(level)) {
                 return;
             }
 
             auto record = LogRecord{.pattern = "{}", .arguments = {}};
             record.arguments.emplace_back(std::string{}, capture_tick(value, context->evaluation_time()));
-            QUILL_LOG_DYNAMIC(logger, level, "{}", std::move(record));
+            bg::logging::details::submit(level, [record = std::move(record)] {
+                return log_detail::format_record(record);
+            });
         }
     };
 

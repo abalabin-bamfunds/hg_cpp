@@ -10,18 +10,16 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <quill/LogMacros.h>
-#include <quill/sinks/Sink.h>
-
 #include <fmt/format.h>
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
-#include <memory>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
 #include <mutex>
-#include <cstdint>
-#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <thread>
@@ -31,85 +29,78 @@
 using namespace bg;
 using namespace bg::literals;
 
+struct LogFormattingGate {
+    void wait_until_entered() {
+        auto lock = std::unique_lock{mutex};
+        condition.wait(lock, [&] { return entered; });
+    }
+
+    void release() {
+        const auto lock = std::scoped_lock{mutex};
+        released = true;
+        condition.notify_all();
+    }
+
+    std::thread::id backend_thread() {
+        const auto lock = std::scoped_lock{mutex};
+        return formatting_thread;
+    }
+
+    std::mutex mutex;
+    std::condition_variable condition;
+    bool entered{};
+    bool released{};
+    std::thread::id formatting_thread;
+};
+
+struct LogGateProbe {
+    LogFormattingGate *gate;
+};
+
+template <> struct fmt::formatter<LogGateProbe> {
+    constexpr auto parse(fmt::format_parse_context &context) { return context.begin(); }
+
+    auto format(const LogGateProbe &value, fmt::format_context &context) const {
+        auto lock = std::unique_lock{value.gate->mutex};
+        value.gate->formatting_thread = std::this_thread::get_id();
+        value.gate->entered = true;
+        value.gate->condition.notify_all();
+        value.gate->condition.wait(lock, [&] { return value.gate->released; });
+        return fmt::format_to(context.out(), "gate");
+    }
+};
+
 namespace {
 
-struct CapturedMessage {
-    quill::LogLevel level;
-    std::string text;
-    std::string statement;
-};
+std::filesystem::path log_path() {
+    const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::filesystem::temp_directory_path() / ("bg_log_operator_" + std::to_string(nonce) + ".log");
+}
 
-class TestSink final : public quill::Sink {
-  public:
-    explicit TestSink(bool gate_on_message = false) : gate_on_message_{gate_on_message} {}
-
-    void wait_for_gate() {
-        auto lock = std::unique_lock{mutex_};
-        gate_condition_.wait(lock, [&] { return gate_entered_; });
+std::vector<std::string> read_lines(const std::filesystem::path &path) {
+    auto file = std::ifstream{path};
+    REQUIRE(file.is_open());
+    auto lines = std::vector<std::string>{};
+    for (auto line = std::string{}; std::getline(file, line);) {
+        lines.push_back(std::move(line));
     }
+    return lines;
+}
 
-    void release_gate() {
-        const auto lock = std::scoped_lock{mutex_};
-        gate_released_ = true;
-        gate_condition_.notify_all();
-    }
-
-    std::vector<CapturedMessage> messages() const {
-        const auto lock = std::scoped_lock{mutex_};
-        return messages_;
-    }
-
-    std::thread::id backend_thread() const {
-        const auto lock = std::scoped_lock{mutex_};
-        return backend_thread_;
-    }
-
-  protected:
-    void write_log(quill::MacroMetadata const *, uint64_t, std::string_view, std::string_view,
-                   std::string const &, std::string_view, quill::LogLevel level, std::string_view,
-                   std::string_view, std::vector<std::pair<std::string, std::string>> const *,
-                   std::string_view message, std::string_view statement) override {
-        auto lock = std::unique_lock{mutex_};
-        backend_thread_ = std::this_thread::get_id();
-        messages_.push_back({level, std::string{message}, std::string{statement}});
-        if (!gate_on_message_ || message != "gate") {
-            return;
-        }
-
-        gate_entered_ = true;
-        gate_condition_.notify_all();
-        gate_condition_.wait(lock, [&] { return gate_released_; });
-    }
-
-    void flush_sink() override {}
-
-  private:
-    mutable std::mutex mutex_;
-    std::condition_variable gate_condition_;
-    std::vector<CapturedMessage> messages_;
-    std::thread::id backend_thread_;
-    bool gate_on_message_{};
-    bool gate_entered_{};
-    bool gate_released_{};
-};
+auto remove_file_on_exit(const std::filesystem::path &path) {
+    return util::scope_exit{[path]() noexcept {
+        auto error = std::error_code{};
+        std::filesystem::remove(path, error);
+    }};
+}
 
 struct ExtensionFormatObservation {
     std::mutex mutex;
     std::vector<std::pair<int, std::thread::id>> values;
 };
 
-struct BackendErrorObservation {
-    std::mutex mutex;
-    std::vector<std::string> messages;
-};
-
 ExtensionFormatObservation &extension_format_observation() {
     static auto observation = ExtensionFormatObservation{};
-    return observation;
-}
-
-BackendErrorObservation &backend_error_observation() {
-    static auto observation = BackendErrorObservation{};
     return observation;
 }
 
@@ -131,16 +122,12 @@ void format_extension_scalar(Scalar<> value, fmt::format_context &context) {
         observation.values.emplace_back(number, std::this_thread::get_id());
     }
 
-    if (number == 99) {
-        throw std::runtime_error{"extension format failed"};
-    }
-
     context.advance_to(fmt::format_to(context.out(), "provider({})", number));
 }
 
 } // namespace
 
-TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
+TEST_CASE("log_ defers scalar and nested tick formatting to the logging thread",
           "[feature:operator][series:value][scalar:i64][transition:removal]") {
     const auto embedded_nul = "text"_n = "a\0b";
     CHECK(embedded_nul.value == std::string{"a\0b", 3});
@@ -168,26 +155,15 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
                      }),
                      WiringError);
 
-    auto &backend_errors = backend_error_observation();
-    auto backend_options = quill::BackendOptions{};
-    backend_options.error_notifier = [&backend_errors](const std::string &message) {
-        const auto lock = std::scoped_lock{backend_errors.mutex};
-        backend_errors.messages.push_back(message);
-    };
-    auto sink = std::make_shared<TestSink>(true);
-    auto secondary_sink = std::make_shared<TestSink>();
-    auto pattern = quill::PatternFormatterOptions{"%(message)"};
-    pattern.pattern_suffix = quill::PatternFormatterOptions::NO_SUFFIX;
-    auto *logger = bg::logging::initialize({sink, secondary_sink}, pattern, backend_options);
-    REQUIRE(logger->get_sinks().size() == 2);
-    CHECK(logger->get_pattern_formatter_options().format_pattern == "%(message)");
-    CHECK(bg::logging::logger() == logger);
+    const auto path = log_path();
+    const auto cleanup = remove_file_on_exit(path);
+    bg::logging::initialize({.file = path.string(), .pattern = "{message}"});
     CHECK_THROWS_AS(bg::logging::initialize(), std::logic_error);
-    logger->set_log_level(quill::LogLevel::Info);
 
-    QUILL_LOG_INFO(logger, "gate");
-    sink->wait_for_gate();
-    auto release_gate = util::scope_exit{[sink]() noexcept { sink->release_gate(); }};
+    auto gate = LogFormattingGate{};
+    bg::log::info("{}", LogGateProbe{&gate});
+    gate.wait_until_entered();
+    auto release_gate = util::scope_exit{[&gate]() noexcept { gate.release(); }};
 
     const auto graph = [](wp<TSD<i64, TS<i64>>> book, wp<TS<i64>> value, wp<TS<string>> text) {
         operators::log_("value={:04d}", value);
@@ -226,17 +202,16 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
     (void)run_graph(nested_graph, {true, true, true},
                     {{{1, {{2, 10}}}}, {{1, {{2, literal::INVALID}}}}, literal::SKIP});
 
-    sink->release_gate();
+    gate.release();
     release_gate.release();
     bg::logging::flush();
 
-    const auto messages = sink->messages();
-    const auto secondary_messages = secondary_sink->messages();
+    const auto messages = read_lines(path);
     const auto contains_message = [&](std::string_view expected) {
-        return std::ranges::any_of(messages, [&](const auto &message) { return message.text == expected; });
+        return std::ranges::find(messages, std::string{expected}) != messages.end();
     };
     const auto message_count = [&](std::string_view expected) {
-        return std::ranges::count_if(messages, [&](const auto &message) { return message.text == expected; });
+        return std::ranges::count(messages, std::string{expected});
     };
     CHECK(contains_message("gate"));
     CHECK(contains_message("value=0007"));
@@ -257,14 +232,11 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
     CHECK(message_count("trigger=true nested={1: {2: 10}}") == 1);
     CHECK(message_count("trigger=true nested={1: {2: INVALID}}") == 1);
     CHECK(message_count("trigger=true nested=SKIP") == 1);
-    CHECK(std::ranges::any_of(secondary_messages, [](const auto &message) {
-        return message.text == "trigger=true nested=SKIP" && message.statement == message.text;
-    }));
     CHECK(std::ranges::none_of(messages, [](const auto &message) {
-        return message.text.starts_with("disabled=") || message.text.starts_with("debug=");
+        return message.starts_with("disabled=") || message.starts_with("debug=");
     }));
 
-    const auto backend_thread = sink->backend_thread();
+    const auto backend_thread = gate.backend_thread();
     auto &observation = extension_format_observation();
     {
         const auto lock = std::scoped_lock{observation.mutex};
@@ -276,14 +248,5 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
 
     CHECK(discarded_extension_values().load(std::memory_order_relaxed) == 2);
 
-    const auto warning = std::ranges::find_if(messages, [](const auto &message) {
-        return message.text == "warning=7";
-    });
-    REQUIRE(warning != messages.end());
-    CHECK(warning->level == quill::LogLevel::Warning);
-
-    const auto error_lock = std::scoped_lock{backend_errors.mutex};
-    CHECK(std::ranges::any_of(backend_errors.messages, [](const auto &message) {
-        return message.find("extension format failed") != std::string::npos;
-    }));
+    CHECK(contains_message("warning=7"));
 }

@@ -619,7 +619,8 @@ For each reusable node and graph, test:
 - deferred logging, level filtering before capture, scalar format specifications,
   collection deltas, backend extension formatting, ownership after graph teardown,
   and typed payload cleanup after formatting failure
-- logging startup configuration, multiple sinks, message patterns, backend options,
+- BG logging startup configuration, stdout, stderr and file output, message and
+  timestamp patterns, deferred node argument ownership, runtime level changes,
   default initialization, and rejection of late or repeated initialization
 - regular-expression search with Boolean results and fixed TSL captures, empty
   and absent captures, match loss, Unicode text, backreferences, invalid patterns,

@@ -53,7 +53,7 @@ option(BG_BUILD_WEB "Build the HTTP extension" OFF)
 
 set(QUILL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(QUILL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
-set(QUILL_ENABLE_INSTALL ON CACHE BOOL "" FORCE)
+set(QUILL_ENABLE_INSTALL OFF CACHE BOOL "" FORCE)
 
 FetchContent_Declare(
     tpack
@@ -209,8 +209,7 @@ add_library(bg::bg ALIAS bg)
 
 target_compile_features(bg PUBLIC cxx_std_23)
 target_compile_definitions(bg PRIVATE BG_BUILDING_ENGINE BG_VERSION="${PROJECT_VERSION}" QUILL_DLL_EXPORT)
-target_compile_definitions(bg INTERFACE QUILL_DLL_IMPORT)
-target_link_libraries(bg PUBLIC ddv::ddvisitor fmt::fmt quill::quill PRIVATE Threads::Threads)
+target_link_libraries(bg PUBLIC ddv::ddvisitor fmt::fmt PRIVATE quill::quill Threads::Threads)
 target_include_directories(
     bg
     PUBLIC

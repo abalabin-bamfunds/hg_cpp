@@ -637,7 +637,7 @@ A string-series pattern requires at least one formatting argument.
 tick formatting rules as `print_`. The scalar string option `__level__` selects
 severity and defaults to `"info"`. Logging nodes are not deduplicated.
 
-Logging uses the process-level Quill logger named `bg`. The node checks its
+Logging uses the process-level BG logger named `bg`. The node checks its
 enabled level before capturing data. Enabled messages own their pattern,
 argument names, scalar values, and serialized ticks. The logging thread builds
 the format arguments and calls the existing scalar and
@@ -649,17 +649,19 @@ uses the same formatting rules as `print_`.
 Extension type descriptors and registered callbacks must remain available until
 queued messages have been released.
 
-`<bg/logging.hpp>` exposes `bg::logging::initialize(sinks, pattern_options,
-backend_options)` for application startup. It uses Quill's configuration types
-and rejects initialization after BG's logger exists or Quill's backend starts.
-Initialization paths are serialized; subsequent `logger()` calls return a cached
-pointer. Empty sinks select stdout. Lazy initialization retains the same default
-and adopts an existing application-managed `bg` logger. The default pattern
-includes time, level, logger name, message, and MDC fields. It omits thread ID
-and source location and formats local wall time with microsecond precision.
-Explicit pattern options replace these defaults.
-`bg::logging::logger()` exposes runtime level changes through Quill;
-`bg::logging::flush()` waits for queued messages.
+`<bg/logging.hpp>` exposes BG levels, configuration, and `bg::log` formatting
+functions. See the [public logging API](../../user/reference/library-text.md)
+for configuration fields and defaults. `initialize` rejects late or repeated
+configuration. `set_level` changes the runtime filter; `flush` waits for queued
+messages. Initialization paths are serialized and logging uses a cached backend.
+
+Quill is a private implementation dependency of the core shared library.
+Graph logging and node logging submit owning, move-only formatting callbacks
+through the same BG boundary. The backend invokes each callback after dequeueing
+its message. Node logging captures argument values, including owning copies of
+string views and C strings. The enabled-level check precedes these captures.
+The backend adapter translates BG pattern fields into its private formatter
+syntax. Public headers and installed target interfaces do not expose Quill.
 
 ### Regular expressions
 
