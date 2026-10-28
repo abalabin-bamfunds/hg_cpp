@@ -10,8 +10,6 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-#include <quill/Backend.h>
-#include <quill/Frontend.h>
 #include <quill/LogMacros.h>
 #include <quill/sinks/Sink.h>
 
@@ -38,10 +36,13 @@ namespace {
 struct CapturedMessage {
     quill::LogLevel level;
     std::string text;
+    std::string statement;
 };
 
 class TestSink final : public quill::Sink {
   public:
+    explicit TestSink(bool gate_on_message = false) : gate_on_message_{gate_on_message} {}
+
     void wait_for_gate() {
         auto lock = std::unique_lock{mutex_};
         gate_condition_.wait(lock, [&] { return gate_entered_; });
@@ -67,11 +68,11 @@ class TestSink final : public quill::Sink {
     void write_log(quill::MacroMetadata const *, uint64_t, std::string_view, std::string_view,
                    std::string const &, std::string_view, quill::LogLevel level, std::string_view,
                    std::string_view, std::vector<std::pair<std::string, std::string>> const *,
-                   std::string_view message, std::string_view) override {
+                   std::string_view message, std::string_view statement) override {
         auto lock = std::unique_lock{mutex_};
         backend_thread_ = std::this_thread::get_id();
-        messages_.push_back({level, std::string{message}});
-        if (message != "gate") {
+        messages_.push_back({level, std::string{message}, std::string{statement}});
+        if (!gate_on_message_ || message != "gate") {
             return;
         }
 
@@ -87,6 +88,7 @@ class TestSink final : public quill::Sink {
     std::condition_variable gate_condition_;
     std::vector<CapturedMessage> messages_;
     std::thread::id backend_thread_;
+    bool gate_on_message_{};
     bool gate_entered_{};
     bool gate_released_{};
 };
@@ -172,10 +174,15 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
         const auto lock = std::scoped_lock{backend_errors.mutex};
         backend_errors.messages.push_back(message);
     };
-    quill::Backend::start(backend_options);
-
-    auto sink = std::make_shared<TestSink>();
-    auto *logger = quill::Frontend::create_or_get_logger("bg", sink);
+    auto sink = std::make_shared<TestSink>(true);
+    auto secondary_sink = std::make_shared<TestSink>();
+    auto pattern = quill::PatternFormatterOptions{"%(message)"};
+    pattern.pattern_suffix = quill::PatternFormatterOptions::NO_SUFFIX;
+    auto *logger = bg::logging::initialize({sink, secondary_sink}, pattern, backend_options);
+    REQUIRE(logger->get_sinks().size() == 2);
+    CHECK(logger->get_pattern_formatter_options().format_pattern == "%(message)");
+    CHECK(bg::logging::logger() == logger);
+    CHECK_THROWS_AS(bg::logging::initialize(), std::logic_error);
     logger->set_log_level(quill::LogLevel::Info);
 
     QUILL_LOG_INFO(logger, "gate");
@@ -224,6 +231,7 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
     bg::logging::flush();
 
     const auto messages = sink->messages();
+    const auto secondary_messages = secondary_sink->messages();
     const auto contains_message = [&](std::string_view expected) {
         return std::ranges::any_of(messages, [&](const auto &message) { return message.text == expected; });
     };
@@ -249,6 +257,9 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the Quill backend",
     CHECK(message_count("trigger=true nested={1: {2: 10}}") == 1);
     CHECK(message_count("trigger=true nested={1: {2: INVALID}}") == 1);
     CHECK(message_count("trigger=true nested=SKIP") == 1);
+    CHECK(std::ranges::any_of(secondary_messages, [](const auto &message) {
+        return message.text == "trigger=true nested=SKIP" && message.statement == message.text;
+    }));
     CHECK(std::ranges::none_of(messages, [](const auto &message) {
         return message.text.starts_with("disabled=") || message.text.starts_with("debug=");
     }));

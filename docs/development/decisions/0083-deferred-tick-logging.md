@@ -22,7 +22,11 @@ constructs the format-argument store and invokes the existing formatters.
 
 Use one process-level Quill logger named `bg`. The core shared library owns
 Quill's shared state; other libraries and applications import it. Configuration
-uses Quill's API through `bg::logging::logger()`.
+uses Quill's sink, pattern, and backend configuration types through
+`bg::logging::initialize()`. Explicit initialization precedes logger access and
+backend startup. Reject late initialization because Quill's create-or-get and
+backend startup APIs otherwise ignore replacement settings. Runtime level
+changes use Quill's API through `bg::logging::logger()`.
 
 See [logging behavior](../design/library.md#text-operations) and
 [tick formatting](../design/time-series-types.md#tick-formatting).

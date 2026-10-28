@@ -243,6 +243,19 @@ endif()
 
 catch_discover_tests(bg_library_tests DISCOVERY_MODE PRE_TEST)
 
+add_executable(bg_logging_initialization_tests library/logging_initialization_test.cpp)
+target_link_libraries(bg_logging_initialization_tests PRIVATE bg::bg Catch2::Catch2WithMain)
+if(WIN32)
+    add_custom_command(
+        TARGET bg_logging_initialization_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:bg_logging_initialization_tests>
+                $<TARGET_FILE_DIR:bg_logging_initialization_tests>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
+catch_discover_tests(bg_logging_initialization_tests DISCOVERY_MODE PRE_TEST)
+
 find_package(Python3 3.13 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(

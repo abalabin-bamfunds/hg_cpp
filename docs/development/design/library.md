@@ -630,8 +630,14 @@ uses the same formatting rules as `print_`.
 Extension type descriptors and registered callbacks must remain available until
 queued messages have been released.
 
-`<bg/logging.hpp>` exposes `bg::logging::logger()` for standard Quill
-configuration and `bg::logging::flush()` to wait for queued messages.
+`<bg/logging.hpp>` exposes `bg::logging::initialize(sinks, pattern_options,
+backend_options)` for application startup. It uses Quill's configuration types
+and rejects initialization after BG's logger exists or Quill's backend starts.
+Initialization paths are serialized; subsequent `logger()` calls return a cached
+pointer. Empty sinks select stdout. Lazy initialization retains the same default
+and adopts an existing application-managed `bg` logger.
+`bg::logging::logger()` exposes runtime level changes through Quill;
+`bg::logging::flush()` waits for queued messages.
 
 ### Regular expressions
 

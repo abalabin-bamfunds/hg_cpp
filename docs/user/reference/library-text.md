@@ -141,9 +141,33 @@ log_("book={}", book, "__level__"_n = "debug");
 Disabled levels skip data capture. Enabled messages capture their data during
 graph evaluation and format it on Quill's logging thread. Logging can finish
 after graph execution returns. Backend formatting errors follow Quill's error
-handling. C++ applications can include `<bg/logging.hpp>`,
-configure `bg::logging::logger()` through Quill, and call `bg::logging::flush()`
-to wait for queued messages.
+handling. Call `bg::logging::flush()` to wait for queued messages.
+
+C++ applications configure logging at startup with `<bg/logging.hpp>`.
+`initialize(sinks, pattern_options, backend_options)` accepts Quill's sink,
+`PatternFormatterOptions`, and `BackendOptions` types. The options are optional;
+an empty sink list selects stdout.
+
+```cpp
+#include <bg/logging.hpp>
+#include <quill/Frontend.h>
+#include <quill/sinks/FileSink.h>
+
+auto sink = quill::Frontend::create_or_get_sink<quill::FileSink>("graph.log");
+auto* logger = bg::logging::initialize(
+    {sink}, quill::PatternFormatterOptions{"%(time) %(log_level) %(message)", "%H:%M:%S.%Qus"});
+logger->set_log_level(quill::LogLevel::Debug);
+```
+
+Call `initialize` before accessing BG's logger or starting Quill's backend.
+Late or repeated initialization throws `std::logic_error`. Without explicit
+initialization, BG selects stdout unless it adopts an existing `bg` logger.
+Quill's default backend options apply when BG starts the backend.
+`bg::logging::logger()` returns the same borrowed logger for runtime level
+changes. Quill owns it; keep it registered while BG can use it.
+
+Applications that already manage Quill can create a logger named `"bg"` through
+Quill before accessing BG's logger. BG adopts that logger.
 
 <!-- runnable-example -->
 ::::::{tab-set}
