@@ -1,6 +1,6 @@
 # Frame foundation handoff
 
-Updated: 2026-10-27.
+Updated: 2026-10-28.
 
 ## Incremental numeric column sum
 
@@ -18,6 +18,9 @@ The [benchmark report](benchmarks/incremental_sum.md) records complete evaluatio
 cycle timings against a native batch full scan. For one changed `i64` row per
 cycle, median ratios range from 3.08× to 65.62× for direct columns and from
 4.12× to 74.60× for filtered columns across 1,000–100,000 source rows.
+The report also records profiler intervals for the sum node, excluding source,
+filter, and sink evaluation. Run the benchmark with `--profile-nodes` to collect
+those intervals separately.
 
 Verification on `.lanes/frame-incremental-sum`:
 
