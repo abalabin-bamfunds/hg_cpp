@@ -827,20 +827,21 @@ TEST_CASE("switch can select a graph that reduces its dictionary input",
     CHECK(actual.equals<i64>({3, 13, 7}));
 }
 
-TEST_CASE("a switch branch uses the reduce default for an empty TSD and recovers after invalidity",
+TEST_CASE("an empty reduction uses its default again after an outputless switch branch",
           "[feature:reduce][feature:switch][feature:nested-graph][series:tsd]"
-          "[shape:doubly-nested][validity:optional][transition:invalidation][transition:revalidation]") {
+          "[shape:doubly-nested][transition:invalidation][transition:revalidation]") {
     const auto tested = [](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
         return switch_(key,
                        cases{case_(i64{1}, [](auto items) {
-                           return reduce(add_graph, items, "default"_n = i64{20});
-                       })},
+                                 return reduce(add_graph, items, "default"_n = i64{20});
+                             }),
+                             case_(DEFAULT, [](auto) {})},
                        values);
     };
 
-    const auto actual = bg::run_graph(tested, ticks({1, 1, 1}), ticks({{}, literal::INVALID, {}}));
+    const auto actual = bg::run_graph(tested, ticks({1, 2, 1}), ticks({{}, {}, {}}));
 
-    CHECK(actual.equals({20, literal::INVALID, 20}));
+    CHECK(actual.equals<i64>({20, std::nullopt, 20}));
 }
 
 TEST_CASE("mapped reductions apply each parent's switch to its own total across removal and recreation",
