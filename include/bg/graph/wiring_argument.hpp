@@ -165,8 +165,22 @@ class WiringArgument {
     WiringArgument(const Scalar<T> &value) : WiringArgument{ScalarValue<>{Scalar<>::from(value)}} {}
 
     template <util::compile_time_string Name, typename T>
+        requires requires(T &value) { WiringArgument{value}; }
+    WiringArgument(details::named_argument<Name, T> &value) : WiringArgument{value.value} {
+        name_ = util::symbol{Name.view()};
+        variadic_capture_mode_ = details::VariadicMode::none;
+    }
+
+    template <util::compile_time_string Name, typename T>
+        requires requires(const T &value) { WiringArgument{value}; }
+    WiringArgument(const details::named_argument<Name, T> &value) : WiringArgument{value.value} {
+        name_ = util::symbol{Name.view()};
+        variadic_capture_mode_ = details::VariadicMode::none;
+    }
+
+    template <util::compile_time_string Name, typename T>
         requires requires(T &&value) { WiringArgument{std::forward<T>(value)}; }
-    WiringArgument(details::named_argument<Name, T> value) : WiringArgument{std::move(value.value)} {
+    WiringArgument(details::named_argument<Name, T> &&value) : WiringArgument{std::move(value.value)} {
         name_ = util::symbol{Name.view()};
         variadic_capture_mode_ = details::VariadicMode::none;
     }

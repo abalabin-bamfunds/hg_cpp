@@ -14,6 +14,7 @@
 #include <concepts>
 #include <cstdint>
 #include <exception>
+#include <memory>
 #include <memory_resource>
 #include <optional>
 #include <span>
@@ -109,6 +110,10 @@ struct Finalizable {
 
 template <template <typename, auto...> typename Field> struct FinalizableRecord {
     Field<Opaque<Finalizable>> value;
+};
+
+template <template <typename, auto...> typename Field> struct SharedPointerRecord {
+    Field<Opaque<std::shared_ptr<int>>> value;
 };
 
 template <template <typename, auto...> typename Field> struct HashableRecord {
@@ -656,6 +661,28 @@ TEST_CASE("a hierarchical scalar destroys its fields after its final release",
     }
 
     CHECK(destruction_count == 1);
+}
+
+TEST_CASE("a hierarchical bundle retains a named scalar field through construction",
+          "[value][feature:scalar-storage][scalar:hierarchical][schema:named][lifetime:retained]") {
+    using namespace bg::literals;
+
+    auto owner = std::make_shared<int>(7);
+    auto lifetime = std::weak_ptr<int>{owner};
+    auto retained = std::optional<ScalarValue<Bundle<SharedPointerRecord>>>{};
+
+    {
+        auto field = ScalarValue<Opaque<std::shared_ptr<int>>>{owner};
+        const auto named = "value"_n = std::move(field);
+        retained.emplace(bundle<SharedPointerRecord>(bundle_allocator, named));
+        owner.reset();
+    }
+
+    REQUIRE(retained.has_value());
+    CHECK_FALSE(lifetime.expired());
+
+    retained.reset();
+    CHECK(lifetime.expired());
 }
 
 TEST_CASE("a base hierarchical view preserves the derived runtime type",

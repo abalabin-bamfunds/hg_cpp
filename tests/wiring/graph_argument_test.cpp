@@ -32,6 +32,11 @@ namespace run_graph_argument {
 struct captured_pointer {
     std::shared_ptr<int> value;
 
+    explicit captured_pointer(std::shared_ptr<int> value) : value{std::move(value)} {}
+    captured_pointer(const captured_pointer &) = default;
+    captured_pointer(captured_pointer &&) noexcept = default;
+    ~captured_pointer() { value.reset(); }
+
     friend bool operator==(const captured_pointer &, const captured_pointer &) = default;
 };
 
@@ -165,6 +170,10 @@ struct graph_sink_node {
 
 template <template <typename, auto...> typename Field> struct graph_value_bundle {
     Field<TS<i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct graph_shared_pointer_bundle {
+    Field<TS<run_graph_argument::captured_pointer>> value;
 };
 
 using GRAPH_INPUT_FORM = Union<"GRAPH_INPUT_FORM", TS<i64>, TSB<graph_value_bundle>>;
@@ -965,6 +974,136 @@ TEST_CASE("graph signature constraints own captured scalars without registry ret
     CHECK_FALSE(lifetime.expired());
     signature.reset();
     CHECK(lifetime.expired());
+}
+
+TEST_CASE("named scalar arguments remain alive through graph wiring",
+          "[feature:wiring][feature:graph-argument][scalar:opaque][lifetime:retained]") {
+    const auto source = node<captured_shared_pointer_node>();
+    auto wiring = GraphWiring{};
+    auto rvalue_lifetime = std::weak_ptr<int>{};
+    auto lvalue_lifetime = std::weak_ptr<int>{};
+    auto const_lvalue_lifetime = std::weak_ptr<int>{};
+
+    {
+        auto context = WiringContext{wiring};
+
+        {
+            auto owner = std::make_shared<int>(1);
+            rvalue_lifetime = owner;
+            (void)source("value"_n = run_graph_argument::captured_pointer{owner});
+        }
+
+        {
+            auto owner = std::make_shared<int>(2);
+            lvalue_lifetime = owner;
+            auto named = "value"_n = run_graph_argument::captured_pointer{owner};
+            (void)source(named);
+        }
+
+        {
+            auto owner = std::make_shared<int>(3);
+            const_lvalue_lifetime = owner;
+            const auto named = "value"_n = run_graph_argument::captured_pointer{owner};
+            (void)source(named);
+        }
+    }
+
+    (void)wiring.complete_pending_wiring();
+    CHECK_FALSE(rvalue_lifetime.expired());
+    CHECK_FALSE(lvalue_lifetime.expired());
+    CHECK_FALSE(const_lvalue_lifetime.expired());
+}
+
+TEST_CASE("named built-in scalar arguments preserve their name and value",
+          "[feature:wiring][feature:graph-argument][scalar:native]") {
+    auto mutable_named = "default"_n = i64{20};
+    const auto const_named = "default"_n = i64{21};
+
+    const auto mutable_argument = WiringArgument{mutable_named};
+    const auto const_argument = WiringArgument{const_named};
+    const auto rvalue_argument = WiringArgument{"default"_n = i64{22}};
+
+    CHECK(mutable_argument.name() == std::optional{util::symbol{"default"}});
+    CHECK(const_argument.name() == std::optional{util::symbol{"default"}});
+    CHECK(rvalue_argument.name() == std::optional{util::symbol{"default"}});
+    CHECK(mutable_argument.type().accepts(cpp_scalar_type<i64>()));
+    CHECK(const_argument.type().accepts(cpp_scalar_type<i64>()));
+    CHECK(rvalue_argument.type().accepts(cpp_scalar_type<i64>()));
+    CHECK(scalar_cast<i64>(mutable_argument.scalar()).value() == 20);
+    CHECK(scalar_cast<i64>(const_argument.scalar()).value() == 21);
+    CHECK(scalar_cast<i64>(rvalue_argument.scalar()).value() == 22);
+}
+
+TEST_CASE("typed bundles retain named scalar sources through construction",
+          "[feature:wiring][feature:graph-argument][series:tsb][schema:named][lifetime:retained]") {
+    auto wiring = GraphWiring{};
+    auto lifetime = std::weak_ptr<int>{};
+
+    {
+        auto context = WiringContext{wiring};
+        auto owner = std::make_shared<int>(7);
+        lifetime = owner;
+        (void)bundle<graph_shared_pointer_bundle>(
+            "value"_n = run_graph_argument::captured_pointer{owner});
+    }
+
+    (void)wiring.complete_pending_wiring();
+    CHECK_FALSE(lifetime.expired());
+}
+
+TEST_CASE("free TSB bundles retain named scalar sources through construction",
+          "[feature:wiring][feature:graph-argument][series:tsb][schema:named][lifetime:retained]") {
+    auto wiring = GraphWiring{};
+    auto lifetime = std::weak_ptr<int>{};
+    auto retained = std::optional<WiringPoint>{};
+
+    {
+        auto context = WiringContext{wiring};
+        auto owner = std::make_shared<int>(11);
+        lifetime = owner;
+        retained.emplace(bundle("value"_n = run_graph_argument::captured_pointer{owner}));
+    }
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(retained.has_value());
+    const auto fields = retained->record()->collection_original_arguments();
+    REQUIRE(fields.has_value());
+    REQUIRE(fields->size() == 1);
+    const auto value = fields->front().scalar();
+    CHECK(*scalar_cast<run_graph_argument::captured_pointer>(value).value().value == 11);
+    REQUIRE_FALSE(lifetime.expired());
+    CHECK(*lifetime.lock() == 11);
+}
+
+TEST_CASE("graph var_kwargs retain named scalar arguments after the caller returns",
+          "[feature:wiring][feature:variadic-wiring][series:tsb][schema:named][lifetime:retained]") {
+    auto wiring = GraphWiring{};
+    auto lifetime = std::weak_ptr<int>{};
+    auto retained = std::optional<WiringPoint>{};
+    const auto capture = graph("name"_n = "retain_named_scalar_kwargs",
+                               [&](wp<TSB<SCHEMA>, "values"_n, var_kwargs> values) {
+                                   retained.emplace(static_cast<WiringPoint>(values));
+                               });
+
+    {
+        auto context = WiringContext{wiring};
+        auto owner = std::make_shared<int>(13);
+        lifetime = owner;
+        const auto named = "payload"_n = run_graph_argument::captured_pointer{owner};
+        (void)capture(named);
+    }
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(retained.has_value());
+    const auto fields = retained->record()->collection_original_arguments();
+    REQUIRE(fields.has_value());
+    REQUIRE(fields->size() == 1);
+    REQUIRE(fields->front().name());
+    CHECK(fields->front().name()->text() == "payload");
+    const auto value = fields->front().scalar();
+    CHECK(*scalar_cast<run_graph_argument::captured_pointer>(value).value().value == 13);
+    REQUIRE_FALSE(lifetime.expired());
+    CHECK(*lifetime.lock() == 13);
 }
 
 TEST_CASE("operator diagnostics retain graph argument types",

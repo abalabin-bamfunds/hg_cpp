@@ -7,20 +7,69 @@
 #include <bg/operators.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/type/type_registry.hpp>
+#include <bg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <span>
 #include <vector>
 
+namespace map_wiring_test {
+
+struct MapLifetimeValue {
+    std::shared_ptr<int> value;
+
+    explicit MapLifetimeValue(std::shared_ptr<int> value) : value{std::move(value)} {}
+    MapLifetimeValue(const MapLifetimeValue &) = default;
+    MapLifetimeValue(MapLifetimeValue &&) noexcept = default;
+    ~MapLifetimeValue() { value.reset(); }
+
+    friend bool operator==(const MapLifetimeValue &, const MapLifetimeValue &) = default;
+};
+
+} // namespace map_wiring_test
+
+namespace std {
+
+template <> struct hash<map_wiring_test::MapLifetimeValue> {
+    size_t operator()(const map_wiring_test::MapLifetimeValue &value) const noexcept {
+        return hash<shared_ptr<int>>{}(value.value);
+    }
+};
+
+} // namespace std
+
+namespace bg {
+
+template <> struct scalar_type_traits<map_wiring_test::MapLifetimeValue> {
+    static const ScalarType &type() noexcept {
+        class Type final : public ScalarType {
+          public:
+            bool is_resolved() const noexcept override { return true; }
+            const bg::Type &resolve(const TypeMap &) const override { return *this; }
+            bool supports_equality() const noexcept override { return true; }
+            bool supports_hash() const noexcept override { return true; }
+        };
+
+        static const auto type = util::static_storage<Type>{};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+        return type.get();
+    }
+};
+
+} // namespace bg
+
 namespace {
 
 using namespace bg;
 using namespace bg::literals;
+using map_wiring_test::MapLifetimeValue;
 
 using MAP_LEFT = ScalarVariable<"MAP_LEFT">;
 using MAP_RIGHT = ScalarVariable<"MAP_RIGHT">;
@@ -199,16 +248,64 @@ TEST_CASE("map runtime declarations preserve valid_items inputs",
     {
         auto context = WiringContext{wiring};
         (void)map(identity, values(), pass_through(valid_items(dictionary())));
+        (void)map(identity, values(), "1"_n = pass_through(valid_items(dictionary())));
     }
 
     (void)wiring.complete_pending_wiring();
-    const auto mapped = std::ranges::find_if(wiring.nodes(), [](const auto &candidate) {
+    const auto mapped_count = std::ranges::count_if(wiring.nodes(), [](const auto &candidate) {
         return std::ranges::any_of(candidate.signature().parameters,
                                    [](const auto &parameter) { return parameter.valid_items; });
     });
-    REQUIRE(mapped != wiring.nodes().end());
-    CHECK(std::ranges::any_of(mapped->signature().parameters,
-                              [](const auto &parameter) { return parameter.valid_items; }));
+    CHECK(mapped_count == 2);
+}
+
+TEST_CASE("map retains named and unnamed scalar arguments from the caller tuple",
+          "[feature:map][feature:wiring][feature:graph-argument][lifetime:retained][scalar:opaque]") {
+    SECTION("named") {
+        const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+        const auto capture_context = node([](MapLifetimeValue, Out<TS<i64>>) {});
+        const auto map_identity = graph(
+            "name"_n = "map_lifetime_identity_named",
+            [capture_context](wp<TS<i64>> item, MapLifetimeValue context) {
+                (void)capture_context(context);
+                return item;
+            });
+        auto wiring = GraphWiring{};
+        auto lifetime = std::weak_ptr<int>{};
+
+        {
+            auto graph_context = WiringContext{wiring};
+            auto owner = std::make_shared<int>(7);
+            lifetime = owner;
+            (void)map(map_identity, values(), "1"_n = MapLifetimeValue{owner});
+        }
+
+        (void)wiring.complete_pending_wiring();
+        CHECK_FALSE(lifetime.expired());
+    }
+
+    SECTION("unnamed") {
+        const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+        const auto capture_context = node([](MapLifetimeValue, Out<TS<i64>>) {});
+        const auto map_identity = graph(
+            "name"_n = "map_lifetime_identity_unnamed",
+            [capture_context](wp<TS<i64>> item, MapLifetimeValue context) {
+                (void)capture_context(context);
+                return item;
+            });
+        auto wiring = GraphWiring{};
+        auto lifetime = std::weak_ptr<int>{};
+
+        {
+            auto graph_context = WiringContext{wiring};
+            auto owner = std::make_shared<int>(8);
+            lifetime = owner;
+            (void)map(map_identity, values(), MapLifetimeValue{owner});
+        }
+
+        (void)wiring.complete_pending_wiring();
+        CHECK_FALSE(lifetime.expired());
+    }
 }
 
 TEST_CASE("map overloads receive map options",

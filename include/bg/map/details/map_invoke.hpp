@@ -26,7 +26,7 @@ inline constexpr bool is_pass_through_argument_v = is_pass_through_argument<std:
 
 template <typename Argument> decltype(auto) unwrap_map_argument(Argument &&argument) {
     if constexpr (is_pass_through_argument_v<Argument>) {
-        return std::forward<Argument>(argument).value;
+        return (std::forward<Argument>(argument).value);
     } else {
         return std::forward<Argument>(argument);
     }
@@ -43,8 +43,10 @@ auto unwrap_map_argument(named_argument<Name, Value> &argument) {
 
 template <typename Argument> MapArgument map_supplied_argument(Argument &argument) {
     if constexpr (is_named_argument_v<Argument>) {
-        auto unwrapped = unwrap_map_argument(argument);
-        return {WiringArgument{unwrapped}, is_pass_through_argument_v<decltype(argument.value)>};
+        auto value = WiringArgument{unwrap_map_argument(argument.value)};
+        value.set_name(util::symbol{std::remove_cvref_t<Argument>::name.view()});
+        value.clear_variadic_capture_mode();
+        return {std::move(value), is_pass_through_argument_v<decltype(argument.value)>};
     } else {
         return {WiringArgument{unwrap_map_argument(argument)}, is_pass_through_argument_v<Argument>};
     }
