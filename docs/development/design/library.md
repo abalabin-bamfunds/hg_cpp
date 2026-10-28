@@ -614,6 +614,25 @@ current values.
 A lone string time series is tick data; a scalar string is a format pattern.
 A string-series pattern requires at least one formatting argument.
 
+`log_(series)` and `log_(pattern, *values, **named)` use the same argument and
+tick formatting rules as `print_`. The scalar string option `__level__` selects
+severity and defaults to `"info"`. Logging nodes are not deduplicated.
+
+Logging uses the process-level Quill logger named `bg`. The node checks its
+enabled level before capturing data. Enabled messages own their pattern,
+argument names, scalar values, and serialized ticks. The logging thread builds
+the format arguments and calls the existing scalar and
+[serialized tick formatters](time-series-types.md#tick-formatting).
+Captured ticks use the existing serializer representation and reader cleanup.
+This is required to release encoded scalar payloads even when formatting fails.
+Changed invalid inputs retain an invalid tick header so collection invalidation
+uses the same formatting rules as `print_`.
+Extension type descriptors and registered callbacks must remain available until
+queued messages have been released.
+
+`<bg/logging.hpp>` exposes `bg::logging::logger()` for standard Quill
+configuration and `bg::logging::flush()` to wait for queued messages.
+
 ### Regular expressions
 
 `matches(pattern, text)` returns whether the pattern occurs anywhere in the

@@ -3,6 +3,8 @@
 #include <bg/util/compile_time_string.hpp>
 
 #include <cstddef>
+#include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
@@ -18,7 +20,15 @@ template <util::compile_time_string Name> struct compile_time_name {
     static constexpr auto text = Name;
 
     template <typename Value> [[nodiscard]] constexpr auto operator=(Value &&value) const {
-        return named_argument<Name, std::decay_t<Value>>{std::forward<Value>(value)};
+        if constexpr (std::is_array_v<std::remove_reference_t<Value>> &&
+                      std::is_same_v<std::remove_cv_t<std::remove_extent_t<std::remove_reference_t<Value>>>, char>) {
+            constexpr auto extent = std::extent_v<std::remove_reference_t<Value>>;
+            const auto text = std::string_view{value, extent};
+            const auto size = !text.empty() && text.back() == '\0' ? text.size() - 1 : text.size();
+            return named_argument<Name, std::string>{std::string{text.data(), size}};
+        } else {
+            return named_argument<Name, std::decay_t<Value>>{std::forward<Value>(value)};
+        }
     }
 };
 

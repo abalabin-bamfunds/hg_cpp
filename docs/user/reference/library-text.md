@@ -122,6 +122,29 @@ Passing a string series alone prints its tick data, including quotes around
 strings. A scalar string remains a format pattern. To format a string-series
 pattern, supply at least one formatting argument.
 
+`log_(series)` and `log_(pattern, *values, **named)` send the same tick data and
+formatted messages to the process-level `bg` logger. The fixed string option
+`__level__` selects severity and defaults to `"info"`.
+Accepted values are `"trace"`, `"debug"`, `"info"`, `"warning"`, `"error"`,
+`"critical"`, and `"off"`. Unknown levels are wiring errors.
+
+```python
+log_(book)
+log_("book={}", book, __level__="debug")
+```
+
+```cpp
+log_(book);
+log_("book={}", book, "__level__"_n = "debug");
+```
+
+Disabled levels skip data capture. Enabled messages capture their data during
+graph evaluation and format it on Quill's logging thread. Logging can finish
+after graph execution returns. Backend formatting errors follow Quill's error
+handling. C++ applications can include `<bg/logging.hpp>`,
+configure `bg::logging::logger()` through Quill, and call `bg::logging::flush()`
+to wait for queued messages.
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language

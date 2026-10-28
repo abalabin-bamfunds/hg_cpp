@@ -12,6 +12,7 @@ casefold = _native.casefold
 str_ = _native.str_
 format_ = _native.format_
 print_ = _native.print_
+log_ = _native.log_
 matches = _native.matches
 replace = _native.replace
 match_ = _native.match_
@@ -116,6 +117,7 @@ __all__ = [
     "lower",
     "lag",
     "len_",
+    "log_",
     "lt",
     "map",
     "merge",

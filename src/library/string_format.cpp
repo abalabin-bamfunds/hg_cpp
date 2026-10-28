@@ -1,4 +1,5 @@
 #include "registration.hpp"
+#include "string_format_helpers.hpp"
 
 #include <bg/graph.hpp>
 #include <bg/evaluation_context.hpp>
@@ -226,31 +227,6 @@ TimeSeriesGuarantee resolve_output(const WiringArguments &arguments) {
     return guarantee;
 }
 
-template <typename VALUE>
-void push_argument(fmt::dynamic_format_arg_store<fmt::format_context> &store, const char *name, VALUE value) {
-    if (name == nullptr) {
-        store.push_back(value);
-    } else {
-        store.push_back(fmt::arg(name, value));
-    }
-}
-
-template <typename FALLBACK>
-void push_scalar(fmt::dynamic_format_arg_store<fmt::format_context> &store, const char *name, Scalar<SCALAR> value,
-                 FALLBACK &&push_fallback) {
-    value.visit(
-        [&](const Scalar<byte> *item) { push_argument(store, name, std::to_integer<unsigned int>(item->value())); },
-        [&](const Scalar<bool> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<i64> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<double> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<date_time_t> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<timedelta_t> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<string> *item) { push_argument(store, name, item->value()); },
-        [&](const Scalar<symbol> *item) { push_argument(store, name, item->value().text()); },
-        [&](const auto *) { std::forward<FALLBACK>(push_fallback)(store, name, value); },
-        ddv::noop);
-}
-
 struct string_format_overloads {
     static void add_input(fmt::dynamic_format_arg_store<fmt::format_context> &store,
                           std::vector<std::string> &names, const In<TS_T> &input, std::string_view name = {}) {
@@ -265,9 +241,10 @@ struct string_format_overloads {
             names.emplace_back(name);
             argument_name = names.back().c_str();
         }
-        push_scalar(store, argument_name, *value, [](auto &arguments, auto argument_name, Scalar<SCALAR> item) {
+        push_scalar_format_argument(store, argument_name, *value,
+                                    [](auto &arguments, auto argument_name, Scalar<SCALAR> item) {
             auto text = scalar_text(item, true);
-            push_argument(arguments, argument_name, std::move(text));
+            push_format_argument(arguments, argument_name, std::move(text));
         });
     }
 
@@ -319,9 +296,9 @@ struct string_format_overloads {
             input.visit(
                 [&](const In<TS<SCALAR>> *series) {
                     scalar_series = true;
-                    push_scalar(store, argument_name, series->value_view(),
+                    push_scalar_format_argument(store, argument_name, series->value_view(),
                                 [](auto &arguments, auto name, Scalar<SCALAR> value) {
-                                    push_argument(arguments, name, value);
+                                    push_format_argument(arguments, name, value);
                                 });
                 },
                 ddv::noop);
@@ -330,7 +307,7 @@ struct string_format_overloads {
             return;
         }
 
-        push_argument(store, argument_name, tick(input, now));
+        push_format_argument(store, argument_name, tick(input, now));
     }
 
     template <typename POSITIONAL, typename NAMED>

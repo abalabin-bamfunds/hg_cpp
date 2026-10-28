@@ -173,6 +173,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "str_", operators::str_);
     export_operator(operators_module, "format_", operators::format_);
     export_operator(operators_module, "print_", operators::print_);
+    export_operator(operators_module, "log_", operators::log_);
     export_operator(operators_module, "matches", operators::matches);
     export_operator(operators_module, "replace", operators::replace);
     export_operator(operators_module, "match_", operators::match_);

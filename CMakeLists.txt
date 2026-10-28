@@ -20,6 +20,10 @@ find_package(fmt CONFIG REQUIRED)
 option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
 option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
 
+set(QUILL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+set(QUILL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+set(QUILL_ENABLE_INSTALL ON CACHE BOOL "" FORCE)
+
 FetchContent_Declare(
     tpack
     GIT_REPOSITORY https://github.com/uentity/tpack.git
@@ -36,6 +40,14 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(ddvisitor)
 
+FetchContent_Declare(
+    quill
+    GIT_REPOSITORY https://github.com/odygrd/quill.git
+    GIT_TAG v13.1.0
+    GIT_SHALLOW TRUE
+)
+FetchContent_MakeAvailable(quill)
+
 add_library(
     bg SHARED
     src/compiled_graph.cpp
@@ -43,6 +55,7 @@ add_library(
     src/evaluation_profile.cpp
     src/evaluation_profiler.cpp
     src/global_state.cpp
+    src/logging.cpp
     src/graph_instance_id.cpp
     src/graph_argument.cpp
     src/graph_wiring.cpp
@@ -163,8 +176,9 @@ add_library(
 add_library(bg::bg ALIAS bg)
 
 target_compile_features(bg PUBLIC cxx_std_23)
-target_compile_definitions(bg PRIVATE BG_BUILDING_ENGINE BG_VERSION="${PROJECT_VERSION}")
-target_link_libraries(bg PUBLIC ddv::ddvisitor fmt::fmt PRIVATE Threads::Threads)
+target_compile_definitions(bg PRIVATE BG_BUILDING_ENGINE BG_VERSION="${PROJECT_VERSION}" QUILL_DLL_EXPORT)
+target_compile_definitions(bg INTERFACE QUILL_DLL_IMPORT)
+target_link_libraries(bg PUBLIC ddv::ddvisitor fmt::fmt quill::quill PRIVATE Threads::Threads)
 target_include_directories(
     bg
     PUBLIC
@@ -201,6 +215,7 @@ add_library(
     src/library/timed.cpp
     src/library/running.cpp
     src/library/collection_reduction.cpp
+    src/library/log.cpp
 )
 add_library(bg::library ALIAS bg_library)
 

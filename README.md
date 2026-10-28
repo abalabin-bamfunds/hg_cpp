@@ -39,7 +39,7 @@ ctest --test-dir build/dev --output-on-failure
 ```
 
 The project requires CMake 3.31 or newer, Ninja, Catch2 3, and a C++23 compiler.
-CMake downloads pinned `ddvisitor` and `tpack` releases during configuration.
+CMake downloads pinned `ddvisitor`, `tpack`, and Quill releases during configuration.
 
 After installation, CMake consumers can use
 `find_package(bg CONFIG REQUIRED)` and link to `bg::bg`.

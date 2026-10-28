@@ -60,6 +60,7 @@ extern BG_LIBRARY_EXPORT operator_<auto(TEXT) -> string> casefold;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> string> str_;
 extern BG_LIBRARY_EXPORT operator_<auto(string) -> string> format_;
 extern BG_LIBRARY_EXPORT operator_<auto(string) -> void> print_;
+extern BG_LIBRARY_EXPORT operator_<auto(string) -> void> log_;
 extern BG_LIBRARY_EXPORT operator_<auto(REGEX_PATTERN, REGEX_TEXT) -> bool> matches;
 extern BG_LIBRARY_EXPORT operator_<auto(REGEX_PATTERN, REGEX_REPLACEMENT, REGEX_TEXT) -> string> replace;
 extern BG_LIBRARY_EXPORT operator_<auto(REGEX_PATTERN, REGEX_TEXT) -> OUT> match_;

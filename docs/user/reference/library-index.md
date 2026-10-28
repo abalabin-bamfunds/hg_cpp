@@ -48,6 +48,7 @@ imports and headers.
 | `lag` | [Reference](library-stateful.md#lag) |
 | `le` | [Reference](library-numeric.md#arithmetic) |
 | `len_` | [Reference](library-collections.md#collection-queries) |
+| `log_` | [Reference](library-text.md#formatting-and-printing) |
 | `lower` | [Reference](library-text.md#construction-and-queries) |
 | `lt` | [Reference](library-numeric.md#arithmetic) |
 | `map` | [Reference](higher-order.md#map) |
