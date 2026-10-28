@@ -2,9 +2,9 @@
 
 Status: approved design; inferred-schema column assignments are implemented.
 
-The current implementation accepts concrete `TSC<T>` inputs and column
-expressions. Scalar broadcasting, explicit concrete output schema validation,
-and shared-materialisation profiling remain future work.
+The current implementation accepts concrete `TSC<T>` inputs, column expressions,
+scalar constants, and scalar time series. Explicit concrete output schema
+validation and shared-materialisation profiling remain future work.
 
 Combined BG and Arrow-on frame Release verification passes all nine frame CTest
 executables. The test that resolves the inferred schema inside an enclosing
@@ -45,11 +45,15 @@ auto priced = frame::with_columns<EnrichedQuotes>(
 The current API provides the inferred-schema form. Both forms are intended to
 use the same schema calculation and runtime node.
 
-The current implementation accepts an unbound expression, a bound column
-expression, or a concrete `TSC<T>`. A future stage will add scalar constants and
-scalar time series, broadcast over the source frame's rows. Expressions can
-capture scalar constants and scalar time series through the existing expression
-API.
+An assignment accepts an unbound expression, a bound column expression, a
+concrete `TSC<T>`, or a scalar constant or scalar time series of a supported cell
+type. Scalar assignments broadcast over the source frame's visible rows.
+Expressions can also capture scalars through the existing expression API.
+
+```cpp
+auto enriched = frame::with_columns(
+    q, "venue"_n = symbol{"LSE"}, "limit"_n = limit_ts);
+```
 
 All assignments read the input frame. An expression cannot refer to a column
 introduced by another assignment in the same call. Chain calls to express that
@@ -98,6 +102,12 @@ Distinct assigned results use separate expression nodes. This preserves their
 independent dependencies and incremental evaluation. Shared operations inside
 distinct expressions follow the existing BG materialisation rules.
 
+Scalar assignments use an ordinary node with a `TSF` source, a `TS<T>` value,
+and an `Out<TSC<T>, frame::computed<>>` output. Constants use `operators::const_`.
+The computed output owns its cells and follows membership directly
+from the frame. The [node API](README.md#adding-and-replacing-columns) defines
+incremental writes, invalidation, and supported cell types.
+
 ## Frame binding change
 
 Extend the existing `Out<TSF<Schema>, frame::view>` binder to accept column
@@ -136,10 +146,10 @@ calculation with inferred output and dynamic assignment names. BG resolves the
 graph output schema from the selected graph result after the graph body runs
 once. Combined Release verification passes all nine frame CTest executables.
 
-Outstanding stages add scalar broadcasting and concrete output schema
-validation. Verification must cover concrete and runtime schemas, replacement,
-keys, nulls, source additions and removals, independent column updates, scalar
-captures, rebinding, and invalidation. Verify borrowed buffers and row domains
+Outstanding stages add concrete output schema validation and complete the
+remaining binding and materialisation checks. Verification must cover concrete
+and runtime schemas, replacement, keys, nulls, source additions and removals,
+independent column updates, scalar captures, rebinding, and invalidation. Verify borrowed buffers and row domains
 are shared. Verify that shared expression results materialise once, then measure
 the expression and assembly nodes separately against the existing expression
 path.

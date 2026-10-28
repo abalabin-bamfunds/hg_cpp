@@ -269,7 +269,7 @@ Include `<bg/frame/tsc.hpp>` for the typed views.
 | Delta | `for_each_changed` combines additions and modifications; `for_each_removed` supplies IDs |
 | `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate`, `apply` |
 | `Out<TSC<i64>, frame::view>` | `bind(source)`, `invalidate` |
-| `Out<TSC<i64>, frame::computed<>>` | `bind(source)`, `set(id, value)`, `set_batch(ids, batch)`, `invalidate` |
+| `Out<TSC<i64>, frame::computed<>>` | `bind(source)`, `for_each_added`, `set(id, value)`, `set_batch(ids, batch)`, `invalidate` |
 
 Delta reads require a valid, modified input with matching change time. An accepted
 ordinary set publishes even when the value is equal. An addition followed by
@@ -286,10 +286,14 @@ removed and the new rows as added, including overlapping numeric row IDs.
 If the source changed but its delta timestamp does not match the input's last
 update, the view reconciles the current rows and marks retained rows modified.
 
-A computed `TSC` output uses `bind(source)` to follow source row membership and
-row identity while owning its result cells. Source cell changes alone do not
-publish the computed output; the node writes results with `set` or
-`set_batch`. New rows start with null result cells. Removing a source row clears
+A computed `TSC` output uses `bind(source)` with a `TSC` or `TSF` input to follow
+source row membership and row identity while owning its result cells. A frame
+source supplies membership directly, including when its schema has no fields.
+`for_each_added(callback)` supplies the output's added row IDs for the current
+cycle, including additions found by reconciling membership. These IDs describe
+the output's cumulative cycle delta and are observable during the node invocation.
+Source cell changes alone do not publish the computed output; the node writes
+results with `set` or `set_batch`. New rows start with null result cells. Removing a source row clears
 its result cell. Accepted writes publish even when the value is equal or both
 the old and new values are null. The output cell type may differ from the source
 cell type. Generic `TSC<SCALAR>` declarations resolve both cell types at wiring.
@@ -597,11 +601,15 @@ the same binding implementation.
 ### Adding and replacing columns
 
 `frame::with_columns` calculates its output schema during wiring. Assignments
-accept concrete TSC inputs and bound or unbound column expressions:
+accept concrete TSC inputs, bound or unbound column expressions, scalar
+constants, and scalar time series:
 
 ```cpp
 auto priced = frame::with_columns(
-    quotes, "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
+    quotes,
+    "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0,
+    "venue"_n = symbol{"LSE"},
+    "limit"_n = limit_ts); // TS<double>
 ```
 
 The returned wiring point carries a resolved anonymous output schema. Existing fields
@@ -615,6 +623,16 @@ The helper binds expressions against the source and passes concrete column
 results to one generic assembly node. That node uses `bind_columns`, with the
 binding and change-propagation rules above. Source, assignment, and result
 schemas resolve independently; no concrete C++ schema declaration is required.
+
+A scalar assignment broadcasts over the source's visible rows. A scalar tick
+fills all current rows; otherwise, only added rows are filled. Source cell
+changes alone do not publish the broadcast column. Invalidating either required
+input invalidates the broadcast column; revalidation fills all current rows.
+Broadcasting supports `bool`, `i64`, `double`, `string`, and `symbol`, using
+their exact cell types without implicit promotion. Concrete and runtime schemas,
+including schemas with no fields, use the same nodes.
+String batch writes copy text into each result cell; broadcasting currently
+uses this write path.
 
 ### Mixed computed and borrowed columns
 

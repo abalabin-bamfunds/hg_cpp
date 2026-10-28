@@ -5,7 +5,7 @@ Updated: 2026-10-29.
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is rebased onto main `d3906f2f` and includes
+`agent/frame-with-columns`. The lane is rebased onto main `ac6ab2da` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
@@ -16,9 +16,9 @@ the agreed single-threaded registration contract and the preserved draft. The
 semantic-only literal source change and default runtime registration remain
 there. The frame lane does not contain the transaction draft.
 
-The next frame stage is scalar constant and scalar time series broadcasting in
-`with_columns`, followed by explicit output schema validation and the remaining
-binding and materialisation checks listed below.
+Scalar constant and scalar time series broadcasting in `with_columns` is
+implemented in `98ad0b2d`. Next are explicit output schema validation and the
+remaining binding and materialisation checks listed below.
 
 Verification after separation:
 
@@ -33,7 +33,7 @@ bounded `first_unset` tests. Compatibility changes migrate callback tests to
 use typed input annotation in the TSC literal rejection test.
 The provider test reconstructs its input descriptor after state changes because
 `TimeSeriesInputData` stores a state copy. These changes are committed as
-`f86a73f8`.
+`cc0435ea` after rebasing onto `ac6ab2da`.
 
 ## Adding and replacing frame columns
 
@@ -50,23 +50,58 @@ Verification:
 - Arrow-on frame Release build succeeded. All nine CTest executables passed.
 - `git diff --check` passed.
 
-Builds are under `.lanes/frame-with-columns/build/bg-release` and
-`.lanes/frame-with-columns/build/release`, relative to this implementation
-lane. The frame build uses the BG install at `build/bg-release-install`.
+The current frame build is `build/frame-release`, relative to this implementation
+lane. It uses the BG install at `build/bg-release-install`.
 
 Remaining stages:
 
-- Broadcast scalar constants and scalar time series over source membership.
 - Add explicit concrete output schema validation.
 - Complete coverage for source additions and removals, independent column
   updates, rebinding, and invalidation.
 - Verify shared materialisation and measure expression and assembly nodes
   separately.
 
-### Wiring-time schema calculation in progress
+### Scalar assignments
 
-The current change adds `src/with_columns.cpp` and
-`tests/with_columns_test.cpp`. One assembly node uses independent source,
+`src/with_columns.cpp` broadcasts scalar constants and `TS<T>` inputs through an
+ordinary node with a schema-variable frame input and a computed TSC output.
+The [node API](README.md#adding-and-replacing-columns) defines supported cells
+and update behavior. The assembly node continues to borrow the resulting
+concrete columns.
+
+`Out<TSC<T>, computed<>>::bind` now accepts a TSF input.
+`ColumnRowMembership::bind_rows` owns the common membership transitions; the
+TSC binding path retains column coverage validation. `for_each_added` exposes
+the computed output's cycle additions, including reconciled additions.
+
+String broadcasts currently copy text through existing batch writes. Constant
+construction preserves the scalar's stored handle through `operators::const_`.
+
+Verification for `98ad0b2d`:
+
+- Arrow-enabled Release build passed; all nine frame CTest executables passed.
+- The `with_columns` suite passed 10 cases and 126 assertions. Coverage includes
+  a schema created with `anonymous_schema(fields)` during wiring, dynamic
+  assignment names, all five supported cells, a zero-field source, additions,
+  removals, recycled row IDs, selected membership, and invalidation/revalidation.
+- Source cell changes preserve borrowed buffers and do not publish the broadcast
+  column. A 129-row bool case checks the batch boundary and packed tail.
+- `git diff --check` passed. Main remains at `ac6ab2da`.
+
+GCC emitted `-Wstringop-overflow` warnings at `include/bg/util/buffer.hpp:444`
+during inlined TSB/TSL tick serialization. The build completed successfully.
+
+Run from the frame lane:
+
+```sh
+conda run --no-capture-output -n hg-build cmake --build build/frame-release --parallel 12
+conda run --no-capture-output -n hg-build ctest --test-dir build/frame-release --output-on-failure
+```
+
+### Wiring-time schema calculation
+
+`src/with_columns.cpp` and `tests/with_columns_test.cpp` implement schema
+calculation. One assembly node uses independent source,
 assignment, and result schema variables. Its resolver preserves source field
 order and metadata, replaces assigned fields with their exact cell types,
 appends new fields, and rejects key replacement.
