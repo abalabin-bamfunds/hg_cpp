@@ -2,6 +2,35 @@
 
 Updated: 2026-10-28.
 
+## Adding and replacing frame columns
+
+The first stage of the [approved design](with_columns_proposal.md) implements
+`Out<TSF<Schema>, frame::view>::bind_columns(source, assigned_columns)`.
+The [node API](README.md#borrowing-assigned-columns) defines its binding and
+change-propagation rules. Implementation and Catch2 tests are on
+`agent/frame-with-columns` in `.lanes/frame-with-columns`.
+
+Verification:
+
+- Release Arrow-on: all eight CTest executables passed. The final focused rerun
+  passed four cases and 40 assertions.
+- Debug ASan/UBSan: the focused suite passed four cases and 40 assertions.
+  The extension and test are instrumented and use matching ordinary Debug BG.
+  Leak detection is disabled.
+- `git diff --check` passed.
+
+Builds are under `.lanes/frame-with-columns/build/release` and
+`.lanes/frame-with-columns/build/debug-asan`, relative to this implementation
+lane. They use the matching BG installs under
+`.lanes/frame-field-access/build/arrow-sum/` in the repository root.
+
+Remaining stages:
+
+- Broadcast scalar constants and scalar time series over source membership.
+- Calculate output schemas and provide the `with_columns` graph helper.
+- Verify shared materialisation and measure expression and assembly nodes
+  separately.
+
 ## Incremental numeric column sum
 
 `operators::sum_` accepts ordinary `TSC<i64>` and `TSC<double>` inputs.

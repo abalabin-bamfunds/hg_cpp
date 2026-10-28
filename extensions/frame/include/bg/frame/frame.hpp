@@ -13,6 +13,8 @@
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
 #include <bg/time_series/time_series_type.hpp>
+#include <bg/time_series/tsb/tsb_input.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/declaration_variables.hpp>
 #include <bg/type/schema.hpp>
 #include <bg/type/fixed_item_time_series_type.hpp>
@@ -637,6 +639,40 @@ template <cell_type Cell> FrameColumnReadBinding frame_column_read_binding(const
     return {std::addressof(cpp_scalar_type<Cell>()), payload, &bind_frame_column_view<Cell>,
             &bind_frame_column_series_view<Cell>, &copy_frame_column_storage<Cell>, column.native,
             column.rows, column.snapshot, column.visible_rows, column.coverage, column.physical_rows};
+}
+
+struct FrameViewColumnInput {
+    using Storage = std::variant<ColumnStorage<bool>, ColumnStorage<i64>, ColumnStorage<double>,
+                                 ColumnStorage<string>, ColumnStorage<symbol>>;
+
+    Storage storage;
+    FrameColumnReadBinding binding;
+    const util::index<> *modified_rows{};
+    bool modified{};
+    EvaluationTime last_updated{MIN_DT};
+    EvaluationTime change_time{MIN_DT};
+};
+
+using FrameViewColumnReadFunction = void (*)(const TimeSeriesInputData &, FrameViewColumnInput &);
+
+template <cell_type Cell>
+void read_frame_view_column_input(const TimeSeriesInputData &data, FrameViewColumnInput &destination) {
+    auto input = In<TSC<Cell>>{data};
+    const auto descriptor = input.extension_descriptor();
+    destination.storage = descriptor.storage;
+    const auto &storage = std::get<ColumnStorage<Cell>>(destination.storage);
+    destination.binding = frame_column_read_binding<Cell>(std::addressof(storage));
+    const auto view = ColumnSeriesView<Cell>{storage};
+    destination.modified_rows = std::addressof(view.modified());
+    destination.modified = data.modified();
+    destination.last_updated = data.last_updated();
+    destination.change_time = view.change_time();
+}
+
+inline FrameViewColumnReadFunction frame_view_column_read_function(const ScalarType &type) {
+    return visit_cell_type(type, []<typename Cell>(std::type_identity<Cell>) {
+        return &read_frame_view_column_input<Cell>;
+    });
 }
 
 template <cell_type Cell>
@@ -2090,11 +2126,20 @@ class RuntimeFrameViewOutputStorage {
         std::uint64_t layout_revision{};
     };
 
+    struct AssignedFieldMapping {
+        static constexpr auto no_index = std::numeric_limits<std::size_t>::max();
+
+        std::size_t source_index{no_index};
+        std::size_t assigned_index{no_index};
+        details::FrameViewColumnReadFunction read{};
+    };
+
     const RuntimeFrameViewLayout *layout{};
     SelectedRows previous_rows;
     SelectedRows selected_rows;
     util::sparse_bunch<row_id_t> selected_order;
     mutable util::contiguous_bunch<SelectedOrderMapping> selected_order_mappings;
+    util::contiguous_bunch<AssignedFieldMapping> assigned_fields;
     util::sparse_bunch<row_id_t>::size_type selected_order_size{};
     util::sparse_bunch<row_id_t>::size_type selected_order_initialized{};
     RowSet source_rows{};
@@ -2107,6 +2152,8 @@ class RuntimeFrameViewOutputStorage {
     bool filtering{};
     bool valid{};
     const details::NativeFrameLayout *source_layout{};
+    const bg::Schema *assigned_source_schema{};
+    const TimeSeriesBundleType *assigned_bundle_schema{};
 
     void initialize(const RuntimeFrameViewLayout &runtime_layout) noexcept {
         layout = std::addressof(runtime_layout);
@@ -2390,26 +2437,101 @@ class RuntimeFrameViewOutputStorage {
         return input.field_index(layout->schema->field(target_index).name);
     }
 
+    void clear_assigned_fields(allocator memory) noexcept {
+        assigned_fields.release(memory.memory_resource());
+        assigned_source_schema = nullptr;
+        assigned_bundle_schema = nullptr;
+    }
+
+    void prepare_assigned_fields(const FrameReadStorage &input, const TimeSeriesBundleType &bundle_schema,
+                                 allocator memory) {
+        if (input.schema == assigned_source_schema && std::addressof(bundle_schema) == assigned_bundle_schema)
+            return;
+
+        auto prepared = std::vector<AssignedFieldMapping>(layout->fields.size());
+        auto source_indices = std::vector<std::size_t>(layout->fields.size(), AssignedFieldMapping::no_index);
+        for (auto bundle_index = std::size_t{}; bundle_index != bundle_schema.item_count(); ++bundle_index) {
+            const auto target_index = field_index(bundle_schema.item_name(bundle_index));
+            if (std::ranges::find(layout->key_fields, target_index) != layout->key_fields.end())
+                throw std::invalid_argument{"frame column binding cannot assign a key field"};
+            auto &mapping = prepared[target_index];
+
+            const auto &expected_type = static_cast<const TimeSeriesType &>(
+                layout->fields[target_index].column.column_runtime->type());
+            const auto &assigned_type = bundle_schema.item_type(bundle_index).dereferenced_type();
+            if (!expected_type.accepts(assigned_type))
+                throw std::invalid_argument{"frame column binding assignment type does not match its output field"};
+
+            mapping.assigned_index = bundle_index;
+            mapping.read = details::frame_view_column_read_function(*layout->fields[target_index].column.cell_type);
+        }
+
+        for (auto index = std::size_t{}; index != prepared.size(); ++index) {
+            auto &mapping = prepared[index];
+            if (mapping.assigned_index != AssignedFieldMapping::no_index)
+                continue;
+            const auto source_index = input.field_index(layout->schema->field(index).name);
+            if (input.schema->field(source_index).type != layout->schema->field(index).type)
+                throw std::invalid_argument{"frame column binding source type does not match its output field"};
+            mapping.source_index = source_index;
+            source_indices[index] = source_index;
+        }
+
+        validate_key_mapping(input, source_indices);
+        clear_assigned_fields(memory);
+        for (const auto &mapping : prepared)
+            assigned_fields.emplace_back(memory.memory_resource(), mapping);
+        assigned_source_schema = input.schema;
+        assigned_bundle_schema = std::addressof(bundle_schema);
+    }
+
     struct ProjectionOperation {};
 
     bool bind_projection(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
                          EvaluationTime time, allocator memory) {
-        return bind_impl(input, source_indices, false, {}, ProjectionOperation{}, time, memory);
+        clear_assigned_fields(memory);
+        return bind_impl(input, source_indices, false, {}, ProjectionOperation{}, time, memory, {});
     }
 
     template <typename Evaluator>
     bool bind_filter(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
                      bool rebuild_predicate, std::span<const row_id_t> changed_predicate_rows,
                      Evaluator &&evaluator, EvaluationTime time, allocator memory) {
+        clear_assigned_fields(memory);
         return bind_impl(input, source_indices, rebuild_predicate, changed_predicate_rows,
-                         std::forward<Evaluator>(evaluator), time, memory);
+                         std::forward<Evaluator>(evaluator), time, memory, {});
+    }
+
+    bool bind_columns(const FrameReadStorage &input, const TimeSeriesInputData &assigned,
+                      std::span<details::FrameViewColumnInput> assigned_inputs, EvaluationTime time,
+                      allocator memory) {
+        if (input.schema == nullptr)
+            throw std::logic_error{"TSF view has no resolved source schema"};
+        const auto &bundle_schema = static_cast<const TimeSeriesBundleType &>(assigned.runtime_type().type());
+        prepare_assigned_fields(input, bundle_schema, memory);
+        for (auto index = std::size_t{}; index != layout->fields.size(); ++index) {
+            const auto &mapping = assigned_fields[index];
+            if (mapping.assigned_index == AssignedFieldMapping::no_index)
+                continue;
+            const auto item = assigned.runtime_type().item(assigned.data(),
+                                                           static_cast<item_id_t>(mapping.assigned_index));
+            const auto modified = assigned.modified() && assigned.runtime_type().item_updated(
+                                                               assigned.last_updated_ref(), assigned.data(),
+                                                               static_cast<item_id_t>(mapping.assigned_index));
+            const auto column = TimeSeriesInputData{item.runtime_type, item.last_updated, item.value, modified};
+            mapping.read(column, assigned_inputs[mapping.assigned_index]);
+        }
+
+        return bind_impl(input, {}, false, {}, ProjectionOperation{}, time, memory, assigned_inputs);
     }
 
     template <typename Evaluator>
     bool bind_impl(const FrameReadStorage &input, std::span<const std::size_t> source_indices,
                    bool rebuild_requested_predicate, std::span<const row_id_t> changed_predicate_rows,
-                   Evaluator &&evaluator, EvaluationTime time, allocator memory) {
+                   Evaluator &&evaluator, EvaluationTime time, allocator memory,
+                   std::span<const details::FrameViewColumnInput> assigned_inputs) {
         constexpr auto filtering = !std::is_same_v<std::remove_cvref_t<Evaluator>, ProjectionOperation>;
+        const auto with_columns = !assigned_fields.empty();
         if (layout == nullptr || input.schema == nullptr)
             throw std::logic_error{"TSF view has no resolved schema layout"};
         if (valid && filtering != this->filtering)
@@ -2417,6 +2539,9 @@ class RuntimeFrameViewOutputStorage {
         if (!source_indices.empty() && source_indices.size() != layout->fields.size())
             throw std::invalid_argument{"frame view column count does not match its output schema"};
         const auto source_index = [&](std::size_t index) {
+            if (with_columns)
+                return assigned_fields[static_cast<util::contiguous_bunch<AssignedFieldMapping>::size_type>(index)]
+                    .source_index;
             return source_field_index(input, source_indices, index);
         };
         validate_key_mapping(input, source_indices);
@@ -2427,13 +2552,22 @@ class RuntimeFrameViewOutputStorage {
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
             if (is_computed(index))
                 continue;
-            const auto binding = input.column(source_index(index));
+            const auto mapping_index = static_cast<util::contiguous_bunch<AssignedFieldMapping>::size_type>(index);
+            const auto assigned_index = with_columns ? assigned_fields[mapping_index].assigned_index
+                                                     : AssignedFieldMapping::no_index;
+            const auto assigned = assigned_index != AssignedFieldMapping::no_index;
+            const auto binding = assigned ? assigned_inputs[assigned_index].binding : input.column(source_index(index));
             const auto &field = layout->fields[index].column;
             if (binding.cell_type != field.cell_type || binding.payload == nullptr ||
                 binding.copy_column_storage == nullptr || binding.native == nullptr ||
                 binding.physical_rows == nullptr || binding.visible_rows.identity != input.rows.identity ||
                 (binding.rows != nullptr && binding.rows->identity() != input.rows.identity))
                 throw std::invalid_argument{"frame view column does not match the resolved schema or row domain"};
+            if (assigned) {
+                if (binding.visible_rows != input.rows || binding.coverage != input.rows)
+                    throw std::invalid_argument{"frame binding assigned column must use the source row set"};
+                continue;
+            }
             const auto exact_native_coverage = binding.rows != nullptr &&
                                                std::addressof(binding.rows->slots()) == binding.physical_rows &&
                                                binding.coverage.context == input.rows.context &&
@@ -2621,19 +2755,32 @@ class RuntimeFrameViewOutputStorage {
                     std::addressof(added_rows), native_modified, std::addressof(removed_rows), time);
                 continue;
             }
-            const auto binding = input.column(source_index(index));
+            const auto mapping_index = static_cast<util::contiguous_bunch<AssignedFieldMapping>::size_type>(index);
+            const auto assigned_index = with_columns ? assigned_fields[mapping_index].assigned_index
+                                                     : AssignedFieldMapping::no_index;
+            const auto assigned = assigned_index != AssignedFieldMapping::no_index;
+            const auto binding = assigned ? assigned_inputs[assigned_index].binding : input.column(source_index(index));
             const auto mapping = ColumnMapping{binding.native, binding.rows, binding.physical_rows, binding.snapshot,
                                                binding.visible_rows.context, binding.visible_rows.identity,
                                                binding.coverage.context, binding.coverage.identity};
             const auto mapping_changed = !valid || state.mapping != mapping;
             state.mapping = mapping;
-            const auto *source_modified = input_delta_current ? input.modified_at(source_index(index)) : nullptr;
-            if (mapping_changed || (input.modified && !input_delta_current)) {
+            const auto *source_modified = assigned
+                                              ? assigned_inputs[assigned_index].modified_rows
+                                              : (input_delta_current ? input.modified_at(source_index(index)) : nullptr);
+            const auto source_modified_tick = assigned ? assigned_inputs[assigned_index].modified
+                                                       : input.modified;
+            const auto source_delta_time = assigned ? assigned_inputs[assigned_index].change_time : input.change_time;
+            const auto source_last_updated = assigned ? assigned_inputs[assigned_index].last_updated : input.last_updated;
+            const auto source_changes_current = assigned
+                                                    ? source_modified_tick && source_delta_time == source_last_updated
+                                                    : input_delta_current;
+            if (mapping_changed || (source_modified_tick && !source_changes_current)) {
                 output_rows.each([&](row_id_t id) {
                     if (!added_rows.contains(id))
                         output_modified.set(id, memory.memory_resource());
                 });
-            } else if (source_modified != nullptr) {
+            } else if (source_changes_current && source_modified != nullptr) {
                 for (auto id : *source_modified)
                     if (output_rows.has(id) && !added_rows.contains(id))
                         output_modified.set(id, memory.memory_resource());
@@ -2657,6 +2804,7 @@ class RuntimeFrameViewOutputStorage {
     }
 
     void invalidate(allocator memory) noexcept {
+        clear_assigned_fields(memory);
         clear_computed_fields(memory);
         previous_rows.clear();
         previous_rows.bind({});
@@ -2680,6 +2828,7 @@ class RuntimeFrameViewOutputStorage {
     }
 
     void release(allocator memory) noexcept {
+        clear_assigned_fields(memory);
         previous_rows.release(memory);
         selected_rows.release(memory);
         clear_selected_order();
@@ -4008,6 +4157,46 @@ class Out<frame::TSF<Schema, Properties...>, frame::view>
         for (const auto name : source_names)
             source_indices.push_back(input.field_index(name));
         return bind_projection(source, std::span<const std::size_t>{source_indices});
+    }
+
+    template <template <template <typename, auto...> typename> typename SourceSchema,
+              auto... SeriesProperties, auto... SourceProperties,
+              template <template <typename, auto...> typename> typename AssignedSchema,
+              auto... BundleProperties, auto... AssignedProperties>
+    bool bind_columns(const In<frame::TSF<SourceSchema, SeriesProperties...>, SourceProperties...> &source,
+                      const In<TSB<AssignedSchema, BundleProperties...>, AssignedProperties...> &assigned) const {
+        const auto input = source.extension_descriptor();
+        auto &output = runtime_storage();
+        if (input.schema == nullptr)
+            throw std::logic_error{"TSF view has no resolved source schema"};
+        if (!input.valid || !assigned.runtime_type().all_valid(assigned.input_data())) {
+            if (output.valid)
+                binding_->invalidate();
+            return false;
+        }
+        const auto &bundle_type = static_cast<const TimeSeriesBundleType &>(assigned.runtime_type().type());
+        const auto count = bundle_type.item_count();
+        auto *column_inputs = count == 0
+                                  ? nullptr
+                                  : static_cast<frame::details::FrameViewColumnInput *>(
+                                        binding_->context().scratch().allocate(
+                                            count * sizeof(frame::details::FrameViewColumnInput),
+                                            alignof(frame::details::FrameViewColumnInput)));
+        for (auto index = std::size_t{}; index != count; ++index)
+            std::construct_at(column_inputs + index);
+        auto destroy_column_inputs = util::scope_exit{[&]() noexcept {
+            for (auto index = count; index != 0; --index)
+                std::destroy_at(column_inputs + index - 1);
+        }};
+        const auto changed = output.bind_columns(
+            input, assigned.input_data(), std::span<frame::details::FrameViewColumnInput>{column_inputs, count},
+            binding_->context().evaluation_time(), binding_->allocator());
+        if (changed) {
+            for (auto index : output.changed_columns)
+                binding_->publish_item(binding_->runtime_type(), static_cast<item_id_t>(index));
+            binding_->publish();
+        }
+        return changed;
     }
 
     template <template <template <typename, auto...> typename> typename SourceSchema,

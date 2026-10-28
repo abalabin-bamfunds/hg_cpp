@@ -111,7 +111,8 @@ descriptors remain invocation-local. No BG core changes are proposed.
 ## Implementation and verification
 
 1. Generalise borrowed-column binding and review its node API.
-2. Add schema calculation and the graph helper using existing materialisation.
+2. Add scalar broadcasting, schema calculation, and the graph helper using
+   existing materialisation.
 3. Verify concrete and runtime schemas, replacement, keys, nulls, source
    additions/removals, independent column updates, scalar captures, rebinding,
    and invalidation. Verify that borrowed buffers and row domains are shared.

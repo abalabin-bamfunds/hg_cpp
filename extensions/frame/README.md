@@ -541,6 +541,7 @@ Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
 | Delta | `for_each_changed`, `for_each_removed`, `for_each_modified<Index>` |
 | `Out<TSF<Schema>>` | `schema`, `add`, `set`, `erase`, `clear`, `invalidate` |
 | `Out<TSF<Schema>, frame::view>` | `schema`, `bind_projection(source, ordinals/names/columns<...>())`, `invalidate` |
+| Borrowed column assignments | `output.bind_columns(source, assigned_columns)` |
 | `Out<TSF<Schema>, frame::computed<"mid">>` | `schema`, `bind(source)`, `set<"mid">`, `set_batch<"mid">`, `invalidate` |
 | `Out<TSF<Schema>, frame::computed<>>` | `schema`, `bind(source)`, runtime-selected `set(name/ordinal, ...)`, `set_batch(name/ordinal, ...)`, `invalidate` |
 | Column selection | `select_column<"bid">(frame)` returns a `wp<TSC<T>>` |
@@ -567,7 +568,7 @@ membership and reports changed column bindings as modifications to retained rows
 Rebinding to a different row domain reports old rows as removed and new rows as
 added, including overlapping numeric IDs.
 
-A valid TSF view output uses either projection or filtering. Switching between
+A valid TSF view output uses either projection, including `bind_columns`, or filtering. Switching between
 these operations throws `std::logic_error`; invalidate the output before
 changing its operation.
 
@@ -577,6 +578,21 @@ source key fields in key order. Binding from an unkeyed source, dropping or
 reordering a key field, or mapping another source field to a key is rejected
 before output state changes. An unkeyed view may project a keyed source without
 retaining its key. Computed TSF outputs cannot compute key fields.
+
+### Borrowing assigned columns
+
+`Out<TSF<Schema>, frame::view>::bind_columns(source, assigned_columns)` borrows
+named TSC inputs from a TSB. Each TSB field supplies the same-named output field.
+Other output fields borrow the same-named source fields. Cell types must match
+the output schema exactly. Assigned columns must expose the source's exact
+`RowSet` descriptor. Key fields cannot be assigned.
+
+The source frame supplies row membership. Each borrowed column supplies its own
+cell modifications: replacing a source field suppresses that source field's
+modifications, and an assigned-column update can publish without a source-frame
+update. The output copies column descriptors and borrows their cell buffers
+through the node's retained input connections. Concrete and runtime schemas use
+the same binding implementation.
 
 ### Mixed computed and borrowed columns
 

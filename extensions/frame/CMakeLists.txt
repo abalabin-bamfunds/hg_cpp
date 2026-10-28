@@ -80,6 +80,10 @@ if(BUILD_TESTING)
     add_test(NAME bg_frame_expression_test COMMAND bg_frame_expression_test)
 
     find_package(Catch2 3 CONFIG REQUIRED)
+    add_executable(bg_frame_with_columns_binding_test tests/with_columns_binding_test.cpp)
+    target_link_libraries(bg_frame_with_columns_binding_test PRIVATE bg::frame Catch2::Catch2WithMain)
+    add_test(NAME bg_frame_with_columns_binding_test COMMAND bg_frame_with_columns_binding_test)
+
     add_executable(bg_frame_reduction_test tests/reduction_test.cpp)
     target_link_libraries(bg_frame_reduction_test PRIVATE bg::frame Catch2::Catch2WithMain)
     add_test(NAME bg_frame_reduction_test COMMAND bg_frame_reduction_test)
