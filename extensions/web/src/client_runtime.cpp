@@ -226,9 +226,7 @@ std::optional<std::string> Transfer::validate() const {
 ScalarValue<Bundle<HttpResponse>> response_value(i64 status, HeaderValues headers,
                                                  ScalarValue<bytes> body_value) {
     for (auto &[name, raw_value] : headers) {
-        auto value = std::string{};
-        details::append_latin1_header_value_as_utf8(value, raw_value);
-        raw_value = std::move(value);
+        details::convert_latin1_header_value_as_utf8(raw_value);
     }
 
     auto memory = allocator{};

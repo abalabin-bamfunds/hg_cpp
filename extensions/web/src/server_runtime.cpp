@@ -86,9 +86,7 @@ ScalarValue<Bundle<HttpServerRequest>> request_value(const http::request<http::s
     auto headers = std::vector<std::pair<std::string, std::string>>{};
     headers.reserve(request_headers.size());
     for (const auto &[name, raw_value] : request_headers) {
-        auto value = std::string{};
-        details::append_latin1_header_value_as_utf8(value, raw_value);
-        headers.emplace_back(name, std::move(value));
+        headers.emplace_back(name, details::latin1_header_value_as_utf8(raw_value));
     }
 
     const auto body = std::span<const std::byte>{reinterpret_cast<const std::byte *>(request.body().data()),

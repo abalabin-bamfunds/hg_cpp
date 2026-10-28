@@ -17,6 +17,7 @@
 #include <bg/web/auth.hpp>
 
 #include "../src/client_output.hpp"
+#include "../src/http_header.hpp"
 
 #include <array>
 #include <chrono>
@@ -24,6 +25,7 @@
 #include <span>
 #include <stop_token>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -99,6 +101,56 @@ ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
 }
 
 } // namespace
+
+TEST_CASE("Latin-1 HTTP header values convert to UTF-8", "[feature:http]") {
+    auto latin1 = std::string{};
+    auto expected = std::string{};
+    latin1.reserve(256);
+    expected.reserve(384);
+    for (auto byte = 0; byte <= 0xff; ++byte) {
+        const auto character = static_cast<unsigned char>(byte);
+        latin1.push_back(static_cast<char>(character));
+        if (character < 0x80) {
+            expected.push_back(static_cast<char>(character));
+            continue;
+        }
+        expected.push_back(static_cast<char>(0xc0 | (character >> 6)));
+        expected.push_back(static_cast<char>(0x80 | (character & 0x3f)));
+    }
+
+    CHECK(bg::web::details::latin1_header_value_as_utf8(latin1) == expected);
+    auto converted = latin1;
+    bg::web::details::convert_latin1_header_value_as_utf8(converted);
+    CHECK(converted == expected);
+}
+
+TEST_CASE("Latin-1 HTTP header conversion preserves ASCII and empty values", "[feature:http]") {
+    auto empty = std::string{};
+    const auto empty_data = empty.data();
+    const auto empty_capacity = empty.capacity();
+    bg::web::details::convert_latin1_header_value_as_utf8(empty);
+    CHECK(empty.empty());
+    CHECK(empty.data() == empty_data);
+    CHECK(empty.capacity() == empty_capacity);
+
+    auto ascii = std::string{"plain ASCII header value"};
+    const auto ascii_data = ascii.data();
+    const auto ascii_capacity = ascii.capacity();
+    bg::web::details::convert_latin1_header_value_as_utf8(ascii);
+    CHECK(ascii == "plain ASCII header value");
+    CHECK(ascii.data() == ascii_data);
+    CHECK(ascii.capacity() == ascii_capacity);
+}
+
+TEST_CASE("Latin-1 HTTP header conversion preserves mixed ASCII and non-ASCII bytes", "[feature:http]") {
+    const auto latin1 = std::string{static_cast<char>(0x80)} + "A" + static_cast<char>(0xff);
+    const auto expected = std::string{"\xc2\x80" "A" "\xc3\xbf"};
+
+    CHECK(bg::web::details::latin1_header_value_as_utf8(latin1) == expected);
+    auto converted = latin1;
+    bg::web::details::convert_latin1_header_value_as_utf8(converted);
+    CHECK(converted == expected);
+}
 
 TEST_CASE("HTTP auth decisions contain exactly one identity or rejection",
           "[feature:http][feature:scalar]") {
