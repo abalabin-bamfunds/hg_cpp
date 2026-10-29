@@ -534,11 +534,15 @@ the worst case; TSS uses one Boolean membership lookup.
 
 ## Collection queries
 
-`len_(value)` returns an `i64` length. It counts current TSS membership or the
-items in `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. For fixed TSL and TSB,
-it returns the declared item count as a wiring-time constant, independent of
-item validity. These fixed-size queries add no runtime query node. Sparse TSL
-length is not supplied.
+The [collection query reference](../../user/reference/library-collections.md#collection-queries)
+defines public query behavior, including TSD physical-key and valid-item counts.
+
+`len_(value)` returns an `i64` length. It counts current TSS membership, physical
+TSD keys, or the items in `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. Use
+`len_(valid_items(dictionary))` to count valid immediate items. For fixed TSL
+and TSB, it returns the declared item count as a wiring-time constant,
+independent of item validity. These fixed-size queries add no runtime query
+node. Sparse TSL length is not supplied.
 
 `contains_(collection, key)` tests current membership in TSS, TSD, or a scalar
 list, set, or dictionary time series. Dictionaries test keys. The key can be a
@@ -569,10 +573,18 @@ annotations are not yet supplied.
 
 ## Collection selection
 
+The [collection selection reference](../../user/reference/library-collections.md#collection-queries)
+defines the public key projection and selection behavior.
+
 `keys_(dictionary)` returns the dictionary's key-set time series. It selects the
 existing key-set item, so key additions and removals update the result while
 dictionary value updates do not. The result follows dictionary reference
 switching and preserves the dictionary guarantee.
+
+The valid-item projection filters keys by immediate item validity and follows
+item invalidation and revalidation. It preserves root invalidation. See the
+[collection query reference](../../user/reference/library-collections.md#collection-queries)
+for its public behavior.
 
 `keys_where_true(mask)` returns a TSS containing the keys whose current TSD
 Boolean items are valid and true. False or invalid items are absent. The output
@@ -732,6 +744,9 @@ produces an empty string. Both strings and symbols produce string output.
 
 ## Time series set operations
 
+The [time series set operation reference](../../user/reference/library-collections.md#time-series-set-operations)
+defines the public TSS and TSD operator behavior.
+
 Two `TSS<K>` inputs support union (`bit_or`, `|`), intersection (`bit_and`,
 `&`), difference (`sub`, `-`), and symmetric difference (`bit_xor`, `^`).
 Both inputs must have the same key type. `eq` and `ne` compare membership;
@@ -741,9 +756,11 @@ Inputs are required by default. A TSS result preserves its membership while
 a required input is invalid and reconciles the current sets when evaluation
 resumes. Boolean results follow normal required-input invalidation.
 
-`opt()` selects overloads that treat invalid inputs as empty sets. Marking
-either binary operand selects that behavior for both operands. Optional
-overloads evaluate on input changes, without startup scheduling.
+For TSS operations, `opt()` selects overloads that treat invalid inputs as
+empty sets. Marking either binary operand selects that behavior for both
+operands. Optional overloads evaluate on input changes, without startup
+scheduling. TSD set operations require both roots to be valid; `opt()` does
+not select optional TSD set operations.
 
 ```cpp
 auto shared = lhs & rhs;
@@ -757,17 +774,24 @@ available = bg.opt(lhs) | bg.opt(rhs)
 empty = bg.operators.is_empty(available)
 ```
 
-Set results publish only actual membership changes, including a first valid
-empty result. Updating one operand without changing the result membership does
-not publish another set tick.
+TSS set results publish only actual membership changes, including a first
+valid empty result. Updating one operand without changing the result membership
+does not publish another set tick. See the public reference for TSD result
+selection and validity.
 
-Required overloads propagate the weakest observed input guarantee. Optional
-overloads produce ordinary outputs. Boolean outputs publish on each evaluation
+Required TSS overloads propagate the weakest observed input guarantee. Optional
+TSS overloads produce ordinary outputs. Boolean outputs publish on each evaluation
 unless their resolved guarantee suppresses an equal result.
 
 Set operations and equality process changed keys incrementally. Initial
 evaluation and recovery enumerate current membership. Equality retains a
 mismatch count; neither implementation retains a second set of keys.
+
+TSD intersection and difference compose key-set operations with dictionary
+selection. Union and symmetric difference maintain reference outputs from key
+changes and reference changes. Target updates reach consumers directly. The
+results expose ordinary dictionary and item-reference guarantees; selected
+reference targets retain their guarantees.
 
 ## Dictionary transform implementation
 

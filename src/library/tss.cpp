@@ -152,6 +152,49 @@ struct tss_overloads {
         return key_set.as<TSS<K, G>>();
     })};
 
+    struct keys_tsd_valid_items_impl {
+        In<TSD<K, TS_T, G>, valid_items> dictionary;
+        Out<TSS<K, G>> output;
+
+        void evaluate() const {
+            if (!output.valid() || dictionary.became_valid()) {
+                output.clear();
+                dictionary.for_each_key([&](const auto &key) { output.insert(key); });
+                return;
+            }
+
+            dictionary.for_each_added_key([&](const auto &key) { output.insert(key); });
+            dictionary.for_each_removed_key([&](const auto &key) { output.erase(key); });
+        }
+    };
+    overload<keys_> keys_tsd_valid_items{graph(
+        [](wp<TSD<K, TS_T, G>, valid_items> dictionary) -> wp<TSS<K>> {
+            static const auto project = bg::node<keys_tsd_valid_items_impl>();
+            const auto keys = project(dictionary);
+            auto nothing_type = TypeMap{};
+            nothing_type.set(::bg::details::type_parameter<TS_T>(), &keys.type().target_type());
+            return operators::if_then_else(operators::valid(static_cast<WiringPoint>(dictionary)), keys,
+                                           operators::nothing[nothing_type]())
+                .template as<TSS<K>>();
+        })};
+
+    overload<len_> len_tsd_valid_items{graph([](wp<TSD<K, TS_T, G>, valid_items> dictionary) -> wp<TS<i64>> {
+        return operators::len_(operators::keys_(dictionary)).template as<TS<i64>>();
+    })};
+
+    overload<is_empty> is_empty_tsd_valid_items{graph(
+        [](wp<TSD<K, TS_T, G>, valid_items> dictionary) -> wp<TS<bool>> {
+            return operators::is_empty(operators::keys_(dictionary)).template as<TS<bool>>();
+        })};
+
+    overload<len_> len_tsd{graph([](wp<TSD<K, TS_T, G>> dictionary) -> wp<TS<i64, G>> {
+        return operators::len_(operators::keys_(dictionary)).template as<TS<i64, G>>();
+    })};
+
+    overload<is_empty> is_empty_tsd{graph([](wp<TSD<K, TS_T, G>> dictionary) -> wp<TS<bool, G>> {
+        return operators::is_empty(operators::keys_(dictionary)).template as<TS<bool, G>>();
+    })};
+
     struct keys_tsd_reference_impl {
         In<REF<TSD<K, TS_T, GD>, GR>, optional> dictionary;
         In<REF<TSS<K, GD>, GR>, dynamic_binding, optional> key_set;
@@ -333,8 +376,197 @@ struct tss_overloads {
         bit_xor_tss_optional;
 };
 
+struct tsd_set_overloads {
+    static wp<TSD<K, REF<TS_T>>> gate_roots(auto lhs, auto rhs, wp<TSD<K, REF<TS_T>>> result) {
+        const auto valid = operators::and_(operators::valid(static_cast<WiringPoint>(lhs)),
+                                           operators::valid(static_cast<WiringPoint>(rhs)));
+        auto nothing_type = TypeMap{};
+        nothing_type.set(::bg::details::type_parameter<TS_T>(), &result.type().target_type());
+        return operators::if_then_else(valid, result, operators::nothing[nothing_type]())
+            .template as<TSD<K, REF<TS_T>>>();
+    }
+
+    template <typename KEY_OPERATION>
+    static wp<TSD<K, REF<TS_T>>> select_keys(auto lhs, auto rhs, KEY_OPERATION key_operation) {
+        const auto keys = key_operation(operators::keys_(lhs), operators::keys_(rhs));
+        const auto raw_lhs = static_cast<WiringPoint>(lhs).template as<TSD<K, TS_T, G>>();
+        return gate_roots(lhs, rhs, raw_lhs[keys].template as<TSD<K, REF<TS_T>>>());
+    }
+
+    template <bool SYMMETRIC> struct reference_routing_node {
+        In<TSD<K, REF<TS_T>, G>> lhs;
+        In<TSD<K, REF<TS_T>, G>> rhs;
+        In<TSS<K, G>> lhs_keys;
+        In<TSS<K, G>> rhs_keys;
+        State<bool> needs_reconcile;
+        Out<TSD<K, REF<TS_T>>> output;
+
+        void evaluate() const {
+            if (!output.valid() || *needs_reconcile || lhs.became_valid() || rhs.became_valid() ||
+                lhs_keys.became_valid() || rhs_keys.became_valid()) {
+                reconcile();
+                *needs_reconcile = false;
+                return;
+            }
+
+            if (lhs_keys.modified()) {
+                lhs_keys.for_each_added([&](const auto &key) { update(key); });
+                lhs_keys.for_each_removed([&](const auto &key) { update(key); });
+            }
+            if (rhs_keys.modified()) {
+                rhs_keys.for_each_added([&](const auto &key) { update(key); });
+                rhs_keys.for_each_removed([&](const auto &key) { update(key); });
+            }
+            if (lhs.modified()) {
+                lhs.for_each_modified([&](const auto &key) {
+                    if (lhs_keys.contains(key)) {
+                        update(key);
+                    }
+                });
+            }
+            if (rhs.modified()) {
+                rhs.for_each_modified([&](const auto &key) {
+                    if (!lhs_keys.contains(key) && rhs_keys.contains(key)) {
+                        update(key);
+                    }
+                });
+            }
+        }
+
+        void on_invalidation() const { *needs_reconcile = true; }
+
+        bool selected(const auto &key) const {
+            const auto in_lhs = lhs_keys.contains(key);
+            const auto in_rhs = rhs_keys.contains(key);
+            if constexpr (SYMMETRIC) {
+                return in_lhs != in_rhs;
+            }
+            return in_lhs || in_rhs;
+        }
+
+        void update(const auto &key) const {
+            if (!selected(key)) {
+                output.erase(key);
+                return;
+            }
+
+            if (lhs_keys.contains(key)) {
+                output[key].copy(lhs[key]);
+            } else {
+                output[key].copy(rhs[key]);
+            }
+        }
+
+        void reconcile() const {
+            if (!output.valid()) {
+                output.clear();
+            }
+            output.for_each_key([&](const auto &key) {
+                if (!selected(key)) {
+                    output.erase(key);
+                }
+            });
+            lhs_keys.for_each([&](const auto &key) { update(key); });
+            rhs_keys.for_each([&](const auto &key) { update(key); });
+        }
+    };
+
+    template <bool SYMMETRIC>
+    static wp<TSD<K, REF<TS_T>>> route(auto lhs, auto rhs) {
+        const auto lhs_keys = operators::keys_(lhs);
+        const auto rhs_keys = operators::keys_(rhs);
+        const auto lhs_references = static_cast<WiringPoint>(lhs).template as<TSD<K, REF<TS_T>, G>>();
+        const auto rhs_references = static_cast<WiringPoint>(rhs).template as<TSD<K, REF<TS_T>, G>>();
+        static const auto route_node = bg::node<reference_routing_node<SYMMETRIC>>();
+        return gate_roots(lhs, rhs, route_node(lhs_references, rhs_references, lhs_keys, rhs_keys));
+    }
+
+    overload<bit_and> bit_and_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {
+        return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+            return operators::bit_and(lhs_keys, rhs_keys);
+        });
+    })};
+    overload<bit_and> bit_and_tsd_left_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>> rhs) {
+            return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+                return operators::bit_and(lhs_keys, rhs_keys);
+            });
+        })};
+    overload<bit_and> bit_and_tsd_right_valid_items{
+        graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+                return operators::bit_and(lhs_keys, rhs_keys);
+            });
+        })};
+    overload<bit_and> bit_and_tsd_both_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+                return operators::bit_and(lhs_keys, rhs_keys);
+            });
+        })};
+
+    overload<sub> sub_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {
+        return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+            return operators::sub(lhs_keys, rhs_keys);
+        });
+    })};
+    overload<sub> sub_tsd_left_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>> rhs) {
+            return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+                return operators::sub(lhs_keys, rhs_keys);
+            });
+        })};
+    overload<sub> sub_tsd_right_valid_items{
+        graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+                return operators::sub(lhs_keys, rhs_keys);
+            });
+        })};
+    overload<sub> sub_tsd_both_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return select_keys(lhs, rhs, [](auto lhs_keys, auto rhs_keys) {
+                return operators::sub(lhs_keys, rhs_keys);
+            });
+        })};
+
+    overload<bit_or> bit_or_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {
+        return route<false>(lhs, rhs);
+    })};
+    overload<bit_or> bit_or_tsd_left_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>> rhs) {
+            return route<false>(lhs, rhs);
+        })};
+    overload<bit_or> bit_or_tsd_right_valid_items{
+        graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return route<false>(lhs, rhs);
+        })};
+    overload<bit_or> bit_or_tsd_both_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return route<false>(lhs, rhs);
+        })};
+
+    overload<bit_xor> bit_xor_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {
+        return route<true>(lhs, rhs);
+    })};
+    overload<bit_xor> bit_xor_tsd_left_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>> rhs) {
+            return route<true>(lhs, rhs);
+        })};
+    overload<bit_xor> bit_xor_tsd_right_valid_items{
+        graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return route<true>(lhs, rhs);
+        })};
+    overload<bit_xor> bit_xor_tsd_both_valid_items{
+        graph([](wp<TSD<K, TS_T, G>, valid_items> lhs, wp<TSD<K, TS_T, G>, valid_items> rhs) {
+            return route<true>(lhs, rhs);
+        })};
+};
+
 } // namespace
 
-void register_tss_operators() { register_overloads<tss_overloads>(); }
+void register_tss_operators() {
+    register_overloads<tss_overloads>();
+    register_overloads<tsd_set_overloads>();
+}
 
 } // namespace bg::operators::details

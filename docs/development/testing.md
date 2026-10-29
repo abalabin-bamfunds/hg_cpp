@@ -693,6 +693,10 @@ For each reusable node and graph, test:
 - TSS and TSD membership with scalar and time series keys, repeated equal key ticks,
   physical versus valid-item membership, immediate reference-item validity,
   retained missing keys, reference samples, and output guarantees
+- TSD physical and valid-item key queries, union, intersection, difference, and
+  symmetric difference; independent valid-item selection on each operand, left
+  precedence, root invalidation and revalidation, reference retargeting, nested
+  items, target-only updates, output guarantees, and C++ and Python wiring
 - TSD rekeying, partitioning, inversion, key transposition, collapse, and expansion;
   simultaneous removals and assignments, collision behavior, empty-group retention,
   independent source and mapping changes, reference rebinding and item-ID remapping,

@@ -390,6 +390,119 @@ def test_tsd_contains_operator_follows_dynamic_keys_through_absent_key_churn():
     assert bg.run_graph(valid_items_contains, collection, keys) == expected
 
 
+def test_tsd_collection_queries_accept_valid_items():
+    @bg.graph
+    def keys(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TSS[int]:
+        return bg.operators.keys_(values)
+
+    @bg.graph
+    def length(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
+        return bg.operators.len_(values)
+
+    @bg.graph
+    def empty(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[bool]:
+        return bg.operators.is_empty(values)
+
+    updates = [
+        {1: 10, 2: bg.INVALID},
+        {2: 20},
+        {1: bg.INVALID},
+        {1: bg.REMOVE},
+        {3: 30},
+    ]
+    assert bg.run_graph(keys, updates) == [
+        bg.SetDelta(added={1}), bg.SetDelta(added={2}), bg.SetDelta(removed={1}), None,
+        bg.SetDelta(added={3})
+    ]
+    assert bg.run_graph(length, updates) == [1, 2, 1, None, 2]
+    assert bg.run_graph(empty, updates) == [False, False, False, None, False]
+
+
+def test_tsd_set_operators_compose_with_valid_items():
+    @bg.graph
+    def intersection(lhs: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items],
+                     rhs: bg.TSD[int, bg.TS[int]]) -> bg.TSS[int]:
+        return bg.operators.keys_(lhs & rhs)
+
+    @bg.graph
+    def difference(lhs: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items],
+                   rhs: bg.TSD[int, bg.TS[int]]) -> bg.TSS[int]:
+        return bg.operators.keys_(lhs - rhs)
+
+    @bg.graph
+    def union(lhs: bg.TSD[int, bg.TS[int]],
+              rhs: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TSS[int]:
+        return bg.operators.keys_(lhs | rhs)
+
+    lhs = [
+        {1: 10, 2: bg.INVALID, 3: 30},
+        {2: 20},
+        {1: bg.INVALID},
+        {2: bg.REMOVE},
+    ]
+    rhs = [
+        {2: 200, 3: 300},
+        {1: 100},
+        {3: bg.REMOVE},
+        {5: 500},
+    ]
+
+    assert bg.run_graph(intersection, lhs, rhs) == [
+        bg.SetDelta(added={3}), bg.SetDelta(added={1, 2}), bg.SetDelta(removed={1, 3}),
+        bg.SetDelta(removed={2})
+    ]
+    assert bg.run_graph(difference, lhs, rhs) == [
+        bg.SetDelta(added={1}), bg.SetDelta(removed={1}), bg.SetDelta(added={3}), None
+    ]
+    assert bg.run_graph(union, lhs, rhs) == [
+        bg.SetDelta(added={1, 2, 3}), None, None, bg.SetDelta(added={5}),
+    ]
+
+
+@pytest.mark.parametrize(
+    ("operation_name", "lhs_valid", "rhs_valid", "expected"),
+    [
+        ("intersection", False, False, {2, 3}),
+        ("intersection", True, False, {3}),
+        ("intersection", False, True, {2}),
+        ("intersection", True, True, set()),
+        ("difference", False, False, {1, 5}),
+        ("difference", True, False, {1}),
+        ("difference", False, True, {1, 3, 5}),
+        ("difference", True, True, {1, 3}),
+        ("union", False, False, {1, 2, 3, 4, 5}),
+        ("union", True, False, {1, 2, 3, 4}),
+        ("union", False, True, {1, 2, 3, 5}),
+        ("union", True, True, {1, 2, 3}),
+        ("symmetric_difference", False, False, {1, 4, 5}),
+        ("symmetric_difference", True, False, {1, 2, 4}),
+        ("symmetric_difference", False, True, {1, 3, 5}),
+        ("symmetric_difference", True, True, {1, 2, 3}),
+    ],
+)
+def test_tsd_set_operators_accept_valid_items_on_either_side(
+    operation_name, lhs_valid, rhs_valid, expected
+):
+    dictionary_type = bg.TSD[int, bg.TS[int]]
+    lhs_type = Annotated[dictionary_type, bg.valid_items] if lhs_valid else dictionary_type
+    rhs_type = Annotated[dictionary_type, bg.valid_items] if rhs_valid else dictionary_type
+    operations = {
+        "intersection": lambda lhs, rhs: lhs & rhs,
+        "difference": lambda lhs, rhs: lhs - rhs,
+        "union": lambda lhs, rhs: lhs | rhs,
+        "symmetric_difference": lambda lhs, rhs: lhs ^ rhs,
+    }
+    operation = operations[operation_name]
+
+    @bg.graph
+    def projected(lhs: lhs_type, rhs: rhs_type) -> bg.TSS[int]:
+        return bg.operators.keys_(operation(lhs, rhs))
+
+    lhs = [{1: 10, 2: bg.INVALID, 3: 30, 5: bg.INVALID}]
+    rhs = [{2: 200, 3: bg.INVALID, 4: bg.INVALID}]
+    assert bg.run_graph(projected, lhs, rhs) == [bg.SetDelta(added=expected)]
+
+
 def test_tss_equality_and_is_empty():
     @bg.graph
     def equal(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TS[bool]:

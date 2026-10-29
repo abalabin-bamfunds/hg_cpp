@@ -112,13 +112,22 @@ case; TSS uses one Boolean membership lookup.
 the existing key-set series, so value updates do not update the result. It follows
 dictionary reference changes and preserves the dictionary guarantee.
 
+`keys_(valid_items(dictionary))` returns only keys whose immediate items are valid.
+It updates when an item becomes valid or invalid. An invalid dictionary root produces
+an invalid result; revalidation rebuilds the key set. `len_` and `is_empty` accept the
+same valid-item view and query its current keys. These filtered queries produce
+ordinary outputs.
+
 `keys_where_true(mask)` returns the keys whose TSD Boolean items are valid and true.
 It updates when an item becomes false or invalid, or when a key is added or removed.
 
-`len_(value)` returns an `i64` length. It counts current TSS membership or the items in
-`TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. For fixed TSL and TSB, it returns the
-declared item count as a wiring-time constant, independent of item validity. These
-fixed-size queries add no runtime query node. Sparse TSL length is not supplied.
+`len_(value)` returns an `i64` length. It counts current TSS membership, physical TSD
+keys, or the items in `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. Use
+`len_(valid_items(dictionary))` to count only valid immediate TSD items. For fixed TSL
+and TSB, it returns the declared item count as a wiring-time constant, independent of
+item validity. These fixed-size queries add no runtime query node. Sparse TSL length is
+not supplied. `is_empty(dictionary)` tests whether the dictionary has any physical keys;
+`is_empty(valid_items(dictionary))` tests whether it has any valid immediate items.
 
 `contains_(collection, key)` tests current membership in TSS, TSD, or a scalar list,
 set, or dictionary time series. Dictionaries test keys. The key can be a scalar or a
@@ -152,13 +161,24 @@ difference (`sub`, `-`), and symmetric difference (`bit_xor`, `^`). Both inputs 
 have the same key type. `eq` and `ne` compare membership; `is_empty` tests whether a set
 has no members.
 
-Inputs are required by default. A TSS result preserves its membership while a required
-input is invalid and reconciles the current sets when evaluation resumes. Boolean
-results follow normal required-input invalidation.
+Two `TSD<K, TS_T>` inputs support the same set operators. `&` selects keys present in
+both dictionaries, and `-` selects keys present only in the left dictionary. `|` selects
+keys present in either dictionary, and `^` selects keys present in exactly one. The
+result contains references to the selected items. When both inputs contain a selected
+key, `|` uses the left item, even if that physical item is invalid. Use
+`valid_items(lhs) | rhs` to exclude invalid left items so a valid right item can supply
+that key. These operators accept `valid_items` on either or both inputs; that view
+excludes invalid immediate items from membership. Both TSD roots must be valid. If
+either root is invalid, the result is invalid until both roots are valid again.
 
-`opt()` selects overloads that treat invalid inputs as empty sets. Marking either binary
-operand selects that behavior for both operands. Optional overloads evaluate on input
-changes, without startup scheduling.
+TSS inputs are required by default. A TSS result preserves its membership while a
+required input is invalid and reconciles the current sets when evaluation resumes.
+Boolean results follow normal required-input invalidation.
+
+For TSS set operators, `opt()` selects overloads that treat invalid inputs as empty sets.
+Marking either binary operand selects that behavior for both operands. Optional
+overloads evaluate on input changes, without startup scheduling. TSD set operators do
+not have optional-root overloads.
 
 ::::{tab-set}
 :sync-group: language
@@ -187,14 +207,17 @@ auto empty = is_empty(available);
 :::
 ::::
 
-Set results publish only actual membership changes, including a first valid empty
+TSS set results publish only actual membership changes, including a first valid empty
 result. Updating one operand without changing the result membership does not publish
 another set tick.
 
-Required overloads propagate the weakest observed input guarantee. Optional overloads
-produce ordinary outputs. Boolean outputs publish on each evaluation unless their
+Required TSS overloads propagate the weakest observed input guarantee. Optional TSS
+overloads produce ordinary outputs. Boolean outputs publish on each evaluation unless their
 resolved guarantee suppresses an equal result.
 
+TSD set results expose ordinary dictionary and item-reference guarantees. Selected
+reference targets retain their guarantees. Target updates reach consumers without
+reevaluating the routing node.
 
 ## Dictionary transforms
 

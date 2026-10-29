@@ -179,6 +179,33 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
 
+TEST_CASE("a missing TSD root converts to and from item references before becoming valid",
+          "[evaluation][reference][tsd][validity][series:tsd][series:value][transition:invalidation]"
+          "[transition:revalidation][binding:value-to-reference][binding:reference-to-value]"
+          "[feature:reference]") {
+    struct select_dictionary {
+        In<TS<bool>> select_live;
+        In<REF<TSD<i64, REF<TS<i64>>>>, optional> live;
+        In<REF<TSD<i64, REF<TS<i64>>>>, optional> missing;
+        Out<REF<TSD<i64, REF<TS<i64>>>>> output;
+
+        void evaluate() const { output.copy(*select_live ? live : missing); }
+    };
+
+    const auto observe_value = node([](In<TSD<i64, TS<i64>>> dictionary, Out<TS<i64>> output) {
+        output.set(dictionary.contains(1) ? *dictionary[1] : -1);
+    });
+    const auto select = node<select_dictionary>();
+    const auto graph = [&](wp<TS<bool>> select_live, wp<TSD<i64, TS<i64>>> live) {
+        const auto missing = operators::nothing[type<TSD<i64, TS<i64>>>]();
+        return observe_value(select(select_live, live, missing));
+    };
+
+    CHECK(bg::run_graph(graph, bg::input<TS<bool>>({false, true, false}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP}))
+              .equals<i64>({std::nullopt, 10, std::nullopt}));
+}
+
 TEST_CASE("a generated reference value stays stable while its target changes",
           "[evaluation][reference][tsl][series:fixed-tsl][feature:reference][transition:update]"
           "[transition:invalidation][transition:revalidation][binding:value-to-reference]"

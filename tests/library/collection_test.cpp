@@ -61,6 +61,237 @@ TEST_CASE("keys_ projects dictionary membership without copying item updates",
                          {literal::REMOVED(1), literal::REMOVED(3)}}));
 }
 
+TEST_CASE("keys_(valid_items) follows item validity and dictionary validity",
+          "[feature:operator][series:tsd][series:tss][input-guarantee:valid-items]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> values) { return operators::keys_(valid_items(values)); };
+    const auto validity_graph = [](wp<TS<bool>> selected, wp<TSD<i64, TS<i64>>> values) {
+        const auto current =
+            operators::if_then_else(selected, values, operators::nothing[type<TSD<i64, TS<i64>>>]());
+        return operators::valid(operators::keys_(valid_items(current)));
+    };
+
+    const auto input = bg::input<TSD<i64, TS<i64>>>(
+        {{{1, literal::INVALID}}, {{1, 10}}, {{2, literal::INVALID}}, {{1, literal::INVALID}},
+         {{1, literal::REMOVE}}, {{3, 30}}, literal::SKIP, {{4, 40}}});
+    CHECK(bg::run_graph(graph, input)
+              .equals({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, literal::SKIP, {3}, literal::SKIP, {4}}));
+    CHECK(bg::run_graph(validity_graph, bg::input<TS<bool>>({true, false, true}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP}))
+              .equals<bool>({true, false, true}));
+}
+
+TEST_CASE("len_ and is_empty accept valid TSD items",
+          "[feature:operator][series:tsd][series:tss][scalar:i64][scalar:boolean][input-guarantee:valid-items]") {
+    const auto length = [](wp<TSD<i64, TS<i64>>> values) { return operators::len_(valid_items(values)); };
+    const auto empty = [](wp<TSD<i64, TS<i64>>> values) { return operators::is_empty(valid_items(values)); };
+    const auto physical_length = [](wp<TSD<i64, TS<i64>>> values) { return operators::len_(values); };
+    const auto physical_empty = [](wp<TSD<i64, TS<i64>>> values) { return operators::is_empty(values); };
+
+    const auto input = bg::input<TSD<i64, TS<i64>>>(
+        {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}, {{1, literal::INVALID}}, {{3, 30}},
+         {{1, literal::REMOVE}, {2, literal::REMOVE}, {3, literal::REMOVE}}});
+    CHECK(bg::run_graph(length, input).equals<i64>({1, 2, 1, 2, 0}));
+    CHECK(bg::run_graph(empty, input).equals<bool>({false, false, false, false, true}));
+    CHECK(bg::run_graph(physical_length, input).equals<i64>({2, std::nullopt, std::nullopt, 3, 0}));
+    CHECK(bg::run_graph(physical_empty, input).equals<bool>({false, std::nullopt, std::nullopt, false, true}));
+}
+
+TEST_CASE("valid-item collection queries ignore value-only updates",
+          "[feature:operator][series:tsd][input-guarantee:valid-items][transition:update]") {
+    const auto length = [](wp<TSD<i64, TS<i64>>> values) { return operators::len_(valid_items(values)); };
+    const auto empty = [](wp<TSD<i64, TS<i64>>> values) { return operators::is_empty(valid_items(values)); };
+    const auto input = bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, 11}}, {{1, 12}}});
+
+    CHECK(bg::run_graph(length, input).equals<i64>({1, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(empty, input).equals<bool>({false, std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("TSD query results retain scalar types for string items",
+          "[feature:operator][series:tsd][scalar:i64][scalar:boolean][scalar:string]") {
+    const auto length = [](wp<TSD<i64, TS<string>>> values) { return operators::len_(valid_items(values)); };
+    const auto empty = [](wp<TSD<i64, TS<string>>> values) { return operators::is_empty(valid_items(values)); };
+    const auto input = bg::input<TSD<i64, TS<string>>>({{{1, "one"}, {2, literal::INVALID}}, {{2, "two"}}});
+
+    CHECK(bg::run_graph(length, input).equals<i64>({1, 2}));
+    CHECK(bg::run_graph(empty, input).equals<bool>({false, false}));
+}
+
+TEST_CASE("TSD set operators select keys from physical membership",
+          "[feature:operator][series:tsd][series:tss][transition:addition][transition:removal]") {
+    const auto intersection = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(lhs & rhs);
+    };
+    const auto difference = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(lhs - rhs);
+    };
+    const auto union_ = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(lhs | rhs);
+    };
+    const auto symmetric_difference = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(lhs ^ rhs);
+    };
+
+    const auto lhs = bg::input<TSD<i64, TS<i64>>>(
+        {{{1, 10}, {2, 20}}, {{1, 11}, {3, 30}, {2, literal::REMOVE}}, {{4, 40}}});
+    const auto rhs = bg::input<TSD<i64, TS<i64>>>(
+        {{{2, 200}, {3, 300}}, {{2, 201}, {4, 400}}, {{3, literal::REMOVE}}});
+
+    CHECK(bg::run_graph(intersection, lhs, rhs)
+              .equals({{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}}));
+    CHECK(bg::run_graph(difference, lhs, rhs).equals({{1}, literal::SKIP, {3}}));
+    CHECK(bg::run_graph(union_, lhs, rhs).equals({{1, 2, 3}, {4}, literal::SKIP}));
+    CHECK(bg::run_graph(symmetric_difference, lhs, rhs)
+              .equals({{1, 3}, {2, 4, literal::REMOVED(3)}, {3, literal::REMOVED(4)}}));
+}
+
+TEST_CASE("TSD set operators use valid-item membership and gate invalid roots",
+          "[feature:operator][series:tsd][series:tss][input-guarantee:valid-items]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto intersection = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(valid_items(lhs) & rhs);
+    };
+    const auto difference = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(valid_items(lhs) - rhs);
+    };
+    const auto union_ = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::keys_(valid_items(lhs) | rhs);
+    };
+    const auto validity = [](wp<TS<bool>> selected, wp<TSD<i64, TS<i64>>> lhs,
+                             wp<TSD<i64, TS<i64>>> rhs) {
+        const auto current_lhs = operators::if_then_else(
+            selected, lhs, operators::nothing[type<TSD<i64, TS<i64>>>]());
+        return operators::valid(valid_items(current_lhs) ^ rhs);
+    };
+
+    const auto lhs = bg::input<TSD<i64, TS<i64>>>(
+        {{{1, 10}, {2, literal::INVALID}, {3, 30}}, {{2, 20}}, {{1, literal::INVALID}},
+         {{2, literal::REMOVE}}, {{4, 40}}});
+    const auto rhs = bg::input<TSD<i64, TS<i64>>>(
+        {{{2, 200}, {3, 300}}, {{1, 100}}, {{3, literal::REMOVE}}, {{5, 500}}, literal::SKIP});
+
+    CHECK(bg::run_graph(intersection, lhs, rhs)
+              .equals({{3}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(3)}, {literal::REMOVED(2)},
+                       literal::SKIP}));
+    CHECK(bg::run_graph(difference, lhs, rhs)
+              .equals({{1}, {literal::REMOVED(1)}, {3}, literal::SKIP, {4}}));
+    CHECK(bg::run_graph(union_, lhs, rhs)
+              .equals({{1, 2, 3}, literal::SKIP, literal::SKIP, {5}, {4}}));
+    CHECK(bg::run_graph(validity, bg::input<TS<bool>>({true, false, true, false}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+                        bg::input<TSD<i64, TS<i64>>>({{{2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}))
+              .equals<bool>({true, false, true, false}));
+}
+
+TEST_CASE("TSD set operators preserve valid empty roots and filter invalid left items",
+          "[feature:operator][series:tsd][series:tss][input-guarantee:valid-items]") {
+    const auto valid_empty = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::valid(lhs & rhs);
+    };
+    const auto physical_left = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::valid((lhs | valid_items(rhs))[i64{1}]);
+    };
+    const auto filtered_left = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::valid((valid_items(lhs) | rhs)[i64{1}]);
+    };
+    const auto both_filtered = [](wp<TSD<i64, TS<i64>>> lhs, wp<TSD<i64, TS<i64>>> rhs) {
+        return operators::valid((valid_items(lhs) | valid_items(rhs))[i64{1}]);
+    };
+
+    CHECK(bg::run_graph(valid_empty, bg::input<TSD<i64, TS<i64>>>({{}}),
+                        bg::input<TSD<i64, TS<i64>>>({{}}))
+              .equals<bool>({true}));
+    CHECK(bg::run_graph(physical_left, bg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
+              .equals<bool>({false}));
+    CHECK(bg::run_graph(filtered_left, bg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
+              .equals<bool>({true}));
+    CHECK(bg::run_graph(both_filtered, bg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
+              .equals<bool>({true}));
+}
+
+TEST_CASE("TSD set operators produce ordinary dictionaries for nonordinary inputs",
+          "[feature:operator][series:tsd][guarantee:ordinary][guarantee:const]"
+          "[guarantee:deduplicated][guarantee:final]") {
+    const auto final_dictionary = node([](Out<TSD<i64, TS<i64>, TimeSeriesGuarantee::final>> output) {
+        output[1].set(1);
+    });
+    const auto check_final = [&] {
+        const auto result = final_dictionary() | final_dictionary();
+        CHECK(&result.type().dereferenced_type() ==
+              &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::final>>>::type());
+    };
+    testing::test_wiring(check_final);
+
+    const auto check_filtered_queries = [&] {
+        const auto filtered_keys = operators::keys_(valid_items(final_dictionary()));
+        const auto filtered_length = operators::len_(valid_items(final_dictionary()));
+        const auto filtered_empty = operators::is_empty(valid_items(final_dictionary()));
+        CHECK(&filtered_keys.type().dereferenced_type() == &TSS<i64>::type());
+        CHECK(&filtered_length.type().dereferenced_type() == &TS<i64>::type());
+        CHECK(&filtered_empty.type().dereferenced_type() == &TS<bool>::type());
+    };
+    testing::test_wiring(check_filtered_queries);
+
+    const auto deduplicated_dictionary = node([](Out<TSD<i64, TS<i64>, TimeSeriesGuarantee::deduplicated>> output) {
+        output[1].set(1);
+    });
+    const auto check_deduplicated = [&] {
+        const auto result = deduplicated_dictionary() ^ deduplicated_dictionary();
+        CHECK(&result.type().dereferenced_type() ==
+              &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::deduplicated>>>::type());
+    };
+    testing::test_wiring(check_deduplicated);
+
+    const auto constant_dictionary = node([](Out<TSD<i64, TS<i64>, TimeSeriesGuarantee::const_>> output) {
+        output[1].set(1);
+    });
+    const auto check_const = [&] {
+        const auto result = constant_dictionary() & constant_dictionary();
+        CHECK(&result.type().dereferenced_type() ==
+              &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>>>::type());
+    };
+    testing::test_wiring(check_const);
+}
+
+TEST_CASE("TSD reference union follows a retarget with unchanged keys",
+          "[feature:operator][series:tsd][series:reference][transition:update]") {
+    const auto sum = [](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> lhs,
+                        wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second) {
+        return operators::sum_(lhs | operators::if_then_else(select_first, first, second));
+    };
+
+    CHECK(bg::run_graph(sum, bg::input<TS<bool>>({true, false}),
+                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP}),
+                        bg::input<TSD<i64, TS<i64>>>({{{2, 20}}, literal::SKIP}),
+                        bg::input<TSD<i64, TS<i64>>>({{{2, 200}}, literal::SKIP}))
+              .equals<i64>({30, 210}));
+}
+
+TEST_CASE("TSD set operators support reference and nested items",
+          "[feature:operator][series:tsd][series:reference][shape:nested]") {
+    const auto make_references = node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
+        output[1].copy(value);
+    });
+    const auto reference_sum = [&](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        return operators::sum_(make_references(lhs) | make_references(rhs));
+    };
+    const auto nested_keys = [](wp<TSD<i64, TSD<i64, TS<i64>>>> lhs,
+                                wp<TSD<i64, TSD<i64, TS<i64>>>> rhs) {
+        return operators::keys_(lhs | rhs);
+    };
+
+    CHECK(bg::run_graph(reference_sum, bg::input<TS<i64>>({10, 11}),
+                        bg::input<TS<i64>>({100, 200}))
+              .equals<i64>({10, 11}));
+    CHECK(bg::run_graph(nested_keys,
+                        bg::input<TSD<i64, TSD<i64, TS<i64>>>>({{{1, {{2, 20}}}}, {{2, {{3, 30}}}}}),
+                        bg::input<TSD<i64, TSD<i64, TS<i64>>>>({{{3, {{4, 40}}}}, literal::SKIP}))
+              .equals({{1, 3}, {2}}));
+}
+
 TEST_CASE("keys_ projects an ordinary dictionary without adding a runtime node",
           "[feature:operator][feature:graph-compilation][series:tsd][series:tss]") {
     const auto dictionary = node([](Out<TSD<i64, TS<i64>>> output) { output[1].set(1); });

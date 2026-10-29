@@ -47,11 +47,13 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
             TimeSeriesDictionaryReferenceRepresentation *representation;
             const ResolvedTimeSeries *base_time_series;
         } callback{this, &base_time_series};
-        base_runtime_type.for_each_item_id(base_time_series.storage, &callback, [](void *context, item_id_t id) {
-            auto &callback = *static_cast<Callback *>(context);
-            callback.representation->add_item(id, callback.representation->last_updated_.time(),
-                                               *callback.base_time_series);
-        });
+        if (base_time_series.storage != nullptr) {
+            base_runtime_type.for_each_item_id(base_time_series.storage, &callback, [](void *context, item_id_t id) {
+                auto &callback = *static_cast<Callback *>(context);
+                callback.representation->add_item(id, callback.representation->last_updated_.time(),
+                                                 *callback.base_time_series);
+            });
+        }
     }
 
     ResolvedTimeSeries resolve() const override {
