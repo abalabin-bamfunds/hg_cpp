@@ -77,7 +77,9 @@ concept opaque_source_argument = [] {
                          requires { typename optional_scalar_argument<Source>::value_type; } ||
                          requires { typename scalar_value_argument<Source>::scalar_type; } ||
                          graph_scalar_view_argument<T> || wiring_point_argument<T> || graph_argument_facade<T> ||
-                         is_named_argument_v<T> || is_opaque_v<Source> || std::same_as<Source, GraphArgument>) {
+                         is_named_argument_v<T> || is_opaque_v<Source> || std::same_as<Source, GraphArgument> ||
+                         std::convertible_to<Source, std::span<const WiringArgument>> ||
+                         std::convertible_to<Source, std::span<const WiringPoint>>) {
         return false;
     } else if constexpr (!std::copy_constructible<Source>) {
         return false;

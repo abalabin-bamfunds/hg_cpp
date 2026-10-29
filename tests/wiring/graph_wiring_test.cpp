@@ -126,6 +126,21 @@ TEST_CASE("node calls add wired nodes to the active graph", "[graph_wiring][feat
     CHECK(nodes[1].inputs()[0].index() == 0);
 }
 
+TEST_CASE("wiring templates accept arrays through their span overloads", "[graph_wiring][feature:wiring]") {
+    const auto source = node([](Out<TS<float>>) {});
+    const auto sink = node([](In<TS<float>>) {});
+
+    testing::test_wiring([&] {
+        const auto input = source();
+        const auto wiring_arguments = std::array{WiringArgument{input}};
+        const auto wiring_points = std::array<WiringPoint, 1>{input};
+
+        const auto &wiring_template = static_cast<const WiringTemplate &>(sink);
+        CHECK_NOTHROW(wiring_template(wiring_arguments));
+        CHECK_NOTHROW(wiring_template(wiring_points));
+    });
+}
+
 TEST_CASE("collected node calls have identities separate from output indices",
           "[graph_wiring][feature:wiring]") {
     const auto source = node<source_definition>();
