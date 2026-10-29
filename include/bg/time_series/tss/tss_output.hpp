@@ -61,8 +61,14 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     }
 
     void apply(const literal::TimeSeriesLiteral &literal) const {
-        if (const auto sentinel = literal::Sentinel::from(literal); sentinel && *sentinel == literal::SKIP) {
-            return;
+        if (const auto sentinel = literal::Sentinel::from(literal)) {
+            if (*sentinel == literal::SKIP) {
+                return;
+            }
+            if (*sentinel == literal::INVALID) {
+                invalidate();
+                return;
+            }
         }
         apply_values(details::scalar_literal::sequence(literal));
     }
@@ -120,10 +126,13 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
         if (input.last_updated() != state_->evaluation_time() || !input.modified()) {
             return;
         }
-        if (!input.valid() && !valid()) {
+        if (!input.valid()) {
+            if (valid()) {
+                invalidate();
+            }
             return;
         }
-        if (input.valid() && !valid()) {
+        if (!valid()) {
             clear();
         }
 
@@ -135,7 +144,7 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     void copy(const In<TSS<K, InputTimeSeriesProperties...>, InputProperties...> &input) const {
         if (!input.valid()) {
             if (valid()) {
-                clear();
+                invalidate();
             }
             return;
         }

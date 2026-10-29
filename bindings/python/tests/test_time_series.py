@@ -128,6 +128,126 @@ def test_delta_value_is_none_after_input_invalidation():
     assert observed == [(True, True, 10), (False, True, None), (False, False, None), (True, True, 20)]
 
 
+def test_invalid_set_root_delta_reports_removals_until_the_next_unchanged_cycle():
+    @bg.compute_node(valid=())
+    def inspect(trigger: bg.TS[int], value: bg.TSS[int]) -> bg.TS[object]:
+        delta = value.delta_value
+        return (
+            trigger.value,
+            value.valid,
+            value.modified,
+            None if delta is None else (sorted(delta.added), sorted(delta.removed)),
+            sorted(value.removed()),
+        )
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], value: bg.TSS[int]) -> bg.TS[object]:
+        return inspect(trigger, bg.opt(value))
+
+    assert bg.run_graph(graph, [1, 2, 3], [bg.SetDelta(added={1, 2}), bg.INVALID, None]) == [
+        (1, True, True, ([1, 2], []), []),
+        (2, False, True, ([], [1, 2]), [1, 2]),
+        (3, False, False, None, []),
+    ]
+
+
+def test_invalid_dictionary_root_delta_reports_removals_until_the_next_unchanged_cycle():
+    @bg.compute_node(valid=())
+    def inspect(trigger: bg.TS[int], value: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        delta = value.delta_value
+        return (
+            trigger.value,
+            value.valid,
+            value.modified,
+            None if delta is None else dict(delta),
+            list(value.removed_keys()),
+        )
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], value: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        return inspect(trigger, bg.opt(value))
+
+    assert bg.run_graph(graph, [1, 2, 3], [{1: 10, 2: 20}, bg.INVALID, None]) == [
+        (1, True, True, {1: 10, 2: 20}, []),
+        (2, False, True, {1: bg.REMOVE, 2: bg.REMOVE}, [1, 2]),
+        (3, False, False, None, []),
+    ]
+
+
+def test_dictionary_delta_recurses_into_invalidated_set_items():
+    @bg.compute_node(valid=())
+    def inspect(trigger: bg.TS[int], value: bg.TSD[int, bg.TSS[int]]) -> bg.TS[object]:
+        delta = value.delta_value
+        nested_delta = None
+        if trigger.value == 2:
+            nested = delta[1]
+            nested_delta = (sorted(nested.added), sorted(nested.removed))
+        return trigger.value, delta is None, nested_delta
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], value: bg.TSD[int, bg.TSS[int]]) -> bg.TS[object]:
+        return inspect(trigger, bg.opt(value))
+
+    assert bg.run_graph(graph, [1, 2, 3], [{1: {10, 20}}, {1: bg.INVALID}, None]) == [
+        (1, False, None),
+        (2, False, ([], [10, 20])),
+        (3, True, None),
+    ]
+
+
+def test_dictionary_delta_recurses_into_invalidated_dictionary_items():
+    @bg.compute_node(valid=())
+    def inspect(trigger: bg.TS[int], value: bg.TSD[int, bg.TSD[int, bg.TS[int]]]) -> bg.TS[object]:
+        delta = value.delta_value
+        nested_delta = None
+        if trigger.value == 2:
+            nested_delta = dict(delta[1])
+        return trigger.value, delta is None, nested_delta
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], value: bg.TSD[int, bg.TSD[int, bg.TS[int]]]) -> bg.TS[object]:
+        return inspect(trigger, bg.opt(value))
+
+    assert bg.run_graph(graph, [1, 2, 3], [{1: {10: 100, 20: 200}}, {1: bg.INVALID}, None]) == [
+        (1, False, None),
+        (2, False, {10: bg.REMOVE, 20: bg.REMOVE}),
+        (3, True, None),
+    ]
+
+
+def test_dictionary_delta_reports_removed_keys_after_reference_invalidation():
+    @bg.compute_node
+    def select(
+        trigger: bg.TS[int], target: bg.REF[bg.TSD[int, bg.TS[int]]]
+    ) -> bg.REF[bg.TSD[int, bg.TS[int]]]:
+        return target.value
+
+    @bg.compute_node(valid=())
+    def inspect(observer: bg.TS[int], value: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        delta = value.delta_value
+        return (
+            observer.value,
+            value.valid,
+            value.modified,
+            None if delta is None else dict(delta),
+        )
+
+    @bg.graph
+    def graph(trigger: bg.TS[int], observer: bg.TS[int], value: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        return inspect(observer, bg.opt(select(trigger, value)))
+
+    assert bg.run_graph(
+        graph,
+        [1, bg.INVALID, None],
+        [1, 2, 3],
+        [{1: 10, 2: 20}],
+    ) == [
+        (1, True, True, {1: 10, 2: 20}),
+        (2, False, True, {1: bg.REMOVE, 2: bg.REMOVE}),
+        (3, False, False, None),
+    ]
+
+
 def test_time_series_set_removed_markers_apply_recursively_in_dictionary():
     @bg.compute_node
     def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[int, bg.TSS[int]]:

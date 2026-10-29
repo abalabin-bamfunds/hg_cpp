@@ -342,13 +342,13 @@ TEST_CASE("copy handles an invalid erased input without runtime type metadata",
         output.copy(In<TS_T>{TimeSeriesInputData{}});
     });
 
-    const auto size = node([](In<TSD<i64, TS<i64>>> input) { return static_cast<i64>(input.size()); });
+    const auto observe_validity = node([](In<TSD<i64, TS<i64>>, optional> input) { return input.valid(); });
 
-    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return size(copy_invalid(input)); };
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe_validity(copy_invalid(input)); };
 
     const auto actual = bg::run_graph(graph, {{{1, 1}}, {{1, 2}}});
 
-    CHECK(actual.equals({0, 0}));
+    CHECK(actual.equals({false, false}));
 }
 
 TEST_CASE("copy reconciles a time series set snapshot",

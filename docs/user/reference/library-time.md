@@ -40,12 +40,11 @@ graphs. Scheduling outside the supported [evaluation-time range](execution.md) f
 ## Retained events
 
 Delay retains owning tick data for supported scalar, set, dictionary, bundle, and
-fixed-list shapes. It rejects contained references and sparse TSL values. TSS and
-TSD root invalidation cannot be replayed, so retargeting from a valid collection
-to an invalid target fails. Initially unbound references are supported. A retained
-scalar refers to its owned value at the input event, not the source's later current
-value. Throttle retains timing state and reads the current source at publication,
-reconciling collection state then.
+fixed-list shapes, including invalidation. Contained references are dereferenced
+before capture. Delay rejects sparse TSL values. Initially unbound references are
+supported. A retained scalar refers to its owned value at the input event, not
+the source's later current value. Throttle retains timing state and reads the
+current source at publication, reconciling collection state then.
 
 ## resample
 

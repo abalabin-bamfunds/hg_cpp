@@ -36,8 +36,7 @@ stronger contained guarantees.
 preserves its output while closed. Opening publishes the current value if it has updated
 since the last forwarding; repeated true condition ticks do not republish an unchanged
 value. Reopening reconciles the complete collection, including removals while closed.
-Input invalidation propagates while open; TSS and TSD outputs become valid empty
-collections rather than root-invalid. The output retains the input's root guarantee up
+Input invalidation propagates while open. The output retains the input's root guarantee up
 to `final`. Contained time series are limited to that same guarantee because reopening
 can copy unchanged items. A const input becomes final because its first forwarding can
 be delayed.

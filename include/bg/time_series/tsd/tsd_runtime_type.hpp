@@ -113,7 +113,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     virtual void for_each_removed(const TimeSeriesState &last_updated, const void *value, void *context,
                                   ItemIdFunction function) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
-        if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
+        if (storage.change_time() != last_updated.time()) {
             return;
         }
         for (const auto id : storage.key_storage().value.removed()) {
@@ -174,7 +174,8 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         if (range == ItemRange::current) {
             return next(keys.live());
         }
-        if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
+        if ((!last_updated.valid() && range != ItemRange::removed) ||
+            storage.change_time() != last_updated.time()) {
             return util::occupancy_index::npos;
         }
         if (range == ItemRange::added) {
@@ -323,7 +324,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().last_updated.valid();
     }
 
-    void invalidate_output(const OutputState &) const override {}
+    void invalidate_output(const OutputState &output) const override;
     void copy_tick(const TimeSeriesInputData &input, OutputState &output) const override;
     void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 
@@ -382,7 +383,8 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     virtual bool item_in_range(const TimeSeriesState &last_updated, const void *value, ItemRange range,
                                item_id_t id) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
-        if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
+        if ((!last_updated.valid() && range != ItemRange::removed) ||
+            storage.change_time() != last_updated.time()) {
             return false;
         }
 

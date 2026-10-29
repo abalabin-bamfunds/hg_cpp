@@ -120,7 +120,8 @@ class QueueMessageCodec {
   private:
     static bool supports_literal_invalidation(const TimeSeriesType &type) {
         return type_cast<TimeSeriesValueType>(&type) != nullptr || type_cast<TimeSeriesListType>(&type) != nullptr ||
-               type_cast<TimeSeriesBundleType>(&type) != nullptr;
+               type_cast<TimeSeriesBundleType>(&type) != nullptr || type_cast<TimeSeriesSetType>(&type) != nullptr ||
+               type_cast<TimeSeriesDictionaryType>(&type) != nullptr;
     }
 
     void write_zeroes(std::size_t size) {
@@ -734,7 +735,7 @@ class QueueTickInspect {
         }
         if (type_cast<TimeSeriesSetType>(&type) != nullptr ||
             type_cast<TimeSeriesDictionaryType>(&type) != nullptr) {
-            return false;
+            return last_updated.valid() && last_updated.time() == evaluation_time_;
         }
         return inspect_invalidation(runtime_type, value);
     }
@@ -742,7 +743,7 @@ class QueueTickInspect {
     bool inspect_set(const TimeSeriesSetType &, const TimeSeriesRuntimeType &runtime_type,
                      const TimeSeriesState &last_updated, const void *value, TickHeader header) {
         if (!header.valid) {
-            throw std::logic_error{"TSS invalidation cannot be replayed through its output API"};
+            return last_updated.valid() && last_updated.time() == evaluation_time_;
         }
 
         const auto &set_runtime = static_cast<const TimeSeriesSetRuntimeType &>(runtime_type);
@@ -774,7 +775,10 @@ class QueueTickInspect {
                             const TimeSeriesRuntimeType &runtime_type, const TimeSeriesState &last_updated,
                             const void *value, TickHeader header) {
         if (!header.valid) {
-            throw std::logic_error{"TSD invalidation cannot be replayed through its output API"};
+            return last_updated.valid() && last_updated.time() == evaluation_time_;
+        }
+        if (!last_updated.valid() && last_updated.time() == evaluation_time_) {
+            return true;
         }
 
         const auto &dictionary_runtime = static_cast<const TimeSeriesDictionaryRuntimeType &>(runtime_type);

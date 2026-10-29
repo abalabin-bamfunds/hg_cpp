@@ -25,6 +25,44 @@ TEST_CASE("a time series set publishes only new items",
     CHECK(actual.equals({{1}, {2}, literal::SKIP}));
 }
 
+TEST_CASE("a TSS input does not replay changes when another input triggers evaluation",
+          "[evaluation][tss][feature:collection-change][transition:addition][transition:removal]") {
+    struct observation {
+        bool modified;
+        i64 added;
+        i64 removed;
+        bool was_added;
+        bool was_removed;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto update = node([](In<TS<i64>> trigger, Out<TSS<i64>> output) {
+        if (*trigger == 1) {
+            output.insert(7);
+        } else if (*trigger == 3) {
+            output.erase(7);
+        }
+    });
+    const auto inspect = node([](In<TSS<i64>> input, In<TS<i64>>) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
+        auto removed = i64{};
+        input.for_each_removed([&](const auto &) { ++removed; });
+        const auto raw_key = i64{7};
+        const auto key = Scalar<i64>::from(raw_key);
+        return observation{input.modified(), added, removed, input.was_added(key), input.was_removed(key)};
+    });
+    const auto graph = [&](wp<TS<i64>> trigger) { return inspect(update(trigger), trigger); };
+
+    const auto actual = bg::run_graph(graph, {1, 2, 3, 4});
+
+    CHECK(actual.equals<observation>({observation{true, 1, 0, true, false},
+                                     observation{false, 0, 0, false, false},
+                                     observation{true, 0, 1, false, true},
+                                     observation{false, 0, 0, false, false}}));
+}
+
 TEST_CASE("a set output reports its current size and membership",
           "[evaluation][tss][feature:node-api][series:tss][scalar:integer]") {
     const auto inspect = node([](i64, Out<TSS<i64>> output) {
@@ -226,6 +264,22 @@ struct invalidating_value_source_definition {
     void evaluate() const { output.invalidate(); }
 };
 
+struct preserving_set_from_value_definition {
+    static constexpr auto on_invalidation = preserve_output;
+
+    i64 input;
+    Out<TSS<i64>> output;
+
+    void evaluate() const { output.insert(input); }
+};
+
+struct set_from_value_definition {
+    i64 input;
+    Out<TSS<i64>> output;
+
+    void evaluate() const { output.insert(input); }
+};
+
 struct clearing_referenced_set_source_definition {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -242,12 +296,12 @@ struct clearing_referenced_set_source_definition {
 
 } // namespace
 
-TEST_CASE("a time series set preserves its value when a required input becomes invalid",
+TEST_CASE("a TSS node preserves its output when it declares preserve_output",
           "[evaluation][tss][series:tss][validity][feature:collection-change][validity:required]"
-          "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
+          "[scalar:integer][representation:native][declaration:concrete][binding:direct]"
+          "[invalidation:preserve-output]") {
     const auto source = node<invalidating_value_source_definition>();
-
-    const auto set_from_value = node([](i64 value, Out<TSS<i64>> output) { output.insert(value); });
+    const auto set_from_value = node<preserving_set_from_value_definition>();
 
     const auto size = node([](In<TSS<i64>> input) { return static_cast<i64>(input.size()); });
 
@@ -256,6 +310,74 @@ TEST_CASE("a time series set preserves its value when a required input becomes i
     const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({1}));
+}
+
+TEST_CASE("a TSS node invalidates its output when a required input becomes invalid",
+          "[evaluation][tss][series:tss][validity][feature:collection-change][validity:required]"
+          "[transition:invalidation]") {
+    const auto source = node<invalidating_value_source_definition>();
+    const auto set_from_value = node<set_from_value_definition>();
+    const auto size = node([](In<TSS<i64>> input) { return static_cast<i64>(input.size()); });
+
+    const auto actual = bg::run_graph([&] { return size(set_from_value(source())); });
+
+    CHECK(actual.equals({1, std::nullopt}));
+    CHECK(actual.visit_tick(1, [](const TimeSeriesType &, bool valid, util::buffer_reader &) {
+        CHECK_FALSE(valid);
+    }));
+}
+
+TEST_CASE("a TSS output invalidates its root and reports removal before revalidation",
+          "[feature:invalidation][series:tss][scalar:integer][transition:invalidation]"
+          "[transition:revalidation][transition:removal][transition:addition][definition:function]") {
+    const auto update = node([](In<TS<i64>> command, Out<TSS<i64>> output) {
+        if (*command == 0 || *command == 3) {
+            output.insert(1);
+            output.insert(2);
+            output.insert(3);
+            return;
+        }
+
+        output.invalidate();
+    });
+
+    const auto inspect = node([](In<TSS<i64>, optional> input) {
+        if (input.valid()) {
+            CHECK(input.size() == 3);
+
+            auto added = std::vector<i64>{};
+            input.for_each_added([&](const auto &item) { added.push_back(*item); });
+            CHECK(added == std::vector<i64>{1, 2, 3});
+
+            auto removed = std::vector<i64>{};
+            input.for_each_removed([&](const auto &item) { removed.push_back(*item); });
+            CHECK(removed.empty());
+        } else {
+            CHECK(input.size() == 0);
+
+            auto removed = std::vector<i64>{};
+            input.for_each_removed([&](const auto &item) { removed.push_back(*item); });
+            CHECK(removed == std::vector<i64>{1, 2, 3});
+
+            auto added = std::vector<i64>{};
+            input.for_each_added([&](const auto &item) { added.push_back(*item); });
+            CHECK(added.empty());
+        }
+
+        return input.valid();
+    });
+
+    const auto graph = [&](wp<TS<i64>> command) { return inspect(update(command)); };
+
+    CHECK(bg::run_graph(graph, {0, 1, 2, 3}).equals<bool>({true, false, std::nullopt, true}));
+
+    const auto contains = node([](In<TSS<i64>> input) { return input.contains(1); });
+    const auto contains_graph = [&](wp<TS<i64>> command) { return contains(update(command)); };
+    const auto membership = bg::run_graph(contains_graph, {0, 1, 2, 3});
+    CHECK(membership.equals<bool>({true, std::nullopt, std::nullopt, true}));
+    CHECK(membership.visit_tick(1, [](const TimeSeriesType &, bool valid, util::buffer_reader &) {
+        CHECK_FALSE(valid);
+    }));
 }
 
 TEST_CASE("a time series set accepts its exact non-canonical item type",
@@ -708,9 +830,15 @@ TEST_CASE("a generic input visitor sees TSS removals on reference invalidation",
     CHECK(removed_counts == std::vector<std::size_t>{0, 2});
 }
 
-TEST_CASE("a TSS update rejects a root INVALID marker",
+TEST_CASE("a TSS update applies a root INVALID marker",
           "[evaluation][series:tss][feature:collection-change][validity]") {
-    const auto source = node([](Out<TSS<i64>> output) { output.apply(literal::INVALID); });
+    const auto source = node([](In<TS<i64>, optional> input, Out<TSS<i64>> output) {
+        if (input.valid()) {
+            output.insert(input.value());
+        } else {
+            output.apply(literal::INVALID);
+        }
+    });
 
-    CHECK_THROWS_AS(run_graph([&] { source(); }), std::invalid_argument);
+    CHECK(bg::run_graph(source, {11, literal::INVALID, 12}).equals({{11}, literal::INVALID, {12}}));
 }

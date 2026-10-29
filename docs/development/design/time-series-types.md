@@ -20,9 +20,9 @@ bg::TS<float, bg::TimeSeriesGuarantee::final>
 The [validity design](time-series-validity.md) defines invalidation and
 revalidation for these types.
 
-TSS and TSD validity starts with their first tick and then remains valid. TSD
-item validity remains independent. When an input samples an invalid reference
-target, the target's former items or keys are reported as removals.
+TSS and TSD validity starts with their first tick. Invalidation removes their
+current collection value and reports member removals. TSD item validity remains
+independent. Sampling an invalid reference target reports the same removals.
 
 ## Type summary
 
@@ -102,17 +102,13 @@ matching baseline, not from an arbitrary later record. Scalar payloads are
 owned by the record until replay or discard.
 
 Each record begins with a one-byte header that identifies the update and its
-validity. Collection entries follow, and each collection ends with a
-standalone `end` header. The first valid tick of an empty TSS or TSD has
-a valid root header and an empty collection body. Replay marks an invalid
-output valid for this event; it leaves an already-valid output unchanged.
+validity. Invalidation has no payload. A valid collection record contains
+entries followed by a standalone `end` header. The first valid tick of an empty
+TSS or TSD has a valid root header and an empty collection body. Replay marks an
+invalid output valid for this event; it leaves an already-valid output unchanged.
 
 The built-in writer supports value, fixed-list, bundle, set, and dictionary time
-series. It does not serialize reference bindings. TSS and TSD do not support root
-invalidation through their output APIs; an invalid sampled reference target is
-represented by its item or key removals.
-An invalid TSS target contained in a fixed TSL does not currently propagate
-that removal through the enclosing list tick.
+series, including invalidation. It does not serialize reference bindings.
 Provider-defined time series register `TimeSeriesTickOperations` with
 `TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`, declared in
 `<bg/time_series/tick_operations.hpp>`. This registry is

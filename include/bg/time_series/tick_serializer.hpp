@@ -74,13 +74,10 @@ class TimeSeriesTickWrite {
             return false;
         }
 
-        const auto valid = tick_validity(input);
-        if (!valid) {
-            return false;
+        TickHeader{TickOperation::tick, input.valid()}.write(*writer_);
+        if (input.valid()) {
+            write_payload(input, now);
         }
-
-        TickHeader{TickOperation::tick, *valid}.write(*writer_);
-        write_payload(input, now);
         return true;
     }
 
@@ -131,10 +128,6 @@ class TimeSeriesTickWrite {
             TickHeader{TickOperation::remove}.write(*writer_);
             write_scalar(key);
         });
-        if (!input->valid()) {
-            TickHeader{TickOperation::end}.write(*writer_);
-            return;
-        }
 
         input->for_each_added([&](const auto &key) {
             const auto item = (*input)[key];
@@ -174,43 +167,13 @@ class TimeSeriesTickWrite {
     }
 
   private:
-    template <typename Input> std::optional<bool> tick_validity(const Input &input) const {
-        if (input.valid()) {
-            return true;
-        }
-
-        // nullopt means no event, false means invalidation, and true means a value or collection delta.
-        auto valid = std::optional<bool>{false};
-        input.visit(
-            [&](const In<TSS<SCALAR>> *set) {
-                if (set->next_removed_id(0) != util::occupancy_index::npos) {
-                    valid = true;
-                } else {
-                    valid.reset();
-                }
-            },
-            [&](const In<TSD<SCALAR, TS_T>> *dictionary) {
-                if (dictionary->next_removed_id(0) != util::occupancy_index::npos) {
-                    valid = true;
-                } else {
-                    valid.reset();
-                }
-            },
-            ddv::noop);
-        return valid;
-    }
-
     template <typename Input, typename WriteIdentity>
     void write_child(const Input &input, TickOperation operation, EvaluationTime now,
                      WriteIdentity &&write_identity) {
-        const auto valid = operation == TickOperation::add ? std::optional{input.valid()} : tick_validity(input);
-        if (!valid) {
-            return;
-        }
-
-        TickHeader{operation, *valid}.write(*writer_);
+        const auto valid = input.valid();
+        TickHeader{operation, valid}.write(*writer_);
         write_identity();
-        if (*valid) {
+        if (valid) {
             write_payload(input, now);
         }
     }
@@ -553,7 +516,8 @@ class TimeSeriesTickReplay {
     void apply_concrete(const TimeSeriesType &type, const Out<TSS<SCALAR>> &output, TickHeader header) {
         const auto &set_type = type_cast<TimeSeriesSetType>(type);
         if (!header.valid) {
-            throw std::logic_error{"TSS invalidation cannot be replayed through its output API"};
+            mutate([&] { output.invalidate(); });
+            return;
         }
         if (!output.valid()) {
             mutate([&] { output.clear(); });
@@ -582,7 +546,8 @@ class TimeSeriesTickReplay {
     void apply_concrete(const TimeSeriesType &type, const Out<TSD<SCALAR, TS_T>> &output, TickHeader header) {
         const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(type);
         if (!header.valid) {
-            throw std::logic_error{"TSD invalidation cannot be replayed through its output API"};
+            mutate([&] { output.invalidate(); });
+            return;
         }
         if (!output.valid()) {
             mutate([&] { output.clear(); });

@@ -10,6 +10,20 @@
 
 namespace bg::details {
 
+void TimeSeriesSetRuntimeType::invalidate_output(const OutputState &output) const {
+    if (!output.valid()) {
+        return;
+    }
+
+    auto memory = current_scalar_allocator();
+    auto &storage = *static_cast<time_series_set_storage *>(output.mutable_data());
+    const auto layout = util::runtime_item_layout{key_->size(), key_->alignment()};
+    const auto evaluation_time = output.evaluation_time();
+    storage.reset_change_tracking(evaluation_time, *key_, layout, memory, [](std::uint32_t) noexcept {});
+    storage.clear(*key_, layout, memory, [](std::uint32_t) noexcept {});
+    output.invalidate_value();
+}
+
 void TimeSeriesSetRuntimeType::copy_tick(const TimeSeriesInputData &input, OutputState &output) const {
     if (input.valid() && type_cast<TimeSeriesSetType>(&input.runtime_type().type()) == nullptr) {
         throw std::invalid_argument{"time series set copy requires a set input"};

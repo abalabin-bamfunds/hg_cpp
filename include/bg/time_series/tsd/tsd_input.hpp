@@ -237,11 +237,12 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     // A sampled reference reports whether any common key has a different physical ID.
     bool has_item_id_remapping() const {
-        return data_.data() != nullptr && dictionary_runtime_type().has_item_id_remapping(data_.data());
+        return modified() && data_.data() != nullptr &&
+               dictionary_runtime_type().has_item_id_remapping(data_.data());
     }
 
     template <typename Function> void for_each_item_id_remapping(Function &&function) const {
-        if (data_.data() != nullptr) {
+        if (modified() && data_.data() != nullptr) {
             dictionary_runtime_type().for_each_item_id_remapping(
                 data_.data(), std::addressof(function), invoke_with_id_remapping<std::remove_reference_t<Function>>);
         }
@@ -340,7 +341,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_removed_physical_id(Function &&function) const {
-        if (data_.data() == nullptr) {
+        if (!modified() || data_.data() == nullptr) {
             return;
         }
         dictionary_runtime_type().for_each_removed_physical_id(
@@ -436,7 +437,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     bool item_modified(const details::ScalarData &key) const {
-        if (!valid()) {
+        if (!modified() || !valid()) {
             return false;
         }
         if (uses_valid_items()) {
@@ -477,6 +478,9 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     item_id_t next(ItemRange range, item_id_t start) const {
+        if (range != ItemRange::current && !modified()) {
+            return util::occupancy_index::npos;
+        }
         return dictionary_runtime_type().next_item_id(last_updated_state(), data_.data(), range, start);
     }
 
@@ -494,6 +498,9 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_selected_id(ItemRange range, Function &&function) const {
+        if (!modified()) {
+            return;
+        }
         if (!uses_valid_items()) {
             if (data_.data() == nullptr) {
                 return;
@@ -533,7 +540,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     item_id_t find_change(ItemRange range, const details::ScalarData &key) const {
-        if (data_.data() == nullptr || (range != ItemRange::removed && !valid())) {
+        if (!modified() || data_.data() == nullptr || (range != ItemRange::removed && !valid())) {
             return util::occupancy_index::npos;
         }
         if (!uses_valid_items()) {

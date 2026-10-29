@@ -51,7 +51,7 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
         return last_updated.valid();
     }
 
-    void invalidate_output(const OutputState &) const override {}
+    void invalidate_output(const OutputState &output) const override;
     void copy_tick(const TimeSeriesInputData &input, OutputState &output) const override;
     void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 

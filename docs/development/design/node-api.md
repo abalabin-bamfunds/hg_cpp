@@ -391,9 +391,9 @@ supports it. Use dot notation to access the time series itself.
 
 ## Required input invalidation
 
-By default, failure of a `required` or `all_valid` constraint invalidates an
-invalidatable node output. A TSS or TSD output preserves its value. The
-evaluation function runs only when every input validity constraint passes.
+By default, failure of a `required` or `all_valid` constraint invalidates the
+node output. The evaluation function runs only when every input validity
+constraint passes.
 
 A node can preserve its output by setting the `on_invalidation` named argument:
 
@@ -653,11 +653,9 @@ Use it when sampling a value rather than forwarding a tick.
 
 The input must have a compatible value shape. Its time series guarantees need
 not match the output's guarantees. Both operations use normal output mutation
-and guarantee behavior. Invalid inputs invalidate outputs that support
-invalidation. For an invalid TSS or TSD input, `copy_tick()` applies reported
-removals and `copy()` clears an existing output. Neither operation initializes
-an invalid output from an invalid input. A cleared output remains valid,
-following the [validity design](time-series-validity.md).
+and guarantee behavior. Invalid inputs invalidate the output. Neither operation
+initializes an invalid output from an invalid input. TSS and TSD invalidation
+reports member removals, following the [validity design](time-series-validity.md).
 Reference copies copy the reference, not its target value.
 `Out<REF<TS_T>>::set_value(reference)` assigns a `Reference` directly.
 

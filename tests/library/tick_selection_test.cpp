@@ -119,7 +119,7 @@ TEST_CASE("step follows TSS and TSD references through invalid targets and reval
     });
 
     CHECK(bg::run_graph(set_sum, ticks({0, 1, 2, 3}), ticks({{1}, literal::SKIP, {2}, {3}}), ticks({}))
-              .equals({1, 0, literal::SKIP, 6}));
+              .equals({1, literal::INVALID, literal::SKIP, 6}));
 
     const auto select_dictionary = node([](In<TS<i64>> cycle, In<REF<TSD<i64, TS<i64>>>, passive> populated,
                                            In<REF<TSD<i64, TS<i64>>>, passive> invalid,
@@ -134,7 +134,7 @@ TEST_CASE("step follows TSS and TSD references through invalid targets and reval
 
     CHECK(bg::run_graph(dictionary_sum, ticks({0, 1, 2, 3}),
                         ticks({{{1, 10}}, literal::SKIP, {{2, 20}}, {{3, 30}}}), ticks({}))
-              .equals({10, 0, literal::SKIP, 60}));
+              .equals({10, literal::INVALID, literal::SKIP, 60}));
 }
 
 template <template <typename, auto...> typename Field> struct changing_and_constant {

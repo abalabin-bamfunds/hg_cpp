@@ -23,10 +23,9 @@ Omitted collection items remain unchanged. Empty collection deltas do not clear 
 items. Nested deltas follow the declared child type. A scalar dictionary inside `TS`
 remains one scalar; a dictionary delta applies only to `TSD`.
 
-`INVALID` is supported for TS, fixed TSL, and TSB roots and for their compatible items.
-TSS and TSD roots cannot be invalidated through these deltas. Use member or key removals
-to clear them. Removing a TSD key removes its item, whereas invalidating an item retains
-the key.
+`INVALID` invalidates TS, fixed TSL, TSB, TSS, and TSD roots and their compatible
+items. Invalidating a TSS or TSD reports its previous members as removed. Removing
+a TSD key removes its item, whereas invalidating an item retains the key.
 
 ## Recorded results
 

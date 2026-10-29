@@ -1562,6 +1562,29 @@ struct stable_set_target {
     void evaluate() const {}
 };
 
+struct delayed_invalidating_set_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TSS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.insert(1);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.invalidate();
+            ++*step;
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            return;
+        }
+
+        output.insert(1);
+    }
+};
+
 struct revalidating_set_reference_list {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -1804,6 +1827,26 @@ TEST_CASE("a revalidated fixed-list reference samples an unchanged TSS target as
     };
 
     CHECK(bg::run_graph(graph).equals({1, -1, -1, 1}));
+}
+
+TEST_CASE("a nested fixed-TSL reference propagates delayed TSS invalidation and revalidation",
+          "[evaluation][reference][tsl][series:fixed-tsl][series:tss][feature:sampling]"
+          "[transition:invalidation][transition:revalidation][binding:value-to-reference]"
+          "[binding:reference-to-value][representation:native]") {
+    const auto target = node<delayed_invalidating_set_target>();
+    const auto make_inner = node([](In<REF<TSS<i64>>> child, Out<TSL<REF<TSS<i64>>, 1>> output) {
+        output[0].copy(child);
+    });
+    const auto observe = node([](In<TSL<TSL<TSS<i64>, 1>, 1>, optional> input, Out<TS<bool>> output) {
+        output.set(input.valid() && input[0].valid() && input[0][0].valid());
+    });
+    const auto graph = [&] {
+        const auto inner = make_inner(target());
+        const auto nested = tsl(inner).as<REF<TSL<TSL<REF<TSS<i64>>, 1>, 1>>>();
+        return observe(nested);
+    };
+
+    CHECK(bg::run_graph(graph).equals({true, false, true}));
 }
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",

@@ -256,8 +256,7 @@ guarantee recursively and retain stronger contained guarantees.
 true. It preserves its output while closed. Opening publishes the current value
 if it has changed since the last forwarding; repeated true condition ticks do
 not republish an unchanged value. Reopening reconciles the complete collection,
-including removals while closed. Input invalidation propagates while open;
-TSS and TSD outputs become valid empty collections rather than root-invalid.
+including removals while closed. Input invalidation propagates while open.
 The output retains the input's root guarantee up to `final`. Contained time
 series are limited to that same guarantee because reopening can copy unchanged
 items. A const input becomes final because its first forwarding can be delayed.
@@ -351,9 +350,8 @@ nor reset the count. Revalidation resumes the existing count.
 
 `take` propagates invalidation until its count is complete; later invalidation
 preserves its output. `drop` propagates invalidation after forwarding begins.
-`step` propagates invalidation independently of valid-tick selection. For TSS
-and TSD, propagation follows the normal [copying rules](node-api.md#output-parameters)
-and clears an existing output to a valid empty collection.
+`step` propagates invalidation independently of valid-tick selection, following
+the normal [copying rules](node-api.md#output-parameters).
 
 The first forwarded collection value includes changes made while ticks were
 skipped. Each selected `step` tick copies the complete current collection,
@@ -380,10 +378,8 @@ separate events. Zero duration returns the input; negative duration is a wiring
 error. Positive delay limits const guarantees to final, including contained
 time series. Contained references are dereferenced before ticks reach delay, so
 it retains target values and collection deltas rather than reference bindings.
-If a referenced TSS or TSD target becomes invalid, its removal delta is retained
-and replayed for direct TSS/TSD values and TSD-contained references. A fixed
-TSL containing a reference to a TSS does not currently propagate the target's
-invalidating removal through the list. Delay rejects sparse TSL values.
+If a referenced TSS or TSD target becomes invalid, delay retains and replays
+its invalidation. Delay rejects sparse TSL values.
 Retained ticks follow the supported types and ownership rules in
 [retaining ticks](time-series-types.md#retaining-ticks). Initially unbound
 references are supported.
@@ -752,9 +748,8 @@ Two `TSS<K>` inputs support union (`bit_or`, `|`), intersection (`bit_and`,
 Both inputs must have the same key type. `eq` and `ne` compare membership;
 `is_empty` tests whether a set has no members.
 
-Inputs are required by default. A TSS result preserves its membership while
-a required input is invalid and reconciles the current sets when evaluation
-resumes. Boolean results follow normal required-input invalidation.
+Inputs are required by default. An invalid required input invalidates the
+result. Revalidation computes the result from the current sets.
 
 For TSS operations, `opt()` selects overloads that treat invalid inputs as
 empty sets. Marking either binary operand selects that behavior for both
@@ -790,8 +785,10 @@ mismatch count; neither implementation retains a second set of keys.
 TSD intersection and difference compose key-set operations with dictionary
 selection. Union and symmetric difference maintain reference outputs from key
 changes and reference changes. Target updates reach consumers directly. The
-results expose ordinary dictionary and item-reference guarantees; selected
-reference targets retain their guarantees.
+results expose ordinary dictionary guarantees. Union and symmetric difference
+use ordinary item-reference guarantees. Intersection and difference preserve
+the selected item-reference guarantees. Selected reference targets retain their
+guarantees.
 
 ## Dictionary transform implementation
 

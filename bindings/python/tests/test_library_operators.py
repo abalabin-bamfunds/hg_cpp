@@ -663,6 +663,7 @@ def test_sampled_tss_operators_match_seeded_membership_oracle(name, operation, s
         if set_result:
             if value is None:
                 expected.append(None)
+                previous_set = None
                 continue
             if previous_set is None:
                 expected.append(bg.SetDelta(added=value))

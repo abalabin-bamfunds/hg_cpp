@@ -59,14 +59,22 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     bool contains(const Scalar<K> &item) const { return contains(details::scalar_data(item)); }
 
     bool was_added(const Scalar<K> &item) const {
-        return valid() && (sampled() ? set_runtime_type().set_was_added(last_updated_state(), data(),
-                                                                         details::scalar_data(item))
-                                     : changed(item, storage().added()));
+        if (!modified() || !valid()) {
+            return false;
+        }
+        if (sampled()) {
+            return set_runtime_type().set_was_added(last_updated_state(), data(), details::scalar_data(item));
+        }
+        return changed(item, storage().added());
     }
     bool was_removed(const Scalar<K> &item) const {
-        return data() != nullptr && (sampled() ? set_runtime_type().set_was_removed(last_updated_state(), data(),
-                                                                                     details::scalar_data(item))
-                                               : changed(item, storage().removed()));
+        if (!modified() || data() == nullptr) {
+            return false;
+        }
+        if (sampled()) {
+            return set_runtime_type().set_was_removed(last_updated_state(), data(), details::scalar_data(item));
+        }
+        return changed(item, storage().removed());
     }
 
     template <typename Source>
@@ -87,7 +95,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_added(Function &&function) const {
-        if (!valid()) {
+        if (!modified() || !valid()) {
             return;
         }
         if (sampled()) {
@@ -98,6 +106,9 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_removed(Function &&function) const {
+        if (!modified()) {
+            return;
+        }
         if (sampled()) {
             apply_sampled(details::TimeSeriesSetRuntimeType::Range::removed, function);
         } else if (data() != nullptr && storage().change_time() == last_updated()) {
@@ -122,7 +133,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     }
 
     item_id_t next_added_id(item_id_t start) const {
-        if (!valid() || (!sampled() && storage().change_time() != last_updated())) {
+        if (!modified() || !valid() || (!sampled() && storage().change_time() != last_updated())) {
             return util::occupancy_index::npos;
         }
         return sampled() ? set_runtime_type().set_next_item_id(last_updated_state(), data(),
@@ -131,6 +142,9 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     }
 
     item_id_t next_removed_id(item_id_t start) const {
+        if (!modified()) {
+            return util::occupancy_index::npos;
+        }
         if (sampled()) {
             return set_runtime_type().set_next_item_id(last_updated_state(), data(),
                                                        details::TimeSeriesSetRuntimeType::Range::removed, start);
@@ -143,11 +157,11 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
 
     // A sampled reference reports whether any common item has a different physical ID.
     bool has_item_id_remapping() const {
-        return data_.data() != nullptr && set_runtime_type().has_item_id_remapping(data_.data());
+        return modified() && data_.data() != nullptr && set_runtime_type().has_item_id_remapping(data_.data());
     }
 
     template <typename Function> void for_each_item_id_remapping(Function &&function) const {
-        if (data_.data() != nullptr) {
+        if (modified() && data_.data() != nullptr) {
             set_runtime_type().for_each_item_id_remapping(data_.data(), std::addressof(function),
                                                          invoke_with_id_remapping<std::remove_reference_t<Function>>);
         }

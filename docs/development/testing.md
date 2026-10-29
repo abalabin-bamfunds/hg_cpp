@@ -575,6 +575,9 @@ graph compilation or evaluation.
 ### Collection time series
 
 - set additions and removals
+- TSS and TSD root invalidation, valid-empty invalidation, repeated invalidation,
+  member removals and their outer-cycle lifetime, filtered valid-item removals,
+  revalidation, keyed observers, copying, and retained-tick replay
 - sampled set and dictionary item-ID remapping across reference changes, including ID exchanges and ordinary deltas
 - fixed-list updates
 - bundle fields and inheritance

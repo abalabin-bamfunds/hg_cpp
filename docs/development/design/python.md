@@ -227,9 +227,9 @@ Collection annotations interpret sequence elements as deltas: TSD uses key-to-
 item mappings with `REMOVE` for key removal; TSS uses sets or `SetDelta`, with
 `Removed(value)` marking removals; TSL uses index-to-item mappings; TSB uses
 field-name-to-item mappings. Nested collection deltas follow the declared item
-type. `INVALID` invalidates TS, TSL, or TSB inputs; TSS and TSD do not support
-invalidation. A scalar collection such as `TS[dict[int, str]]` remains one
-scalar value and is not interpreted as a TSD delta. Generic graph definitions
+type. `INVALID` invalidates TS, TSL, TSB, TSS, or TSD inputs. A scalar collection
+such as `TS[dict[int, str]]` remains one scalar value and is not interpreted as
+a TSD delta. Generic graph definitions
 require explicit, fully resolved input types, for example
 `run_graph(graph[bg.TS[int], bg.TSD[int, bg.TS[str]]], ...)`.
 The graph can return `TS`, `TSS`, `TSL`, `TSD`, or `TSB`, including nested
@@ -672,6 +672,9 @@ Output deltas use these forms:
 key maps to `REMOVE`; an added key maps to its complete current item value;
 an updated key maps to its item delta. A TSS input delta has lazy `added` and
 `removed` views. Collection item deltas recur through the same table.
+TSS and TSD input deltas include removals when the collection root becomes
+invalid. The delta is `None` on a later unchanged invalid cycle. This also
+applies when a nested TSS or TSD item becomes invalid.
 
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
 `datetime.timedelta`, and `bg.Symbol`. Durations map to signed 64-bit

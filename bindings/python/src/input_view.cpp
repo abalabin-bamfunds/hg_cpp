@@ -896,19 +896,27 @@ nb::object make_value(In<TS_T> input, const PythonScalarConversions &conversions
 
 nb::object make_delta_value(In<TS_T> input, const PythonScalarConversions &conversions,
                             const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
-    if (!input.valid() || !input.modified()) {
+    if (!input.modified()) {
         return nb::none();
     }
 
     const auto result = input.visit(
-        [&](const In<TS<SCALAR>> *value) { return scalar_value(*value, conversions); },
+        [&](const In<TS<SCALAR>> *value) {
+            return value->valid() ? scalar_value(*value, conversions) : nb::none();
+        },
         [&](const In<TSS<SCALAR>> *) { return nb::cast(SetDeltaView{input, conversions, lifetime, generation}); },
-        [&](const In<TSL<TS_T, SIZE>> *) { return nb::cast(FixedDeltaView{input, conversions, lifetime, generation}); },
-        [&](const In<TSB<SCHEMA>> *) { return nb::cast(FixedDeltaView{input, conversions, lifetime, generation}); },
+        [&](const In<TSL<TS_T, SIZE>> *value) {
+            return value->valid() ? nb::cast(FixedDeltaView{input, conversions, lifetime, generation}) : nb::none();
+        },
+        [&](const In<TSB<SCHEMA>> *value) {
+            return value->valid() ? nb::cast(FixedDeltaView{input, conversions, lifetime, generation}) : nb::none();
+        },
         [&](const In<TSD<SCALAR, TS_T>> *) {
             return nb::cast(DictionaryDeltaView{input, conversions, lifetime, generation});
         },
-        [&](const In<REF<TS_T>> *value) { return nb::cast(ReferenceValue{value->value(), lifetime, generation}); },
+        [&](const In<REF<TS_T>> *value) {
+            return value->valid() ? nb::cast(ReferenceValue{value->value(), lifetime, generation}) : nb::none();
+        },
         ddv::noop);
     if (!result) {
         throw std::logic_error{"the Python input has an unsupported time-series type"};
@@ -1005,7 +1013,7 @@ nb::object TSSInput::value() const {
 
 nb::object TSSInput::delta_value() const {
     check_lifetime();
-    if (!valid() || !modified()) {
+    if (!modified()) {
         return nb::none();
     }
     return nb::cast(SetDeltaView{input(), conversions(), lifetime(), generation()});
@@ -1306,8 +1314,7 @@ nb::object TSDInput::value() const {
 
 nb::object TSDInput::delta_value() const {
     check_lifetime();
-    return valid() && modified() ? nb::cast(DictionaryDeltaView{input(), conversions(), lifetime(), generation()})
-                                 : nb::none();
+    return modified() ? nb::cast(DictionaryDeltaView{input(), conversions(), lifetime(), generation()}) : nb::none();
 }
 
 nb::object TSDInput::iter() const {

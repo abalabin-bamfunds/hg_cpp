@@ -13,7 +13,6 @@ class TimeSeriesSetType : public TimeSeriesType {
     void format_name(std::string &result) const override;
     const ScalarType &item_type() const noexcept { return *item_type_; }
     [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
-    bool supports_invalidation() const noexcept final { return false; }
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 
   protected:

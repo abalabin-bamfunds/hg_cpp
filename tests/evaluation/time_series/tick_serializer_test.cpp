@@ -736,6 +736,74 @@ TEST_CASE("standard queue admission applies TSS no-ops and leaves a same-cycle u
     CHECK(actual.equals({1, 3}));
 }
 
+TEST_CASE("standard queue invalidation conflicts with a same-cycle empty TSS publication",
+          "[evaluation][feature:time-series-storage][series:tss][queue][validity]"
+          "[transition:invalidation]") {
+    auto same_cycle_invalidation_conflicted = false;
+    auto later_invalidation_admitted = false;
+    auto repeated_invalidation_admitted = false;
+
+    const auto update = bg::node<TS_T>([&](In<TS<i64>> command, Out<TS_T> output) {
+        if (*command == 0) {
+            output.as<TSS<i64>>().clear();
+            const auto result = apply_queue_literal(output, literal::INVALID);
+            same_cycle_invalidation_conflicted = !result.applied && result.pending_before == result.pending_after;
+            return;
+        }
+
+        const auto result = apply_queue_literal(output, literal::INVALID);
+        if (*command == 1) {
+            later_invalidation_admitted = result.applied;
+        } else {
+            repeated_invalidation_admitted = result.applied;
+        }
+    });
+
+    const auto graph = [&](bg::wp<TS<i64>> command) { return update[bg::type<TSS<i64>>](command); };
+    (void)bg::run_graph(graph, std::array<i64, 3>{0, 1, 2});
+
+    CHECK(same_cycle_invalidation_conflicted);
+    CHECK(later_invalidation_admitted);
+    CHECK(repeated_invalidation_admitted);
+}
+
+TEST_CASE("standard queue TSD invalidation conflicts with a same-cycle empty publication and revalidation",
+          "[evaluation][feature:time-series-storage][series:tsd][queue][validity]"
+          "[transition:invalidation][transition:revalidation]") {
+    auto same_cycle_invalidation_conflicted = false;
+    auto later_invalidation_admitted = false;
+    auto same_cycle_empty_revalidation_waited = false;
+    auto repeated_invalidation_admitted = false;
+
+    const auto update = bg::node<TS_T>([&](In<TS<i64>> command, Out<TS_T> output) {
+        if (*command == 0) {
+            output.as<TSD<i64, TS<i64>>>().clear();
+            const auto result = apply_queue_literal(output, literal::INVALID);
+            same_cycle_invalidation_conflicted = !result.applied && result.pending_before == result.pending_after;
+            return;
+        }
+
+        const auto invalidation = apply_queue_literal(output, literal::INVALID);
+        if (*command == 1) {
+            later_invalidation_admitted = invalidation.applied;
+            const auto revalidation = apply_queue_literal(output, literal::TimeSeriesLiteral{});
+            same_cycle_empty_revalidation_waited =
+                !revalidation.applied && revalidation.pending_before == revalidation.pending_after;
+            return;
+        }
+
+        repeated_invalidation_admitted = invalidation.applied;
+    });
+
+    const auto graph = [&](bg::wp<TS<i64>> command) { return update[bg::type<TSD<i64, TS<i64>>>](command); };
+    (void)bg::run_graph(graph, std::array<i64, 3>{0, 1, 2});
+
+    CHECK(same_cycle_invalidation_conflicted);
+    CHECK(later_invalidation_admitted);
+    CHECK(same_cycle_empty_revalidation_waited);
+    CHECK(repeated_invalidation_admitted);
+}
+
 TEST_CASE("a pending TSD message retries with its encoded owning key",
           "[evaluation][feature:test-graph][feature:time-series-storage][series:tsd][scalar:string][queue]"
           "[shape:single-node][transition:update]") {

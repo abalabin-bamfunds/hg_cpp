@@ -12,6 +12,7 @@
 
 #include <array>
 #include <cstdint>
+#include <vector>
 
 using namespace bg;
 
@@ -27,6 +28,92 @@ TEST_CASE("all_valid on a valid_items dictionary input requires only a valid dic
     const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({2, 1}));
+}
+
+TEST_CASE("a TSD output invalidates its root and filters removals by previous item validity",
+          "[feature:invalidation][feature:collection-change][series:tsd][scalar:integer]"
+          "[input-guarantee:valid-items][transition:invalidation][transition:revalidation]"
+          "[transition:removal][transition:addition][definition:function]") {
+    const auto update = node([](In<TS<i64>> command, Out<TSD<i64, TS<i64>>> output) {
+        if (*command == 0) {
+            output[1].set(10);
+            output[2].invalidate();
+            output[3].set(30);
+            return;
+        }
+        if (*command == 3) {
+            output[1].set(10);
+            output[2].set(20);
+            output[3].set(30);
+            return;
+        }
+
+        output.invalidate();
+    });
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>, optional> physical,
+                                 In<TSD<i64, TS<i64>>, valid_items, optional> valid_items) {
+        CHECK(physical.valid() == valid_items.valid());
+
+        auto physical_added = std::vector<i64>{};
+        physical.for_each_added([&](const auto &key) { physical_added.push_back(*key); });
+        auto physical_removed = std::vector<i64>{};
+        physical.for_each_removed([&](const auto &key) { physical_removed.push_back(*key); });
+
+        auto valid_added = std::vector<i64>{};
+        valid_items.for_each_added([&](const auto &key) { valid_added.push_back(*key); });
+        auto valid_removed = std::vector<i64>{};
+        valid_items.for_each_removed([&](const auto &key) { valid_removed.push_back(*key); });
+        auto physical_removed_values = std::vector<i64>{};
+        auto physical_removed_invalid_keys = std::vector<i64>{};
+        physical.for_each_removed_key_value([&](const auto &key, const auto &item) {
+            if (item.valid()) {
+                physical_removed_values.push_back(*item);
+            } else {
+                physical_removed_invalid_keys.push_back(*key);
+            }
+        });
+        auto valid_removed_values = std::vector<i64>{};
+        valid_items.for_each_removed_key_value(
+            [&](const auto &, const auto &item) { valid_removed_values.push_back(*item); });
+
+        if (physical.valid()) {
+            CHECK(physical.size() == 3);
+            CHECK(physical_added == std::vector<i64>{1, 2, 3});
+            CHECK(physical_removed.empty());
+            CHECK(physical_removed_values.empty());
+            CHECK(physical_removed_invalid_keys.empty());
+
+            if (valid_items.size() == 2) {
+                CHECK(valid_added == std::vector<i64>{1, 3});
+            } else {
+                CHECK(valid_items.size() == 3);
+                CHECK(valid_added == std::vector<i64>{1, 2, 3});
+            }
+            CHECK(valid_removed.empty());
+            CHECK(valid_removed_values.empty());
+        } else {
+            CHECK(physical.size() == 0);
+            CHECK(physical_added.empty());
+            CHECK(physical_removed == std::vector<i64>{1, 2, 3});
+            CHECK(physical_removed_values == std::vector<i64>{10, 30});
+            CHECK(physical_removed_invalid_keys == std::vector<i64>{2});
+
+            CHECK(valid_items.size() == 0);
+            CHECK(valid_added.empty());
+            CHECK(valid_removed == std::vector<i64>{1, 3});
+            CHECK(valid_removed_values == std::vector<i64>{10, 30});
+        }
+
+        return physical.valid();
+    });
+
+    const auto graph = [&](wp<TS<i64>> command) {
+        const auto dictionary = update(command);
+        return inspect(dictionary, valid_items(dictionary));
+    };
+
+    CHECK(bg::run_graph(graph, {0, 1, 2, 3}).equals<bool>({true, false, std::nullopt, true}));
 }
 
 TEST_CASE("a nested graph preserves a fixed valid_items input",

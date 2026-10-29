@@ -116,6 +116,47 @@ TEST_CASE("delay retains target ticks in a fixed list of references",
     CHECK(bg::run_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
 }
 
+struct invalidating_set_for_delay {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TSS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.insert(1);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.invalidate();
+            ++*step;
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+            return;
+        }
+
+        output.insert(1);
+    }
+};
+
+TEST_CASE("delay propagates invalidation and revalidation through a fixed list of TSS references",
+          "[feature:operator][feature:timed-scheduling][series:fixed-tsl][series:tss][series:reference]"
+          "[transition:invalidation][transition:revalidation][binding:reference-to-value]") {
+    const auto target = node<invalidating_set_for_delay>();
+    const auto make_list = node([](In<REF<TSS<i64>>> child, Out<TSL<REF<TSS<i64>>, 1>> output) {
+        output[0].copy(child);
+    });
+    const auto observe = node([](In<TSL<TSS<i64>, 1>, optional> input, Out<TS<bool>> output) {
+        output.set(input.valid() && input[0].valid());
+    });
+    const auto delayed = [&] {
+        const auto list = make_list(target());
+        return observe(operators::delay(list, timedelta_t{1}));
+    };
+
+    CHECK(bg::run_graph(delayed).equals<bool>({std::nullopt, true, false, true}));
+}
+
 template <template <typename, auto...> typename Field> struct TimedPair {
     Field<TS<i64>> left;
     Field<TS<i64>> right;
@@ -349,7 +390,7 @@ TEST_CASE("delay replays removals from an invalid TSS inside a TSD",
               .equals<i64>({0, 1, 0}));
     const auto result = bg::run_graph(delayed_sum, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}),
                                       ticks({}));
-    CHECK(result.equals<i64>({std::nullopt, 1, 0, 3}));
+    CHECK(result.equals<i64>({std::nullopt, 1, -1, 3}));
 }
 
 TEST_CASE("throttle follows reference retargets and target ticks",

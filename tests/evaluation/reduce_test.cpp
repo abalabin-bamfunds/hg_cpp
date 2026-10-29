@@ -735,7 +735,7 @@ TEST_CASE("reduce invalidates and revalidates a non-scalar default reference",
 
     const auto actual = bg::run_graph(tested, {true, false, true}, {{}}, {{{1, 11}}, {{1, 22}}, {{1, 33}}});
 
-    CHECK(actual.equals({{{1, 11}}, {{1, literal::REMOVE}}, {{1, 33}}}));
+    CHECK(actual.equals({{{1, 11}}, literal::INVALID, {{1, 33}}}));
 }
 
 TEST_CASE("reduce preserves a non-scalar default reference while its target invalidates and revalidates",

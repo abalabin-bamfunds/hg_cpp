@@ -24,25 +24,21 @@ template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE, typename OPERATION>
 struct tss_set_operation_impl {
     In<TSS<K, G>, VALIDITY> lhs;
     In<TSS<K, G>, VALIDITY> rhs;
-    State<bool> needs_reconcile;
     Out<TSS<K, OUTPUT_GUARANTEE>> output;
 
     void evaluate() const {
         const auto lhs_validity_changed = lhs.became_valid() || lhs.became_invalid();
         const auto rhs_validity_changed = rhs.became_valid() || rhs.became_invalid();
-        if (*needs_reconcile || !output.valid() || lhs_validity_changed || rhs_validity_changed) {
+        if (!output.valid() || lhs_validity_changed || rhs_validity_changed) {
             if (!output.valid()) {
                 output.clear();
             }
             OPERATION::reconcile(lhs, rhs, output);
-            *needs_reconcile = false;
             return;
         }
 
         OPERATION::update(lhs, rhs, output);
     }
-
-    void on_invalidation() const { *needs_reconcile = true; }
 };
 
 template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE, bool NEGATED>
@@ -154,7 +150,7 @@ struct tss_overloads {
 
     struct keys_tsd_valid_items_impl {
         In<TSD<K, TS_T, G>, valid_items> dictionary;
-        Out<TSS<K, G>> output;
+        Out<TSS<K>> output;
 
         void evaluate() const {
             if (!output.valid() || dictionary.became_valid()) {
@@ -167,16 +163,7 @@ struct tss_overloads {
             dictionary.for_each_removed_key([&](const auto &key) { output.erase(key); });
         }
     };
-    overload<keys_> keys_tsd_valid_items{graph(
-        [](wp<TSD<K, TS_T, G>, valid_items> dictionary) -> wp<TSS<K>> {
-            static const auto project = bg::node<keys_tsd_valid_items_impl>();
-            const auto keys = project(dictionary);
-            auto nothing_type = TypeMap{};
-            nothing_type.set(::bg::details::type_parameter<TS_T>(), &keys.type().target_type());
-            return operators::if_then_else(operators::valid(static_cast<WiringPoint>(dictionary)), keys,
-                                           operators::nothing[nothing_type]())
-                .template as<TSS<K>>();
-        })};
+    overload<keys_, keys_tsd_valid_items_impl> keys_tsd_valid_items;
 
     overload<len_> len_tsd_valid_items{graph([](wp<TSD<K, TS_T, G>, valid_items> dictionary) -> wp<TS<i64>> {
         return operators::len_(operators::keys_(dictionary)).template as<TS<i64>>();
@@ -377,20 +364,11 @@ struct tss_overloads {
 };
 
 struct tsd_set_overloads {
-    static wp<TSD<K, REF<TS_T>>> gate_roots(auto lhs, auto rhs, wp<TSD<K, REF<TS_T>>> result) {
-        const auto valid = operators::and_(operators::valid(static_cast<WiringPoint>(lhs)),
-                                           operators::valid(static_cast<WiringPoint>(rhs)));
-        auto nothing_type = TypeMap{};
-        nothing_type.set(::bg::details::type_parameter<TS_T>(), &result.type().target_type());
-        return operators::if_then_else(valid, result, operators::nothing[nothing_type]())
-            .template as<TSD<K, REF<TS_T>>>();
-    }
-
     template <typename KEY_OPERATION>
     static wp<TSD<K, REF<TS_T>>> select_keys(auto lhs, auto rhs, KEY_OPERATION key_operation) {
         const auto keys = key_operation(operators::keys_(lhs), operators::keys_(rhs));
         const auto raw_lhs = static_cast<WiringPoint>(lhs).template as<TSD<K, TS_T, G>>();
-        return gate_roots(lhs, rhs, raw_lhs[keys].template as<TSD<K, REF<TS_T>>>());
+        return raw_lhs[keys].template as<TSD<K, REF<TS_T>>>();
     }
 
     template <bool SYMMETRIC> struct reference_routing_node {
@@ -398,14 +376,12 @@ struct tsd_set_overloads {
         In<TSD<K, REF<TS_T>, G>> rhs;
         In<TSS<K, G>> lhs_keys;
         In<TSS<K, G>> rhs_keys;
-        State<bool> needs_reconcile;
-        Out<TSD<K, REF<TS_T>>> output;
+        Out<TSD<K, REF<TS_T, TimeSeriesGuarantee::ordinary>>> output;
 
         void evaluate() const {
-            if (!output.valid() || *needs_reconcile || lhs.became_valid() || rhs.became_valid() ||
-                lhs_keys.became_valid() || rhs_keys.became_valid()) {
+            if (!output.valid() || lhs.became_valid() || rhs.became_valid() || lhs_keys.became_valid() ||
+                rhs_keys.became_valid()) {
                 reconcile();
-                *needs_reconcile = false;
                 return;
             }
 
@@ -432,8 +408,6 @@ struct tsd_set_overloads {
                 });
             }
         }
-
-        void on_invalidation() const { *needs_reconcile = true; }
 
         bool selected(const auto &key) const {
             const auto in_lhs = lhs_keys.contains(key);
@@ -472,13 +446,13 @@ struct tsd_set_overloads {
     };
 
     template <bool SYMMETRIC>
-    static wp<TSD<K, REF<TS_T>>> route(auto lhs, auto rhs) {
+    static wp<TSD<K, REF<TS_T, TimeSeriesGuarantee::ordinary>>> route(auto lhs, auto rhs) {
         const auto lhs_keys = operators::keys_(lhs);
         const auto rhs_keys = operators::keys_(rhs);
         const auto lhs_references = static_cast<WiringPoint>(lhs).template as<TSD<K, REF<TS_T>, G>>();
         const auto rhs_references = static_cast<WiringPoint>(rhs).template as<TSD<K, REF<TS_T>, G>>();
         static const auto route_node = bg::node<reference_routing_node<SYMMETRIC>>();
-        return gate_roots(lhs, rhs, route_node(lhs_references, rhs_references, lhs_keys, rhs_keys));
+        return route_node(lhs_references, rhs_references, lhs_keys, rhs_keys);
     }
 
     overload<bit_and> bit_and_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {

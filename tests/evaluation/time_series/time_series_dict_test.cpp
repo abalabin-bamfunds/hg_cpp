@@ -293,6 +293,112 @@ TEST_CASE("a time series dictionary publishes item and key changes",
                            Snapshot{.size = 2, .first_value = 12, .added = {2}, .modified = {2}}});
 }
 
+TEST_CASE("a TSD input does not replay changes when another input triggers evaluation",
+          "[evaluation][tsd][feature:collection-change][transition:addition][transition:removal]"
+          "[input-guarantee:valid-items]") {
+    struct observation {
+        bool modified;
+        i64 added;
+        i64 removed;
+        i64 updated;
+        i64 changes;
+        bool cursor_added;
+        bool cursor_removed;
+        bool cursor_updated;
+        bool cursor_modified;
+        bool found_added;
+        bool found_removed;
+        bool found_updated;
+        bool found_modified;
+        bool item_modified;
+        i64 valid_items_added;
+        i64 valid_items_removed;
+        i64 removed_physical;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto update = node([](In<TS<i64>> trigger, Out<TSD<i64, TS<i64>>> output) {
+        if (*trigger == 1) {
+            output[7].set(70);
+        } else if (*trigger == 3) {
+            output[7].set(71);
+        } else if (*trigger == 5) {
+            output.erase(7);
+        }
+    });
+    const auto inspect = node([](In<TSD<i64, TS<i64>>> input, In<TSD<i64, TS<i64>>, valid_items> valid_input,
+                                 In<TS<i64>>) {
+        auto added = i64{};
+        input.for_each_added([&](const auto &) { ++added; });
+        auto removed = i64{};
+        input.for_each_removed([&](const auto &) { ++removed; });
+        auto updated = i64{};
+        input.for_each_updated([&](const auto &) { ++updated; });
+        auto changes = i64{};
+        input.for_each_modified([&](const auto &) { ++changes; });
+        auto valid_items_added = i64{};
+        valid_input.for_each_added([&](const auto &) { ++valid_items_added; });
+        auto valid_items_removed = i64{};
+        valid_input.for_each_removed([&](const auto &) { ++valid_items_removed; });
+        auto removed_physical = i64{};
+        input.for_each_removed_physical_id([&](item_id_t) { ++removed_physical; });
+
+        const auto raw_key = i64{7};
+        const auto key = Scalar<i64>::from(raw_key);
+        return observation{input.modified(),
+                           added,
+                           removed,
+                           updated,
+                           changes,
+                           input.next_added_id(0) != util::occupancy_index::npos,
+                           input.next_removed_id(0) != util::occupancy_index::npos,
+                           input.next_updated_id(0) != util::occupancy_index::npos,
+                           input.next_modified_id(0) != util::occupancy_index::npos,
+                           input.find_added_id(key) != util::occupancy_index::npos,
+                           input.find_removed_id(key) != util::occupancy_index::npos,
+                           input.find_updated_id(key) != util::occupancy_index::npos,
+                           input.find_modified_id(key) != util::occupancy_index::npos,
+                           input.item_modified(key),
+                           valid_items_added,
+                           valid_items_removed,
+                           removed_physical};
+    });
+    const auto graph = [&](wp<TS<i64>> trigger) {
+        const auto dictionary = update(trigger);
+        return inspect(dictionary, dictionary, trigger);
+    };
+
+    const auto actual = bg::run_graph(graph, {1, 2, 3, 4, 5, 6});
+
+    CHECK(actual.equals<observation>({observation{.modified = true,
+                                                  .added = 1,
+                                                  .changes = 1,
+                                                  .cursor_added = true,
+                                                  .cursor_modified = true,
+                                                  .found_added = true,
+                                                  .found_modified = true,
+                                                  .item_modified = true,
+                                                  .valid_items_added = 1},
+                                     observation{},
+                                     observation{.modified = true,
+                                                  .updated = 1,
+                                                  .changes = 1,
+                                                  .cursor_updated = true,
+                                                  .cursor_modified = true,
+                                                  .found_updated = true,
+                                                  .found_modified = true,
+                                                  .item_modified = true},
+                                     observation{},
+                                     observation{.modified = true,
+                                                  .removed = 1,
+                                                  .cursor_removed = true,
+                                                  .found_removed = true,
+                                                  .valid_items_removed = 1,
+                                                  .removed_physical = 1},
+                                     observation{}}));
+}
+
 namespace {
 
 struct literal_dict_source_definition {
@@ -355,13 +461,18 @@ TEST_CASE("a TSD update removes an entry with REMOVE",
     CHECK(removed_keys == std::vector<std::vector<i64>>{{}, {1}, {}});
 }
 
-TEST_CASE("a TSD update rejects a root INVALID marker",
+TEST_CASE("a TSD update applies a root INVALID marker",
           "[evaluation][tsd][series:tsd][feature:collection-change][validity]") {
-    const auto source = node([](Out<TSD<i64, TS<i64>>> output) {
-        output.apply(literal::INVALID);
+    const auto source = node([](In<TS<i64>, optional> input, Out<TSD<i64, TS<i64>>> output) {
+        if (input.valid()) {
+            output[1].set(input.value());
+        } else {
+            output.apply(literal::INVALID);
+        }
     });
 
-    CHECK_THROWS_AS(run_graph([&] { source(); }), std::invalid_argument);
+    CHECK(bg::run_graph(source, {11, literal::INVALID, 12})
+              .equals({{{1, 11}}, literal::INVALID, {{1, 12}}}));
 }
 
 namespace {
@@ -940,16 +1051,30 @@ struct invalidating_dict_input_definition {
     void evaluate() const { output.invalidate(); }
 };
 
+struct preserving_dict_from_value_definition {
+    static constexpr auto on_invalidation = preserve_output;
+
+    i64 input;
+    Out<TSD<i64, TS<i64>>> output;
+
+    void evaluate() const { output[1].set(input); }
+};
+
+struct dict_from_value_definition {
+    i64 input;
+    Out<TSD<i64, TS<i64>>> output;
+
+    void evaluate() const { output[1].set(input); }
+};
+
 } // namespace
 
-TEST_CASE("a dictionary preserves its value when a required input becomes invalid",
+TEST_CASE("a TSD node preserves its output when it declares preserve_output",
           "[evaluation][tsd][series:tsd][validity][feature:collection-change][validity:required]"
-          "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
+          "[scalar:integer][representation:native][declaration:concrete][binding:direct]"
+          "[invalidation:preserve-output]") {
     const auto source = node<invalidating_dict_input_definition>();
-
-    const auto dict_from_value = node([](i64 input, Out<TSD<i64, TS<i64>>> output) {
-        output[1].set(input);
-    });
+    const auto dict_from_value = node<preserving_dict_from_value_definition>();
 
     const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
 
@@ -958,6 +1083,21 @@ TEST_CASE("a dictionary preserves its value when a required input becomes invali
     const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({1}));
+}
+
+TEST_CASE("a TSD node invalidates its output when a required input becomes invalid",
+          "[evaluation][tsd][series:tsd][validity][feature:collection-change][validity:required]"
+          "[transition:invalidation]") {
+    const auto source = node<invalidating_dict_input_definition>();
+    const auto dict_from_value = node<dict_from_value_definition>();
+    const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
+    const auto actual = bg::run_graph([&] { return select(dict_from_value(source())); });
+
+    CHECK(actual.equals({1, std::nullopt}));
+    CHECK(actual.visit_tick(1, [](const TimeSeriesType &, bool valid, util::buffer_reader &) {
+        CHECK_FALSE(valid);
+    }));
 }
 
 namespace {

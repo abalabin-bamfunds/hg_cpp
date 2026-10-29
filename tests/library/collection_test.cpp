@@ -251,7 +251,7 @@ TEST_CASE("TSD set operators produce ordinary dictionaries for nonordinary input
     const auto check_const = [&] {
         const auto result = constant_dictionary() & constant_dictionary();
         CHECK(&result.type().dereferenced_type() ==
-              &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>>>::type());
+              &TSD<i64, REF<TS<i64, TimeSeriesGuarantee::const_>, TimeSeriesGuarantee::const_>>::type());
     };
     testing::test_wiring(check_const);
 }
@@ -330,8 +330,7 @@ TEST_CASE("keys_ follows a selected dictionary reference through switching and i
         bg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
         bg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
 
-    CHECK(actual.equals({{}, {1, 2}, {8, literal::REMOVED(1), literal::REMOVED(2)},
-                         {literal::REMOVED(8)}, {1, 2}}));
+    CHECK(actual.equals({{}, {1, 2}, {8, literal::REMOVED(1), literal::REMOVED(2)}, literal::INVALID, {1, 2}}));
     CHECK(validity.equals<bool>({true, std::nullopt, std::nullopt, false, true}));
 }
 
@@ -356,7 +355,7 @@ TEST_CASE("keys_ follows an initially invalid selected dictionary as it becomes 
         bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
         bg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
 
-    CHECK(actual.equals({{1}, {literal::REMOVED(1)}, {}, {8}}));
+    CHECK(actual.equals({{1}, literal::INVALID, {}, {8}}));
     CHECK(validity.equals<bool>({true, false, true, std::nullopt}));
 }
 
@@ -1179,7 +1178,7 @@ TEST_CASE("TSS set operations accept erased wiring points and treat optional inv
               .equals({{1}, {2}}));
 }
 
-TEST_CASE("TSS set operations retain members while a required reference is invalid",
+TEST_CASE("TSS set operations invalidate while a required reference is invalid",
           "[feature:operator][series:tss][series:reference][scalar:i64][validity:required]"
           "[transition:invalidation][transition:revalidation][transition:addition][transition:removal]") {
     const auto select = node([](In<TS<i64>> phase, In<REF<TSS<i64>>, passive> populated,
@@ -1195,7 +1194,7 @@ TEST_CASE("TSS set operations retain members while a required reference is inval
     CHECK(bg::run_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP},
                               {literal::SKIP},
                               {{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}, literal::SKIP})
-              .equals({{1, 2}, literal::SKIP, literal::SKIP, {4, literal::REMOVED(2)}}));
+              .equals({{1, 2}, literal::INVALID, literal::SKIP, {1, 4}}));
 }
 
 TEST_CASE("optional TSS set operations remove an invalid reference contribution",

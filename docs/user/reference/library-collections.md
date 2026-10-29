@@ -171,9 +171,8 @@ that key. These operators accept `valid_items` on either or both inputs; that vi
 excludes invalid immediate items from membership. Both TSD roots must be valid. If
 either root is invalid, the result is invalid until both roots are valid again.
 
-TSS inputs are required by default. A TSS result preserves its membership while a
-required input is invalid and reconciles the current sets when evaluation resumes.
-Boolean results follow normal required-input invalidation.
+TSS inputs are required by default. An invalid required input invalidates the
+result. Revalidation computes the result from the current sets.
 
 For TSS set operators, `opt()` selects overloads that treat invalid inputs as empty sets.
 Marking either binary operand selects that behavior for both operands. Optional

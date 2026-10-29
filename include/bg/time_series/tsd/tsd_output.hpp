@@ -80,8 +80,14 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     }
 
     void apply(const literal::TimeSeriesLiteral &literal) const {
-        if (const auto sentinel = literal::Sentinel::from(literal); sentinel && *sentinel == literal::SKIP) {
-            return;
+        if (const auto sentinel = literal::Sentinel::from(literal)) {
+            if (*sentinel == literal::SKIP) {
+                return;
+            }
+            if (*sentinel == literal::INVALID) {
+                invalidate();
+                return;
+            }
         }
         apply_values(details::scalar_literal::sequence(literal));
     }
@@ -161,7 +167,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         }
         if (!input.valid()) {
             if (valid()) {
-                input.for_each_removed([&](const auto &key) { erase(key); });
+                invalidate();
             }
             return;
         }
@@ -178,7 +184,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     void copy(const In<TSD<K, InputItem, InputTimeSeriesProperties...>, InputProperties...> &input) const {
         if (!input.valid()) {
             if (valid()) {
-                clear();
+                invalidate();
             }
             return;
         }

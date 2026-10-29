@@ -54,8 +54,10 @@ remaining lifetime of the reference.
 ## Collections
 
 `TSS` and `TSD` start invalid. Their first tick makes them valid, including a
-tick that publishes an empty collection. They remain valid after that tick.
-`TSD` item validity is independent of TSD validity.
+tick that publishes an empty collection. `invalidate()` removes their current
+value and reports every previously visible member as removed for that cycle.
+Repeated invalidation does nothing. Revalidation reports current members as
+added. `TSD` item validity is independent of TSD validity.
 
 `In<TSD<K, TS_T>, valid_items>` filters current-item enumeration, size,
 membership, and keyed access to valid immediate items. Its change queries
@@ -75,8 +77,9 @@ dereferenced TSD representation reports changes to its item targets through the
 Removed storage follows the
 [outer-cycle lifetime](time-series-references.md#outer-cycle-boundary).
 
-`clear()` publishes a valid empty TSS or TSD. A TSS or TSD output preserves its
-value when a required input becomes invalid.
+`clear()` publishes a valid empty TSS or TSD. Required-input invalidation uses
+the node's declared [invalidation behavior](node-api.md#required-input-invalidation),
+as it does for other output types.
 
 Invalidating a TSB makes every item view invalid. Each item behaves as a first
 update when it becomes valid again.

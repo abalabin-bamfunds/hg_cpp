@@ -303,7 +303,7 @@ TEST_CASE("convert reconciles repeated set snapshots without publishing false ch
               .equals<i64>({20, std::nullopt, 11}));
 }
 
-TEST_CASE("convert preserves a TSS snapshot when its scalar collection input is invalid",
+TEST_CASE("convert invalidates a TSS snapshot when its scalar collection input is invalid",
           "[feature:operator][feature:validity][series:tss][scalar:list][guarantee:deduplicated]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
     const auto observe = node([](In<TS<List<i64>, TimeSeriesGuarantee::deduplicated>, optional> values,
@@ -317,7 +317,7 @@ TEST_CASE("convert preserves a TSS snapshot when its scalar collection input is 
     };
 
     CHECK(bg::run_graph(convert_and_observe, bg::input<TS<List<i64>>>({{}, {}, literal::INVALID, {}}))
-              .equals<bool>({true, std::nullopt, true, true}));
+              .equals<bool>({true, std::nullopt, false, true}));
 }
 
 TEST_CASE("combine captures homogeneous time-series arguments into a TSL",

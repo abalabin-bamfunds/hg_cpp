@@ -10,6 +10,21 @@
 
 namespace bg::details {
 
+void TimeSeriesDictionaryRuntimeType::invalidate_output(const OutputState &output) const {
+    if (!output.valid()) {
+        return;
+    }
+
+    auto memory = current_scalar_allocator();
+    auto &storage = *static_cast<time_series_dict_storage *>(output.mutable_data());
+    const auto evaluation_time = output.evaluation_time();
+    storage.reset_change_tracking(evaluation_time, *key_, key_layout_, *item_, item_layout_, item_value_offset_,
+                                  memory);
+    storage.clear(*key_, key_layout_, *item_, item_layout_, item_value_offset_, memory);
+    storage.key_storage().last_updated.invalidate(evaluation_time);
+    output.invalidate_value();
+}
+
 bool TimeSeriesDictionaryRuntimeType::all_valid(const TimeSeriesInputData &input) const noexcept {
     return input.valid_items() ? input.valid() : all_valid(input.last_updated_ref(), input.data());
 }
