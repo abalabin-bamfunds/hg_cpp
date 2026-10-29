@@ -89,11 +89,11 @@ The WebSocket server API is currently C++ only.
 
 `websocket_handler(path, graph)` registers a WebSocket route on the HTTP server's
 listener. HTTP and WebSocket routes can use the same path. A WebSocket handler
-receives `TSB<WebSocketServerRequest<bytes>::schema>` for one connection or a
+receives `TSB<BinaryWebSocketServerRequest>` for one connection or a
 dictionary keyed by connection ID. The request contains the HTTP
 `connect_request` and a time series of binary `messages`.
 
-The handler returns `TSB<WebSocketResponse<bytes>::schema>` or a bundle with a
+The handler returns `TSB<BinaryWebSocketResponse>` or a bundle with a
 `response` field. `connect_response` accepts a connection with status 101 and an
 empty body, or rejects it with an HTTP status from 400 through 599. Its headers
 are sent with the handshake. A `Sec-WebSocket-Protocol` response header must
@@ -268,3 +268,33 @@ TS<Bundle<HttpResponse>>`. Pass `HttpClientOptions` to `http_client_impl()` to
 configure the timeout and response body limit. One implementation owns one
 transport thread shared by its service clients, with separate runtime state
 for each graph run.
+
+## WebSocket client
+
+`websocket_client` connects to a binary `ws://` endpoint. Its request is
+`TSB<BinaryWebSocketClientRequest>` with a `connect_request` containing a URL
+and ordered handshake headers, a `message` containing bytes, and a `close`
+request. Each connect tick starts a new connection for that service client.
+The implementation applies request updates at the next minimum evaluation time.
+Message ticks send complete binary messages. For an open connection, a message
+and close request in one update sends the message before the close frame. A
+close request during the handshake cancels the attempt and discards any message
+from that update.
+
+The reply is `TSB<BinaryWebSocketClientReply>`. `connect_response` contains the
+handshake status, headers, and body. A successful handshake reports status 101
+and includes the selected subprotocol header when the server returns one.
+`messages` contains received binary messages in arrival order. `close` reports
+the observed close code and reason. A transport failure before the handshake
+returns status 599; an abnormal closure after admission reports code 1006.
+
+The C++ entry points are declared in `<bg/web/websocket_client.hpp>`:
+
+```cpp
+auto catalogue = bg::ServiceCatalogue{};
+catalogue.register_impl(bg::web::websocket_client, bg::web::websocket_client_impl(), {});
+```
+
+`WebSocketClientOptions` configures the timeout for resolve, connect, and
+handshake, plus the maximum received message size. The initial client supports
+only `ws://`, binary messages, and one active connection per service client.

@@ -31,6 +31,11 @@ template <template <typename, auto...> typename Field> struct HttpClientRequest 
     Field<bytes> body;
 };
 
+template <template <typename, auto...> typename Field> struct WebSocketConnectRequest {
+    Field<string> url;
+    Field<List<Tuple<string, string>>> headers;
+};
+
 template <template <typename, auto...> typename Field> struct HttpResponse {
     Field<i64> status;
     Field<List<Tuple<string, string>>> headers;
@@ -49,6 +54,22 @@ template <typename T> struct WebSocketServerRequest {
     };
 };
 
+template <typename T> struct WebSocketClientRequest {
+    template <template <typename, auto...> typename Field> struct schema {
+        Field<TS<Bundle<WebSocketConnectRequest>>> connect_request;
+        Field<TS<T>> message;
+        Field<TS<Bundle<WebSocketClose>>> close;
+    };
+};
+
+template <typename T> struct WebSocketClientReply {
+    template <template <typename, auto...> typename Field> struct schema {
+        Field<TS<Bundle<HttpResponse>>> connect_response;
+        Field<TS<List<T>>> messages;
+        Field<TS<Bundle<WebSocketClose>>> close;
+    };
+};
+
 template <typename T> struct WebSocketResponse {
     template <template <typename, auto...> typename Field> struct schema {
         Field<TS<Bundle<HttpResponse>>> connect_response;
@@ -56,5 +77,17 @@ template <typename T> struct WebSocketResponse {
         Field<TS<Bundle<WebSocketClose>>> close;
     };
 };
+
+template <template <typename, auto...> typename Field>
+using BinaryWebSocketClientRequest = WebSocketClientRequest<bytes>::template schema<Field>;
+
+template <template <typename, auto...> typename Field>
+using BinaryWebSocketClientReply = WebSocketClientReply<bytes>::template schema<Field>;
+
+template <template <typename, auto...> typename Field>
+using BinaryWebSocketServerRequest = WebSocketServerRequest<bytes>::template schema<Field>;
+
+template <template <typename, auto...> typename Field>
+using BinaryWebSocketResponse = WebSocketResponse<bytes>::template schema<Field>;
 
 } // namespace bg::web

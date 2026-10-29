@@ -36,6 +36,8 @@ add_library(
     src/http_client.cpp
     src/http_server.cpp
     src/server_runtime.cpp
+    src/websocket_client.cpp
+    src/websocket_client_runtime.cpp
 )
 add_library(bg::web ALIAS bg_web)
 target_compile_features(bg_web PUBLIC cxx_std_23)
@@ -121,7 +123,7 @@ endif()
 
 if(BUILD_TESTING)
     find_package(Catch2 3 REQUIRED)
-    add_executable(bg_web_tests tests/http_client_test.cpp tests/http_server_test.cpp)
+    add_executable(bg_web_tests tests/http_client_test.cpp tests/http_server_test.cpp tests/websocket_client_test.cpp)
     target_compile_features(bg_web_tests PRIVATE cxx_std_23)
     target_link_libraries(bg_web_tests PRIVATE bg::web bg::library Catch2::Catch2WithMain ${BG_WEB_BOOST_TARGETS})
     add_test(NAME bg_web_tests COMMAND bg_web_tests)

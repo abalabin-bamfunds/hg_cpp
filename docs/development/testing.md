@@ -25,7 +25,7 @@ Use `[dimension:value]` for each applicable dimension:
   `wiring-defaults`,
   `time-series-storage`, `time-series-view`, `collection-change`, `reference`, `sampling`, `feedback`,
   `item-id-remapping`, `service`, `getitem`, `getattr`, `nested-graph`, `mesh`,
-  `multiservice`, `reduce`, `late-bound-wiring`, `http`,
+  `multiservice`, `reduce`, `late-bound-wiring`, `http`, `websocket`,
   `variadic-wiring`, or `wiring-materialisation`
 - `series`: `value`, `fixed-tsl`, `tss`, `tsd`, `tsb`, `reference`, or `generic`
 - `schema`: `named`, `unnamed`, or `generic`
@@ -762,6 +762,8 @@ For each reusable node and graph, test:
 - request removal after completion or disconnection, late replies, and stop with pending requests
 - independent transport state for repeated runs of one compiled graph
 - Python native schema conversion and request/reply wiring
+- WebSocket server and client schema wiring, binary message exchange, subprotocol negotiation, and reconnect
+- WebSocket rejected handshakes, pending-handshake cancellation, URL validation, and transport failures
 
 ### Performance and portability
 
