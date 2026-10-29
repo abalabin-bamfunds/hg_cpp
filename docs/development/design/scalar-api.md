@@ -507,8 +507,16 @@ with `ScalarType::set_default_runtime_type_factory()`. The callback takes the
 semantic descriptor and returns the trait-defined default runtime. This makes
 the default available to consumers that retain only the semantic type,
 including empty literal inputs. Registration stores the callback without
-constructing the runtime. A declaration that reuses an existing semantic
-descriptor retains that descriptor's default.
+constructing the runtime. A declaration that reuses a semantic descriptor with
+a recorded callback retains that callback.
+
+`ScalarType::default_runtime_type_factory()` provides default runtime dispatch.
+Built-in scalar descriptors provide their factory directly. Structural scalar
+descriptors return a recorded trait factory when present; otherwise they return
+a factory for composed storage that resolves component defaults recursively.
+Creating composed storage does not prevent a later C++ declaration from
+recording its trait factory during setup. Default resolution invokes this
+callback and validates the returned runtime's semantic type and interface.
 
 `scalar_declaration_traits<T>` controls whether graph signatures accept the
 declaration as a collection, an implicit scalar argument, or a time series

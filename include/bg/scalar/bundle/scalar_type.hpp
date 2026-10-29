@@ -50,6 +50,7 @@ class HierarchicalScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    RuntimeTypeFactory default_runtime_type_factory() const noexcept override;
     void format_name(std::string &result) const override;
     virtual const SchemaType &schema_type() const noexcept = 0;
 

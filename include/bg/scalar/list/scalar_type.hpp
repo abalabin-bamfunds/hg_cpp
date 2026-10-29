@@ -15,6 +15,7 @@ class ListScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    RuntimeTypeFactory default_runtime_type_factory() const noexcept override;
     void format_name(std::string &result) const override;
     virtual const ScalarType &item_type() const noexcept = 0;
 

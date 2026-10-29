@@ -1041,68 +1041,39 @@ class ScalarRuntimeTypeResolver {
     }
 
     const ScalarRuntimeType &resolve(const ScalarType &type) {
-        if (mode_ == Mode::ordinary) {
-            const auto supplied = std::ranges::find_if(
-                overrides_, [&](const auto &item) { return item.type == &type; });
-            if (supplied != overrides_.end()) {
-                validate_runtime_interface(*supplied->runtime_type);
-                return *supplied->runtime_type;
-            }
+        if (mode_ == Mode::default_runtime) {
+            return resolve_default_scalar_runtime_type(type);
         }
 
-        if (mode_ == Mode::default_runtime || !has_supplied_runtime_component(type)) {
-            if (mode_ == Mode::ordinary) {
-                if (const auto *native = registered_native_runtime_type(runtime_types_, type)) {
-                    return *native;
-                }
+        const auto supplied = std::ranges::find_if(overrides_, [&](const auto &item) { return item.type == &type; });
+        if (supplied != overrides_.end()) {
+            validate_runtime_interface(*supplied->runtime_type);
+            return *supplied->runtime_type;
+        }
+
+        if (!has_supplied_runtime_component(type)) {
+            if (const auto *native = registered_native_runtime_type(runtime_types_, type)) {
+                return *native;
             }
 
-            if (const auto factory = type.default_runtime_type_factory()) {
-                const auto &runtime_type = factory(type);
-                if (&runtime_type.type() != &type) {
-                    throw std::invalid_argument{"default scalar runtime type does not match its semantic type"};
-                }
-                validate_runtime_interface(runtime_type);
-                return runtime_type;
+            if (type.ScalarType::default_runtime_type_factory() != nullptr) {
+                return resolve_default_scalar_runtime_type(type);
             }
         }
 
         if (const auto *composed = find_composed(type)) {
             return *composed;
         }
-        if (const auto *builtin = resolve_builtin(type)) {
-            return *builtin;
-        }
 
         const ScalarRuntimeType *result = nullptr;
         type.visit(
             [&](const HierarchicalScalarType *hierarchical) {
-                if (!hierarchical->is_resolved()) {
-                    throw std::invalid_argument{"an unresolved hierarchical scalar has no runtime type"};
-                }
-                result = &resolve_composed(static_cast<const ResolvedHierarchicalScalarType &>(*hierarchical));
+                result = &resolve_composed(*hierarchical);
             },
             [&](const TupleScalarType *tuple) { result = &resolve_composed(*tuple); },
-            [&](const ListScalarType *list) {
-                auto runtime_type = std::make_unique<ComposedListRuntimeType>(*list);
-                auto &published = static_cast<ComposedListRuntimeType &>(publish(std::move(runtime_type)));
-                result = &published;
-                published.initialize_item_runtime_type(resolve(list->item_type()));
-            },
-            [&](const SetScalarType *set) {
-                auto runtime_type = std::make_unique<ComposedSetRuntimeType>(*set);
-                auto &published = static_cast<ComposedSetRuntimeType &>(publish(std::move(runtime_type)));
-                result = &published;
-                published.initialize_item_runtime_type(resolve(set->item_type()));
-            },
-            [&](const DictScalarType *dict) {
-                auto runtime_type = std::make_unique<ComposedDictRuntimeType>(*dict);
-                auto &published = static_cast<ComposedDictRuntimeType &>(publish(std::move(runtime_type)));
-                result = &published;
-                const auto &key_runtime_type = resolve(dict->key_type());
-                const auto &mapped_runtime_type = resolve(dict->mapped_type());
-                published.initialize_runtime_types(key_runtime_type, mapped_runtime_type);
-            },
+            [&](const ListScalarType *list) { result = &resolve_composed(*list); },
+            [&](const SetScalarType *set) { result = &resolve_composed(*set); },
+            [&](const DictScalarType *dict) { result = &resolve_composed(*dict); },
             ddv::noop);
         if (result == nullptr) {
             throw std::logic_error{"resolved scalar type has no runtime type"};
@@ -1110,18 +1081,68 @@ class ScalarRuntimeTypeResolver {
         return *result;
     }
 
-    const HierarchicalScalarRuntimeType &resolve_composed(const ResolvedHierarchicalScalarType &type) {
+    const ScalarListRuntimeType &resolve_composed(const ListScalarType &type) {
+        if (!type.is_resolved()) {
+            throw std::invalid_argument{"an unresolved list scalar has no runtime type"};
+        }
         if (const auto *existing = find_composed(type)) {
+            return static_cast<const ScalarListRuntimeType &>(*existing);
+        }
+
+        auto runtime_type = std::make_unique<ComposedListRuntimeType>(type);
+        auto &published = static_cast<ComposedListRuntimeType &>(publish(std::move(runtime_type)));
+        const auto &item_runtime_type = resolve(type.item_type());
+        published.initialize_item_runtime_type(item_runtime_type);
+        return published;
+    }
+
+    const ScalarSetRuntimeType &resolve_composed(const SetScalarType &type) {
+        if (!type.is_resolved()) {
+            throw std::invalid_argument{"an unresolved set scalar has no runtime type"};
+        }
+        if (const auto *existing = find_composed(type)) {
+            return static_cast<const ScalarSetRuntimeType &>(*existing);
+        }
+
+        auto runtime_type = std::make_unique<ComposedSetRuntimeType>(type);
+        auto &published = static_cast<ComposedSetRuntimeType &>(publish(std::move(runtime_type)));
+        const auto &item_runtime_type = resolve(type.item_type());
+        published.initialize_item_runtime_type(item_runtime_type);
+        return published;
+    }
+
+    const ScalarDictRuntimeType &resolve_composed(const DictScalarType &type) {
+        if (!type.is_resolved()) {
+            throw std::invalid_argument{"an unresolved dictionary scalar has no runtime type"};
+        }
+        if (const auto *existing = find_composed(type)) {
+            return static_cast<const ScalarDictRuntimeType &>(*existing);
+        }
+
+        auto runtime_type = std::make_unique<ComposedDictRuntimeType>(type);
+        auto &published = static_cast<ComposedDictRuntimeType &>(publish(std::move(runtime_type)));
+        const auto &key_runtime_type = resolve(type.key_type());
+        const auto &mapped_runtime_type = resolve(type.mapped_type());
+        published.initialize_runtime_types(key_runtime_type, mapped_runtime_type);
+        return published;
+    }
+
+    const HierarchicalScalarRuntimeType &resolve_composed(const HierarchicalScalarType &type) {
+        if (!type.is_resolved()) {
+            throw std::invalid_argument{"an unresolved hierarchical scalar has no runtime type"};
+        }
+        const auto &resolved = static_cast<const ResolvedHierarchicalScalarType &>(type);
+        if (const auto *existing = find_composed(resolved)) {
             return static_cast<const HierarchicalScalarRuntimeType &>(*existing);
         }
 
-        auto runtime_type = make_composed_hierarchical_scalar_runtime_type(type);
+        auto runtime_type = make_composed_hierarchical_scalar_runtime_type(resolved);
         auto *result = runtime_type.get();
         publish(std::move(runtime_type));
 
         auto fields = std::vector<const ScalarRuntimeType *>{};
-        fields.reserve(type.field_count());
-        for (const auto &field : type.fields()) {
+        fields.reserve(resolved.field_count());
+        for (const auto &field : resolved.fields()) {
             fields.push_back(&resolve(static_cast<const ScalarType &>(*field.type)));
         }
         initialize_composed_hierarchical_scalar_runtime_type(*result, fields);
@@ -1147,6 +1168,13 @@ class ScalarRuntimeTypeResolver {
         }
         initialize_fixed_tuple_runtime_type(*result, items);
         return *result;
+    }
+
+    template <typename Family>
+    static const ScalarRuntimeType &resolve_default_composed(const ScalarType &type) {
+        auto &runtime_types = scalar_runtime_types();
+        auto resolver = ScalarRuntimeTypeResolver{runtime_types, {}, Mode::default_runtime};
+        return resolver.resolve_composed(static_cast<const Family &>(type));
     }
 
   private:
@@ -1202,20 +1230,6 @@ class ScalarRuntimeTypeResolver {
         return found == runtime_types_.composed.end() ? nullptr : found->runtime_type.get();
     }
 
-    const ScalarRuntimeType *resolve_builtin(const ScalarType &type) {
-        auto *result = static_cast<const ScalarRuntimeType *>(nullptr);
-        auto match = [&]<typename Declaration>(tp::unit<Declaration>) {
-            if (result == nullptr && &type == &cpp_scalar_type<Declaration>()) {
-                result = &cpp_scalar_runtime_type<Declaration>();
-            }
-        };
-
-        tp::for_each(builtin_scalar_declarations, match);
-        match(tp::unit<int>{});
-        match(tp::unit<float>{});
-        return result;
-    }
-
     ScalarRuntimeType &publish(std::unique_ptr<ScalarRuntimeType> runtime_type) {
         auto &result = *runtime_type;
         runtime_types_.composed.push_back(
@@ -1229,6 +1243,41 @@ class ScalarRuntimeTypeResolver {
 };
 
 } // namespace details
+
+ScalarType::RuntimeTypeFactory ListScalarType::default_runtime_type_factory() const noexcept {
+    if (const auto factory = ScalarType::default_runtime_type_factory()) {
+        return factory;
+    }
+    return &details::ScalarRuntimeTypeResolver::resolve_default_composed<ListScalarType>;
+}
+
+ScalarType::RuntimeTypeFactory SetScalarType::default_runtime_type_factory() const noexcept {
+    if (const auto factory = ScalarType::default_runtime_type_factory()) {
+        return factory;
+    }
+    return &details::ScalarRuntimeTypeResolver::resolve_default_composed<SetScalarType>;
+}
+
+ScalarType::RuntimeTypeFactory DictScalarType::default_runtime_type_factory() const noexcept {
+    if (const auto factory = ScalarType::default_runtime_type_factory()) {
+        return factory;
+    }
+    return &details::ScalarRuntimeTypeResolver::resolve_default_composed<DictScalarType>;
+}
+
+ScalarType::RuntimeTypeFactory TupleScalarType::default_runtime_type_factory() const noexcept {
+    if (const auto factory = ScalarType::default_runtime_type_factory()) {
+        return factory;
+    }
+    return &details::ScalarRuntimeTypeResolver::resolve_default_composed<TupleScalarType>;
+}
+
+ScalarType::RuntimeTypeFactory HierarchicalScalarType::default_runtime_type_factory() const noexcept {
+    if (const auto factory = ScalarType::default_runtime_type_factory()) {
+        return factory;
+    }
+    return &details::ScalarRuntimeTypeResolver::resolve_default_composed<HierarchicalScalarType>;
+}
 
 bool ScalarRuntimeType::equals(const void *value, const details::ScalarData &other) const {
     return &type() == &other.type() && equals_same_type(value, other);
@@ -1299,10 +1348,17 @@ const ScalarRuntimeType &resolve_scalar_runtime_type(const ScalarType &type,
 }
 
 const ScalarRuntimeType &resolve_default_scalar_runtime_type(const ScalarType &type) {
-    auto &runtime_types = scalar_runtime_types();
-    auto resolver = details::ScalarRuntimeTypeResolver{
-        runtime_types, {}, details::ScalarRuntimeTypeResolver::Mode::default_runtime};
-    return resolver.resolve(type);
+    const auto factory = type.default_runtime_type_factory();
+    if (factory == nullptr) {
+        throw std::invalid_argument{"scalar type has no default runtime type"};
+    }
+
+    const auto &runtime_type = factory(type);
+    if (&runtime_type.type() != &type) {
+        throw std::invalid_argument{"default scalar runtime type does not match its semantic type"};
+    }
+    validate_runtime_interface(runtime_type);
+    return runtime_type;
 }
 
 } // namespace bg

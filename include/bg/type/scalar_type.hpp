@@ -27,7 +27,7 @@ class ScalarType : public Type {
     virtual bool supports_equality() const noexcept { return false; }
     virtual bool supports_hash() const noexcept { return false; }
 
-    RuntimeTypeFactory default_runtime_type_factory() const noexcept { return default_runtime_type_factory_; }
+    virtual RuntimeTypeFactory default_runtime_type_factory() const noexcept { return default_runtime_type_factory_; }
     void set_default_runtime_type_factory(RuntimeTypeFactory factory) const noexcept {
         assert(factory != nullptr);
         if (default_runtime_type_factory_ == nullptr) {

@@ -134,6 +134,7 @@ static_assert(alignof(ScalarRuntimeType) >= 8);
 void register_scalar_runtime_type(const ScalarRuntimeType &runtime_type);
 
 template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<const Type *>();
 
 namespace details {
 

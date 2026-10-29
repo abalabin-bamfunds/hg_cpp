@@ -23,6 +23,7 @@ class TupleScalarType : public ScalarType {
 
     VISITOR_SUPPORT()
 
+    RuntimeTypeFactory default_runtime_type_factory() const noexcept override;
     void format_name(std::string &result) const override;
     virtual std::span<const ScalarType *const> item_types() const noexcept = 0;
     std::size_t size() const noexcept { return item_types().size(); }
