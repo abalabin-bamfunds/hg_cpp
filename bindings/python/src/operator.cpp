@@ -206,10 +206,14 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "count", operators::count);
     export_operator(operators_module, "sample", operators::sample);
     export_operator(operators_module, "dedup", operators::dedup);
+    export_operator(operators_module, "if_", operators::if_);
     export_operator(operators_module, "filter_", operators::filter_);
     export_operator(operators_module, "gate", operators::gate);
     export_operator(operators_module, "batch", operators::batch);
     export_operator(operators_module, "merge", operators::merge);
+    export_operator(operators_module, "race", operators::race);
+    export_operator(operators_module, "route_by_index", operators::route_by_index);
+    export_operator(operators_module, "if_true", operators::if_true);
     export_operator(operators_module, "take", operators::take);
     export_operator(operators_module, "drop", operators::drop);
     export_operator(operators_module, "step", operators::step);

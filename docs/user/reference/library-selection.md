@@ -60,6 +60,50 @@ observed result invalid. Updates to the other input and repeated identical condi
 values do not publish additional ticks. Selection applies to the whole collection. Both
 inputs must have a [common time series type](types.md#guarantees).
 
+## if_
+
+`if_(condition, value)` returns a time series bundle with `true_value` and
+`false_value` reference fields. A valid condition routes `value` to the matching field
+and invalidates the other field. An invalid condition invalidates both fields. Access a
+field with `getattr(result, symbol("true_value"))` in Python or
+`getattr(result, "true_value"_sym)` in C++. The native schema is `bg.IfResult` in Python
+and `bg::operators::if_result` in C++.
+
+## if_true
+
+`if_true(condition, tick_once_only=False)` emits an ordinary `true` tick for each true
+condition tick. False ticks produce no output. Condition invalidation preserves the last
+output. It does not schedule a startup tick. When `tick_once_only` is true, the operator
+becomes passive after its first true tick and emits no later ticks.
+
+## race
+
+`race(*values)` routes the reference to the valid input whose current continuous-validity
+period started first. If validity starts at the same time, the leftmost input wins. When
+the selected input becomes invalid, the next earliest valid input wins. A valid-to-valid
+reference retarget does not restart the input's validity period. At least one input is
+required; one input is returned without a selection node. Inputs may be supplied as a
+prebuilt fixed list using `race(values=values)` in Python or
+`race("values"_n = values)` in C++. A positional list is one collection candidate.
+
+## route_by_index
+
+`route_by_index(index, value)` routes `value` into the selected slot of a fixed time-series
+list. The result list type must be specified because its size is fixed. An index below
+zero, outside the list, or invalid invalidates the previously selected slot. Changing
+the index invalidates the old slot before routing the value to the new slot. The selected
+slot follows its input by reference.
+
+Specify the complete result type before calling the operator:
+
+```python
+route_by_index[TSL[TS[int], 3]](index, value)
+```
+
+```cpp
+route_by_index[type<TSL<TS<i64>, 3>>](index, value)
+```
+
 ## all_valid
 
 `all_valid(value)` tests root validity and validity of every immediate child. Its

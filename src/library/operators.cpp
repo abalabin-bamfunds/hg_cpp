@@ -58,11 +58,15 @@ decltype(count) count{"count", {"value"}};
 
 decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
+decltype(if_) if_{"if_", {"condition", "value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
 decltype(gate) gate{"gate", {"condition", "value", "buffer_length"_n = std::numeric_limits<i64>::max()}};
 decltype(batch)
     batch{"batch", {"condition", "value", "delay", "buffer_length"_n = std::numeric_limits<i64>::max()}};
 decltype(merge) merge{"merge", {"values"}};
+decltype(race) race{"race", {"values"}};
+decltype(route_by_index) route_by_index{"route_by_index", {"index", "value"}};
+decltype(if_true) if_true{"if_true", {"condition", "tick_once_only"_n = false}};
 decltype(take) take{"take", {"value", "n"}};
 decltype(drop) drop{"drop", {"value", "n"}};
 decltype(step) step{"step", {"value", "n"}};

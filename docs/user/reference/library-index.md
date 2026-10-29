@@ -48,7 +48,9 @@ imports and headers.
 | `getattr` | [Reference](library-collections.md#getitem-and-getattr) |
 | `getitem` | [Reference](library-collections.md#getitem-and-getattr) |
 | `gt` | [Reference](library-numeric.md#arithmetic) |
+| `if_` | [Reference](library-selection.md#if_) |
 | `if_then_else` | [Reference](library-selection.md#if_then_else) |
+| `if_true` | [Reference](library-selection.md#if_true) |
 | `is_empty` | [Reference](library-collections.md#time-series-set-operations) |
 | `join` | [Reference](library-text.md#split-and-join) |
 | `keys_` | [Reference](library-collections.md#collection-queries) |
@@ -84,12 +86,14 @@ imports and headers.
 | `pass_through` | [Reference](higher-order.md#map) |
 | `pos` | [Reference](library-numeric.md#arithmetic) |
 | `pow` | [Reference](library-numeric.md#arithmetic) |
+| `race` | [Reference](library-selection.md#race) |
 | `print_` | [Reference](library-text.md#formatting-and-printing) |
 | `reduce` (C++) | [Reference](higher-order.md#reduce) |
 | `rekey` | [Reference](library-collections.md#dictionary-transforms) |
 | `replace` | [Reference](library-text.md#regular-expressions) |
 | `resample` | [Reference](library-time.md#resample) |
 | `round` | [Reference](library-numeric.md#arithmetic) |
+| `route_by_index` | [Reference](library-selection.md#route_by_index) |
 | `sample` | [Reference](library-selection.md#sample) |
 | `schedule` | [Reference](library-time.md#schedule) |
 | `split` | [Reference](library-text.md#split-and-join) |
