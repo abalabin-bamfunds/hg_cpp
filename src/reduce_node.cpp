@@ -820,14 +820,10 @@ class NestedReduceRuntime {
         }
 
         const auto resolved = ResolvedTimeSeries::resolve(reference);
-        if (!resolved.valid()) {
-            output.invalidate();
-            using_default_ = false;
-            return true;
-        }
         const auto current_reference = output.valid() ? *static_cast<const Reference *>(output.data()) : Reference{};
         if (!force && current_reference == reference &&
-            resolved.last_updated->time() != invocation.context().evaluation_time()) {
+            (resolved.last_updated == nullptr ||
+             resolved.last_updated->time() != invocation.context().evaluation_time())) {
             return true;
         }
 

@@ -809,4 +809,41 @@ TEST_CASE("reduce invalidates and revalidates a non-scalar default reference",
     CHECK(actual.equals<i64>({11, std::nullopt, 33}));
 }
 
+TEST_CASE("reduce preserves a non-scalar default reference while its target invalidates and revalidates",
+          "[feature:reduce][series:tsd][series:reference][shape:nested][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto unused_list_result = node([](Out<TSL<TS<i64>, 2>> output) {
+        output[0].set(0);
+        output[1].set(0);
+    });
+    const auto unused_list_reducer = graph("name"_n = "unused_two_item_list_reducer",
+                                           [unused_list_result](wp<TSL<TS<i64>, 2>>, wp<TSL<TS<i64>, 2>>) {
+                                               return unused_list_result();
+                                           });
+    const auto empty_values = node([](Out<TSD<i64, TSL<TS<i64>, 2>>> output) { output.clear(); });
+    const auto make_target = node([](In<TS<bool>> available, Out<TSL<TS<i64>, 2>> output) {
+        if (*available) {
+            output[0].set(11);
+            output[1].set(22);
+        } else {
+            output[0].invalidate();
+            output[1].invalidate();
+        }
+    });
+    const auto observe = node([](In<REF<TSL<TS<i64>, 2>>, optional> reference,
+                                 In<TSL<TS<i64>, 2>, optional> value, Out<TS<i64>> output) {
+        output.set(static_cast<i64>(reference.valid() * 10 + value.valid()));
+    });
+
+    const auto tested = [&](wp<TS<bool>> available) {
+        const auto target = make_target(available);
+        const auto reduced = reduce(unused_list_reducer, empty_values(), "default"_n = target);
+        return observe(reduced, reduced);
+    };
+
+    const auto actual = bg::run_graph(tested, {true, false, true, false});
+
+    CHECK(actual.equals<i64>({11, 10, 11, 10}));
+}
+
 } // namespace
