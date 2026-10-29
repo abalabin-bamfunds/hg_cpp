@@ -982,8 +982,8 @@ TEST_CASE("map restores a removed key through a retained mapped reference",
     CHECK(actual.equals<i64>({10, std::nullopt, 10}));
 }
 
-TEST_CASE("repro: map retargets a selected dictionary reference across a nested graph",
-          "[.][repro][feature:map][feature:nested-graph][feature:reference][series:tsd]") {
+TEST_CASE("map retargets a selected dictionary reference across a nested graph",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd]") {
     const auto select_dictionary = node(
         [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
            In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
