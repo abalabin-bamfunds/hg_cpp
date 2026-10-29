@@ -59,8 +59,9 @@ which remain the [coverage source](../testing.md#coverage-model).
 The review adds **37 cases**. The original validation had **26 ordinary passing
 cases** and **11 hidden reproductions**. After the library merge, the retargeting
 case passes and runs in the ordinary suite, leaving **27 ordinary cases** and
-**10 hidden reproductions**. The other ten reproductions have not been rerun
-against the merge. A reproduction can expose a wiring failure, an output
+**10 hidden reproductions**. The rebuilt-list case still fails on `8f0eaab6`;
+the other nine reproductions have not been rerun against the merge.
+A reproduction can expose a wiring failure, an output
 mismatch, or an unresolved semantic difference; it is not automatically an
 approved defect or implementation task.
 
@@ -71,7 +72,7 @@ approved defect or implementation task.
 | Nested TSB/TSL REF pass-through attempts to create a reference targeting a reference. | 2 | Wiring failures against the documented reference-preserving nested boundary. |
 | Mesh/switch/reduce compositions fail type resolution, including with typed callbacks. | 2 | Wiring failures; runtime behavior remains unverified. |
 | Free TSB/TSL switch activations capture empty structural deltas while scalar consumers read held values. | 2 | Collection observation gap. Sampling and capture require separate investigation. |
-| Reselecting a rebuilt free list emits held values where the source test expects silence. | 1 | Unresolved target-identity semantics. |
+| Reselecting a rebuilt free list emits extra ticks for an unchanged item source. | 1 | Confirmed on `8f0eaab6`: `{10, 10, 10, 20}` instead of `{10, SKIP, SKIP, 20}`. Both branches reference the same item time series. |
 
 Passing additions exercise key removal/readdition, independent reference-backed
 contexts, leaf updates and validity, nested free structures, pass-through
@@ -83,7 +84,8 @@ preserves the failure on BG `cab5c342` and records the passing result on
 `c8b33979`. Dereferenced dictionary item access now uses the shared
 `observed_state()` operation to include the reference's binding time. No
 production fix was added by this review. The other findings and complete-suite
-counts retain their original 2026-10-28 validation scope.
+counts retain their original 2026-10-28 validation scope, except for the
+rebuilt-list recheck below.
 
 ## Verification boundaries
 
@@ -127,6 +129,19 @@ translation unit against `c8b33979`. All **39 map cases and 53 assertions** pass
 including the promoted retargeting regression. Its explicit filter also passes
 independently. The complete engine and library suites were not rerun on this
 revision. Commands and logs are in the retargeting investigation.
+
+The rebuilt-list recheck uses the review lane rebased onto `8f0eaab6`, a rebuilt
+Release runtime, and a freshly compiled list test translation unit. The exact
+case fails with `{10, 10, 10, 20}`. The expected `{10, SKIP, SKIP, 20}` follows
+from both branches retaining the same item source. The rebuilt container does
+not justify an item reference-change event. No production code was changed.
+
+```sh
+build/verification/free-list-latest 'reselecting a rebuilt free list keeps unchanged item references'
+```
+
+The result is recorded in
+`build/verification/2026-10-29-free-list-reselection-latest.log`.
 
 Failing reproductions use hidden Catch2 cases tagged `[.][repro]`. The default
 suite excludes them. They retain their required assertions and have explicit
