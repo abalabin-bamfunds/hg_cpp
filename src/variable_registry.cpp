@@ -18,34 +18,16 @@ void VariableRegistry::register_static_variable(const Variable &variable) noexce
 }
 
 void VariableRegistry::register_owned_variable(std::unique_ptr<Variable> variable) {
-    const auto lock = std::lock_guard{mutex_};
     owned_variables_.push_back(std::move(variable));
 }
 
-void VariableRegistry::rollback(const Variable &variable) noexcept {
-    auto removed = std::unique_ptr<Variable>{};
-    {
-        const auto lock = std::lock_guard{mutex_};
-        const auto found = std::ranges::find(owned_variables_, &variable, [](const auto &candidate) {
-            return candidate.get();
-        });
-        if (found == owned_variables_.end()) {
-            return;
-        }
-
-        removed = std::move(*found);
-        owned_variables_.erase(found);
-    }
-}
-
 bool VariableRegistry::contains(const Variable &variable) const {
-    for (auto *entry = static_entries_.load(std::memory_order_acquire); entry != nullptr; entry = entry->next()) {
+    for (auto *entry = static_entries_; entry != nullptr; entry = entry->next()) {
         if (&entry->object() == &variable) {
             return true;
         }
     }
 
-    const auto lock = std::lock_guard{mutex_};
     return std::ranges::any_of(owned_variables_, [&](const auto &candidate) { return candidate.get() == &variable; });
 }
 

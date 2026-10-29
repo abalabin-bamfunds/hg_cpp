@@ -502,6 +502,14 @@ This gives the semantic type and canonical runtime type one stable identity
 across shared-library boundaries. Semantic type factories follow the
 [type registration contract](type-system.md#type-model).
 
+The factory that creates the provider's semantic descriptor records a callback
+with `ScalarType::set_default_runtime_type_factory()`. The callback takes the
+semantic descriptor and returns the trait-defined default runtime. This makes
+the default available to consumers that retain only the semantic type,
+including empty literal inputs. Registration stores the callback without
+constructing the runtime. A declaration that reuses an existing semantic
+descriptor retains that descriptor's default.
+
 `scalar_declaration_traits<T>` controls whether graph signatures accept the
 declaration as a collection, an implicit scalar argument, or a time series
 value. Its `generic` flag identifies declarations containing type variables.

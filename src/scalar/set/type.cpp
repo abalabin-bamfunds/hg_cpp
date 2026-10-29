@@ -66,41 +66,22 @@ const SetScalarType &set_scalar_type(const ScalarType &item_type) {
     static auto types = util::static_storage<std::vector<std::pair<const ScalarType *, const ResolvedSetScalarType *>>>{};
     auto &cache = types.get();
 
-    const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
+    if (!item_type.supports_hash()) {
+        throw std::invalid_argument{"set item type does not support hashing"};
+    }
+    if (auto *registration = details::SemanticTypeRegistration::current()) {
+        registration->require_hash(item_type, details::HashRequirement::set_item);
+    }
+
     const auto found = std::ranges::find_if(cache, [&](const auto &type) { return type.first == &item_type; });
     if (found != cache.end()) {
         return *found->second;
     }
-    if (!item_type.supports_hash()) {
-        throw std::invalid_argument{"set item type does not support hashing"};
-    }
 
-    cache.emplace_back(&item_type, nullptr);
-    const ResolvedSetScalarType *registered_type = nullptr;
-    try {
-        const auto &result =
-            TypeRegistry::instance().register_owned(std::make_unique<ResolvedSetScalarType>(item_type));
-        registered_type = &result;
-        cache.back().second = registered_type;
-        if (auto *registration = details::SemanticTypeRegistration::current()) {
-            registration->on_validate([&item_type] {
-                if (!item_type.supports_hash()) {
-                    throw std::invalid_argument{"set item type does not support hashing"};
-                }
-            });
-            registration->on_rollback([result = registered_type] {
-                std::erase_if(types.get(), [result](const auto &entry) { return entry.second == result; });
-                TypeRegistry::instance().rollback(*result);
-            });
-        }
-        return result;
-    } catch (...) {
-        cache.pop_back();
-        if (registered_type != nullptr) {
-            TypeRegistry::instance().rollback(*registered_type);
-        }
-        throw;
-    }
+    const auto &result = static_cast<const ResolvedSetScalarType &>(
+        TypeRegistry::instance().register_owned(std::make_unique<ResolvedSetScalarType>(item_type)));
+    cache.emplace_back(&item_type, &result);
+    return result;
 }
 
 } // namespace bg

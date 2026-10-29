@@ -33,9 +33,9 @@ class ResolvedHierarchicalScalarType;
 class TypeMap;
 
 namespace details {
-
 const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(
-    const std::type_info &identity, std::string_view name, void (*initialize)(ResolvedHierarchicalScalarType &));
+    const std::type_info &identity, const std::type_info &declaration_identity, std::string_view name,
+    void (*initialize)(ResolvedHierarchicalScalarType &));
 const ResolvedHierarchicalScalarType &canonical_hierarchical_scalar_type(const Schema &schema);
 template <template <template <typename, auto...> typename> typename Schema>
 const ResolvedHierarchicalScalarType &hierarchical_scalar_type();
@@ -75,6 +75,8 @@ class ResolvedHierarchicalScalarType final : public HierarchicalScalarType {
     bool supports_value_covariance() const noexcept override { return true; }
     bool supports_equality() const noexcept override { return supports_equality_; }
     bool supports_hash() const noexcept override { return supports_hash_; }
+    // Recomputes recursive capabilities during semantic type completion.
+    bool finalize_capabilities() noexcept;
 
   protected:
     bool do_match(const Type &supplied, TypeMap &type_map) const override;
@@ -83,10 +85,10 @@ class ResolvedHierarchicalScalarType final : public HierarchicalScalarType {
     ResolvedHierarchicalScalarType() noexcept = default;
     void set_base(const ResolvedHierarchicalScalarType *base) noexcept { base_ = base; }
     void initialize(const Schema &schema);
-    bool finalize_capabilities() noexcept;
 
     friend const ResolvedHierarchicalScalarType &details::canonical_hierarchical_scalar_type(
-        const std::type_info &, std::string_view, void (*)(ResolvedHierarchicalScalarType &));
+        const std::type_info &, const std::type_info &, std::string_view,
+        void (*)(ResolvedHierarchicalScalarType &));
     template <template <template <typename, auto...> typename> typename Schema>
     friend const ResolvedHierarchicalScalarType &details::hierarchical_scalar_type();
     template <template <template <typename, auto...> typename> typename Schema>
@@ -269,7 +271,8 @@ void initialize_hierarchical_scalar_type(ResolvedHierarchicalScalarType &type) {
 template <template <template <typename, auto...> typename> typename Schema>
 const ResolvedHierarchicalScalarType &hierarchical_scalar_type() {
     return canonical_hierarchical_scalar_type(
-        typeid(Schema<schema_identity_field>), util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>(),
+        typeid(Schema<schema_identity_field>), typeid(Schema<schema_identity_field>),
+        util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>(),
         &initialize_hierarchical_scalar_type<Schema>);
 }
 

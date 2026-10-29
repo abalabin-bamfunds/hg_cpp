@@ -3,6 +3,7 @@
 #include <bg/scalar/construction.hpp>
 #include <bg/scalar/runtime_type.hpp>
 
+#include <cassert>
 #include <cstddef>
 #include <memory>
 #include <optional>
@@ -13,11 +14,17 @@ namespace bg {
 class ScalarDictRuntimeType : public ScalarRuntimeType {
   protected:
     ScalarDictRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
+                          bool requires_finalization, bool supports_byte_copy_initialization) noexcept
+        : ScalarRuntimeType{
+              type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization} {}
+
+    ScalarDictRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
                           bool requires_finalization, bool supports_byte_copy_initialization,
                           const ScalarRuntimeType &key, const ScalarRuntimeType &mapped) noexcept
-        : ScalarRuntimeType{
-              type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization},
-          key_{&key}, mapped_{&mapped} {}
+        : ScalarDictRuntimeType{type, size, alignment, uses_variable_memory, requires_finalization,
+                                supports_byte_copy_initialization} {
+        initialize_runtime_types(key, mapped);
+    }
 
   public:
     struct Item {
@@ -52,8 +59,20 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
 
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
 
-    const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
-    const ScalarRuntimeType &mapped_runtime_type() const noexcept { return *mapped_; }
+    const ScalarRuntimeType &key_runtime_type() const noexcept {
+        assert(key_ != nullptr);
+        return *key_;
+    }
+    const ScalarRuntimeType &mapped_runtime_type() const noexcept {
+        assert(mapped_ != nullptr);
+        return *mapped_;
+    }
+    void initialize_runtime_types(const ScalarRuntimeType &key, const ScalarRuntimeType &mapped) noexcept {
+        assert(key_ == nullptr);
+        assert(mapped_ == nullptr);
+        key_ = &key;
+        mapped_ = &mapped;
+    }
     virtual std::size_t item_count(const void *storage) const noexcept = 0;
     virtual bool contains(const void *storage, const details::ScalarData &key) const = 0;
     template <typename Key>
@@ -102,8 +121,8 @@ class ScalarDictRuntimeType : public ScalarRuntimeType {
     virtual void clear(void *storage, allocator &memory) const noexcept = 0;
 
   private:
-    const ScalarRuntimeType *key_;
-    const ScalarRuntimeType *mapped_;
+    const ScalarRuntimeType *key_{};
+    const ScalarRuntimeType *mapped_{};
 };
 
 } // namespace bg

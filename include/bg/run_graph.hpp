@@ -227,7 +227,7 @@ template <typename Value> ScalarValue<> graph_run_owned_scalar_value(Value &&val
 inline bool graph_run_explicit_input(const GraphRunInput &) noexcept { return true; }
 
 inline bool graph_run_explicit_input(const GraphRunLiteralInput &input) noexcept {
-    return input.runtime_type != nullptr;
+    return input.time_series_type != nullptr;
 }
 
 inline bool graph_run_explicit_input(const RawGraphRunLiteralInput &) noexcept { return false; }
@@ -345,14 +345,14 @@ inline void graph_run_default_guarantees(const TimeSeriesType &type, TypeMap &ty
 
 inline const TimeSeriesRuntimeType &graph_run_runtime_type(const TimeSeriesType &type) {
     if (type.is_resolved()) {
-        return resolve_time_series_runtime_type(type);
+        return resolve_default_time_series_runtime_type(type);
     }
 
     auto type_map = TypeMap{};
     graph_run_default_guarantees(type, type_map);
     try {
         const auto &resolved_type = type_cast<TimeSeriesType>(type.resolve(type_map));
-        return resolve_time_series_runtime_type(resolved_type);
+        return resolve_default_time_series_runtime_type(resolved_type);
     } catch (const TypeResolutionError &error) {
         if (error.code() != TypeResolutionErrorCode::unmapped_variable) {
             throw;
@@ -459,7 +459,7 @@ inline const ScalarRuntimeType &graph_run_value_runtime_type(const TimeSeriesTyp
     if (value_type == nullptr) {
         throw std::invalid_argument{"run_graph needs a scalar time-series input type"};
     }
-    return resolve_scalar_runtime_type(*value_type, {});
+    return resolve_default_scalar_runtime_type(*value_type);
 }
 
 inline bool graph_run_literal_matches_scalar(const literal::TimeSeriesLiteral &value, const ScalarType &type);
@@ -546,7 +546,7 @@ inline bool graph_run_literal_matches_scalar(const literal::TimeSeriesLiteral &v
             },
             [](std::span<const literal::TimeSeriesLiteral>) -> const ScalarRuntimeType * { return nullptr; })
                                 .value_or(nullptr);
-        return source_type != nullptr && resolve_scalar_runtime_type(type, {}).accepts_input(*source_type);
+        return source_type != nullptr && resolve_default_scalar_runtime_type(type).accepts_input(*source_type);
     }
 
     if (const auto *list = type_cast<ListScalarType>(&type)) {
@@ -598,7 +598,7 @@ inline bool graph_run_literal_matches_scalar(const literal::TimeSeriesLiteral &v
     if (type_cast<BuiltinScalarType>(&type) != nullptr) {
         return false;
     }
-    const auto &runtime_type = resolve_scalar_runtime_type(type, {});
+    const auto &runtime_type = resolve_default_scalar_runtime_type(type);
     return ScalarDispatch<ScalarLiteralOperations>::instance().find(runtime_type) != nullptr;
 }
 
@@ -676,7 +676,7 @@ inline bool graph_run_raw_literals_are_initial_event(std::span<const literal::Ti
                                   type_cast<HierarchicalScalarType>(&value_type) != nullptr;
         auto has_provider_literal = false;
         if (!is_composite && type_cast<BuiltinScalarType>(&value_type) == nullptr) {
-            const auto &runtime_type = resolve_scalar_runtime_type(value_type, {});
+            const auto &runtime_type = resolve_default_scalar_runtime_type(value_type);
             has_provider_literal = ScalarDispatch<ScalarLiteralOperations>::instance().find(runtime_type) != nullptr;
         }
         return (is_composite || has_provider_literal) &&
@@ -864,8 +864,9 @@ inline std::span<const literal::TimeSeriesLiteral> GraphRunArguments::normalize_
 }
 
 inline WiringPoint GraphRunArguments::wire_literal(const GraphRunLiteralInput &input, std::size_t index) {
-    const auto &runtime_type = input.runtime_type == nullptr ? graph_run_runtime_type(signature, index)
-                                                             : *input.runtime_type;
+    const auto &runtime_type = input.time_series_type == nullptr
+                                   ? graph_run_runtime_type(signature, index)
+                                   : graph_run_runtime_type(*input.time_series_type);
     const auto values = normalize_numeric_literals(input.ticks(), runtime_type);
     return details::wire_literal_source(GraphRunLiteralInput(values), runtime_type);
 }
@@ -1177,10 +1178,10 @@ auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunO
 // Wire an explicitly typed input while a run_graph callback has an active WiringContext.
 // Its tick storage and borrowed sources must survive the enclosing run_graph evaluation.
 inline WiringPoint graph_run_input(const GraphRunLiteralInput &input BG_LIFETIMEBOUND) {
-    if (input.runtime_type == nullptr) {
+    if (input.time_series_type == nullptr) {
         throw std::invalid_argument{"graph_run_input requires an explicit time-series type"};
     }
-    return details::wire_literal_source(input, *input.runtime_type);
+    return details::wire_literal_source(input, details::graph_run_runtime_type(*input.time_series_type));
 }
 
 inline WiringPoint graph_run_input(const GraphRunInput &input) {

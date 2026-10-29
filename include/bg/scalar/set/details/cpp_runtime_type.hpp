@@ -17,7 +17,9 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
     static_assert(util::byte_copy_initializable<details::scalar_set_storage<T>>);
 
   public:
-    CppScalarRuntimeType() : Base{cpp_scalar_type<Set<T>>(), cpp_scalar_runtime_type<T>()} {}
+    CppScalarRuntimeType() : Base{cpp_scalar_type<Set<T>>()} {}
+
+    void initialize_runtime_type() { this->initialize_item_runtime_type(cpp_scalar_runtime_type<T>()); }
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<details::scalar_set_storage<T> *>(destination));

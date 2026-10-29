@@ -6,7 +6,6 @@
 #include <bg/util/static_storage.hpp>
 
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <vector>
 
@@ -79,10 +78,8 @@ time_series_bundle_runtime_type(const TimeSeriesBundleType &type,
         std::unique_ptr<RuntimeTimeSeriesBundleRuntimeType> runtime_type;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
     const auto found = std::ranges::find_if(
         cache, [&](const auto &entry) { return entry.type == &type && std::ranges::equal(entry.items, items); });
@@ -97,10 +94,8 @@ time_series_bundle_runtime_type(const TimeSeriesBundleType &type,
 }
 
 const TimeSeriesRuntimeType &free_time_series_bundle_runtime_type(const TimeSeriesBundleType &type) {
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto runtime_types = util::static_storage<std::vector<std::unique_ptr<FreeTimeSeriesBundleRuntimeType>>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = runtime_types.get();
     const auto existing =
         std::ranges::find_if(cache, [&](const auto &candidate) { return &candidate->type() == &type; });

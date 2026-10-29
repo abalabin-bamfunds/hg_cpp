@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/list/type.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_registry.hpp>
@@ -46,7 +47,9 @@ template <typename T> struct scalar_type_traits<List<T>> {
 
             return type.get();
         } else {
-            return list_scalar_type(details::scalar_type_for<T>());
+            const auto &type = list_scalar_type(details::scalar_type_for<T>());
+            type.set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<List<T>>);
+            return type;
         }
     }
 };
@@ -69,3 +72,5 @@ template <typename T> struct declaration_variable_traits<List<T>> {
 };
 
 } // namespace bg::details
+
+#include <bg/scalar/cpp_runtime_type.hpp>

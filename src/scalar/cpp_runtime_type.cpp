@@ -1,4 +1,4 @@
-#include <bg/scalar/details/cpp_runtime_type.hpp>
+#include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/literal/sentinel.hpp>
 #include <bg/util/symbol.hpp>
 

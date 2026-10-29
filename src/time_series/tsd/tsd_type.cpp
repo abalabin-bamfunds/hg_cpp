@@ -7,9 +7,10 @@
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/util/symbol.hpp>
 
+#include "../../type/type_registration.hpp"
+
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <vector>
 
@@ -155,32 +156,27 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
         bool operator==(const Key &) const = default;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto types = util::static_storage<std::vector<std::pair<Key, const ResolvedTimeSeriesDictionaryType *>>>{};
 
     const auto &effective_value = value_type.with_guarantee(strongest(*value_type.guarantee().value(), guarantee));
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = types.get();
     const auto key = Key{&key_type, &effective_value, guarantee};
     const auto found = std::ranges::find(cache, key, &std::remove_reference_t<decltype(cache)>::value_type::first);
-    if (found != cache.end()) {
-        return *found->second;
-    }
     if (!key_type.supports_hash()) {
         throw std::invalid_argument{"time series dictionary key type does not support hashing"};
     }
+    if (auto *registration = details::SemanticTypeRegistration::current()) {
+        registration->require_hash(key_type, details::HashRequirement::time_series_dictionary_key);
+    }
+    if (found != cache.end()) {
+        return *found->second;
+    }
 
     const auto &key_set = time_series_set_type(key_type, guarantee);
-    cache.emplace_back(key, nullptr);
-    try {
-        const auto &type = TypeRegistry::instance().register_owned(
-            std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, effective_value, key_set, guarantee));
-        cache.back().second = &type;
-        return type;
-    } catch (...) {
-        cache.pop_back();
-        throw;
-    }
+    const auto &type = TypeRegistry::instance().register_owned(
+        std::make_unique<ResolvedTimeSeriesDictionaryType>(key_type, effective_value, key_set, guarantee));
+    cache.emplace_back(key, &type);
+    return type;
 }
 
 } // namespace bg

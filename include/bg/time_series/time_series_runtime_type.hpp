@@ -170,6 +170,9 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
                                  std::span<const TimeSeriesRuntimeType *const> available_time_series = {},
                                  std::span<const ScalarRuntimeType *const> available_scalars = {});
 
+// Resolves the default representation owned by the semantic type and its providers.
+[[nodiscard]] const TimeSeriesRuntimeType &resolve_default_time_series_runtime_type(const TimeSeriesType &type);
+
 // Registers the default physical representation for its semantic type. Explicitly supplied representations take
 // precedence during resolution.
 void register_time_series_runtime_type(const TimeSeriesRuntimeType &runtime_type);

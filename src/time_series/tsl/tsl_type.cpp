@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <unordered_map>
 
@@ -169,26 +168,20 @@ const Type &GenericTimeSeriesListType::resolve(const TypeMap &type_map) const {
 
 const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,
                                                 TimeSeriesGuarantee guarantee) {
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto types = util::static_storage<
         std::unordered_map<ListTypeKey, const ResolvedTimeSeriesListType *, ListTypeKeyHash>>{};
 
     const auto &effective_item = item_type.with_guarantee(strongest(*item_type.guarantee().value(), guarantee));
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = types.get();
     const auto key = ListTypeKey{&effective_item, size, guarantee};
-    auto [entry, inserted] = cache.try_emplace(key);
-    if (inserted) {
-        try {
-            entry->second = &TypeRegistry::instance().register_owned(
-                std::make_unique<ResolvedTimeSeriesListType>(effective_item, size, guarantee));
-        } catch (...) {
-            cache.erase(entry);
-            throw;
-        }
+    if (const auto entry = cache.find(key); entry != cache.end()) {
+        return *entry->second;
     }
 
-    return *entry->second;
+    const auto &type = TypeRegistry::instance().register_owned(
+        std::make_unique<ResolvedTimeSeriesListType>(effective_item, size, guarantee));
+    cache.emplace(key, &type);
+    return type;
 }
 
 } // namespace bg

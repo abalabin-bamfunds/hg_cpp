@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/dict/type.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/type/details/declaration_variables.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_registry.hpp>
@@ -54,7 +55,9 @@ template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
 
             return type.get();
         } else {
-            return dict_scalar_type(details::scalar_type_for<K>(), details::scalar_type_for<V>());
+            const auto &type = dict_scalar_type(details::scalar_type_for<K>(), details::scalar_type_for<V>());
+            type.set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<Dict<K, V>>);
+            return type;
         }
     }
 };
@@ -80,3 +83,5 @@ template <typename K, typename V> struct declaration_variable_traits<Dict<K, V>>
 };
 
 } // namespace bg::details
+
+#include <bg/scalar/cpp_runtime_type.hpp>

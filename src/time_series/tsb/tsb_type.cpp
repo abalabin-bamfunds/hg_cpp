@@ -8,7 +8,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <stdexcept>
 #include <vector>
@@ -346,11 +345,9 @@ const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSe
         bool operator==(const Key &) const = default;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto types = util::static_storage<std::vector<std::pair<Key, const ResolvedTimeSeriesBundleType *>>>{};
 
     const auto &effective_schema = schema_with_minimum_guarantee(schema, guarantee);
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = types.get();
     const auto key = Key{&effective_schema, guarantee};
     const auto existing = std::ranges::find(
@@ -359,16 +356,10 @@ const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSe
         return *existing->second;
     }
 
-    cache.emplace_back(key, nullptr);
-    try {
-        const auto &type = TypeRegistry::instance().register_owned(
-            std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
-        cache.back().second = &type;
-        return type;
-    } catch (...) {
-        cache.pop_back();
-        throw;
-    }
+    const auto &type = TypeRegistry::instance().register_owned(
+        std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
+    cache.emplace_back(key, &type);
+    return type;
 }
 
 } // namespace bg

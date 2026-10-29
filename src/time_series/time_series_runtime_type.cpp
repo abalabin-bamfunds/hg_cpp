@@ -1,6 +1,11 @@
 #include <bg/time_series/time_series_runtime_type.hpp>
 
 #include <bg/scalar/runtime_type.hpp>
+#include <bg/scalar/bundle/scalar_type.hpp>
+#include <bg/scalar/dict/scalar_type.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
+#include <bg/scalar/set/scalar_type.hpp>
+#include <bg/scalar/tuple/scalar_type.hpp>
 #include <bg/node/details/output_factory.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/details/input_data.hpp>
@@ -21,7 +26,6 @@
 #include <bg/util/static_storage.hpp>
 
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <stdexcept>
 #include <unordered_map>
@@ -59,11 +63,6 @@ auto &registered_runtime_types() {
     return types.get();
 }
 
-auto &registered_runtime_types_mutex() {
-    static auto mutex = util::static_storage<std::mutex>{};
-    return mutex.get();
-}
-
 void validate_registered_runtime_type(const TimeSeriesRuntimeType &runtime_type) {
     auto valid = true;
     runtime_type.type().visit(
@@ -86,9 +85,70 @@ void validate_registered_runtime_type(const TimeSeriesRuntimeType &runtime_type)
     }
 }
 
+bool has_matching_scalar_component(const ScalarType &type,
+                                   std::span<const TimeSeriesRuntimeType *const> available_time_series,
+                                   std::span<const ScalarRuntimeType *const> available_scalars,
+                                   std::vector<const ScalarType *> &visited) {
+    if (std::ranges::any_of(available_scalars, [&](const auto *runtime_type) {
+            return runtime_type != nullptr && &runtime_type->type() == &type;
+        })) {
+        return true;
+    }
+    if (std::ranges::any_of(available_time_series, [&](const auto *runtime_type) {
+            const auto *value = runtime_type == nullptr ? nullptr : type_cast<TimeSeriesValueType>(&runtime_type->type());
+            return value != nullptr && &value->value_type() == &type;
+        })) {
+        return true;
+    }
+    if (std::ranges::find(visited, &type) != visited.end()) {
+        return false;
+    }
+    visited.push_back(&type);
+
+    auto result = false;
+    type.visit(
+        [&](const HierarchicalScalarType *hierarchical) {
+            if (!hierarchical->is_resolved()) {
+                return;
+            }
+            const auto &resolved = static_cast<const ResolvedHierarchicalScalarType &>(*hierarchical);
+            result = std::ranges::any_of(resolved.fields(), [&](const auto &field) {
+                return has_matching_scalar_component(static_cast<const ScalarType &>(*field.type),
+                                                     available_time_series, available_scalars, visited);
+            });
+        },
+        [&](const TupleScalarType *tuple) {
+            result = std::ranges::any_of(tuple->item_types(), [&](const auto *item) {
+                return has_matching_scalar_component(*item, available_time_series, available_scalars, visited);
+            });
+        },
+        [&](const ListScalarType *list) {
+            result = has_matching_scalar_component(list->item_type(), available_time_series, available_scalars,
+                                                   visited);
+        },
+        [&](const SetScalarType *set) {
+            result = has_matching_scalar_component(set->item_type(), available_time_series, available_scalars,
+                                                   visited);
+        },
+        [&](const DictScalarType *dictionary) {
+            result = has_matching_scalar_component(dictionary->key_type(), available_time_series, available_scalars,
+                                                   visited) ||
+                     has_matching_scalar_component(dictionary->mapped_type(), available_time_series, available_scalars,
+                                                   visited);
+        },
+        ddv::noop);
+
+    visited.pop_back();
+    return result;
+}
+
 bool has_matching_runtime_component(const TimeSeriesType &type,
                                     std::span<const TimeSeriesRuntimeType *const> available_time_series,
                                     std::span<const ScalarRuntimeType *const> available_scalars) {
+    if (available_time_series.empty() && available_scalars.empty()) {
+        return false;
+    }
+
     if (std::ranges::any_of(available_time_series, [&](const auto *runtime_type) {
             return runtime_type != nullptr && &runtime_type->type() == &type;
         })) {
@@ -96,15 +156,8 @@ bool has_matching_runtime_component(const TimeSeriesType &type,
     }
 
     const auto has_scalar = [&](const ScalarType &scalar) {
-        if (std::ranges::any_of(available_scalars, [&](const auto *runtime_type) {
-                return runtime_type != nullptr && &runtime_type->type() == &scalar;
-            })) {
-            return true;
-        }
-        return std::ranges::any_of(available_time_series, [&](const auto *runtime_type) {
-            const auto *value = runtime_type == nullptr ? nullptr : type_cast<TimeSeriesValueType>(&runtime_type->type());
-            return value != nullptr && &value->value_type() == &scalar;
-        });
+        auto visited = std::vector<const ScalarType *>{};
+        return has_matching_scalar_component(scalar, available_time_series, available_scalars, visited);
     };
 
     auto result = false;
@@ -175,10 +228,9 @@ void register_time_series_runtime_type(const TimeSeriesRuntimeType &runtime_type
     }
     validate_registered_runtime_type(runtime_type);
 
-    const auto lock = std::lock_guard{registered_runtime_types_mutex()};
     const auto [entry, inserted] = registered_runtime_types().try_emplace(&runtime_type.type(), &runtime_type);
     if (!inserted && entry->second != &runtime_type) {
-        throw std::invalid_argument{"a semantic time series type already has a different default runtime type"};
+        throw std::invalid_argument{"a semantic time series type already has a different registered runtime type"};
     }
 }
 
@@ -297,11 +349,9 @@ const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType
         throw std::invalid_argument{"a value runtime type requires a time series value type"};
     }
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto runtime_types = util::static_storage<
         std::unordered_map<ValueRuntimeTypeKey, std::unique_ptr<ValueRuntimeType>, ValueRuntimeTypeKeyHash>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     const auto key = ValueRuntimeTypeKey{&type, &scalar_runtime_type};
     auto [entry, inserted] = runtime_types.get().try_emplace(key);
     if (inserted) {
@@ -323,10 +373,17 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
     }
 
     if (!has_matching_runtime_component(type, available_time_series, available_scalars)) {
-        const auto lock = std::lock_guard{registered_runtime_types_mutex()};
         if (const auto registered = registered_runtime_types().find(&type);
             registered != registered_runtime_types().end()) {
             return *registered->second;
+        }
+        if (const auto factory = type.default_runtime_type_factory()) {
+            const auto &runtime_type = factory(type);
+            if (&runtime_type.type() != &type) {
+                throw std::invalid_argument{"default time series runtime type does not match its semantic type"};
+            }
+            validate_registered_runtime_type(runtime_type);
+            return runtime_type;
         }
     }
 
@@ -386,11 +443,59 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
         return *result;
     }
 
-    const auto lock = std::lock_guard{registered_runtime_types_mutex()};
     if (const auto registered = registered_runtime_types().find(&type); registered != registered_runtime_types().end()) {
         return *registered->second;
     }
     throw std::logic_error{"resolved time series type has no runtime type"};
+}
+
+const TimeSeriesRuntimeType &resolve_default_time_series_runtime_type(const TimeSeriesType &type) {
+    if (const auto factory = type.default_runtime_type_factory()) {
+        const auto &runtime_type = factory(type);
+        if (&runtime_type.type() != &type) {
+            throw std::invalid_argument{"default time series runtime type does not match its semantic type"};
+        }
+        validate_registered_runtime_type(runtime_type);
+        return runtime_type;
+    }
+
+    const TimeSeriesRuntimeType *result{};
+    type.visit(
+        [&](const TimeSeriesValueType *value) {
+            result = &time_series_value_runtime_type(*value,
+                                                     resolve_default_scalar_runtime_type(value->value_type()));
+        },
+        [&](const TimeSeriesReferenceType *reference) { result = &time_series_reference_runtime_type(*reference); },
+        [&](const TimeSeriesListType *list) {
+            if (list->item_count() == std::dynamic_extent) {
+                throw std::invalid_argument{"variable-size time series lists are not implemented"};
+            }
+            result = &details::fixed_time_series_list_runtime_type(
+                *list, resolve_default_time_series_runtime_type(list->item_type()));
+        },
+        [&](const TimeSeriesSetType *set) {
+            result = &details::time_series_set_runtime_type(
+                *set, resolve_default_scalar_runtime_type(set->item_type()));
+        },
+        [&](const TimeSeriesDictionaryType *dictionary) {
+            const auto &key = resolve_default_scalar_runtime_type(dictionary->key_type());
+            const auto &item = resolve_default_time_series_runtime_type(dictionary->value_type());
+            result = &details::time_series_dictionary_runtime_type(*dictionary, key, item);
+        },
+        [&](const TimeSeriesBundleType *bundle) {
+            auto items = std::vector<const TimeSeriesRuntimeType *>{};
+            items.reserve(bundle->item_count());
+            for (auto index = std::size_t{}; index < bundle->item_count(); ++index) {
+                items.push_back(&resolve_default_time_series_runtime_type(bundle->item_type(index)));
+            }
+            result = &details::time_series_bundle_runtime_type(*bundle, items);
+        },
+        ddv::noop);
+    if (result != nullptr) {
+        return *result;
+    }
+
+    throw std::logic_error{"resolved time series type has no default runtime type"};
 }
 
 } // namespace bg

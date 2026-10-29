@@ -74,21 +74,27 @@ canonical C++ runtime through `cpp_time_series_runtime_type<Declaration>(resolve
 It must use the supplied resolved type, including inherited guarantees. The
 no-argument runtime accessor uses a neutral declaration; direct output bindings
 request `TimeSeriesTypeRole::output` to apply output defaults.
-The provider registers defaults with `register_time_series_runtime_type()`
-when it creates resolved family types, including resolution of generic
-declarations. This makes the default available before graph compilation
-requests it.
+The canonical semantic factory records a callback with
+`TimeSeriesType::set_default_runtime_type_factory()`, including when it resolves
+a generic declaration. The callback takes the resolved semantic type and
+returns its trait-defined runtime. Recording the callback does not construct
+the runtime. This supports consumers that retain only semantic types, including
+empty and skip-only literal inputs.
 
-Registration associates one default runtime with an exact resolved semantic
-type. Repeating registration of the same runtime is allowed. Registering a
-different default for that type is an error. Registered runtime objects must
-remain alive while the registry can use them.
+`register_time_series_runtime_type()` associates one runtime with an exact resolved semantic
+type for ordinary runtime resolution. Repeating registration of the same runtime
+is allowed. Registering a different runtime for that type is an error. Registered
+runtime objects must remain alive while the registry can use them.
 
 The general runtime resolver gives explicitly supplied representations
-precedence over registered defaults. Output selection follows the
+precedence over registered representations. Output selection follows the
 [output declaration](#output-declarations). A node template selects the
 output runtime type during wiring. The selected runtime must have the wired
 output's resolved semantic type.
+
+Literal sources use default runtime resolution, which calls the semantic
+descriptor's factory and recursively obtains component defaults. Supplied
+representations do not select literal storage.
 
 Initial storage follows the existing
 [byte-copy initialization requirement](type-system.md#runtime-types).

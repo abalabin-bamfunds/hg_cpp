@@ -3,6 +3,7 @@
 #include <bg/scalar/builtins.hpp>
 #include <bg/type/type.hpp>
 
+#include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <utility>
@@ -10,9 +11,12 @@
 namespace bg {
 
 template <typename T = void> class Scalar;
+class ScalarRuntimeType;
 
 class ScalarType : public Type {
   public:
+    using RuntimeTypeFactory = const ScalarRuntimeType &(*)(const ScalarType &);
+
     using generic_scalar_view = Scalar<>;
 
     VISITOR_SUPPORT()
@@ -22,6 +26,17 @@ class ScalarType : public Type {
     void format_name(std::string &result) const override { result += "scalar"; }
     virtual bool supports_equality() const noexcept { return false; }
     virtual bool supports_hash() const noexcept { return false; }
+
+    RuntimeTypeFactory default_runtime_type_factory() const noexcept { return default_runtime_type_factory_; }
+    void set_default_runtime_type_factory(RuntimeTypeFactory factory) const noexcept {
+        assert(factory != nullptr);
+        if (default_runtime_type_factory_ == nullptr) {
+            default_runtime_type_factory_ = factory;
+        }
+    }
+
+  private:
+    mutable RuntimeTypeFactory default_runtime_type_factory_{};
 };
 
 class BuiltinScalarType : public ScalarType {

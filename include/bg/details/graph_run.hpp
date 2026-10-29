@@ -255,7 +255,7 @@ class LiteralSource {
 
     LiteralSource(const GraphRunLiteralInput &input, const TimeSeriesRuntimeType &runtime_type)
         : ticks_{input.ticks()},
-          runtime_type_{&resolve_time_series_runtime_type(
+          runtime_type_{&resolve_default_time_series_runtime_type(
               runtime_type.type().with_guarantee_limit(TimeSeriesGuarantee::ordinary))},
           signature_{util::symbol{"graph_run_literal_source"}, {}, runtime_type_->type()} {}
 

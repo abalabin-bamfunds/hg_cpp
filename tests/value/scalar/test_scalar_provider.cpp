@@ -248,6 +248,8 @@ int &generic_trait_runtime_type_for_copy_calls() {
 
 const bg::ScalarType &semantic_type_from_provider() noexcept {
     static const auto type = bg::util::static_storage<ExternalScalarType>{};
+    type.get().set_default_runtime_type_factory(
+        &bg::details::cpp_scalar_runtime_type_for_type<value>);
     [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
 
     return type.get();
@@ -289,6 +291,8 @@ const bg::ScalarType &compound_semantic_type_from_provider() {
 
 const bg::ScalarType &layout_semantic_type_from_provider() {
     static const auto type = bg::util::static_storage<ExternalScalarType>{};
+    type.get().set_default_runtime_type_factory(
+        &bg::details::cpp_scalar_runtime_type_for_type<layout_value>);
     [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
     return type.get();
 }
@@ -297,6 +301,8 @@ const bg::ScalarRuntimeType &mismatched_layout_runtime_type() { return mismatche
 
 const bg::ScalarType &copy_only_semantic_type() noexcept {
     static const auto type = bg::util::static_storage<ExternalScalarType>{};
+    type.get().set_default_runtime_type_factory(
+        &bg::details::cpp_scalar_runtime_type_for_type<copy_only_value>);
     [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
     return type.get();
 }
