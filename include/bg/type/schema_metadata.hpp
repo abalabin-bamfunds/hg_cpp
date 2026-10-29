@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <concepts>
+#include <initializer_list>
 #include <memory>
 #include <span>
 #include <string_view>
@@ -25,7 +26,8 @@ class BG_EXPORT SchemaMetadata {
     std::size_t size() const noexcept;
     std::size_t hash() const noexcept;
     const ScalarData *find(std::string_view name) const noexcept;
-    [[nodiscard]] SchemaMetadata with_overrides(const SchemaMetadata &overrides) const;
+    [[nodiscard]] SchemaMetadata copy_with(
+        const SchemaMetadata &overrides = {}, std::initializer_list<std::string_view> remove = {}) const;
     bool operator==(const SchemaMetadata &other) const;
 
   private:

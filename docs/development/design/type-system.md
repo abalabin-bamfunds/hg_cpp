@@ -151,7 +151,10 @@ recursive scalar registration commit or roll back with that group.
 derived entries, which replace base entries with the same name. Metadata is
 immutable and owns copies of its scalar values. Extensions can read a borrowed
 value with `metadata().find(name)`; the returned `ScalarData` remains valid for
-the schema lifetime.
+the schema lifetime. `copy_with(overrides, remove)` returns a new metadata value:
+it removes the listed names, then adds or replaces entries from `overrides`.
+An override wins when its name also appears in `remove`. Missing removal names
+have no effect, and the original metadata remains unchanged.
 
 `SchemaRegistration` reserves runtime schemas, finalizes their descriptors before
 `commit()`, and rolls back the reservations and owned descriptors on failure.

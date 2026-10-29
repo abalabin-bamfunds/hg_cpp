@@ -51,8 +51,9 @@ const ScalarData *SchemaMetadata::find(std::string_view name) const noexcept {
     return std::addressof(details::scalar_data(found->value));
 }
 
-SchemaMetadata SchemaMetadata::with_overrides(const SchemaMetadata &overrides) const {
-    if (overrides.empty()) {
+SchemaMetadata SchemaMetadata::copy_with(const SchemaMetadata &overrides,
+                                         std::initializer_list<std::string_view> remove) const {
+    if (overrides.empty() && remove.size() == 0) {
         return *this;
     }
     if (empty()) {
@@ -62,32 +63,16 @@ SchemaMetadata SchemaMetadata::with_overrides(const SchemaMetadata &overrides) c
     auto entries = std::vector<SchemaMetadataEntry>{};
     entries.reserve(size() + overrides.size());
 
-    auto base = impl_->entries.begin();
-    auto override = overrides.impl_->entries.begin();
-    while (base != impl_->entries.end() && override != overrides.impl_->entries.end()) {
-        if (base->name < override->name) {
-            entries.push_back({base->name, details::scalar_data(base->value)});
-            ++base;
+    for (const auto &entry : impl_->entries) {
+        if (std::ranges::find(remove, entry.name) != remove.end() || overrides.find(entry.name) != nullptr) {
             continue;
         }
-        if (override->name < base->name) {
-            entries.push_back({override->name, details::scalar_data(override->value)});
-            ++override;
-            continue;
+        entries.push_back({entry.name, details::scalar_data(entry.value)});
+    }
+    if (!overrides.empty()) {
+        for (const auto &override : overrides.impl_->entries) {
+            entries.push_back({override.name, details::scalar_data(override.value)});
         }
-
-        entries.push_back({override->name, details::scalar_data(override->value)});
-        ++base;
-        ++override;
-    }
-
-    while (base != impl_->entries.end()) {
-        entries.push_back({base->name, details::scalar_data(base->value)});
-        ++base;
-    }
-    while (override != overrides.impl_->entries.end()) {
-        entries.push_back({override->name, details::scalar_data(override->value)});
-        ++override;
     }
 
     return make_schema_metadata(entries);

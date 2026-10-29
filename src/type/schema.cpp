@@ -204,7 +204,7 @@ void Schema::finalize(std::span<const SchemaField> fields) {
         }
     }
 
-    auto inherited_metadata = base_ == nullptr ? direct_metadata_ : base_->metadata().with_overrides(direct_metadata_);
+    auto inherited_metadata = base_ == nullptr ? direct_metadata_ : base_->metadata().copy_with(direct_metadata_);
     direct_fields_ = std::move(direct_fields);
     fields_ = std::move(resolved_fields);
     metadata_ = std::move(inherited_metadata);
