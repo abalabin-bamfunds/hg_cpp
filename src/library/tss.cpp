@@ -129,9 +129,8 @@ struct tss_overloads {
                 return;
             }
 
-            mask.for_each_added([&](const auto &key) { update(key); });
-            mask.for_each_removed([&](const auto &key) { output.erase(key); });
             mask.for_each_modified([&](const auto &key) { update(key); });
+            mask.for_each_removed([&](const auto &key) { output.erase(key); });
         }
 
         void update(const auto &key) const {

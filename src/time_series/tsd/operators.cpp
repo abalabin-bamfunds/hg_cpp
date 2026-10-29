@@ -105,7 +105,6 @@ template <typename KEY, typename VALUE, auto GUARANTEE> struct tsd_getitem_tss {
                 output[key].invalidate();
             }
         });
-        dictionary.for_each_added([&](const auto &key) { update_if_selected(key); });
         dictionary.for_each_modified([&](const auto &key) { update_if_selected(key); });
     }
 
