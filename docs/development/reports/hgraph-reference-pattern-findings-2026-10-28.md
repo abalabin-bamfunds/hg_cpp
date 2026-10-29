@@ -8,8 +8,9 @@ The review uses hgraph 0.5.42 at
 [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be)
 and hgraph 0.8.37 at
 [`b9305bb23f8e54337cd1941447b940e5fd43ec59`](https://github.com/hhenson/hgraph/tree/b9305bb23f8e54337cd1941447b940e5fd43ec59).
-The original suite validation uses BG `8058a013`. The review lane is now based
-on `cab5c342` for the retargeting investigation.
+The original suite validation uses BG `8058a013`. The retargeting investigation
+reproduced the failure on `cab5c342` and verified the passing regression after
+the library merge on `c8b33979`.
 
 ## Findings
 
@@ -18,30 +19,29 @@ on `cab5c342` for the retargeting investigation.
 | 0.5 `hgraph_unit_tests/_wiring/test_map.py::test_map_re_added_references` | `map restores a removed key through a retained mapped reference` in [`map_test.cpp`](../../../tests/evaluation/map_test.cpp). The source graph has typed `TSS` and `TSD` parameters, maps values, then selects mapped values with the original key set. The BG case uses explicitly typed graph callbacks for both map layers. | Added, passing. Typed graph callbacks supply the required map inference. Generic callbacks fail during wiring with `argument does not satisfy its generic type`; this does not establish a runtime reference failure. |
 | 0.8 `ported/_wiring/test_map_regressions.py::test_map_removed_typed_bundle_reference_does_not_retick_with_sibling` | `map drops a removed reference item while a sibling follows its target` in [`map_test.cpp`](../../../tests/evaluation/map_test.cpp). It uses a typed bundle value, removes one mapped reference, then updates the shared target through the retained sibling. | Added, passing. |
 | 0.8 `ported/_wiring/test_map_regressions.py::test_map_preserves_typed_keyed_bundle_reference_and_materialization` | The same typed lookup and bundle shape is exercised by the test above. It checks reference output and sibling updates; it does not separately assert both source output forms (retained reference and explicit field materialization). | Partial. The source's static reference and materialization outputs are not both represented by this BG case. |
-| BG combination of 0.5 `hgraph_unit_tests/_wiring/test_map.py::test_map_re_added_references`, 0.8 `python/tests/ported/_wiring/test_map_regressions.py::test_map_preserves_typed_keyed_bundle_reference_and_materialization`, and 0.8 `tests/cpp/test_nested_wiring.cpp::nested wiring: a child REF output retargets an outer plain consumer` | `repro: map retargets a selected dictionary reference across a nested graph` in [`map_test.cpp`](../../../tests/evaluation/map_test.cpp). No single upstream test contains this composition. The `as<TSD<i64, TS<i64>>>()` at the nested graph return supplies the target TSD type needed for map key and output inference. | Reproduced failure: captured deltas are `{1:1,2:2}`, `{1:11}`, `{1:3}`, `{1:4}`. The expected middle ticks are `{1:11,2:20}` and `{1:3,2:2}`. Held key 2 is absent on both target switches. The hidden case captures formatted output ticks. |
+| BG combination of 0.5 `hgraph_unit_tests/_wiring/test_map.py::test_map_re_added_references`, 0.8 `python/tests/ported/_wiring/test_map_regressions.py::test_map_preserves_typed_keyed_bundle_reference_and_materialization`, and 0.8 `tests/cpp/test_nested_wiring.cpp::nested wiring: a child REF output retargets an outer plain consumer` | `map retargets a selected dictionary reference across a nested graph` in [`map_test.cpp`](../../../tests/evaluation/map_test.cpp). No single upstream test contains this composition. The `as<TSD<i64, TS<i64>>>()` at the nested graph return supplies the target TSD type needed for map key and output inference. | Resolved by the library merge. The ordinary regression passes on `c8b33979`, including `{1:11,2:20}` and `{1:3,2:2}` on the two target switches. The earlier failure and metadata observations are retained in the investigation report. |
 | BG combination of 0.5 `hgraph_unit_tests/_wiring/test_context.py::test_context_over_switch` and `test_context_over_switch_inside_map`, and 0.8 `python/tests/ported/_wiring/test_context.py::test_context_crosses_nested_map_and_switch_boundaries` | `a TSD item reference context reacts to selector and target changes` and `a switch does not retick a TSD item reference argument for an unchanged selector` in [`context_time_series_test.cpp`](../../../tests/evaluation/context/context_time_series_test.cpp). The BG cases add a TSD item reference as the context or switch argument and distinguish selector ticks from target ticks. | Added, passing. |
 | BG combination of 0.5 `hgraph_unit_tests/_wiring/test_context.py::test_context_over_switch_inside_map`, and 0.8 `python/tests/ported/_wiring/test_context.py::test_context_crosses_nested_map_and_switch_boundaries` and `test_aliased_context_crosses_a_mapped_child_boundary` | `each mapped graph reads the context for its own key` in [`map_test.cpp`](../../../tests/evaluation/map_test.cpp). The selector and context update independently for each dictionary key. | Added, passing. No single upstream test contains this per-key selector and reference-backed context composition. |
 
-## Verification
+## Original verification (`8058a013`)
 
 All five new ordinary reference/context cases pass against BG `8058a013`.
 The hidden nested-retarget case fails its output assertion with the captured
 trace above. See the [review summary](hgraph-pattern-review-2026-10-28.md)
 for complete-suite validation.
 
-Run the hidden reproduction from the review lane:
+The original hidden reproduction command was:
 
 ```sh
 build/verification/bg_tests \
   "repro: map retargets a selected dictionary reference across a nested graph"
 ```
 
-The nested-retarget reproduction retains its output assertion and stays
-excluded from default test runs. `as<TSD<i64, TS<i64>>>()` is retained because
-it supplies compile-time map inference; this is a wiring type requirement, not
-an observed runtime defect.
+The nested-retarget case was hidden during this run and has since been promoted
+to an ordinary regression. `as<TSD<i64, TS<i64>>>()` supplies compile-time map
+inference; this is a wiring type requirement, not an observed runtime defect.
 
-## Retargeting investigation, 2026-10-29
+## Retargeting investigation (`cab5c342`)
 
 The unchanged reproduction still fails after rebuilding against BG `cab5c342`.
 The map test translation unit's 30 ordinary cases pass (42 assertions). Direct
@@ -54,3 +54,13 @@ and the item's last-updated time remains at the first cycle. The defect is in
 the dereferenced dictionary representation's scalar-item sampling metadata.
 See the [investigation report](reference-retarget-investigation-2026-10-29.md)
 for the stage comparisons, source locations, and verification commands.
+
+## Post-library-merge verification (`c8b33979`)
+
+The original output assertions pass against the rebuilt Release runtime and
+fresh map test object. The case now runs in the ordinary suite as
+`map retargets a selected dictionary reference across a nested graph`.
+All **39 map cases and 53 assertions** pass; the explicit regression filter
+also passes independently with one assertion. No production fix was added in
+this review lane. The investigation report records the merged timestamp
+selection and commands for these runs.

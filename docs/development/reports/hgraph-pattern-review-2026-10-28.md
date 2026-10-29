@@ -15,6 +15,7 @@ The upstream references were fetched from
 | BG initial baseline | `11ba59a4` |
 | BG 2026-10-28 suite validation base | `8058a013` |
 | BG 2026-10-29 reference investigation base | `cab5c342` |
+| BG post-library-merge retarget validation base | `c8b33979` |
 | hgraph `release/0.5`, latest tag `v_0.5.42` | [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be) |
 | hgraph `main`, latest tag `0.8.37` | [`b9305bb23f8e54337cd1941447b940e5fd43ec59`](https://github.com/hhenson/hgraph/tree/b9305bb23f8e54337cd1941447b940e5fd43ec59) |
 
@@ -55,14 +56,17 @@ which remain the [coverage source](../testing.md#coverage-model).
 
 ## Results
 
-The review adds **37 cases**: **26 ordinary passing cases** and **11 hidden
-reproductions**. A reproduction can expose a wiring failure, an output
+The review adds **37 cases**. The original validation had **26 ordinary passing
+cases** and **11 hidden reproductions**. After the library merge, the retargeting
+case passes and runs in the ordinary suite, leaving **27 ordinary cases** and
+**10 hidden reproductions**. The other ten reproductions have not been rerun
+against the merge. A reproduction can expose a wiring failure, an output
 mismatch, or an unresolved semantic difference; it is not automatically an
 approved defect or implementation task.
 
 | Finding | Cases | Classification |
 | --- | --- | --- |
-| Selected dictionary reference omits a held key on retargeting across a nested graph. | 1 | Output mismatch. |
+| Selected dictionary reference omits a held key on retargeting across a nested graph. | 1 | Resolved by the library merge; ordinary regression passes on `c8b33979`. |
 | Switch rejects native/free TSB branches, rebuilt free TSB branches, or reference/owned TSD branches. | 3 | Wiring compatibility failures. The TSD failure blocks the cascaded map/switch/`take` pattern before evaluation. |
 | Nested TSB/TSL REF pass-through attempts to create a reference targeting a reference. | 2 | Wiring failures against the documented reference-preserving nested boundary. |
 | Mesh/switch/reduce compositions fail type resolution, including with typed callbacks. | 2 | Wiring failures; runtime behavior remains unverified. |
@@ -74,18 +78,18 @@ contexts, leaf updates and validity, nested free structures, pass-through
 selection identity, and map/switch/mesh/reduce combinations. The detailed
 reports identify exact ports, partial coverage, and new BG combinations.
 
-The [2026-10-29 retargeting investigation](reference-retarget-investigation-2026-10-29.md)
-confirms the first reproduction on BG `cab5c342` and isolates a scalar-item
-sampling defect in the dereferenced dictionary representation. The item value
-and dictionary change set are correct, but the item retains its source update
-time, so `copy_tick` skips it. A nested graph is not required to trigger this
-defect. The other findings and complete-suite counts retain their original
-2026-10-28 validation scope.
+The [retargeting investigation](reference-retarget-investigation-2026-10-29.md)
+preserves the failure on BG `cab5c342` and records the passing result on
+`c8b33979`. Dereferenced dictionary item access now uses the shared
+`observed_state()` operation to include the reference's binding time. No
+production fix was added by this review. The other findings and complete-suite
+counts retain their original 2026-10-28 validation scope.
 
 ## Verification boundaries
 
-Final validation uses a freshly built Release runtime from BG `8058a013` and
-test objects rebuilt against that revision's headers, with matching `NDEBUG`.
+The original complete-suite validation uses a freshly built Release runtime
+from BG `8058a013` and test objects rebuilt against that revision's headers,
+with matching `NDEBUG`.
 This checks correctness; it is not a performance measurement.
 
 | Run | Result |
@@ -97,7 +101,7 @@ This checks correctness; it is not a performance measurement.
 | Hidden library reproduction | 1 case; 1 assertion failed during switch wiring. |
 | Engine and library coverage-tag validation | Passed. |
 
-Run from `/home/abalabin/_bg/.lanes/hgraph-pattern-review`:
+Commands used for the original validation in the review lane:
 
 ```sh
 build/verification/bg_tests
@@ -117,6 +121,12 @@ The review ports selected patterns to BG and runs BG tests. It does not claim
 to rerun either complete hgraph suite, establish Python authoring parity from a
 C++ test, or measure runtime performance. Source parameterizations and new BG
 test cases are counted separately.
+
+The post-library-merge check rebuilds the Release runtime and the map test
+translation unit against `c8b33979`. All **39 map cases and 53 assertions** pass,
+including the promoted retargeting regression. Its explicit filter also passes
+independently. The complete engine and library suites were not rerun on this
+revision. Commands and logs are in the retargeting investigation.
 
 Failing reproductions use hidden Catch2 cases tagged `[.][repro]`. The default
 suite excludes them. They retain their required assertions and have explicit
