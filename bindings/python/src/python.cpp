@@ -1390,6 +1390,7 @@ void bind_core(nb::module_ &module) {
     const auto pos_operator = details::PythonOperator{operators::pos};
     const auto neg_operator = details::PythonOperator{operators::neg};
     const auto abs_operator = details::PythonOperator{operators::abs};
+    const auto invert_operator = details::PythonOperator{operators::invert};
     const auto eq_operator = details::PythonOperator{operators::eq};
     const auto ne_operator = details::PythonOperator{operators::ne};
     const auto lt_operator = details::PythonOperator{operators::lt};
@@ -1523,6 +1524,9 @@ void bind_core(nb::module_ &module) {
         .def("__pos__", [pos_operator](const PythonWiringPoint &self) { return pos_operator.call(nb::cast(self)); },
              nb::is_operator())
         .def("__neg__", [neg_operator](const PythonWiringPoint &self) { return neg_operator.call(nb::cast(self)); },
+             nb::is_operator())
+        .def("__invert__",
+             [invert_operator](const PythonWiringPoint &self) { return invert_operator.call(nb::cast(self)); },
              nb::is_operator())
         .def("__abs__", [abs_operator](const PythonWiringPoint &self) { return abs_operator.call(nb::cast(self)); },
              nb::is_operator())

@@ -52,6 +52,7 @@ extern BG_LIBRARY_EXPORT operator_<auto(double, i64) -> double> round;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> pos;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> neg;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
+extern BG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> invert;
 
 // Conversion.
 extern BG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;

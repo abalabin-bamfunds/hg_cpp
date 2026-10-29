@@ -21,6 +21,7 @@ integer operand does not convert to double to match an overload.
 | `pow` | `i64` to `i64`, `double` to `double` |
 | `round` | `double`, with an optional decimal digit count; result is `double` |
 | `neg`, `pos`, `abs` | `i64`, `double`, `timedelta_t` |
+| `bit_and`, `bit_or`, `bit_xor`, `invert` | `i64` |
 | `eq`, `ne` | Compatible values of an equality-comparable scalar type |
 | `lt`, `le`, `gt`, `ge` | `i64`, `double`, `string`, `date_time_t`, `timedelta_t` |
 | `and_`, `or_`, `not_` | `bool` |
@@ -49,6 +50,17 @@ rejects zero raised to a negative exponent and negative bases with fractional ex
 value by a power of ten, rounds, and scales back. Floating-point scaling can affect the
 result: `round(2.675, 2)` returns `2.68`. It preserves non-finite values and the sign of
 zero.
+
+### Integer bitwise operators
+
+`bit_and`, `bit_or`, and `bit_xor` combine the 64-bit representations of two `i64`
+values. `invert` complements every bit. These operators accept scalar or time-series
+operands and do not convert `double` values. Their results retain the `i64` type.
+
+C++ wiring points support `&`, `|`, `^`, and `~`. Python graph values support the same
+syntax for `i64`. The named operators are also available. The existing collection
+overloads for `bit_and`, `bit_or`, and `bit_xor` operate on TSS and TSD values; see
+[set operations](library-collections.md#time-series-set-operations).
 
 ### convert
 
@@ -134,8 +146,8 @@ operators reject `opt()` arguments.
 
 ## Wiring syntax
 
-C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+` and
-`-`, and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `floordiv()`, `pow()`, `round()`, and
+C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+`,
+`-`, and `~`, and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `floordiv()`, `pow()`, `round()`, and
 `abs()` for operations without C++ wiring syntax. These operations also accept scalar
 operands and return `wp<>`.
 
@@ -148,9 +160,10 @@ auto negated = !bounded;
 ```
 
 Python uses `/`, `//`, `%`, and `**` for division, floor division, modulo, and power.
-`round(point, ndigits)` and `abs(point)` call their corresponding operators. Python uses
-the named Boolean operators because its `and`, `or`, and `not` keywords cannot be
-overloaded. Write two comparisons explicitly:
+It uses `&`, `|`, and `^` for integer bitwise operators and collection set operations,
+and `~` for integer bitwise inversion. `round(point, ndigits)` and `abs(point)` call
+their corresponding operators. Python uses the named Boolean operators because its
+`and`, `or`, and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
 ```python
 from bg.operators import and_, not_

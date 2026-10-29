@@ -19,6 +19,7 @@ decltype(round) round{"round", {"value", "ndigits"}};
 decltype(pos) pos{"pos", {"value"}};
 decltype(neg) neg{"neg", {"value"}};
 decltype(abs) abs{"abs", {"value"}};
+decltype(invert) invert{"invert", {"value"}};
 
 decltype(convert) convert{"convert", {"value"}};
 decltype(combine) combine{"combine", {"values"}};

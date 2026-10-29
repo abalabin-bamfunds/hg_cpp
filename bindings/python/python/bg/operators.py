@@ -30,6 +30,7 @@ emit = _native.emit
 pos = _native.pos
 neg = _native.neg
 abs = _native.abs
+invert = _native.invert
 eq = _native.eq
 ne = _native.ne
 lt = _native.lt
@@ -138,6 +139,7 @@ __all__ = [
     "floordiv",
     "filter_",
     "if_",
+    "invert",
     "if_true",
     "gate",
     "batch",
