@@ -97,6 +97,7 @@ imports and headers.
 | `route_by_index` | [Reference](library-selection.md#route_by_index) |
 | `sample` | [Reference](library-selection.md#sample) |
 | `schedule` | [Reference](library-time.md#schedule) |
+| `slice_` | [Reference](library-selection.md#slice_) |
 | `split` | [Reference](library-text.md#split-and-join) |
 | `step` | [Reference](library-selection.md#take-drop-step) |
 | `str_` | [Reference](library-text.md#construction-and-queries) |

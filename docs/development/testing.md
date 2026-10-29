@@ -670,8 +670,9 @@ For each reusable node and graph, test:
   inputs with distinct key and value types and nominal schema compatibility
 - optional addition and multiplication, initial invalidity, invalidation,
   revalidation, startup scheduling, and distinctions from explicit defaults
-- stateful count and one-event lag, including repeated ticks, validity changes,
-  owned scalar snapshots, guarantees, references, and nested graph instances
+- stateful count and event-counted lag, including zero-lag identity, repeated
+  ticks, delayed invalidation, owned scalar snapshots, unread-history cleanup,
+  guarantees, references, and nested graph instances
 - scalar `merge` selection, optional and empty inputs, compatible shapes,
   collection merging, fixed TSL constraints, and guarantee propagation
 - analytical `diff`, `clip`, and `ewma`, including integer wraparound,
@@ -681,6 +682,9 @@ For each reusable node and graph, test:
   ticks, skipped cycles, invalidation without advancing or resetting the count,
   take completion, collection reconciliation after skipped changes, reference
   retargeting, guarantees, and independent nested-graph state
+- duration-based take and drop, including delayed first validity, exact boundaries,
+  quiet boundaries without publication, invalidation, and zero duration;
+  count-based slices, including bounds, strides, and complete collection sampling
 - periodic resampling through schedule and sample, including the first period,
   simultaneous input changes, invalid input, collection reconciliation, and
   nested-graph stop cleanup

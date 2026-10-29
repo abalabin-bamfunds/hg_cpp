@@ -148,6 +148,17 @@ For collections, `step` copies the complete current value on each selected tick.
 forwards deltas. These operators retain supported input shapes. Delayed first
 publication limits const guarantees to final.
 
+`take(value, duration)` and `drop(value, duration)` accept a fixed nonnegative
+duration instead of a tick count. C++ uses `timedelta_t`; Python uses
+`datetime.timedelta`. The keyword remains `n` for either form. The first valid
+input tick starts the interval. Take forwards events before its end; drop
+forwards events at or after its end.
+Passing the deadline alone produces no tick. Root invalidation does not reset
+the interval. Take propagates invalidation only before the deadline; drop
+propagates it at or after the deadline. Drop samples the complete current value when
+forwarding begins, then forwards deltas. Zero duration selects no events for
+take and returns the input unchanged for drop.
+
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language
@@ -221,3 +232,16 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::
 :::::
 ::::::
+
+## slice_
+
+`slice_(value, start, stop, step=1)` selects zero-based valid tick positions in
+`[start, stop)`, taking every `step`th position from `start`. Bounds are fixed
+nonnegative integers with `start <= stop`; `step` must be positive. An empty
+range publishes nothing. Invalid arguments fail during wiring.
+
+Slice composes `step(drop(take(value, stop), start), step)`. Root invalidation
+does not consume a position. It propagates after forwarding begins and before
+the slice ends; the completed slice retains its output. Collection selections
+sample the complete current value, including changes made between selected
+ticks.

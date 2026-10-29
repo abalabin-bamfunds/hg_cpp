@@ -52,6 +52,98 @@ TEST_CASE("counted operators validate their counts and handle zero",
                     WiringError);
 }
 
+TEST_CASE("take and drop select events by duration without sampling at the boundary",
+          "[feature:operator][series:value]"
+          "[transition:update][transition:invalidation][transition:revalidation]") {
+    const auto take = [](wp<TS<i64>> value) { return operators::take(value, timedelta_t{3}); };
+    const auto drop = [](wp<TS<i64>> value) { return operators::drop(value, timedelta_t{3}); };
+
+    CHECK(bg::run_graph(take, {1, literal::INVALID, 2, literal::INVALID, 3, 4})
+              .equals<i64>({1, std::nullopt, 2, std::nullopt, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(drop, {1, literal::INVALID, 2, literal::INVALID, 3, 4})
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, std::nullopt, 3, 4}));
+
+    const auto delayed_take = [](wp<TS<i64>> value) { return operators::take(value, timedelta_t{2}); };
+    const auto delayed_drop = [](wp<TS<i64>> value) { return operators::drop(value, timedelta_t{2}); };
+    CHECK(bg::run_graph(delayed_take, {literal::SKIP, 10, 20, 30, 40})
+              .equals<i64>({std::nullopt, 10, 20, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(delayed_drop, {literal::SKIP, 10, 20, 30, 40})
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 30, 40}));
+    CHECK(bg::run_graph(delayed_take, {10, literal::SKIP, literal::SKIP, 20})
+              .equals<i64>({10, std::nullopt, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(delayed_drop, {10, literal::SKIP, literal::SKIP, 20})
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 20}));
+
+    const auto valid_take = [](wp<TS<i64>> value) {
+        return operators::valid(operators::take(value, timedelta_t{3}));
+    };
+    const auto valid_drop = [](wp<TS<i64>> value) {
+        return operators::valid(operators::drop(value, timedelta_t{3}));
+    };
+    CHECK(bg::run_graph(valid_take, {10, literal::INVALID, 20, literal::INVALID, 30})
+              .equals<bool>({true, false, true, std::nullopt, std::nullopt}));
+    const auto valid_drop_result = bg::run_graph(valid_drop, {10, literal::INVALID, 20, literal::INVALID, 30});
+    CHECK(valid_drop_result.equals<bool>({false, std::nullopt, std::nullopt, std::nullopt, true}));
+
+    const auto take_none = [](wp<TS<i64>> value) { return operators::take(value, timedelta_t{}); };
+    const auto drop_none = [](wp<TS<i64>> value) { return operators::drop(value, timedelta_t{}); };
+    CHECK(bg::run_graph(take_none, {1, 2}).equals<i64>({std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(drop_none, {1, 2}).equals<i64>({1, 2}));
+    CHECK_THROWS_AS(bg::run_graph([](wp<TS<i64>> value) { return operators::take(value, timedelta_t{-1}); }, {1}),
+                    WiringError);
+    CHECK_THROWS_AS(bg::run_graph([](wp<TS<i64>> value) { return operators::drop(value, timedelta_t{-1}); }, {1}),
+                    WiringError);
+}
+
+TEST_CASE("duration take and drop merge to preserve input ticks across the boundary",
+          "[feature:operator][feature:merge][series:value][transition:update]") {
+    const auto roundtrip = [](wp<TS<i64>> value) {
+        const auto duration = timedelta_t{2};
+        return operators::merge(operators::take(value, duration), operators::drop(value, duration));
+    };
+
+    CHECK(bg::run_graph(roundtrip, {literal::SKIP, 10, 20, 30, 30})
+              .equals<i64>({std::nullopt, 10, 20, 30, 30}));
+    CHECK(bg::run_graph(roundtrip, {10, 20, literal::SKIP, 30})
+              .equals<i64>({10, 20, std::nullopt, 30}));
+}
+
+TEST_CASE("slice selects valid root events and does not forward invalidations after stop",
+          "[feature:operator][series:value][transition:update][transition:invalidation]") {
+    const auto slice = [](wp<TS<i64>> value) { return operators::slice_(value, 1, 5, 2); };
+    CHECK(bg::run_graph(slice, {10, literal::INVALID, 20, 30, 40, 50, literal::INVALID, 60})
+              .equals<i64>({std::nullopt, std::nullopt, 20, std::nullopt,
+                            40, std::nullopt, std::nullopt, std::nullopt}));
+
+    const auto after_stop = [](wp<TS<i64>> value) { return operators::slice_(value, 0, 2); };
+    CHECK(bg::run_graph(after_stop, {10, 20, literal::INVALID, 30})
+              .equals<i64>({10, 20, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph([](wp<TS<i64>> value) { return operators::slice_(value, 2, 2); }, {1, 2})
+              .equals<i64>({std::nullopt, std::nullopt}));
+    CHECK_THROWS_AS(bg::run_graph([](wp<TS<i64>> value) { return operators::slice_(value, 2, 1); }, {1}),
+                    WiringError);
+    CHECK_THROWS_AS(bg::run_graph([](wp<TS<i64>> value) { return operators::slice_(value, 0, 1, 0); }, {1}),
+                    WiringError);
+}
+
+TEST_CASE("slice samples complete collection state after skipped events",
+          "[feature:operator][series:tsd][transition:addition][transition:removal]") {
+    const auto slice_sum = [](wp<TSD<i64, TS<i64>>> value) {
+        return operators::sum_(operators::slice_(value, 1, 3)).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(slice_sum, {{{1, 10}}, {{2, 20}}, {{1, literal::REMOVE}, {3, 30}}, {{4, 40}}})
+              .equals<i64>({std::nullopt, 30, 50, std::nullopt}));
+
+    const auto strided_slice_sum = [](wp<TSD<i64, TS<i64>>> value) {
+        return operators::sum_(operators::slice_(value, 1, 5, 2)).as<TS<i64>>();
+    };
+    CHECK(bg::run_graph(strided_slice_sum,
+                        {{{1, 10}}, {{2, 20}}, {{1, literal::REMOVE}, {3, 30}}, {{4, 40}},
+                         {{2, literal::REMOVE}}})
+              .equals<i64>({std::nullopt, 30, std::nullopt, 90, std::nullopt}));
+}
+
 TEST_CASE("initial skips and invalidations do not consume selected events",
           "[feature:operator][feature:validity][series:value]"
           "[transition:first-tick][transition:invalidation]") {
@@ -80,6 +172,18 @@ TEST_CASE("drop and step reconcile skipped dictionary changes before publishing"
               .equals({literal::SKIP, 61, 80}));
     CHECK(bg::run_graph(step_sum, {{{1, 10}, {2, 20}}, {{2, 21}, {3, 30}}, {{2, literal::REMOVE}, {4, 40}}})
               .equals({30, literal::SKIP, 80}));
+}
+
+TEST_CASE("duration drop samples complete dictionary state after skipped changes",
+          "[feature:operator][series:tsd][transition:addition][transition:removal]") {
+    const auto drop_sum = [](wp<TSD<i64, TS<i64>>> value) {
+        return operators::sum_(operators::drop(value, timedelta_t{2})).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(drop_sum,
+                        {literal::SKIP, {{1, 10}}, {{2, 20}}, {{1, literal::REMOVE}, {3, 30}},
+                         {{2, literal::REMOVE}, {4, 40}}})
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 50, 70}));
 }
 
 template <template <typename, auto...> typename Field> struct changing_pair {

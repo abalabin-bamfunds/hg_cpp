@@ -308,7 +308,7 @@ keys and merge the corresponding values. TSB fields merge by name. TSL inputs
 merge corresponding items and must have fixed size; sparse TSL inputs are not
 supported. A named `values` argument can supply a prebuilt TSL of inputs.
 
-## Counting and one-event lag
+## Counting and lag
 
 `count(value)` publishes `1` on the first valid input tick and increments on
 each later valid tick. Invalidation invalidates the output and resets the
@@ -316,19 +316,11 @@ count; revalidation starts at `1`. It counts root ticks, not collection items,
 and propagates the observed input's root guarantee. Incrementing uses the
 `i64` wrapping policy described above.
 
-`lag(value)` accepts `TS<T>` and publishes the preceding input event whenever
-the input changes. It retains an owning copy of the scalar value. Invalidation
-is also an event and is delayed by one input event:
-
-```text
-input:   10   20   invalid   30        40
-output:  —    10   20        invalid   30
-```
-
-Neither operator schedules on start. Skipped cycles do not advance either
-operation. Ordinary equal-valued ticks remain separate events. `lag` produces
-an ordinary output; its first event produces no output, and its final retained
-event remains unpublished unless another input event arrives.
+The [lag reference](../../user/reference/library-stateful.md#lag) defines
+event-counted lag, including invalidation. Wiring returns the input for zero
+lag and uses the single-value implementation for one-event lag. Larger lags
+reuse tick capture and replay to retain bounded event history without shifting
+stored values.
 
 ## Analytical operators
 
@@ -383,6 +375,11 @@ Counts are scalar arguments. `take` and `drop` require `n >= 0`; `take(value, 0)
 publishes nothing, and `drop(value, 0)` forwards every tick. `step` requires
 `n > 0`; `step(value, 1)` forwards every tick. Invalid counts fail during wiring.
 None of these operators schedules on start.
+
+The [selection reference](../../user/reference/library-selection.md#take-drop-step)
+also defines duration-based take and drop. The
+[slice reference](../../user/reference/library-selection.md#slice_) defines
+bounded, stepped tick selection through composition of these operators.
 
 `take` retains the observed input type and its guarantees, except that a zero
 count limits const guarantees to final. `drop` and `step` retain the observed

@@ -56,6 +56,7 @@ if_true = _native.if_true
 take = _native.take
 drop = _native.drop
 step = _native.step
+slice_ = _native.slice_
 if_then_else = _native.if_then_else
 lag = _native.lag
 last_modified_time = _native.last_modified_time
@@ -193,6 +194,7 @@ __all__ = [
     "str_",
     "sum_",
     "step",
+    "slice_",
     "take",
     "switch_",
     "split",

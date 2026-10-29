@@ -218,6 +218,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "take", operators::take);
     export_operator(operators_module, "drop", operators::drop);
     export_operator(operators_module, "step", operators::step);
+    export_operator(operators_module, "slice_", operators::slice_);
     export_operator(operators_module, "if_then_else", operators::if_then_else);
     export_operator(operators_module, "lag", operators::lag);
     export_operator(operators_module, "last_modified_time", operators::last_modified_time);
