@@ -133,19 +133,14 @@ const SampledDictionaryRuntimeType &SampledDictionaryRuntimeType::for_shape(
 void SampledDictionary::append_child(item_id_t current_id, item_id_t previous_id,
                                      const TimeSeriesRuntimeType::ConstItem *previous_item,
                                      const TimeSeriesRuntimeType::ConstItem *current_item) const {
-    const auto resolve_item = [](const TimeSeriesRuntimeType::ConstItem *item) {
-        if (item == nullptr || item->value == nullptr) {
-            return ResolvedTimeSeries{};
-        }
-        if (item->runtime_type.is_reference()) {
-            const auto reference = item->runtime_type.reference(item->value);
-            return reference ? ResolvedTimeSeries::resolve(reference) : ResolvedTimeSeries{};
-        }
-        return ResolvedTimeSeries{item->last_updated, item->value, &item->runtime_type};
-    };
-
-    const auto previous_time_series = resolve_item(previous_item);
-    const auto current_time_series = resolve_item(current_item);
+    const auto previous_time_series = previous_item == nullptr
+                                          ? ResolvedTimeSeries{}
+                                          : ResolvedTimeSeries{previous_item->last_updated, previous_item->value,
+                                                               &previous_item->runtime_type};
+    const auto current_time_series = current_item == nullptr
+                                         ? ResolvedTimeSeries{}
+                                         : ResolvedTimeSeries{current_item->last_updated, current_item->value,
+                                                              &current_item->runtime_type};
     auto sample_memory = memory;
     auto sample = SampledReferenceChange::create(previous_time_series, current_time_series,
                                                  sampled_last_updated.time(), sample_memory);

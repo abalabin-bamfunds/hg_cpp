@@ -1020,6 +1020,39 @@ TEST_CASE("dereferencing a dictionary item samples a new dictionary target",
     CHECK(actual.equals({600, 824, 120}));
 }
 
+TEST_CASE("a sampled dictionary preserves reference-valued items",
+          "[evaluation][series:tsd][series:value][reference][feature:reference][feature:sampling]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto make_inner = node([](i64 value, Out<TSD<i64, TS<i64>>> output) { output[1].set(value); });
+    const auto make_outer = node([](In<REF<TSD<i64, TS<i64>>>> input,
+                                    Out<TSD<i64, REF<TSD<i64, TS<i64>>>>> output) {
+        output[1].copy(input);
+    });
+    const auto select = node([](In<TS<bool>> use_second,
+                                In<REF<TSD<i64, REF<TSD<i64, TS<i64>>>>>> first,
+                                In<REF<TSD<i64, REF<TSD<i64, TS<i64>>>>>> second,
+                                Out<REF<TSD<i64, REF<TSD<i64, TS<i64>>>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+
+    const auto inspect = node([](In<TSD<i64, REF<TSD<i64, TS<i64>>>>> input,
+                                 Out<REF<TSD<i64, TS<i64>>>> output) {
+        output.copy(input[1]);
+    });
+    const auto read = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
+    const auto graph = [&](wp<TS<bool>> use_second, wp<TS<i64>> first_value, wp<TS<i64>> second_value) {
+        const auto first = make_outer(make_inner(first_value));
+        const auto second = make_outer(make_inner(second_value));
+        const auto selected = select(use_second, first, second);
+        return read(inspect(selected));
+    };
+
+    const auto actual = bg::run_graph(graph, {false, true}, {10, 10}, {20, 20});
+
+    CHECK(actual.equals({10, 20}));
+}
+
 TEST_CASE("dictionary getitem follows a sampled dictionary item",
           "[evaluation][series:tsd][series:value][reference][feature:reference][feature:sampling]"
           "[feature:getitem][binding:reference-to-reference][binding:reference-to-value]"

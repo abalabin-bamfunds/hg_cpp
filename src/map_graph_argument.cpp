@@ -315,6 +315,9 @@ class MapGraphArgumentBuilder {
         }
 
         const auto parameter_index = parameters_.size();
+        if (mapped && supplied_reference != nullptr && call_.selected_key_set == user_index) {
+            key_set_parameter_ = parameter_index;
+        }
         const auto &mapped_type = mapped ? mapped_dictionary_type(*supplied_dictionary, input_reference_guarantee)
                                          : input_reference;
         const auto &outer_type = mapped && supplied_reference != nullptr
@@ -337,7 +340,7 @@ class MapGraphArgumentBuilder {
     }
 
     void append_key_set_parameter() {
-        if (!call_.selected_key_set) {
+        if (!call_.selected_key_set || key_set_parameter_) {
             return;
         }
 

@@ -605,6 +605,34 @@ TEST_CASE("map uses an explicitly selected TSD key set",
     CHECK(actual.equals<i64>({3, std::nullopt, 5}));
 }
 
+TEST_CASE("a nested map selects keys from a referenced mapped dictionary",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
+          "[transition:addition][transition:removal]") {
+    const auto add = node([](i64 left, i64 right) { return left + right; });
+    const auto combine = graph("name"_n = "combine_reference_dictionary_values",
+                               [add](wp<TS<i64>> left, wp<TS<i64>> right) { return add(left, right); });
+
+    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> left,
+                            wp<TSD<i64, TSD<i64, TS<i64>>>> right) {
+        const auto outer = map(
+            [&](auto left_item, auto right_item) {
+                return map(combine, left_item, right_item, "__key_set_arg__"_n = 0)[i64{1}];
+            },
+            left, right, "__key_set_arg__"_n = 0);
+        return outer[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(
+        tested, {{{1, {{1, 10}}}}, {{1, {{1, 11}}}}, {{1, {{1, 12}}}}},
+        {{}, {{1, {{1, 20}}}}, {{1, {{1, literal::REMOVE}}}}});
+
+    REQUIRE(actual.size() == 3);
+    CHECK_FALSE(actual[0]);
+    REQUIRE(actual[1]);
+    CHECK(scalar_cast<i64>(actual[1]->view()).value() == 31);
+    CHECK_FALSE(actual[2]);
+}
+
 TEST_CASE("map uses an explicitly selected TSS key set for a source graph",
           "[feature:map][feature:nested-graph][feature:operator][series:tss][series:tsd]"
           "[shape:nested][guarantee:const]") {
