@@ -763,6 +763,8 @@ TEST_CASE("reduce preserves a non-scalar default reference while its target inva
                                        {{0, literal::INVALID}, {1, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({11, 10, 11, 10}));
+}
+
 const auto add_amount = node([](i64 value, int amount) { return value + amount; });
 
 TEST_CASE("reduce combines values selected by a switch in each mapped item",
