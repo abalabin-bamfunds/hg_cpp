@@ -308,6 +308,28 @@ source blocks; distinct mappings gather only requested rows into bounded
 scratch batches. Complete-column arithmetic uses the shared selection contract
 described below.
 
+## Frame and column queries
+
+`bg::operators::len_(value)` returns `TS<i64>` with the number of visible live
+rows in a TSF or TSC. Null cells count as rows. `bg::operators::is_empty(value)`
+returns `TS<bool>` indicating whether there are no visible live rows.
+
+```cpp
+auto row_count = bg::operators::len_(quotes);
+auto no_prices = bg::operators::is_empty(quotes["price"]);
+```
+
+The queries use the same input interfaces for native, borrowed, filtered, and
+computed outputs, including schemas defined during wiring. A valid empty input
+produces zero or true. Input invalidation invalidates the result. An ordinary
+cell update can publish the same count or Boolean result again.
+
+The existing `valid`, `all_valid`, and `count` operators also accept TSF and TSC.
+Null cells do not invalidate a column. For TSF, `all_valid` checks the root and
+its immediate column time series. `count` counts root ticks rather than rows.
+These operators follow BG's [validity](../../docs/development/design/library.md#validity-and-tick-selection)
+and [tick-count](../../docs/development/design/library.md#counting-and-one-event-lag) contracts.
+
 ## Column reductions
 
 `bg::operators::sum_(column)` accepts `TSC<i64>` or `TSC<double>` and returns

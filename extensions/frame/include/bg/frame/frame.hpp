@@ -3767,6 +3767,7 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
         : ActivityControl{activity}, data_{data}, field_ordinals_{extension_descriptor().template field_ordinals<Schema>()} {}
 
     bool valid() const noexcept { return data_.valid(); }
+    bool all_valid() const noexcept { return data_.valid() && data_.runtime_type().all_valid(data_); }
     bool became_valid() const noexcept { return data_.became_valid(); }
     bool became_invalid() const noexcept { return data_.became_invalid(); }
     bool modified() const noexcept { return data_.modified(); }

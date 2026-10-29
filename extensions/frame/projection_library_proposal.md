@@ -1,6 +1,7 @@
 # Frame projection and standard library integration
 
-Status: proposed. This note defines implementation stages for review.
+Status: projection and row-count queries are implemented. Later integration
+stages remain proposed.
 
 ## Purpose
 
@@ -86,16 +87,16 @@ and the exact row selection descriptor. Only mapped-column changes publish
 child modifications. No separate representation is introduced for wiring-time
 schemas.
 
-For computed selections, reuse `with_columns` expression binding, broadcasts,
-and column assembly, emitting only requested fields. Borrow selected source
-columns and materialise computed columns through existing BG operators.
+Computed selections reuse `with_columns` expression binding, broadcasts,
+and column assembly, emitting only requested fields. Selected source columns
+are borrowed; computed columns materialise through existing BG operators.
 
-Keep `project<TargetSchema, Names...>` as a wrapper over the same projection
-implementation, preserving its explicit target-field mapping.
+`project<TargetSchema, Names...>` wraps the same projection implementation,
+preserving its explicit target-field mapping.
 
-Add the planned `with_columns<TargetSchema>` form using the existing schema
-calculation and assembly node. Validate exact field names and cell types;
-the target declaration controls output order and metadata. Follow the
+`with_columns<TargetSchema>` uses the same schema calculation and assembly node
+and validates exact field names and cell types. The target declaration controls
+output order and metadata, following the
 [approved explicit-schema rules](with_columns_proposal.md#graph-api).
 
 ## Standard operator ownership
@@ -121,8 +122,8 @@ its overloads and implements its provider operations.
 | `getitem`, `getattr` | Resolve a scalar column name during wiring and select the existing child TSC; reuse the column-selection implementation. |
 | Arithmetic, comparisons, Boolean operations, `convert` | Retain existing column overloads and block expressions. |
 | `sum_` | Retain existing incremental numeric TSC reduction. |
-| `len_`, `is_empty` | Add row-count and empty-row-set overloads for TSF and TSC. |
-| `valid`, `all_valid`, `count` | Verify generic implementations. Null cells do not invalidate a column. `count` continues to count root ticks. |
+| `len_`, `is_empty` | Count visible live rows or test for no rows in TSF and TSC. Null cells count as rows. |
+| `valid`, `all_valid`, `count` | Use generic implementations. Null cells do not invalidate a column. `count` counts root ticks. |
 | `sample`, Boolean `filter_`, `take`, `drop`, `step`, `throttle`, `resample` | Supply provider `copy` and `copy_tick`; reuse standard nodes where their contracts permit. |
 | `if_then_else` and reference routing through nested graphs | Verify target switching, current values, row changes, and child notifications. Resolve the reference-sampling gap before claiming support. |
 | `delay` | Add retained-tick replay using BG's existing tick-operation registration. |
@@ -195,12 +196,11 @@ concrete missing operation.
 
 ## Implementation order
 
-1. Review the projection syntax and key inference rule. Implement single-column
-   standard selection and schema-driven select/rename/drop. Use one projection
-   node for borrowed columns and existing expression assembly for computed
-   selections. Include explicit `with_columns` output validation.
-2. Add standard row-count queries and verify generic validity/tick-count
-   behaviour. Exercise composition using public graph APIs and anonymous schemas.
+1. Implemented: single-column standard selection, schema-driven
+   select/rename/drop, and explicit `with_columns` output validation. Borrowed
+   columns use one projection node; computed selections use expression assembly.
+2. Implemented: standard row-count queries and generic validity/tick-count
+   verification through public graph APIs, including anonymous schemas.
 3. Review the copying row-identity contract. Implement copy operations once in
    the frame runtimes, then verify the standard tick-selection and timed nodes.
 4. Review and implement the required provider reference-sampling extension;

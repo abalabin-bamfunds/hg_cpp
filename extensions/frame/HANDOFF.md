@@ -5,7 +5,7 @@ Updated: 2026-10-29.
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is rebased onto main `68f4b900` and includes
+`agent/frame-with-columns`. The lane is rebased onto main `dfe929f0` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
@@ -17,8 +17,9 @@ semantic-only literal source change and default runtime registration remain
 there. The frame lane does not contain the transaction draft.
 
 Scalar constant and scalar time series broadcasting in `with_columns` is
-implemented in `98ad0b2d`. The current uncommitted change adds schema-driven
-projection and explicit output schema validation as described below.
+implemented in `98ad0b2d`. Schema-driven projection and explicit output schema
+validation are checkpointed in `a2db09f8`. Row-count queries and standard
+validity/tick-count integration are implemented as described below.
 
 Verification after separation:
 
@@ -35,7 +36,29 @@ The provider test reconstructs its input descriptor after state changes because
 `TimeSeriesInputData` stores a state copy. These changes are committed as
 `cc0435ea` after rebasing onto `ac6ab2da`.
 
-## Current projection work
+## Frame and column queries
+
+`src/collection.cpp` registers `len_` and `is_empty` overloads for TSF and TSC.
+The [query API](README.md#frame-and-column-queries) defines their row-count
+semantics. Existing generic `valid`, `all_valid`, and `count` operators work
+through the frame provider. TSC inputs expose root validity through
+`all_valid()`; TSF inputs delegate to the runtime's immediate-column check.
+
+Verification after rebasing onto main `dfe929f0`:
+
+- Matching BG Release library build and install passed using `j12`.
+- Arrow-on frame Release build passed. All ten frame CTest targets passed.
+- `bg_frame_collection_test` passed four cases and 19 assertions. Cases cover
+  null rows, empty values, same-size updates, removals, invalidation and
+  revalidation, anonymous schemas, projected/filtered/computed inputs, and
+  zero-field frames.
+- `git diff --check` passed.
+
+The next stage requires review of destination row identity for full copies
+and delta copies before implementing provider `copy` and `copy_tick`. See
+[copying and retained ticks](projection_library_proposal.md#copying-and-retained-ticks).
+
+## Projection
 
 The [projection proposal](projection_library_proposal.md) defines this stage.
 Changes in `include/bg/frame/frame.hpp` and `src/with_columns.cpp` add
@@ -63,7 +86,8 @@ and retains the source key tuple order.
 The approved BG metadata API is `SchemaMetadata::copy_with(overrides, remove)`.
 It removes listed names, then applies overrides, and replaces `with_overrides`.
 The isolated core change is in `.lanes/schema-metadata-copy` on
-`agent/schema-metadata-copy` at `ff57649a`, included in this lane as `28243002`.
+`agent/schema-metadata-copy` at `ff57649a`, included in this lane as `4b687a13`
+after rebasing onto `dfe929f0`.
 Its Release engine build succeeded; focused schema tests passed 11 cases and
 50 assertions. The core change is not merged into main.
 
@@ -72,7 +96,7 @@ preserving unrelated metadata. Regression tests cover declared and anonymous
 schemas. Verification against the core change passed as listed below.
 Keep this work on the frame lane until review and integration are authorized.
 
-Verification against the current changes:
+Verification before rebasing onto `dfe929f0`:
 
 - Matching BG Release build and install succeeded at `28243002`, based on main `68f4b900`.
   Its opaque-source constraint excludes span-compatible containers, allowing
