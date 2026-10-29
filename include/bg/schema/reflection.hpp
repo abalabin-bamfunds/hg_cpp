@@ -18,6 +18,8 @@ template <template <template <typename, auto...> typename> typename Schema> stru
     template <template <typename, auto...> typename Field> using apply = Schema<Field>;
 };
 
+template <typename, auto...> struct schema_identity_field {};
+
 struct no_schema_base {};
 
 // Field wrappers can record their address while schema_reflection captures a

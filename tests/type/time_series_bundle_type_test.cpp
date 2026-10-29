@@ -32,7 +32,28 @@ template <template <typename, auto...> typename Field> struct DerivedBundle : bu
     Field<TS<float>> value;
 };
 
+template <template <typename, auto...> typename Field> using BaseBundleAlias = BaseBundle<Field>;
+template <template <typename, auto...> typename Field> using DerivedBundleAlias = DerivedBundle<Field>;
+
 template <template <typename, auto...> typename Field> struct SharedBundle {
+    Field<i64> count;
+    Field<double, bg::optional> value;
+};
+
+template <template <typename, auto...> typename Field> using SharedBundleAlias = SharedBundle<Field>;
+
+template <template <typename, auto...> typename Field> struct ScalarBaseBundle {
+    Field<i64> count;
+};
+
+template <template <typename, auto...> typename Field>
+struct ScalarDerivedBundle : bundle_extends<ScalarBaseBundle, Field> {
+    Field<double> value;
+};
+
+template <template <typename, auto...> typename Field> using ScalarDerivedBundleAlias = ScalarDerivedBundle<Field>;
+
+template <template <typename, auto...> typename Field> struct OtherSharedBundle {
     Field<i64> count;
     Field<double, bg::optional> value;
 };
@@ -210,6 +231,44 @@ TEST_CASE("one schema can describe a hierarchical scalar and a time series bundl
     CHECK(&scalar_schema != &time_series_schema);
 }
 
+TEST_CASE("schema aliases share scalar and time series identities",
+          "[feature:type-system][scalar:hierarchical][series:tsb][schema:named]") {
+    const auto &scalar = cpp_scalar_type<Bundle<SharedBundle>>();
+    const auto &scalar_alias = cpp_scalar_type<Bundle<SharedBundleAlias>>();
+    const auto &time_series = TSB<SharedBundle>::type();
+    const auto &time_series_alias = TSB<SharedBundleAlias>::type();
+    const auto &scalar_schema = static_cast<const ResolvedHierarchicalScalarType &>(scalar).schema();
+    const auto &scalar_alias_schema = static_cast<const ResolvedHierarchicalScalarType &>(scalar_alias).schema();
+
+    CHECK(&scalar == &scalar_alias);
+    CHECK(scalar_schema.identity() == scalar_alias_schema.identity());
+    CHECK(time_series.schema().identity() == time_series_alias.schema().identity());
+    CHECK(time_series.schema().identity() == scalar_schema.identity());
+    CHECK(&scalar != &cpp_scalar_type<Bundle<OtherSharedBundle>>());
+
+    const auto &scalar_derived = cpp_scalar_type<Bundle<ScalarDerivedBundle>>();
+    const auto &scalar_derived_alias = cpp_scalar_type<Bundle<ScalarDerivedBundleAlias>>();
+    const auto &scalar_derived_schema =
+        static_cast<const ResolvedHierarchicalScalarType &>(scalar_derived).schema();
+    const auto &scalar_derived_alias_schema =
+        static_cast<const ResolvedHierarchicalScalarType &>(scalar_derived_alias).schema();
+    CHECK(&scalar_derived == &scalar_derived_alias);
+    CHECK(scalar_derived_schema.identity() == scalar_derived_alias_schema.identity());
+    REQUIRE(scalar_derived_schema.base() != nullptr);
+    REQUIRE(scalar_derived_alias_schema.base() != nullptr);
+    CHECK(scalar_derived_schema.base()->identity() == scalar_derived_alias_schema.base()->identity());
+
+    const auto &derived = TSB<DerivedBundle>::type();
+    const auto &derived_alias = TSB<DerivedBundleAlias>::type();
+    const auto &base = TSB<BaseBundle>::type();
+    const auto &base_alias = TSB<BaseBundleAlias>::type();
+    REQUIRE(derived.schema().base() != nullptr);
+    REQUIRE(derived_alias.schema().base() != nullptr);
+    CHECK(derived.schema().identity() == derived_alias.schema().identity());
+    CHECK(derived.schema().base()->identity() == derived_alias.schema().base()->identity());
+    CHECK(base.schema().identity() == base_alias.schema().identity());
+}
+
 TEST_CASE("explicit time series fields remain time series fields",
           "[feature:type-system][series:tsb][schema:named][declaration:concrete]") {
     STATIC_CHECK_FALSE(details::hierarchical_scalar_schema_supported<BaseBundle>);
@@ -284,7 +343,7 @@ TEST_CASE("bundle declarations remain generic when a field guarantee is unresolv
     const auto fields = std::array{SchemaField{util::symbol{"value"}, &TS<i64, TimeSeriesGuarantee::final>::type()}};
     const auto &schema =
         bg::schema(util::symbol{"UnresolvedFieldBundle"},
-                   std::type_index{typeid(details::schema_template<UnresolvedFieldBundle>)}, nullptr, fields);
+                   std::type_index{typeid(UnresolvedFieldBundle<details::schema_identity_field>)}, nullptr, fields);
     const auto &concrete = time_series_bundle_type(schema, TimeSeriesGuarantee::ordinary);
 
     auto bundle_type_map = TypeMap{};

@@ -156,11 +156,13 @@ the schema lifetime.
 `SchemaRegistration` reserves runtime schemas, finalizes their descriptors before
 `commit()`, and rolls back the reservations and owned descriptors on failure.
 
-A C++ declaration such as `Quote` is identified by
-`std::type_index{typeid(details::schema_template<Quote>)}`. A runtime declaration
-uses a unique `RuntimeSchemaId` allocated by `new_runtime_schema_id()`. Anonymous
-schemas use no declaration identity. Separate declarations remain distinct when
-their fields match.
+A C++ declaration such as `Quote` is identified by the concrete schema
+instantiation `Quote<details::schema_identity_field>`. This keeps aliases of one
+schema declaration identical across scalar and time series projections. A
+runtime declaration uses a unique `RuntimeSchemaId` allocated by
+`new_runtime_schema_id()`. Anonymous schemas use no declaration identity.
+Separate declarations remain distinct when their fields match.
+See the [schema alias identity decision](../decisions/0091-schema-alias-identity.md).
 
 Projections retain that declaration identity and record their actual field types:
 
