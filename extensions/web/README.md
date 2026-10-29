@@ -280,10 +280,11 @@ for each graph run.
 ## Client authentication values
 
 Client authentication values use the `Auth` schema hierarchy. `AnonymousAuth`
-is empty. `BasicAuth`, `DigestAuth`, `NegotiateAuth`, and `NtlmAuth` contain
-`username` and `password`; `BearerAuth` contains `token`; `HeaderAuth` contains
-ordered `headers`. Python exports constructors with these field names, and a
-`TS[Auth]` input preserves the concrete derived class.
+is empty. `BasicAuth`, `DigestAuth`, and `NtlmAuth` contain `username` and
+`password`; `NegotiateAuth` is empty and uses the platform's default
+credentials. `BearerAuth` contains `token`; `HeaderAuth` contains ordered
+`headers`. Python exports constructors with these field names, and a `TS[Auth]`
+input preserves the concrete derived class.
 
 The native transport boundary accepts these values. HTTP handles all seven
 derived schemas. WebSocket handles `AnonymousAuth`, `BasicAuth`, `BearerAuth`,

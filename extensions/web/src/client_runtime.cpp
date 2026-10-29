@@ -256,8 +256,14 @@ std::optional<std::string> Transfer::validate() const {
     }
     if (kind == details::ClientAuthKind::anonymous) return std::nullopt;
 
+    if (kind == details::ClientAuthKind::negotiate) {
+        if (request_has_authorization) {
+            return std::string{"HTTP request Authorization header conflicts with credentials"};
+        }
+        return std::nullopt;
+    }
     if (kind == details::ClientAuthKind::basic || kind == details::ClientAuthKind::digest ||
-        kind == details::ClientAuthKind::negotiate || kind == details::ClientAuthKind::ntlm) {
+        kind == details::ClientAuthKind::ntlm) {
         const auto username = scalar_cast<string>(auth[0]).value();
         const auto password = scalar_cast<string>(auth[1]).value();
         if (details::contains_nul(username) || details::contains_nul(password)) {
@@ -359,12 +365,15 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
     if (auth_value) {
         const auto auth = scalar_cast<Bundle<Auth>>(auth_value->view());
         const auto kind = details::client_auth_kind(auth);
-        if (kind == details::ClientAuthKind::basic || kind == details::ClientAuthKind::digest ||
-            kind == details::ClientAuthKind::negotiate || kind == details::ClientAuthKind::ntlm) {
-            const auto curl_auth = kind == details::ClientAuthKind::basic       ? CURLAUTH_BASIC
-                                   : kind == details::ClientAuthKind::digest    ? CURLAUTH_DIGEST
-                                   : kind == details::ClientAuthKind::negotiate ? CURLAUTH_NEGOTIATE
-                                                                                : CURLAUTH_NTLM;
+        if (kind == details::ClientAuthKind::negotiate) {
+            set_easy_option(easy, CURLOPT_HTTPAUTH, CURLAUTH_NEGOTIATE);
+            // libcurl's empty credentials activate Negotiate with platform credentials.
+            set_easy_option(easy, CURLOPT_USERPWD, ":");
+        } else if (kind == details::ClientAuthKind::basic || kind == details::ClientAuthKind::digest ||
+                   kind == details::ClientAuthKind::ntlm) {
+            const auto curl_auth = kind == details::ClientAuthKind::basic    ? CURLAUTH_BASIC
+                                   : kind == details::ClientAuthKind::digest ? CURLAUTH_DIGEST
+                                                                             : CURLAUTH_NTLM;
             const auto username = std::string{scalar_cast<string>(auth[0]).value()};
             const auto password = std::string{scalar_cast<string>(auth[1]).value()};
             set_easy_option(easy, CURLOPT_HTTPAUTH, curl_auth);

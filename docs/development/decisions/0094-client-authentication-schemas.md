@@ -15,6 +15,9 @@ submission retains an owning base-typed scalar and selects behavior from its
 actual derived type. An explicit anonymous value permits anonymous access.
 Unsupported auth types produce a local status-599 response.
 
+`NegotiateAuth` selects platform or default credentials. Obtaining and
+refreshing tickets is outside the transport schema.
+
 Keep the server policy interface unchanged. It returns an identity or an HTTP
 rejection through `AuthDecision<IDENTITY>`.
 

@@ -57,10 +57,7 @@ template <template <typename, auto...> typename Field> struct DigestAuth : schem
     Field<string> password;
 };
 
-template <template <typename, auto...> typename Field> struct NegotiateAuth : schema_extends<Auth, Field> {
-    Field<string> username;
-    Field<string> password;
-};
+template <template <typename, auto...> typename Field> struct NegotiateAuth : schema_extends<Auth, Field> {};
 
 template <template <typename, auto...> typename Field> struct NtlmAuth : schema_extends<Auth, Field> {
     Field<string> username;

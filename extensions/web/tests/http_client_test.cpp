@@ -29,6 +29,7 @@
 #include <vector>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 using namespace bg;
 using namespace bg::literals;
@@ -114,7 +115,8 @@ ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
 
 } // namespace
 
-TEST_CASE("HTTP client runtime sends typed Basic authentication", "[feature:http][feature:auth]") {
+TEST_CASE("HTTP client runtime handles Basic and Negotiate authentication", "[feature:http][feature:auth]") {
+    const auto use_negotiate = GENERATE(false, true);
     auto stop = std::stop_source{};
     auto catalogue = ServiceCatalogue{};
     register_http_server(catalogue);
@@ -122,7 +124,7 @@ TEST_CASE("HTTP client runtime sends typed Basic authentication", "[feature:http
     auto memory = allocator{};
     const auto basic = bundle<BasicAuth>(memory, "username"_n = std::string{"alice"},
                                          "password"_n = std::string{"secret"});
-    const auto auth = ScalarValue<Bundle<Auth>>{basic.view()};
+    const auto negotiate = bundle<NegotiateAuth>(memory);
     auto observed_authorization = std::string{};
     auto response = std::optional<ObservedResponse>{};
     auto submitted = false;
@@ -144,9 +146,14 @@ TEST_CASE("HTTP client runtime sends typed Basic authentication", "[feature:http
         if (submitted) return;
         const auto request = make_request(
             "GET", "http://127.0.0.1:" + std::to_string(*port) + "/client-auth");
+        auto auth = std::optional<ScalarValue<Bundle<Auth>>>{};
+        if (use_negotiate) {
+            auth.emplace(ScalarValue<Bundle<Auth>>{negotiate.view()});
+        } else {
+            auth.emplace(ScalarValue<Bundle<Auth>>{basic.view()});
+        }
         runtime.value()->request(client_id, 1, ScalarValue<Bundle<HttpClientRequest>>{request.view()},
-                                 std::optional<ScalarValue<Bundle<Auth>>>{
-                                     ScalarValue<Bundle<Auth>>{auth.view()}});
+                                 std::move(auth));
         submitted = true;
     });
     const auto collect = node([&](In<TSD<i64, TS<Bundle<HttpResponse>>>> replies) {
@@ -173,7 +180,7 @@ TEST_CASE("HTTP client runtime sends typed Basic authentication", "[feature:http
     REQUIRE(submitted);
     REQUIRE(response.has_value());
     CHECK(response->status == 204);
-    CHECK(observed_authorization == "Basic YWxpY2U6c2VjcmV0");
+    if (!use_negotiate) CHECK(observed_authorization == "Basic YWxpY2U6c2VjcmV0");
 }
 
 TEST_CASE("HTTP client runtime rejects a base-only authentication value", "[feature:http][feature:auth]") {

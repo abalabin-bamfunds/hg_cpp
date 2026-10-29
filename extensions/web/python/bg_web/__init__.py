@@ -75,8 +75,7 @@ class DigestAuth(Auth):
 
 
 class NegotiateAuth(Auth):
-    username: str
-    password: str
+    """Use the platform's default Negotiate credentials."""
 
 
 class NtlmAuth(Auth):
