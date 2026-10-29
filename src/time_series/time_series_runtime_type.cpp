@@ -377,14 +377,6 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
             registered != registered_runtime_types().end()) {
             return *registered->second;
         }
-        if (const auto factory = type.default_runtime_type_factory()) {
-            const auto &runtime_type = factory(type);
-            if (&runtime_type.type() != &type) {
-                throw std::invalid_argument{"default time series runtime type does not match its semantic type"};
-            }
-            validate_registered_runtime_type(runtime_type);
-            return runtime_type;
-        }
     }
 
     auto scalar_runtime_types =
@@ -443,6 +435,10 @@ resolve_time_series_runtime_type(const TimeSeriesType &type,
         return *result;
     }
 
+    if (type.default_runtime_type_factory() != nullptr) {
+        return resolve_default_time_series_runtime_type(type);
+    }
+
     if (const auto registered = registered_runtime_types().find(&type); registered != registered_runtime_types().end()) {
         return *registered->second;
     }
@@ -458,43 +454,6 @@ const TimeSeriesRuntimeType &resolve_default_time_series_runtime_type(const Time
         validate_registered_runtime_type(runtime_type);
         return runtime_type;
     }
-
-    const TimeSeriesRuntimeType *result{};
-    type.visit(
-        [&](const TimeSeriesValueType *value) {
-            result = &time_series_value_runtime_type(*value,
-                                                     resolve_default_scalar_runtime_type(value->value_type()));
-        },
-        [&](const TimeSeriesReferenceType *reference) { result = &time_series_reference_runtime_type(*reference); },
-        [&](const TimeSeriesListType *list) {
-            if (list->item_count() == std::dynamic_extent) {
-                throw std::invalid_argument{"variable-size time series lists are not implemented"};
-            }
-            result = &details::fixed_time_series_list_runtime_type(
-                *list, resolve_default_time_series_runtime_type(list->item_type()));
-        },
-        [&](const TimeSeriesSetType *set) {
-            result = &details::time_series_set_runtime_type(
-                *set, resolve_default_scalar_runtime_type(set->item_type()));
-        },
-        [&](const TimeSeriesDictionaryType *dictionary) {
-            const auto &key = resolve_default_scalar_runtime_type(dictionary->key_type());
-            const auto &item = resolve_default_time_series_runtime_type(dictionary->value_type());
-            result = &details::time_series_dictionary_runtime_type(*dictionary, key, item);
-        },
-        [&](const TimeSeriesBundleType *bundle) {
-            auto items = std::vector<const TimeSeriesRuntimeType *>{};
-            items.reserve(bundle->item_count());
-            for (auto index = std::size_t{}; index < bundle->item_count(); ++index) {
-                items.push_back(&resolve_default_time_series_runtime_type(bundle->item_type(index)));
-            }
-            result = &details::time_series_bundle_runtime_type(*bundle, items);
-        },
-        ddv::noop);
-    if (result != nullptr) {
-        return *result;
-    }
-
     throw std::logic_error{"resolved time series type has no default runtime type"};
 }
 

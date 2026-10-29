@@ -129,8 +129,9 @@ reuses them across graphs.
 When a default runtime requires C++ type information, the canonical semantic
 factory records a lazy callback. Registration stores this callback without
 constructing the runtime type. C++ scalar defaults use `scalar_storage_traits<T>`;
-time series providers use their runtime traits. BG composition obtains the
-defaults of its components recursively.
+time series providers use their runtime traits. Every resolved built-in time
+series descriptor also records a default runtime callback. Composite callbacks
+obtain the defaults of their components recursively.
 
 Default runtime resolution ignores supplied runtime layouts and registered
 alternate representations. Ordinary runtime resolution can preserve supplied

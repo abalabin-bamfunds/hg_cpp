@@ -1,5 +1,7 @@
 #include <bg/type/time_series_list_type.hpp>
 
+#include <bg/time_series/tsl/tsl_runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/static_storage.hpp>
@@ -17,7 +19,16 @@ namespace {
 class ResolvedTimeSeriesListType final : public TimeSeriesListType {
   public:
     ResolvedTimeSeriesListType(const TimeSeriesType &item_type, std::size_t size, TimeSeriesGuarantee guarantee)
-        : TimeSeriesListType(item_type, size, guarantee) {}
+        : TimeSeriesListType(item_type, size, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            const auto &list = static_cast<const TimeSeriesListType &>(type);
+            if (list.item_count() == std::dynamic_extent) {
+                throw std::invalid_argument{"variable-size time series lists are not implemented"};
+            }
+            return details::fixed_time_series_list_runtime_type(
+                list, resolve_default_time_series_runtime_type(list.item_type()));
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }

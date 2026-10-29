@@ -1,5 +1,8 @@
 #include <bg/type/time_series_dict_type.hpp>
 
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/tsd/tsd_runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
@@ -21,7 +24,14 @@ class ResolvedTimeSeriesDictionaryType final : public TimeSeriesDictionaryType {
   public:
     ResolvedTimeSeriesDictionaryType(const ScalarType &key_type, const TimeSeriesType &value_type,
                                      const TimeSeriesType &key_set_type, TimeSeriesGuarantee guarantee)
-        : TimeSeriesDictionaryType(key_type, value_type, key_set_type, guarantee) {}
+        : TimeSeriesDictionaryType(key_type, value_type, key_set_type, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            const auto &dictionary = static_cast<const TimeSeriesDictionaryType &>(type);
+            const auto &key = resolve_default_scalar_runtime_type(dictionary.key_type());
+            const auto &item = resolve_default_time_series_runtime_type(dictionary.value_type());
+            return details::time_series_dictionary_runtime_type(dictionary, key, item);
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }

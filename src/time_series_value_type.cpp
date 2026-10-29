@@ -1,6 +1,8 @@
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -12,7 +14,12 @@ namespace {
 class ResolvedTimeSeriesValueType final : public TimeSeriesValueType {
   public:
     ResolvedTimeSeriesValueType(const ScalarType &value_type, TimeSeriesGuarantee guarantee)
-        : TimeSeriesValueType(value_type, guarantee) {}
+        : TimeSeriesValueType(value_type, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            const auto &value = static_cast<const TimeSeriesValueType &>(type);
+            return time_series_value_runtime_type(value, resolve_default_scalar_runtime_type(value.value_type()));
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
 

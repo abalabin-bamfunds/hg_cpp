@@ -1359,6 +1359,48 @@ TEST_CASE("time-series runtime resolution applies nested scalar overrides",
     CHECK(&resolve_default_time_series_runtime_type(Bundle::type()) == &default_bundle_runtime);
 }
 
+TEST_CASE("resolved built-in time-series types provide default runtime factories",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Series = TS<i64>;
+    using Reference = REF<Series>;
+    using List = TSL<Series, 2>;
+    using Set = TSS<i64>;
+    using Dictionary = TSD<i64, Series>;
+    using Bundle = provider::ProviderValueTimeSeriesBundle;
+
+    const auto check_default = [](const TimeSeriesType &type) {
+        CHECK(type.default_runtime_type_factory() != nullptr);
+        CHECK(&resolve_default_time_series_runtime_type(type).type() == &type);
+    };
+
+    check_default(Series::type());
+    check_default(Reference::type());
+    check_default(List::type());
+    check_default(Set::type());
+    check_default(Dictionary::type());
+    check_default(Bundle::type());
+}
+
+TEST_CASE("ordinary aggregate runtime resolution composes registered child runtimes",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Child = TS<test_scalar_provider::value, TimeSeriesGuarantee::final>;
+    using Outer = TSL<Child, 1>;
+
+    const auto &alternate = time_series_value_runtime_type(
+        Child::type(), test_scalar_provider::immutable_snapshot_runtime_type());
+    register_time_series_runtime_type(alternate);
+
+    const auto &outer = resolve_time_series_runtime_type(Outer::type());
+
+    CHECK(&outer.item_runtime_type(0) == &alternate);
+
+    const auto &default_child = resolve_default_time_series_runtime_type(Child::type());
+    const auto &default_outer = resolve_default_time_series_runtime_type(Outer::type());
+
+    CHECK(&default_outer.item_runtime_type(0) == &default_child);
+    CHECK(&default_outer.item_runtime_type(0) != &alternate);
+}
+
 TEST_CASE("typed extension inputs defer default runtime lookup until wiring",
           "[testing][evaluation][feature:test-graph][series:generic]") {
     using EmptySeries = provider::Series<test_scalar_provider::layout_value, TimeSeriesGuarantee::deduplicated>;

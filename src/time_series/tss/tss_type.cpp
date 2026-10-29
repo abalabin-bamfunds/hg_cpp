@@ -1,5 +1,7 @@
 #include <bg/type/time_series_set_type.hpp>
 
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/static_storage.hpp>
 #include <bg/type/type_map.hpp>
@@ -19,7 +21,12 @@ namespace {
 class ResolvedTimeSeriesSetType final : public TimeSeriesSetType {
   public:
     ResolvedTimeSeriesSetType(const ScalarType &item_type, TimeSeriesGuarantee guarantee)
-        : TimeSeriesSetType(item_type, guarantee) {}
+        : TimeSeriesSetType(item_type, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            const auto &set = static_cast<const TimeSeriesSetType &>(type);
+            return details::time_series_set_runtime_type(set, resolve_default_scalar_runtime_type(set.item_type()));
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }

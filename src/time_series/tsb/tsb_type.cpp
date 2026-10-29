@@ -1,5 +1,7 @@
 #include <bg/type/time_series_bundle_type.hpp>
 
+#include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
@@ -18,7 +20,17 @@ namespace {
 class ResolvedTimeSeriesBundleType final : public TimeSeriesBundleType {
   public:
     ResolvedTimeSeriesBundleType(const Schema &schema, TimeSeriesGuarantee guarantee)
-        : TimeSeriesBundleType(schema, guarantee) {}
+        : TimeSeriesBundleType(schema, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            const auto &bundle = static_cast<const TimeSeriesBundleType &>(type);
+            auto items = std::vector<const TimeSeriesRuntimeType *>{};
+            items.reserve(bundle.item_count());
+            for (auto index = std::size_t{}; index < bundle.item_count(); ++index) {
+                items.push_back(&resolve_default_time_series_runtime_type(bundle.item_type(index)));
+            }
+            return details::time_series_bundle_runtime_type(bundle, items);
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
