@@ -54,10 +54,12 @@ rather than supplying an old result.
 
 ## reduce
 
-C++ `reduce(graph, values, "default"_n = scalar)` combines valid TSD items. The reducer
-graph has two explicit time series inputs and a scalar-valued output compatible with the
-item type. Its operation must be associative and commutative; dictionary order is
-unspecified. Context inputs are allowed.
+C++ `reduce(graph, values, "default"_n = ...)` combines valid TSD items. The reducer
+graph has two explicit time-series inputs and returns a time series compatible with the
+item type. Scalar-valued items produce a scalar-valued result; other item types produce
+a reference to the reduced time series. The scalar case accepts a scalar default. Other
+item types accept a time-series default of the item type. The operation must be
+associative and commutative; dictionary order is unspecified. Context inputs are allowed.
 
 One valid item is forwarded directly. With no valid items, a valid dictionary uses the
 supplied default or has no result. An invalid dictionary has no result. Target changes

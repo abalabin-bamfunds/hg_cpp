@@ -42,15 +42,13 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
     }
 
     const auto &item_type = dictionary_type_value->value_type().target_type();
+    const auto &reducer_item_type = item_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
     const auto item_runtime_type_is_fixed =
         type_cast<TimeSeriesReferenceType>(&dictionary.type()) == nullptr &&
         !dictionary_type_value->value_type().contains_reference();
     auto built = build_reduce_graph_argument_wiring(
-        function, item_type, type_map, item_runtime_type_is_fixed);
+        function, reducer_item_type, type_map, item_runtime_type_is_fixed);
     const auto *output_value_type = type_cast<TimeSeriesValueType>(&item_type);
-    if (output_value_type == nullptr) {
-        throw WiringError{"reduce graph output must have a scalar-valued time series type"};
-    }
 
     auto parameters = std::vector<ResolvedParameter>{};
     auto outer_arguments = std::vector<WiringArgument>{};
@@ -64,13 +62,32 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
 
     auto default_parameter = std::optional<std::uint32_t>{};
     if (default_value) {
-        if (!default_value->is_scalar() || !output_value_type->value_type().accepts(default_value->type())) {
-            throw WiringError{"reduce default must be a scalar value matching the TSD item type"};
+        if (output_value_type != nullptr) {
+            if (!default_value->is_scalar() || !output_value_type->value_type().accepts(default_value->type())) {
+                throw WiringError{"reduce default must be a scalar value matching the TSD item type"};
+            }
+            default_parameter = static_cast<std::uint32_t>(parameters.size());
+            parameters.push_back({util::symbol{"default"}, &output_value_type->value_type(), active, optional, true});
+            outer_arguments.push_back(*default_value);
+            outer_arguments.back().clear_name();
+        } else {
+            if (!default_value->is_time_series()) {
+                throw WiringError{"reduce default must be a time series matching the TSD item type"};
+            }
+            const auto &provided_type = static_cast<const TimeSeriesType &>(default_value->type()).target_type();
+            const auto &ordinary_default_type = provided_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+            if (!reducer_item_type.accepts(ordinary_default_type) ||
+                !ordinary_default_type.accepts(reducer_item_type)) {
+                throw WiringError{"reduce default must have the TSD item time-series type"};
+            }
+
+            const auto &default_reference_type =
+                time_series_reference_type(reducer_item_type, TimeSeriesGuarantee::ordinary);
+            default_parameter = static_cast<std::uint32_t>(parameters.size());
+            parameters.push_back({util::symbol{"default"}, &default_reference_type, active, optional});
+            outer_arguments.emplace_back(
+                materialize_reference(default_value->time_series(), default_reference_type));
         }
-        default_parameter = static_cast<std::uint32_t>(parameters.size());
-        parameters.push_back({util::symbol{"default"}, &output_value_type->value_type(), active, optional, true});
-        outer_arguments.push_back(*default_value);
-        outer_arguments.back().clear_name();
     }
 
     for (const auto &requirement : built.graph.nested.wiring->inherited_requirements()) {
@@ -78,7 +95,11 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
         outer_arguments.emplace_back(requirement.provider);
     }
 
-    const auto &output_type = time_series_value_type(output_value_type->value_type(), TimeSeriesGuarantee::ordinary);
+    const auto &output_type = output_value_type != nullptr
+                                  ? static_cast<const TimeSeriesType &>(time_series_value_type(
+                                        output_value_type->value_type(), TimeSeriesGuarantee::ordinary))
+                                  : static_cast<const TimeSeriesType &>(time_series_reference_type(
+                                        reducer_item_type, TimeSeriesGuarantee::ordinary));
     auto outer_signature = ResolvedSignature{util::symbol{"reduce"}, std::move(parameters), &output_type};
     auto structure = built.structure;
     auto payload = std::make_shared<DefaultReduceWiring>(DefaultReduceWiring{

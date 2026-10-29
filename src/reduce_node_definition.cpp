@@ -5,6 +5,7 @@
 #include <bg/graph/compiled_graph.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 #include <bg/type/scalar_type.hpp>
 
@@ -53,24 +54,49 @@ void validate_signature(const Signature &signature, std::uint32_t dictionary_par
         (default_parameter && *default_parameter >= signature.parameter_count())) {
         throw std::invalid_argument{"a reduce node parameter index is out of range"};
     }
-    if (signature.output() == nullptr || type_cast<TimeSeriesValueType>(signature.output()) == nullptr) {
-        throw std::invalid_argument{"a reduce node output must be a scalar-valued time series"};
+    if (signature.output() == nullptr || !signature.output()->is_time_series()) {
+        throw std::invalid_argument{"a reduce node output must be a time series"};
     }
 
     const auto *dictionary = type_cast<TimeSeriesDictionaryType>(signature.parameter(dictionary_parameter).type);
-    const auto *value_type = dictionary == nullptr
-                                 ? nullptr
-                                 : type_cast<TimeSeriesValueType>(&dictionary->value_type());
+    if (dictionary == nullptr) {
+        throw std::invalid_argument{"a reduce node requires a TSD input"};
+    }
+
+    const auto *value_type = type_cast<TimeSeriesValueType>(&dictionary->value_type());
     const auto *output_type = type_cast<TimeSeriesValueType>(signature.output());
-    if (value_type == nullptr || output_type == nullptr ||
-        &value_type->value_type() != &output_type->value_type()) {
-        throw std::invalid_argument{"a reduce node requires a value TSD input for its output type"};
+    const auto *output_reference = type_cast<TimeSeriesReferenceType>(signature.output());
+    const auto &item_type = dictionary->value_type().target_type().with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+    if (value_type != nullptr) {
+        if (output_type == nullptr || &value_type->value_type() != &output_type->value_type()) {
+            throw std::invalid_argument{"a reduce node requires a scalar output matching the TSD item type"};
+        }
+    } else if (output_reference == nullptr) {
+        throw std::invalid_argument{"a reduce node requires a reference output matching the TSD item type"};
+    } else {
+        const auto &output_target = output_reference->target_type().with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+        if (!item_type.accepts(output_target) || !output_target.accepts(item_type)) {
+            throw std::invalid_argument{"a reduce node requires a reference output matching the TSD item type"};
+        }
     }
 
     if (default_parameter) {
-        const auto *default_type = type_cast<ScalarType>(signature.parameter(*default_parameter).type);
-        if (default_type == nullptr || !output_type->value_type().accepts(*default_type)) {
-            throw std::invalid_argument{"a reduce node default must match its output scalar type"};
+        const auto &default_type = *signature.parameter(*default_parameter).type;
+        if (value_type != nullptr) {
+            const auto *default_scalar_type = type_cast<ScalarType>(&default_type);
+            if (default_scalar_type == nullptr || !output_type->value_type().accepts(*default_scalar_type)) {
+                throw std::invalid_argument{"a reduce node scalar default must match its output type"};
+            }
+        } else {
+            const auto *default_reference_type = type_cast<TimeSeriesReferenceType>(&default_type);
+            if (default_reference_type == nullptr) {
+                throw std::invalid_argument{"a reduce node default reference must match its TSD item type"};
+            }
+            const auto &default_target =
+                default_reference_type->target_type().with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+            if (!item_type.accepts(default_target) || !default_target.accepts(item_type)) {
+                throw std::invalid_argument{"a reduce node default reference must match its TSD item type"};
+            }
         }
     }
 }
@@ -116,7 +142,8 @@ NestedReduceNodeDefinition::compile(const ResolvedSignature &, allocator &memory
 
     return {.nested = std::move(nested),
             .dictionary_parameter = dictionary_parameter_,
-            .default_parameter = default_parameter_};
+            .default_parameter = default_parameter_,
+            .reference_output = type_cast<TimeSeriesReferenceType>(signature_->output()) != nullptr};
 }
 
 CompactReduceNodeDefinition::CompactReduceNodeDefinition(ReduceCompactGraphWiring wiring,

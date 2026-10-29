@@ -26,6 +26,7 @@ struct CompiledNestedReduceGraph {
     CompiledNestedGraph nested;
     std::uint32_t dictionary_parameter{};
     std::optional<std::uint32_t> default_parameter;
+    bool reference_output{};
 };
 
 class NestedReduceNodeDefinition {

@@ -52,8 +52,8 @@ void validate_signature(const WiringTemplate &function) {
     if (explicit_inputs != 2) {
         throw WiringError{"a reduce graph must have exactly two explicit inputs"};
     }
-    if (signature.output() == nullptr || type_cast<TimeSeriesValueType>(signature.output()) == nullptr) {
-        throw WiringError{"a reduce graph output must have the TSD item value type"};
+    if (signature.output() == nullptr || !signature.output()->is_time_series()) {
+        throw WiringError{"a reduce graph output must be a time series"};
     }
 }
 
@@ -78,12 +78,9 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                                                               const TypeMap &type_map,
                                                               bool item_runtime_type_is_fixed) {
     const auto *item_value_type = type_cast<TimeSeriesValueType>(&item_type);
-    if (item_value_type == nullptr) {
-        throw WiringError{"reduce requires TSD items to be scalar-valued time series"};
-    }
     validate_signature(function);
 
-    const auto &reducer_input_type = item_value_type->with_guarantee(TimeSeriesGuarantee::ordinary);
+    const auto &reducer_input_type = item_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
     auto wiring = std::make_shared<GraphWiring>(WiringContext::current().wiring());
     auto context = WiringContext{*wiring};
 
@@ -97,9 +94,17 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
         throw WiringError{"a reduce graph must produce an output"};
     }
     const auto &result_type = reference_target(result->type());
-    const auto *result_value_type = type_cast<TimeSeriesValueType>(&result_type);
-    if (result_value_type == nullptr || &result_value_type->value_type() != &item_value_type->value_type()) {
-        throw WiringError{"a reduce graph output must have the TSD item value type"};
+    if (item_value_type != nullptr) {
+        const auto *result_value_type = type_cast<TimeSeriesValueType>(&result_type);
+        if (result_value_type == nullptr || &result_value_type->value_type() != &item_value_type->value_type()) {
+            throw WiringError{"a reduce graph output must have the TSD item value type"};
+        }
+    } else {
+        const auto &ordinary_result_type = result_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+        if (!reducer_input_type.accepts(ordinary_result_type) ||
+            !ordinary_result_type.accepts(reducer_input_type)) {
+            throw WiringError{"a reduce graph output must have the TSD item time-series type"};
+        }
     }
 
     const auto concrete_result = wiring->complete_pending_wiring(*result);
@@ -107,7 +112,7 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
 
     auto compact_graph = std::optional<ReduceCompactGraphWiring>{};
     const auto reducer_input_types = std::array<const TimeSeriesType *, 2>{&reducer_input_type, &reducer_input_type};
-    if (item_runtime_type_is_fixed && wiring->inherited_requirements().empty() &&
+    if (item_value_type != nullptr && item_runtime_type_is_fixed && wiring->inherited_requirements().empty() &&
         wiring->service_binding_requirements().empty()) {
         if (accepts_compact_inputs(function, reducer_input_type)) {
             try {

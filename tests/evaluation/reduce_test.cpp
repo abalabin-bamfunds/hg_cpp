@@ -4,7 +4,9 @@
 #include <bg/reduce/details/reduce_graph_argument.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
+#include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +18,11 @@ namespace {
 
 using namespace bg;
 using namespace bg::literals;
+
+template <template <typename, auto...> typename Field> struct ReduceBundle {
+    Field<TS<i64>> left;
+    Field<TS<i64>> right;
+};
 
 const auto add_values = node([](i64 left, i64 right) { return left + right; });
 
@@ -551,6 +558,255 @@ TEST_CASE("reduce follows stable TSD references as initially invalid items becom
     CHECK((actual[1] && scalar_cast<i64>(actual[1]->view()).value() == 15));
     CHECK((actual[2] && scalar_cast<i64>(actual[2]->view()).value() == 7));
     CHECK((actual[3] && scalar_cast<i64>(actual[3]->view()).value() == 19));
+}
+
+TEST_CASE("reduce forwards non-scalar TSD item references",
+          "[feature:reduce][series:tsd][series:fixed-tsl][shape:nested][binding:reference-to-value]") {
+    const auto add_lists = node([](In<TSL<TS<i64>, 2>> left, In<TSL<TS<i64>, 2>> right,
+                                   Out<TSL<TS<i64>, 2>> output) {
+        for (auto index = std::size_t{}; index < 2; ++index) {
+            if (left[index].valid() && right[index].valid()) {
+                output[index].set(*left[index] + *right[index]);
+            }
+        }
+    });
+    const auto add_lists_graph = graph("name"_n = "add_lists_for_reduce",
+                                      [add_lists](wp<TSL<TS<i64>, 2>> left, wp<TSL<TS<i64>, 2>> right) {
+                                          return add_lists(left, right);
+                                      });
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
+    const auto tested = [&](wp<TSD<i64, TSL<TS<i64>, 2>>> values) {
+        return sum(reduce(add_lists_graph, values));
+    };
+
+    const auto actual = bg::run_graph(
+        tested, {{{1, {{0, 10}, {1, 20}}}}, {{2, {{0, 30}, {1, 40}}}}, {{1, literal::REMOVE}}});
+
+    CHECK(actual.equals<i64>({30, 100, 70}));
+}
+
+TEST_CASE("reduce accepts reference-wrapped non-scalar TSD items",
+          "[feature:reduce][series:tsd][series:fixed-tsl][series:reference][shape:nested]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto make_list = node([](In<TS<i64>> value, Out<TSL<TS<i64>, 2>> output) {
+        output[0].set(*value);
+        output[1].set(*value);
+    });
+    const auto retain_lists = node([](In<TS<bool>> install, In<REF<TSL<TS<i64>, 2>>, passive> first,
+                                      In<REF<TSL<TS<i64>, 2>>, passive> second,
+                                      Out<TSD<i64, REF<TSL<TS<i64>, 2>>>> output) {
+        if (*install) {
+            output[1].copy(first);
+            output[2].copy(second);
+        }
+    });
+    const auto add_lists = node([](In<TSL<TS<i64>, 2>> left, In<TSL<TS<i64>, 2>> right,
+                                   Out<TSL<TS<i64>, 2>> output) {
+        for (auto index = std::size_t{}; index < 2; ++index) {
+            if (left[index].valid() && right[index].valid()) {
+                output[index].set(*left[index] + *right[index]);
+            }
+        }
+    });
+    const auto add_lists_graph = graph("name"_n = "add_referenced_lists_for_reduce",
+                                       [add_lists](wp<TSL<TS<i64>, 2>> left,
+                                                  wp<TSL<TS<i64>, 2>> right) { return add_lists(left, right); });
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
+    const auto tested = [&](wp<TS<i64>> first_value, wp<TS<i64>> second_value, wp<TS<bool>> install) {
+        const auto values = retain_lists(install, make_list(first_value), make_list(second_value));
+        return sum(reduce(add_lists_graph, values));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2}, {10, 20}, {true, false});
+
+    CHECK(actual.equals<i64>({22, 44}));
+}
+
+TEST_CASE("reduce accepts TSD values",
+          "[feature:reduce][series:tsd][shape:nested]") {
+    const auto merge_dictionaries = node([](In<TSD<i64, TS<i64>>> left, In<TSD<i64, TS<i64>>> right,
+                                            Out<TSD<i64, TS<i64>>> output) {
+        output.clear();
+        const auto merge = [&](const auto &input) {
+            input.for_each_key_value([&](const auto &key, const auto &value) {
+                if (!value.valid()) {
+                    return;
+                }
+                auto target = output[key];
+                if (!target.valid() || value.value() < target.value()) {
+                    target.set(value.value());
+                }
+            });
+        };
+        merge(left);
+        merge(right);
+    });
+    const auto merge_graph = graph("name"_n = "merge_dictionaries_for_reduce",
+                                   [merge_dictionaries](wp<TSD<i64, TS<i64>>> left,
+                                                        wp<TSD<i64, TS<i64>>> right) {
+                                       return merge_dictionaries(left, right);
+                                   });
+    const auto sum = node([](In<TSD<i64, TS<i64>>> input) {
+        auto result = i64{};
+        input.for_each_value([&](const auto &value) {
+            if (value.valid()) {
+                result += *value;
+            }
+        });
+        return result;
+    });
+
+    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
+        return sum(reduce(merge_graph, values));
+    };
+
+    const auto actual = bg::run_graph(tested, {{{1, {{1, 2}, {2, 3}}}, {2, {{1, 5}, {3, 7}}}}});
+
+    CHECK(actual.equals<i64>({12}));
+}
+
+TEST_CASE("reduce accepts TSS values",
+          "[feature:reduce][series:tsd][series:tss][shape:nested]") {
+    const auto merge_sets = node([](In<TSS<i64>> left, In<TSS<i64>> right, Out<TSS<i64>> output) {
+        output.clear();
+        left.for_each([&](const auto &item) { output.insert(item); });
+        right.for_each([&](const auto &item) { output.insert(item); });
+    });
+    const auto merge_graph = graph("name"_n = "merge_sets_for_reduce",
+                                   [merge_sets](wp<TSS<i64>> left, wp<TSS<i64>> right) {
+                                       return merge_sets(left, right);
+                                   });
+    const auto size = node([](In<TSS<i64>> input) { return static_cast<i64>(input.size()); });
+
+    const auto tested = [&](wp<TSD<i64, TSS<i64>>> values) { return size(reduce(merge_graph, values)); };
+
+    const auto actual = bg::run_graph(tested, {{{1, {1, 2}}, {2, {2, 3}}}});
+
+    CHECK(actual.equals<i64>({3}));
+}
+
+TEST_CASE("reduce accepts TSB values",
+          "[feature:reduce][series:tsd][series:tsb][shape:nested]") {
+    const auto add_bundles = node([](In<TSB<ReduceBundle>> left, In<TSB<ReduceBundle>> right,
+                                     Out<TSB<ReduceBundle>> output) {
+        output->left.set(*left->left + *right->left);
+        output->right.set(*left->right + *right->right);
+    });
+    const auto add_bundles_graph = graph("name"_n = "add_bundles_for_reduce",
+                                         [add_bundles](wp<TSB<ReduceBundle>> left,
+                                                       wp<TSB<ReduceBundle>> right) {
+                                             return add_bundles(left, right);
+                                         });
+    const auto sum = node([](In<TSB<ReduceBundle>> input) { return *input->left + *input->right; });
+
+    const auto tested = [&](wp<TSD<i64, TSB<ReduceBundle>>> values) {
+        return sum(reduce(add_bundles_graph, values));
+    };
+
+    const auto actual = bg::run_graph(
+        tested, {{{1, {{"left", 1}, {"right", 2}}}, {2, {{"left", 10}, {"right", 20}}}}});
+
+    CHECK(actual.equals<i64>({33}));
+}
+
+TEST_CASE("reduce accepts a non-scalar default whose type is also TSD",
+          "[feature:reduce][series:tsd][shape:nested]") {
+    const auto empty_result = node([](Out<TSD<i64, TS<i64>>> output) { output.clear(); });
+    const auto empty_reducer = graph("name"_n = "empty_nested_dictionary_reducer",
+                                     [empty_result](wp<TSD<i64, TS<i64>>>, wp<TSD<i64, TS<i64>>>) {
+                                         return empty_result();
+                                     });
+    const auto empty_values = node([](Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.clear(); });
+    const auto selected_value = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> fallback) {
+        return selected_value(reduce(empty_reducer, empty_values(), "default"_n = fallback));
+    };
+
+    const auto actual = bg::run_graph(tested, {{{1, 42}}});
+
+    CHECK(actual.equals<i64>({42}));
+}
+
+TEST_CASE("reduce forwards updates from a non-scalar default while empty",
+          "[feature:reduce][series:tsd][shape:nested][transition:update]") {
+    const auto empty_result = node([](Out<TSD<i64, TS<i64>>> output) { output.clear(); });
+    const auto empty_reducer = graph("name"_n = "empty_nested_dictionary_reducer",
+                                     [empty_result](wp<TSD<i64, TS<i64>>>, wp<TSD<i64, TS<i64>>>) {
+                                         return empty_result();
+                                     });
+    const auto empty_values = node([](Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.clear(); });
+    const auto selected_value = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> fallback) {
+        return selected_value(reduce(empty_reducer, empty_values(), "default"_n = fallback));
+    };
+
+    const auto actual = bg::run_graph(tested, {{{1, 11}}, {{1, 22}}, {{1, 33}}, {{1, 44}}});
+
+    CHECK(actual.equals<i64>({11, 22, 33, 44}));
+}
+
+TEST_CASE("reduce republishes a changed non-scalar default reference",
+          "[feature:reduce][series:tsd][series:reference][shape:nested][binding:reference-to-reference]"
+          "[transition:update]") {
+    const auto empty_result = node([](Out<TSD<i64, TS<i64>>> output) { output.clear(); });
+    const auto empty_reducer = graph("name"_n = "empty_nested_dictionary_reducer",
+                                     [empty_result](wp<TSD<i64, TS<i64>>>, wp<TSD<i64, TS<i64>>>) {
+                                         return empty_result();
+                                     });
+    const auto empty_values = node([](Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.clear(); });
+    const auto first_target = node([](Out<TSD<i64, TS<i64>>> output) { output[1].set(11); });
+    const auto second_target = node([](Out<TSD<i64, TS<i64>>> output) { output[1].set(22); });
+    const auto select_default = node([](In<TS<bool>> select_second, In<REF<TSD<i64, TS<i64>>>> first,
+                                        In<REF<TSD<i64, TS<i64>>>> second,
+                                        Out<REF<TSD<i64, TS<i64>>>> output) {
+        output.copy(*select_second ? second : first);
+    });
+    const auto selected_value = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
+    const auto tested = [&](wp<TS<bool>> select_second) {
+        const auto fallback = select_default(select_second, first_target(), second_target());
+        return selected_value(reduce(empty_reducer, empty_values(), "default"_n = fallback));
+    };
+
+    const auto actual = bg::run_graph(tested, {false, true});
+
+    CHECK(actual.equals<i64>({11, 22}));
+}
+
+TEST_CASE("reduce invalidates and revalidates a non-scalar default reference",
+          "[feature:reduce][series:tsd][series:reference][shape:nested][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto empty_result = node([](Out<TSD<i64, TS<i64>>> output) { output.clear(); });
+    const auto empty_reducer = graph("name"_n = "empty_nested_dictionary_reducer",
+                                     [empty_result](wp<TSD<i64, TS<i64>>>, wp<TSD<i64, TS<i64>>>) {
+                                         return empty_result();
+                                     });
+    const auto empty_values = node([](Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.clear(); });
+    const auto make_default = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
+        output[1].set(*value);
+    });
+    const auto select_default = node([](In<TS<bool>> available, In<REF<TSD<i64, TS<i64>>>, passive> fallback,
+                                        Out<REF<TSD<i64, TS<i64>>>> output) {
+        if (*available) {
+            output.copy(fallback);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto selected_value = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
+
+    const auto tested = [&](wp<TS<bool>> available, wp<TS<i64>> value) {
+        const auto fallback = select_default(available, make_default(value));
+        return selected_value(reduce(empty_reducer, empty_values(), "default"_n = fallback));
+    };
+
+    const auto actual = bg::run_graph(tested, {true, false, true}, {11, 22, 33});
+
+    CHECK(actual.equals<i64>({11, std::nullopt, 33}));
 }
 
 } // namespace

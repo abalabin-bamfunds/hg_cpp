@@ -694,7 +694,7 @@ class NestedReduceRuntime {
         }
 
         collect_valid_items(values);
-        const auto needs_item_references = candidate_values_.size() > 1;
+        const auto needs_item_references = compiled.reference_output || candidate_values_.size() > 1;
         if (needs_item_references) {
             collect_item_references(invocation.bound_reference(compiled.dictionary_parameter));
         }
@@ -787,8 +787,13 @@ class NestedReduceRuntime {
 
     template <typename Output>
     bool publish_empty_result(const CompiledNestedReduceGraph &compiled, NestedReduceInvocation invocation,
-                              Output &output) {
+                              Output &output, bool force) {
         if (compiled.default_parameter) {
+            if (compiled.reference_output) {
+                const auto reference = invocation.template input<In<REF<TS_T>>>(*compiled.default_parameter).value();
+                return publish_reference_result(reference, invocation, output, force);
+            }
+
             const auto fallback = invocation.scalar(*compiled.default_parameter);
             if (!fallback.has_value()) {
                 output.invalidate();
@@ -803,6 +808,31 @@ class NestedReduceRuntime {
             output.invalidate();
             using_default_ = false;
         }
+        return true;
+    }
+
+    template <typename Output>
+    bool publish_reference_result(Reference reference, NestedReduceInvocation invocation, Output &output, bool force) {
+        if (!reference) {
+            output.invalidate();
+            using_default_ = false;
+            return true;
+        }
+
+        const auto resolved = ResolvedTimeSeries::resolve(reference);
+        if (!resolved.valid()) {
+            output.invalidate();
+            using_default_ = false;
+            return true;
+        }
+        const auto current_reference = output.valid() ? *static_cast<const Reference *>(output.data()) : Reference{};
+        if (!force && current_reference == reference &&
+            resolved.last_updated->time() != invocation.context().evaluation_time()) {
+            return true;
+        }
+
+        output.visit([&](Out<REF<TS_T>> *target) { target->set_value(reference); }, ddv::noop);
+        using_default_ = false;
         return true;
     }
 
@@ -912,6 +942,16 @@ class NestedReduceRuntime {
 
     bool publish_result(const CompiledNestedReduceGraph &compiled, NestedReduceInvocation invocation, bool force) {
         auto output = invocation.template output<TS_T>();
+        if (compiled.reference_output) {
+            if (selected_values_.empty()) {
+                return publish_empty_result(compiled, invocation, output, force);
+            }
+
+            const auto reference = selected_values_.size() == 1 ? selected_references_.front()
+                                                                : current_level_.front();
+            return publish_reference_result(reference, invocation, output, force);
+        }
+
         if (selected_values_.size() == 1) {
             const auto &value = selected_values_.front();
             if (!value.last_updated.valid()) {
@@ -930,7 +970,7 @@ class NestedReduceRuntime {
             return true;
         }
         if (current_level_.empty()) {
-            return publish_empty_result(compiled, invocation, output);
+            return publish_empty_result(compiled, invocation, output, force);
         }
 
         const auto reference = current_level_.front();

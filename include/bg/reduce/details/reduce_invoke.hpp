@@ -106,29 +106,51 @@ template <typename SelectOverload, typename Graph, typename... Arguments>
     requires std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate>
 auto invoke_reduce(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function,
                    Arguments &&...arguments) {
+    auto named_argument_seen = false;
+    const auto validate_argument_order = [&](const auto &argument) {
+        const auto named = [&] {
+            if constexpr (is_named_argument_v<decltype(argument)>) {
+                return true;
+            } else if constexpr (std::same_as<std::remove_cvref_t<decltype(argument)>, WiringArgument>) {
+                return argument.name().has_value();
+            } else {
+                return false;
+            }
+        }();
+        if (named_argument_seen && !named) {
+            throw WiringError{"a positional argument cannot follow a named argument"};
+        }
+        named_argument_seen |= named;
+    };
+    (validate_argument_order(arguments), ...);
+
     auto call = group_reduce_arguments(std::forward<Arguments>(arguments)...);
     auto supplied = std::vector<WiringArgument>{};
     supplied.reserve(std::tuple_size_v<decltype(call.first)> + std::tuple_size_v<decltype(call.second)>);
     append_reduce_arguments(supplied, call.first, std::make_index_sequence<std::tuple_size_v<decltype(call.first)>>{});
-    append_reduce_arguments(supplied, call.second, std::make_index_sequence<std::tuple_size_v<decltype(call.second)>>{});
+    append_reduce_arguments(supplied, call.second,
+                           std::make_index_sequence<std::tuple_size_v<decltype(call.second)>>{});
 
     auto dictionary = std::optional<WiringArgument>{};
     auto default_value = std::optional<WiringArgument>{};
     auto positional_index = std::size_t{};
     for (const auto &argument : supplied) {
-        if (argument.is_time_series()) {
+        const auto is_dictionary = argument.name() == std::optional{util::symbol{"values"}} ||
+                                   (!argument.name() && positional_index == 0);
+        const auto is_default = argument.name() == std::optional{util::symbol{"default"}} ||
+                                (!argument.name() && positional_index == 1);
+        if (is_dictionary) {
             if (dictionary) {
                 throw WiringError{"reduce accepts one TSD argument"};
             }
             dictionary = argument;
-        } else if (argument.is_scalar() && (argument.name() == std::optional{util::symbol{"default"}} ||
-                                            (!argument.name() && positional_index == 1))) {
+        } else if (is_default) {
             if (default_value) {
-                throw WiringError{"reduce accepts one default scalar"};
+                throw WiringError{"reduce accepts one default value"};
             }
             default_value = argument;
         } else {
-            throw WiringError{"reduce accepts a TSD argument and an optional default scalar"};
+            throw WiringError{"reduce accepts a TSD argument and an optional default"};
         }
         if (!argument.name()) {
             ++positional_index;

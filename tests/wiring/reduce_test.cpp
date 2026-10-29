@@ -9,10 +9,12 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <cstdint>
 
@@ -122,7 +124,7 @@ TEST_CASE("reduce wiring rejects reducer graphs with a non-item result",
     });
 }
 
-TEST_CASE("reduce wiring rejects a reference as the reducer result",
+TEST_CASE("reduce wiring accepts a reference as the reducer result",
           "[feature:reduce][feature:wiring][feature:graph-argument][series:tsd]") {
     const auto reference_result = graph("name"_n = "reference_result", [](wp<TS<i64>>,
                                                                               wp<TS<i64>>) {
@@ -132,9 +134,8 @@ TEST_CASE("reduce wiring rejects a reference as the reducer result",
     testing::test_wiring([&] {
         const auto dictionary = dictionary_source();
         const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary.type());
-        CHECK_THROWS_AS(details::build_reduce_graph_argument_wiring(
-                            reference_result, dictionary_type.value_type(), TypeMap{}),
-                        WiringError);
+        CHECK_NOTHROW(details::build_reduce_graph_argument_wiring(
+            reference_result, dictionary_type.value_type(), TypeMap{}));
     });
 }
 
@@ -286,6 +287,61 @@ TEST_CASE("reduce accepts final TSD items and keeps an ordinary output guarantee
         REQUIRE(item_type != nullptr);
         CHECK(&result_type->value_type() == &item_type->value_type());
     });
+}
+
+TEST_CASE("reduce limits nested item guarantees on reducer inputs",
+          "[feature:reduce][feature:wiring][series:tsd][guarantee:final]") {
+    const auto dictionary = node([](Out<TSD<i64, TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
+                                                   TimeSeriesGuarantee::final>>>) {});
+    const auto reducer = graph("name"_n = "first_list_item", [](wp<TSL<TS<i64>, 2>> first,
+                                                                  wp<TSL<TS<i64>, 2>>) { return first; });
+
+    testing::test_wiring([&] {
+        const auto &dictionary_type = type_cast<TimeSeriesDictionaryType>(dictionary().type());
+        const auto built = details::build_reduce_graph_argument_wiring(
+            reducer, dictionary_type.value_type().target_type(), TypeMap{});
+
+        const auto *input_reference = type_cast<TimeSeriesReferenceType>(&built.structure.boundary_type(0));
+        REQUIRE(input_reference != nullptr);
+        const auto *input_list = type_cast<TimeSeriesListType>(&input_reference->target_type());
+        REQUIRE(input_list != nullptr);
+        CHECK(input_list->guarantee().value() == TimeSeriesGuarantee::ordinary);
+        CHECK(input_list->item_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
+    });
+}
+
+TEST_CASE("reduce accepts stronger nested reducer outputs and defaults",
+          "[feature:reduce][feature:wiring][series:tsd][guarantee:final]") {
+    const auto final_list_source = node([](Out<TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
+                                                       TimeSeriesGuarantee::final>>) {});
+    const auto dictionary = node([](Out<TSD<i64, TSL<TS<i64, TimeSeriesGuarantee::final>, 2,
+                                                     TimeSeriesGuarantee::final>>>) {});
+    const auto reducer = graph("name"_n = "final_list_reducer", [=](wp<TSL<TS<i64>, 2>>,
+                                                                       wp<TSL<TS<i64>, 2>>) {
+        return final_list_source();
+    });
+
+    testing::test_wiring([&] {
+        const auto result = reduce(reducer, dictionary(), "default"_n = final_list_source());
+        const auto *result_reference = type_cast<TimeSeriesReferenceType>(&result.type());
+        REQUIRE(result_reference != nullptr);
+        const auto *result_list = type_cast<TimeSeriesListType>(&result_reference->target_type());
+        REQUIRE(result_list != nullptr);
+        CHECK(result_list->guarantee().value() == TimeSeriesGuarantee::ordinary);
+        CHECK(result_list->item_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
+        WiringContext::current().wiring().finalize();
+    });
+}
+
+TEST_CASE("reduce rejects a positional argument after a named argument",
+          "[feature:reduce][feature:operator][feature:wiring][series:tsd]") {
+    const auto reducer = graph("name"_n = "add_for_reduce", [](wp<TS<i64>> left, wp<TS<i64>> right) {
+        return add_values(left, right);
+    });
+
+    CHECK_THROWS_WITH(
+        testing::test_wiring([&] { reduce(reducer, "values"_n = dictionary_source(), i64{20}); }),
+        "a positional argument cannot follow a named argument");
 }
 
 } // namespace
