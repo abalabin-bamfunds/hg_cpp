@@ -515,7 +515,7 @@ TEST_CASE("unregistered C++ values require an exact fixed opaque parameter",
 
 TEST_CASE("opaque source candidates leave ordinary scalar inference unchanged",
           "[graph_wiring][feature:wiring][scalar:native]") {
-    const auto sink = node([](Scalar<int>, Out<TS<float>>) {});
+    const auto sink = node([](Scalar<i64>, Out<TS<float>>) {});
     auto wiring = GraphWiring{};
 
     {
@@ -525,7 +525,7 @@ TEST_CASE("opaque source candidates leave ordinary scalar inference unchanged",
 
     (void)wiring.complete_pending_wiring();
     REQUIRE(wiring.nodes().size() == 1);
-    CHECK(wiring.nodes()[0].signature().parameters[0].type == &cpp_scalar_type<int>());
+    CHECK(wiring.nodes()[0].signature().parameters[0].type == &cpp_scalar_type<i64>());
 }
 
 TEST_CASE("wiring does not reuse outputless node calls", "[graph_wiring][feature:wiring]") {
