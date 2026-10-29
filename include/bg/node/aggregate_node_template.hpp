@@ -45,6 +45,13 @@ class AggregateNodeTemplate final
         return false;
     }
 
+    QueueMode queue_mode() const noexcept override {
+        if constexpr (requires { Definition::queue_mode; }) {
+            return Definition::queue_mode;
+        }
+        return QueueMode::standard;
+    }
+
     template <typename... Arguments>
         requires((details::graph_code_argument<Arguments> && ...) && details::aggregate_node_has_output<Definition>())
     [[nodiscard]] auto operator()(Arguments &&...arguments) const & {

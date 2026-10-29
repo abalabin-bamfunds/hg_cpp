@@ -47,7 +47,54 @@ namespace {
     return MIN_DT + std::chrono::microseconds{microseconds};
 }
 
+struct AggregateBatchQueueSource {
+    Out<TS<List<i64>>> output;
+
+    static constexpr bool uses_queue = true;
+    static constexpr auto queue_mode = QueueMode::batch;
+
+    void evaluate() const {}
+};
+
 } // namespace
+
+TEST_CASE("aggregate batch queues append messages into one list update",
+          "[evaluation][feature:time-series-storage][definition:aggregate][queue][batch]") {
+    auto values = std::vector<std::vector<i64>>{};
+    const auto source = node<AggregateBatchQueueSource>();
+    const auto sink = node([&](In<TS<List<i64>>> input) {
+        auto batch = std::vector<i64>{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            batch.push_back(list[index].value());
+        }
+        values.push_back(std::move(batch));
+    });
+
+    auto wiring = GraphWiring{};
+    WiringPoint output;
+    {
+        const auto context = WiringContext{wiring};
+        output = source();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = CompiledGraph{wiring};
+    CHECK(compiled.node(target).queue_mode() == QueueMode::batch);
+
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    runtime.start(time(1));
+    auto queue = runtime.make_queue(target);
+
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{10})));
+    REQUIRE(queue.write(::literal::TimeSeriesLiteral(i64{20})));
+    runtime.evaluate(time(2));
+
+    CHECK(values == std::vector<std::vector<i64>>{{10, 20}});
+    runtime.stop();
+}
 
 TEST_CASE("outer evaluation drains standard and eliding queues and publishes each changed target once",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][transition:update]") {
