@@ -126,14 +126,17 @@ These source expectations are not used as BG failure oracles.
 
 These source patterns require functionality outside the current BG contract.
 They were inspected to identify the requirement and were not executed as BG
-reproductions.
+reproductions. The reduce exclusions below identify restrictions of the current
+reduce API, not missing support for their constituent map, switch, bundle, or
+tuple operations. They do not establish that these restrictions should remain.
 
 | Source test | Required functionality | Disposition |
 | --- | --- | --- |
 | 0.5 `_wiring/test_map.py::test_tsl_map_wiring`, `test_tsl_map_wiring_no_key`; 0.5/0.8 `_wiring/test_reduce.py::test_tsl_reduce*` | Higher-order map/reduce over fixed TSL | BG's [map](../design/map.md) and [reduce](../design/reduce.md) operate on TSD. Fixed TSL storage and free TSL construction have separate tests. |
-| 0.5 `_wiring/test_reduce.py::test_reduce_map`; 0.8 `test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | A collection-valued reducer output | BG reduce requires scalar-valued time series output. |
-| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | A bundle-valued reducer output | The surrounding map/switch/free-bundle operations are supported; the reducer output is outside the reduce contract. |
-| 0.5 `_wiring/test_reduce.py::test_reduce_tuple`; 0.8 `test_reduce_zero_semantics.py::test_ordered_reduce_retains_delayed_source_schedules` | Ordered, non-associative reduction and a time series zero | BG reduce requires an associative and commutative operation and accepts a scalar default. |
+| 0.5 `_wiring/test_reduce.py::test_reduce_map`; 0.8 `test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | Reduce `TSD<K, TSD<J, TS<V>>>` into a TSD using a mapped reducer. | Current reduce wiring rejects collection-valued items before wiring the reducer. The map operation itself is supported. |
+| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | Current reduce wiring rejects TSB-valued items. Map, switch, free bundle construction, and field selection are supported. |
+| 0.5 `_wiring/test_reduce.py::test_reduce_tuple` | Ordered fold of each `TS<tuple<int, ...>>` tick into a string, starting from a `TS<string>` seed. | Current reduce accepts a TSD, requires matching item/result scalar types, and accepts a scalar default. This source case requires a scalar-collection fold, a different accumulator type, and a time-series seed. Tuple values themselves are supported. |
+| 0.8 `test_reduce_zero_semantics.py::test_ordered_reduce_retains_delayed_source_schedules` | Ordered, non-associative reduction and a time series zero. | BG reduce requires an associative and commutative operation and accepts a scalar default. |
 | 0.8 `ported/_wiring/test_context.py::test_context_crosses_stacked_try_except_boundaries` | A graph boundary that captures exceptions as output | BG [exception handling](../design/evaluation.md#exceptions) stops the graph and propagates the exception. No `try_except` operation was found in the public API. |
 | 0.8 `test_distributed_map.py::test_state_churn_and_quiet_cycles`, `test_default_hosting_uses_a_separate_process` | Worker processes and distributed graph execution | The public BG map API runs local inner graphs. Local map lifecycle coverage does not establish distributed execution. |
 
