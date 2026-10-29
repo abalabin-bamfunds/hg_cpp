@@ -108,11 +108,16 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> diff;
 extern BG_LIBRARY_EXPORT operator_<auto(NUMERIC, NUMERIC, NUMERIC) -> NUMERIC> clip;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<double>, double, i64) -> OUT> ewma;
 
+// Time observations.
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> date_time_t> last_modified_time;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> timedelta_t> elapsed;
+
 // Timed operators.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> delay;
 extern BG_LIBRARY_EXPORT operator_<auto(timedelta_t, bool, i64) -> TS<bool>> schedule;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t, bool) -> OUT> throttle;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> debounce;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> TS<bool>> timeout;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> resample;
 
 // Running numeric aggregates. A valid reset-input tick clears the current aggregate.

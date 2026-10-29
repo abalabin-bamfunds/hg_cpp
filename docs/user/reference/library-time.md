@@ -3,6 +3,21 @@
 Timed operators use evaluation time. C++ durations use `timedelta_t`; Python uses
 `datetime.timedelta`. Arguments such as a period are fixed during construction.
 
+## last_modified_time
+
+`last_modified_time(value)` publishes the input's latest update time on each
+valid input event. The output invalidates with the input and retains its
+guarantee. C++ returns `date_time_t`; Python returns a timezone-naive `datetime`.
+
+## elapsed
+
+`elapsed(value)` publishes the duration between consecutive valid input update
+times. The first valid event establishes the baseline without publishing.
+Input invalidation resets the baseline and invalidates the output; the next
+valid event establishes a new baseline. Skipped cycles do not affect the
+duration. Ordinary equal-valued ticks are separate events. The output guarantee
+retains the input guarantee up to final.
+
 ## delay
 
 `delay(value, duration)` publishes each input event at its original evaluation time plus
@@ -42,6 +57,16 @@ equal ordinary ticks, invalidation, collection changes, and reference changes.
 An event at the expiry time restarts the period without publishing. Debounce
 does not schedule an initial publication. Period must be positive. The output
 guarantee is limited to final, including contained time series.
+
+## timeout
+
+`timeout(value, period)` publishes an ordinary `TS[bool]` tick with value true
+after a period without input events. Every input event restarts the period,
+including equal ordinary ticks, invalidation, collection changes, and reference
+changes. An event at expiry restarts the period without publishing. Timeout
+does not schedule an initial tick. After its first expiry, the output remains
+valid and true; each later expiry publishes another true tick. Period must be
+positive.
 
 Timed work uses evaluation time and stops with the owning graph, including inner
 graphs. Scheduling outside the supported [evaluation-time range](execution.md) fails.

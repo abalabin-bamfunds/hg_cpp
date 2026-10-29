@@ -53,6 +53,8 @@ drop = _native.drop
 step = _native.step
 if_then_else = _native.if_then_else
 lag = _native.lag
+last_modified_time = _native.last_modified_time
+elapsed = _native.elapsed
 diff = _native.diff
 clip = _native.clip
 ewma = _native.ewma
@@ -60,6 +62,7 @@ delay = _native.delay
 schedule = _native.schedule
 throttle = _native.throttle
 debounce = _native.debounce
+timeout = _native.timeout
 resample = _native.resample
 sums = _native.sums
 mins = _native.mins
@@ -124,6 +127,7 @@ __all__ = [
     "dispatch",
     "diff",
     "drop",
+    "elapsed",
     "div",
     "eq",
     "ewma",
@@ -141,6 +145,7 @@ __all__ = [
     "le",
     "lower",
     "lag",
+    "last_modified_time",
     "len_",
     "log_",
     "lt",
@@ -184,6 +189,7 @@ __all__ = [
     "join",
     "sums",
     "throttle",
+    "timeout",
     "upper",
     "valid",
 ]

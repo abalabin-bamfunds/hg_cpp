@@ -677,8 +677,11 @@ invalid. The delta is `None` on a later unchanged invalid cycle. This also
 applies when a nested TSS or TSD item becomes invalid.
 
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
-`datetime.timedelta`, and `bg.Symbol`. Durations map to signed 64-bit
-microseconds; conversion rejects values outside that range.
+`datetime.datetime`, `datetime.timedelta`, and `bg.Symbol`. A `datetime`
+maps to `EvaluationTime` with microsecond precision using the timezone-naive
+local contract. Timezone-aware values, `date`, and `time` objects are rejected.
+Durations map to signed 64-bit microseconds; conversion rejects values outside
+that range.
 `list[T]` declares an engine scalar list. Conversion copies its items using
 the declared scalar type `T`; conversion back to Python produces a list.
 `bg.Symbol` is a `str` subclass. Non-null symbols compare and

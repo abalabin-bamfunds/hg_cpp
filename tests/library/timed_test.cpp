@@ -19,6 +19,180 @@
 using namespace bg;
 using namespace bg::literals;
 
+TEST_CASE("last_modified_time reports root input update times",
+          "[feature:operator][series:value][transition:update][transition:invalidation]") {
+    const auto last_modified = [](wp<TS<i64>> value) { return operators::last_modified_time(value); };
+    const auto start_time = EvaluationTime{EvaluationTime::duration{100}};
+    const auto options = GraphRunOptions{.start_time = start_time};
+
+    CHECK(bg::run_graph(last_modified, options, {1, 1, literal::SKIP, 2})
+              .equals<date_time_t>({start_time, start_time + timedelta_t{1}, std::nullopt,
+                                    start_time + timedelta_t{3}}));
+    CHECK(bg::run_graph(last_modified, options, {1, literal::INVALID, literal::SKIP, 2})
+              .equals<date_time_t>({start_time, std::nullopt, std::nullopt,
+                                    start_time + timedelta_t{3}}));
+}
+
+TEST_CASE("last_modified_time observes collection and reference changes",
+          "[feature:operator][series:tsd][series:reference][transition:update][transition:removal]") {
+    const auto last_modified_dictionary = [](wp<TSD<i64, TS<i64>>> value) {
+        return operators::last_modified_time(value);
+    };
+    const auto last_modified_reference = [](wp<TS<i64>> value) {
+        return operators::last_modified_time(value.as<REF<TS<i64>>>());
+    };
+
+    CHECK(bg::run_graph(last_modified_dictionary, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
+              .equals<date_time_t>({MIN_DT + timedelta_t{1}, MIN_DT + timedelta_t{2}, MIN_DT + timedelta_t{3}}));
+    CHECK(bg::run_graph(last_modified_reference, {1, 2, 3})
+              .equals<date_time_t>({MIN_DT + timedelta_t{1}, MIN_DT + timedelta_t{2}, MIN_DT + timedelta_t{3}}));
+}
+
+TEST_CASE("elapsed reports intervals between valid input changes and resets on invalidation",
+          "[feature:operator][transition:update][transition:invalidation]"
+          "[transition:revalidation][series:tsd]") {
+    const auto elapsed = [](wp<TS<i64>> value) { return operators::elapsed(value); };
+    const auto elapsed_dictionary = [](wp<TSD<i64, TS<i64>>> value) { return operators::elapsed(value); };
+    const auto start_time = EvaluationTime{EvaluationTime::duration{100}};
+    const auto options = GraphRunOptions{.start_time = start_time};
+
+    CHECK(bg::run_graph(elapsed, options,
+                        {1, 1, literal::SKIP, 2, literal::INVALID, literal::SKIP, 3, 4})
+              .equals<timedelta_t>({std::nullopt, timedelta_t{1}, std::nullopt, timedelta_t{2}, std::nullopt,
+                                    std::nullopt, std::nullopt, timedelta_t{1}}));
+    CHECK(bg::run_graph(elapsed, {literal::INVALID}).equals<timedelta_t>({std::nullopt}));
+    CHECK(bg::run_graph(elapsed_dictionary, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
+              .equals<timedelta_t>({std::nullopt, timedelta_t{1}, timedelta_t{1}}));
+}
+
+TEST_CASE("elapsed validity resets through invalidation and revalidation",
+          "[feature:operator][transition:invalidation][transition:revalidation]") {
+    const auto valid_elapsed = [](wp<TS<i64>> value) { return operators::valid(operators::elapsed(value)); };
+
+    CHECK(bg::run_graph(valid_elapsed, {1, 2, literal::INVALID, 3, 4})
+              .equals<bool>({false, true, false, std::nullopt, true}));
+}
+
+TEST_CASE("timeout publishes true after an input event and does not schedule on start",
+          "[feature:operator][feature:timed-scheduling][transition:update]") {
+    const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
+
+    CHECK(bg::run_graph(timeout, {1}).equals<bool>({std::nullopt, std::nullopt, true}));
+    CHECK(bg::run_graph(timeout, {literal::SKIP, literal::SKIP}).equals<bool>({std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("timeout restarts on equal events and preserves true through later expiries",
+          "[feature:operator][feature:timed-scheduling][transition:update]") {
+    const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
+
+    CHECK(bg::run_graph(timeout, {1, 1}).equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
+    CHECK(bg::run_graph(timeout, {1, literal::SKIP, literal::SKIP, 2})
+              .equals<bool>({std::nullopt, std::nullopt, true, std::nullopt, std::nullopt, true}));
+}
+
+TEST_CASE("timeout restarts on input invalidation",
+          "[feature:operator][feature:timed-scheduling][transition:invalidation]") {
+    const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
+
+    CHECK(bg::run_graph(timeout, {1, literal::INVALID, literal::SKIP})
+              .equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
+}
+
+namespace {
+
+struct timeout_coincident_source {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+    }
+
+    void evaluate(EvaluationContext *) const { output.set(20); }
+};
+
+} // namespace
+
+TEST_CASE("timeout restarts rather than publishing when an event coincides with expiry",
+          "[feature:operator][feature:timed-scheduling][transition:update]") {
+    const auto source = node<timeout_coincident_source>();
+    const auto graph = [&] { return operators::timeout(source(), timedelta_t{2}); };
+
+    CHECK(bg::run_graph(graph).equals<bool>({std::nullopt, std::nullopt, std::nullopt, std::nullopt, true}));
+}
+
+TEST_CASE("timeout observes collection and reference events",
+          "[feature:operator][feature:timed-scheduling][series:tsd][series:reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto timeout_dictionary = [](wp<TSD<i64, TS<i64>>> value) {
+        return operators::timeout(value, timedelta_t{2});
+    };
+    const auto timeout_reference = [](wp<TS<i64>> value) {
+        return operators::timeout(value.as<REF<TS<i64>>>(), timedelta_t{2});
+    };
+
+    CHECK(bg::run_graph(timeout_dictionary, {{{1, 10}}, {{1, 20}}})
+              .equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
+    CHECK(bg::run_graph(timeout_reference, {1, 2})
+              .equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
+}
+
+TEST_CASE("timeout timers stop and restart with a nested graph branch",
+          "[feature:operator][feature:timed-scheduling][feature:nested-graph]"
+          "[transition:stop][transition:update]") {
+    const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
+    const auto passthrough = [](wp<TS<i64>>) { return operators::const_(false); };
+    const auto selected = [&](wp<TS<i64>> selector, wp<TS<i64>> value) {
+        return switch_(selector, cases{case_(i64{1}, timeout), case_(i64{0}, passthrough)}, value);
+    };
+
+    CHECK(bg::run_graph(selected, {1, 0}, {10, 20}).equals<bool>({std::nullopt, false}));
+    CHECK(bg::run_graph(selected, {1, 0, 1}, {10, 20, 30})
+              .equals<bool>({std::nullopt, false, std::nullopt, std::nullopt, true}));
+}
+
+TEST_CASE("timeout requires a positive period",
+          "[feature:operator][feature:wiring][feature:timed-scheduling]") {
+    testing::test_wiring([] {
+        const auto value = WiringContext::current().wiring().borrowed_input(TS<i64>::type());
+        CHECK_THROWS_AS(operators::timeout(value, timedelta_t{}), WiringError);
+        CHECK_THROWS_AS(operators::timeout(value, timedelta_t{-1}), WiringError);
+    });
+}
+
+TEST_CASE("time observation operators preserve and limit input guarantees",
+          "[feature:operator][feature:wiring][guarantee:const][guarantee:final]") {
+    const auto final_reference_source = node([](Out<REF<TS<i64>, TimeSeriesGuarantee::final>>) {});
+
+    testing::test_wiring([&] {
+        auto &wiring = WiringContext::current().wiring();
+        const auto &ordinary = wiring.borrowed_input(TS<i64>::type());
+        const auto final_reference = final_reference_source();
+        const auto constant = operators::const_(i64{1});
+
+        CHECK(&operators::last_modified_time(ordinary).type() == &TS<date_time_t>::type());
+        CHECK(&operators::elapsed(ordinary).type() == &TS<timedelta_t>::type());
+        CHECK(&operators::elapsed(final_reference).type() == &TS<timedelta_t>::type());
+        CHECK(&operators::last_modified_time(constant).type() ==
+              &TS<date_time_t, TimeSeriesGuarantee::const_>::type());
+        CHECK(&operators::elapsed(constant).type() == &TS<timedelta_t, TimeSeriesGuarantee::final>::type());
+        CHECK(&operators::timeout(constant, timedelta_t{1}).type() == &TS<bool>::type());
+    });
+}
+
+TEST_CASE("time observation operators handle const inputs",
+          "[feature:operator][guarantee:const]") {
+    const auto last_modified = [] { return operators::last_modified_time(operators::const_(i64{1})); };
+    const auto elapsed = [] { return operators::elapsed(operators::const_(i64{1})); };
+    const auto start_time = EvaluationTime{EvaluationTime::duration{100}};
+    const auto options = GraphRunOptions{.start_time = start_time};
+
+    CHECK(bg::run_graph(last_modified, options).equals<date_time_t>({start_time}));
+    CHECK(bg::run_graph(elapsed, options).equals<timedelta_t>({std::nullopt}));
+}
+
 TEST_CASE("delay publishes each retained input event after its duration",
           "[feature:operator][feature:timed-scheduling][transition:invalidation][transition:revalidation]") {
     const auto delayed = [](wp<TS<i64>> value) { return operators::delay(value, timedelta_t{2}); };

@@ -65,18 +65,19 @@ def test_removed_marker_matches_hgraph_value_semantics():
 
 def test_input_views_expose_last_modified_time_as_datetime():
     @bg.compute_node
-    def inspect(value: bg.TS[int]) -> bg.TS[object]:
-        return value.value, value.valid, value.modified, value.last_modified_time
+    def inspect(value: bg.TS[int], clock: bg.EvaluationClock = None) -> bg.TS[object]:
+        return value.value, value.valid, value.modified, value.last_modified_time, clock.evaluation_time
 
     @bg.graph
     def graph(value: bg.TS[int]) -> bg.TS[object]:
         return inspect(value)
 
     actual = bg.run_graph(graph, [1, 2])
-    assert [value for value, _, _, _ in actual] == [1, 2]
-    assert [valid for _, valid, _, _ in actual] == [True, True]
-    assert [modified for _, _, modified, _ in actual] == [True, True]
-    assert all(isinstance(timestamp, datetime) for _, _, _, timestamp in actual)
+    assert [value for value, _, _, _, _ in actual] == [1, 2]
+    assert [valid for _, valid, _, _, _ in actual] == [True, True]
+    assert [modified for _, _, modified, _, _ in actual] == [True, True]
+    assert all(isinstance(timestamp, datetime) for _, _, _, timestamp, _ in actual)
+    assert all(timestamp == clock for _, _, _, timestamp, clock in actual)
 
 
 def test_delta_value_is_none_when_an_input_did_not_change():

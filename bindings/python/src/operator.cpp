@@ -215,6 +215,8 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "step", operators::step);
     export_operator(operators_module, "if_then_else", operators::if_then_else);
     export_operator(operators_module, "lag", operators::lag);
+    export_operator(operators_module, "last_modified_time", operators::last_modified_time);
+    export_operator(operators_module, "elapsed", operators::elapsed);
     export_operator(operators_module, "diff", operators::diff);
     export_operator(operators_module, "clip", operators::clip);
     export_operator(operators_module, "ewma", operators::ewma);
@@ -222,6 +224,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "schedule", operators::schedule);
     export_operator(operators_module, "throttle", operators::throttle);
     export_operator(operators_module, "debounce", operators::debounce);
+    export_operator(operators_module, "timeout", operators::timeout);
     export_operator(operators_module, "resample", operators::resample);
     export_operator(operators_module, "sums", operators::sums);
     export_operator(operators_module, "mins", operators::mins);

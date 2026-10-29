@@ -1,4 +1,4 @@
-from datetime import timedelta
+from datetime import datetime, timedelta
 
 import pytest
 
@@ -43,12 +43,58 @@ def test_resample_is_available_to_python_graphs():
     ) == [None, None, 30, None, None, None, 50, None, 70]
 
 
+def test_last_modified_time_tracks_input_events_and_invalidation():
+    @bg.graph
+    def last_modified(value: bg.TS[int]) -> bg.TS[datetime]:
+        return bg.operators.last_modified_time(value=value)
+
+    start = datetime(2024, 5, 6, 7, 8, 9, 123456)
+    assert bg.run_graph(
+        last_modified, [1, 1, None, 2, bg.INVALID, None, 3], start_time=start
+    ) == [
+        start,
+        start + timedelta(microseconds=1),
+        None,
+        start + timedelta(microseconds=3),
+        None,
+        None,
+        start + timedelta(microseconds=6),
+    ]
+
+
+def test_elapsed_skips_first_event_and_resets_on_invalidation():
+    @bg.graph
+    def elapsed(value: bg.TS[int]) -> bg.TS[timedelta]:
+        return bg.operators.elapsed(value)
+
+    start = datetime(2024, 5, 6, 7, 8, 9, 123456)
+    assert bg.run_graph(
+        elapsed, [1, 1, None, 2, bg.INVALID, 3, 4], start_time=start
+    ) == [
+        None,
+        timedelta(microseconds=1),
+        None,
+        timedelta(microseconds=2),
+        None,
+        None,
+        timedelta(microseconds=1),
+    ]
+
+
 def test_debounce_waits_for_silence_and_is_available_to_python_graphs():
     @bg.graph
     def debounce(value: bg.TS[int]) -> bg.TS[int]:
         return bg.operators.debounce(value, timedelta(microseconds=2))
 
     assert bg.run_graph(debounce, [1, None, None, 2, 3]) == [None, None, 1, None, None, None, 3]
+
+
+def test_timeout_is_available_to_python_graphs_and_publishes_true_after_silence():
+    @bg.graph
+    def timeout(value: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.timeout(value, timedelta(microseconds=2))
+
+    assert bg.run_graph(timeout, [1]) == [None, None, True]
 
 
 def test_debounce_restarts_on_invalidation_and_revalidation():

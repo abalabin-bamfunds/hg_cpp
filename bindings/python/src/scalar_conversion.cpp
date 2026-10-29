@@ -22,6 +22,7 @@
 #include <bg/util/scope_exit.hpp>
 
 #include <datetime.h>
+#include <nanobind/stl/chrono.h>
 
 #include <algorithm>
 #include <atomic>
@@ -510,6 +511,25 @@ ScalarValue<> from_python_double(nanobind::handle value, allocator &memory, cons
     return make_scalar<double>(nanobind::cast<double>(value), memory);
 }
 
+ScalarValue<> from_python_date_time(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
+    const auto datetime = nanobind::module_::import_("datetime");
+    const auto is_datetime = PyObject_IsInstance(value.ptr(), datetime.attr("datetime").ptr());
+    if (is_datetime < 0) {
+        nanobind::raise_python_error();
+    }
+    if (is_datetime == 0) {
+        PyErr_SetString(PyExc_TypeError, "expected datetime.datetime for bg.date_time_t");
+        nanobind::raise_python_error();
+    }
+
+    if (!value.attr("utcoffset")().is_none()) {
+        PyErr_SetString(PyExc_TypeError, "expected a timezone-naive datetime for bg.date_time_t");
+        nanobind::raise_python_error();
+    }
+
+    return make_scalar<date_time_t>(nanobind::cast<date_time_t>(value), memory);
+}
+
 ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
     const auto datetime = nanobind::module_::import_("datetime");
     const auto is_timedelta = PyObject_IsInstance(value.ptr(), datetime.attr("timedelta").ptr());
@@ -862,6 +882,10 @@ nanobind::object to_python_double(Scalar<> value, const PythonScalarConversions 
     return nanobind::float_{unchecked_scalar_cast<double>(value).value()};
 }
 
+nanobind::object to_python_date_time(Scalar<> value, const PythonScalarConversions &) {
+    return nanobind::cast(unchecked_scalar_cast<date_time_t>(value).value());
+}
+
 nanobind::object to_python_timedelta(Scalar<> value, const PythonScalarConversions &) {
     const auto count = unchecked_scalar_cast<timedelta_t>(value).value().count();
     constexpr auto microseconds_per_day = std::int64_t{86'400'000'000};
@@ -987,6 +1011,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_from_python(bool_type(), &from_python_bool);
     add_from_python(int64_type(), &from_python_i64);
     add_from_python(double_type(), &from_python_double);
+    add_from_python(evaluation_time_type(), &from_python_date_time);
     add_from_python(timedelta_type(), &from_python_timedelta);
     add_from_python(string_type(), &from_python_string);
     add_from_python(bytes_type(), &from_python_bytes);
@@ -1002,6 +1027,7 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_to_python(bool_type(), &to_python_bool);
     add_to_python(int64_type(), &to_python_i64);
     add_to_python(double_type(), &to_python_double);
+    add_to_python(evaluation_time_type(), &to_python_date_time);
     add_to_python(timedelta_type(), &to_python_timedelta);
     add_to_python(string_type(), &to_python_string);
     add_to_python(bytes_type(), &to_python_bytes);
@@ -1018,7 +1044,9 @@ PythonScalarConversions::PythonScalarConversions() : impl_{std::make_unique<Impl
     add_python_builtin(builtins.attr("str"), string_type());
     add_python_builtin(builtins.attr("bytes"), bytes_type());
     add_python_builtin(builtins.attr("memoryview"), bytes_type());
-    add_python_builtin(nanobind::module_::import_("datetime").attr("timedelta"), timedelta_type());
+    const auto datetime = nanobind::module_::import_("datetime");
+    add_python_builtin(datetime.attr("datetime"), evaluation_time_type());
+    add_python_builtin(datetime.attr("timedelta"), timedelta_type());
 }
 
 PythonScalarConversions::~PythonScalarConversions() = default;

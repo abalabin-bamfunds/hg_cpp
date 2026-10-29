@@ -34,6 +34,7 @@ imports and headers.
 | `dispatch` | [Reference](operators.md#runtime-dispatch) |
 | `div` | [Reference](library-numeric.md#arithmetic) |
 | `drop` | [Reference](library-selection.md#take-drop-step) |
+| `elapsed` | [Reference](library-time.md#elapsed) |
 | `emit` | [Reference](library-collections.md#construction-and-conversion) |
 | `eq` | [Reference](library-numeric.md#arithmetic) |
 | `ewma` | [Reference](library-stateful.md#ewma) |
@@ -54,6 +55,7 @@ imports and headers.
 | `keys_where_true` | [Reference](library-collections.md#collection-queries) |
 | `kwargs` (C++) | [Reference](graph-code.md#variadic-parameters) |
 | `lag` | [Reference](library-stateful.md#lag) |
+| `last_modified_time` | [Reference](library-time.md#last_modified_time) |
 | `le` | [Reference](library-numeric.md#arithmetic) |
 | `len_` | [Reference](library-collections.md#collection-queries) |
 | `log_` | [Reference](library-text.md#formatting-and-printing) |
@@ -100,6 +102,7 @@ imports and headers.
 | `switch_` | [Reference](higher-order.md#switch_) |
 | `take` | [Reference](library-selection.md#take-drop-step) |
 | `throttle` | [Reference](library-time.md#throttle) |
+| `timeout` | [Reference](library-time.md#timeout) |
 | `uncollapse_keys` | [Reference](library-collections.md#dictionary-transforms) |
 | `unpartition` | [Reference](library-collections.md#dictionary-transforms) |
 | `upper` | [Reference](library-text.md#construction-and-queries) |

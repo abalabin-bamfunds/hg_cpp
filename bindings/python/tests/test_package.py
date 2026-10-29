@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import sys
 import weakref
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 
 import bg
 import pytest
@@ -150,17 +150,91 @@ def test_runtime_scalar_conversion_overrides_semantic_type_conversion():
     assert view == "runtime double view conversion"
 
 
-def test_date_time_scalar_conversions_remain_available_to_extensions():
+def test_date_time_scalar_conversion_is_builtin_and_extensions_cannot_override_it():
     extension = pytest.importorskip("bg._bg_test_extension")
 
     date_time_added, date_time, timedelta_added, duration, date_time_view = (
         extension.date_time_conversions_can_be_registered()
     )
-    assert date_time_added
-    assert date_time == "extension scalar conversion"
+    assert not date_time_added
+    assert date_time == datetime.fromtimestamp(0)
     assert not timedelta_added
     assert duration == timedelta(0)
-    assert date_time_view == "extension scalar conversion"
+    assert date_time_view == datetime.fromtimestamp(0)
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(1970, 1, 1),
+        datetime(1969, 12, 31, 23, 59, 59, 999999),
+        datetime(2024, 5, 6, 7, 8, 9, 123456),
+    ],
+)
+def test_date_time_scalar_conversion_round_trips_microseconds(value):
+    @bg.graph
+    def constant() -> bg.TS[datetime]:
+        return bg.operators.const_(value)
+
+    @bg.graph
+    def identity(value: bg.TS[datetime]) -> bg.TS[datetime]:
+        return value
+
+    assert bg.run_graph(constant) == [value]
+    assert bg.run_graph(identity, [value]) == [value]
+
+
+def test_date_time_scalar_conversion_supports_nested_scalar_values():
+    values = (datetime(1969, 12, 31, 23, 59, 59, 999999), datetime(2024, 5, 6, 7, 8, 9, 123456))
+
+    @bg.graph
+    def identity(value: bg.TS[tuple[datetime, ...]]) -> bg.TS[tuple[datetime, ...]]:
+        return value
+
+    assert bg.run_graph(identity, [values]) == [values]
+
+
+def test_date_time_scalar_conversion_supports_temporal_operators():
+    value = datetime(2024, 5, 6, 7, 8, 9, 123456)
+
+    @bg.graph
+    def shifted(value: bg.TS[datetime]) -> bg.TS[datetime]:
+        return value + timedelta(microseconds=1)
+
+    @bg.graph
+    def difference(left: bg.TS[datetime], right: bg.TS[datetime]) -> bg.TS[timedelta]:
+        return left - right
+
+    assert bg.run_graph(shifted, [value]) == [value + timedelta(microseconds=1)]
+    assert bg.run_graph(difference, [value + timedelta(microseconds=2)], [value]) == [
+        timedelta(microseconds=2)
+    ]
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        datetime(2024, 5, 6, tzinfo=timezone.utc),
+        datetime(2024, 5, 6, tzinfo=timezone(timedelta(hours=2))),
+    ],
+)
+def test_date_time_scalar_conversion_rejects_timezone_aware_values(value):
+    @bg.graph
+    def identity(value: bg.TS[datetime]) -> bg.TS[datetime]:
+        return value
+
+    with pytest.raises(TypeError, match="timezone-naive datetime"):
+        bg.run_graph(identity, [value])
+
+
+@pytest.mark.parametrize("value", [datetime(2024, 5, 6).date(), datetime(2024, 5, 6).time()])
+def test_date_time_scalar_conversion_rejects_date_and_time_values(value):
+    @bg.graph
+    def identity(value: bg.TS[datetime]) -> bg.TS[datetime]:
+        return value
+
+    with pytest.raises(TypeError, match="expected datetime.datetime"):
+        bg.run_graph(identity, [value])
 
 
 @pytest.mark.parametrize(

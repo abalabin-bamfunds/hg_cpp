@@ -33,9 +33,9 @@ Timestamp subtraction produces a duration. Timestamp minus duration produces a
 timestamp. Integer and temporal arithmetic wraps at the underlying integer width.
 Negation and absolute value of the minimum integer or duration return that same minimum
 value. Floating-point arithmetic uses normal C++ operations. String operations process
-bytes, including embedded NUL bytes. Temporal operators are native C++ overloads. Python
-`datetime.timedelta` maps to `timedelta_t`; Python timestamp scalar conversion is not
-yet supplied.
+bytes, including embedded NUL bytes. Temporal operators are native C++ overloads.
+Python `datetime.datetime` and `datetime.timedelta` map to `date_time_t` and
+`timedelta_t`; timestamp conversion uses a timezone-naive local datetime.
 
 Integer division converts both operands to `double` and uses native floating-point
 division. Conversion can round operands outside the consecutive-integer range, so

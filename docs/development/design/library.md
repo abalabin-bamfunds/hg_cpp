@@ -391,6 +391,16 @@ root guarantee up to final and limit contained guarantees to that same level.
 
 ## Timed operators
 
+`last_modified_time(value)` emits the input's latest update time on each valid
+input event and invalidates with the input. Its output retains the input
+guarantee.
+
+`elapsed(value)` emits the duration between consecutive valid input update
+times. The first valid event establishes the baseline without publishing.
+Input invalidation resets the baseline and invalidates the output; the next
+valid event establishes a new baseline. The output retains the input guarantee
+up to final.
+
 `delay(value, duration)` publishes each input event at its original evaluation
 time plus `duration`. It retains ticks, including invalidation and collection
 deltas, rather than sampling the value later. Equal ordinary ticks remain
@@ -430,6 +440,13 @@ and collection or reference changes. An event at expiry restarts the timer
 without publishing. Debounce does not schedule on start. Period must be
 positive; the output guarantee is limited to final, including contained time
 series.
+
+`timeout(value, period)` publishes an ordinary `TS<bool>` tick with value true
+after a period without input events. Every event restarts the timer, including
+invalidation and collection or reference changes. An event at expiry restarts
+the timer without publishing. Timeout does not schedule on start. After the
+first expiry, its output remains valid and true; each later expiry publishes
+another true tick. Period must be positive.
 
 `resample(value, period)` composes `schedule(period)` and `sample`. Its first
 sampling time is one period after graph start. Each scheduled tick samples the

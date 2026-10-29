@@ -26,6 +26,9 @@
 namespace bg::operators::details {
 namespace {
 
+inline constexpr auto TIME_INPUT_G = guarantee_variable<"TIME_INPUT_G">;
+inline constexpr auto ELAPSED_G = guarantee_variable<"ELAPSED_G">;
+
 EvaluationTime due_time(EvaluationTime now, timedelta_t duration) {
     const auto now_count = now.time_since_epoch().count();
     const auto duration_count = duration.count();
@@ -41,6 +44,42 @@ EvaluationTime due_time(EvaluationTime now, timedelta_t duration) {
 }
 
 struct timed_overloads {
+    // Expose the evaluation time of the latest input change.
+    overload<last_modified_time> last_modified_time_impl{
+        eval = [](In<TS_T::with<TIME_INPUT_G>> value, Out<TS<date_time_t, TIME_INPUT_G>> output) {
+            output.set(value.last_updated());
+        }};
+
+    // Report the interval between consecutive valid input changes.
+    struct elapsed_impl {
+        In<TS_T::with<TIME_INPUT_G>> value;
+        State<std::optional<EvaluationTime>> previous;
+        Out<TS<timedelta_t, ELAPSED_G>> output;
+
+        static TimeSeriesGuarantee resolve(decltype(ELAPSED_G), const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            return weakest(*value_type.guarantee().value(), TimeSeriesGuarantee::final);
+        }
+
+        void evaluate() const {
+            const auto current = value.last_updated();
+            if (!*previous) {
+                *previous = current;
+                return;
+            }
+
+            output.set(current - **previous);
+            *previous = current;
+        }
+
+        void on_invalidation() const {
+            *previous = std::nullopt;
+            output.invalidate();
+        }
+    };
+
+    overload<elapsed, elapsed_impl> elapsed_impl;
+
     // Delay retains each changed input tick until its due evaluation time.
     struct delay_node {
         struct retained_ticks {
@@ -327,6 +366,40 @@ struct timed_overloads {
     };
 
     overload<debounce, debounce_impl> debounce_impl;
+
+    // Publish true once after an input event has been quiet for one period.
+    struct timeout_impl {
+        static constexpr bool uses_timed_scheduling = true;
+
+        In<TS_T, optional> value;
+        Scalar<timedelta_t> period;
+        State<ScheduleHandle> timer;
+        Out<TS<bool>> output;
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto period = scalar_cast<timedelta_t>(*arguments.scalar("period")).value();
+            return period <= timedelta_t{} ? reject("timeout period must be positive") : accept;
+        }
+
+        void evaluate(EvaluationContext *context) const {
+            if (value.modified()) {
+                if (*timer) {
+                    context->cancel(*timer);
+                }
+                *timer = context->schedule_at(context->evaluation_time() + period.value());
+                return;
+            }
+
+            if (!*timer || !context->timer_fired(*timer)) {
+                return;
+            }
+
+            *timer = {};
+            output.set(true);
+        }
+    };
+
+    overload<timeout, timeout_impl> timeout_impl;
 
     struct resample_graph {
         wp<TS_T> value;

@@ -705,8 +705,9 @@ For each reusable node and graph, test:
   target-only updates without routing-node evaluation, and C++ and Python wiring
 - delayed ticks and invalidation, collection delta replay, periodic tick limits,
   throttle publication times and latest-state reconciliation, debounce silence
-  periods and event/expiry coincidence, simultaneous timers and input changes,
-  duration bounds, and nested-graph stop cleanup
+  periods and event/expiry coincidence, timeout expiry and event resets,
+  simultaneous timers and input changes, input update timestamps and elapsed
+  intervals, duration bounds, and nested-graph stop cleanup
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,
@@ -723,6 +724,8 @@ For each reusable node and graph, test:
 - homogeneous scalar tuple annotations, nested and generic items, immutable
   Python materialization, expected-type sequence conversion and ownership,
   and rejection of mutable sequence annotations
+- timezone-naive datetime scalar conversion through scalar, time-series, and
+  nested scalar paths, including microsecond and pre-epoch values
 - conversion between scalar tuple lists and TSL/TSS, scalar dictionaries and
   TSD, named scalar Bundle/TSB schemas, partially valid free combine results,
   and collect reset and emit behavior for supported collection types;
