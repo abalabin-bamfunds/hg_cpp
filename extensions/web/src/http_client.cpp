@@ -1,5 +1,4 @@
 #include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
 #include <bg/map.hpp>
 #include <bg/node.hpp>
 #include <bg/scalar/opaque.hpp>
@@ -75,20 +74,14 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
                 "name"_n = "http_client_request",
                 [](wp<TS<service_client_id_t>, "key"_n> client_id,
                    wp<TS<Bundle<HttpClientRequest>>, "request"_n> request,
-                   wp<TSD<service_client_id_t, TS<Bundle<details::ClientReply>>>, "replies"_n> replies,
-                   wp<TS<Opaque<ClientRuntime *>>, "runtime"_n> runtime) -> wp<TS<Bundle<HttpResponse>>> {
+                   wp<TS<Opaque<ClientRuntime *>>, "runtime"_n> runtime) {
                     const auto client_sequence = service_client_id();
-                    const auto reply = operators::getitem(replies, client_id);
-                    const auto is_current = operators::eq(
-                        operators::getattr(reply, util::symbol{"client_sequence"}), client_sequence);
                     client_request_sink(client_id, client_sequence, request, runtime);
-                    return wp<TS<Bundle<HttpResponse>>>{
-                        operators::filter_(is_current, operators::getattr(reply, util::symbol{"response"}))};
                 });
 
-            const auto response = map(client, requests, pass_through(source->replies), source->runtime);
+            map(client, requests, source->runtime);
             error_sink(source->errors);
-            return wp<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>>{response};
+            return wp<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>>{source->replies};
         });
     return std::make_shared<decltype(implementation)>(std::move(implementation));
 }

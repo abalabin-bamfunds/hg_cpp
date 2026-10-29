@@ -199,7 +199,7 @@ Pass the policy service as the third argument to C++ `http_handler` and keep the
 service declaration alive through handler wiring. The handler uses that original
 declaration's catalogue identity.
 
-## Client
+## HTTP client
 
 `http_client` is a request/reply service. Register its transport implementation
 in the graph's service catalogue:
@@ -238,7 +238,9 @@ Every valid request tick starts a request. Responses tick in completion order
 under the originating service client ID. A client can have several outstanding
 requests. Graph code creates separate service clients when it needs a separate
 response time series for each request. Removing a client cancels its outstanding
-requests. Graph stop cancels transport work and joins the transport thread.
+requests. Completions queued before cancellation cleanup remain ordered before
+the reply removal. Graph stop cancels transport work and joins the transport
+thread.
 
 HTTP error statuses, including 401 and 500, are ordinary responses. A local
 transport failure produces `HttpResponse(status=599)` with an error message in
@@ -275,7 +277,8 @@ for each graph run.
 `TSB<BinaryWebSocketClientRequest>` with a `connect_request` containing a URL
 and ordered handshake headers, a `message` containing bytes, and a `close`
 request. Each connect tick starts a new connection for that service client.
-The implementation applies request updates at the next minimum evaluation time.
+The graph submits request updates to the transport thread during the evaluation
+that receives them.
 Message ticks send complete binary messages. For an open connection, a message
 and close request in one update sends the message before the close frame. A
 close request during the handshake cancels the attempt and discards any message

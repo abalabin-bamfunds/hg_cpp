@@ -1,6 +1,6 @@
 # HTTP client completion delivery
 
-Status: accepted
+Status: superseded by [HTTP client queue delivery](0092-http-client-queue-delivery.md)
 
 ## Context
 
@@ -32,5 +32,5 @@ a locally generated transport failure have the same representation.
 Queued completions from a withdrawn activation cannot reach a later
 activation with the same service client ID.
 
-See the [HTTP client API](../../../extensions/web/README.md#client) for request,
+See the [HTTP client API](../../../extensions/web/README.md#http-client) for request,
 service, and lifecycle behavior.

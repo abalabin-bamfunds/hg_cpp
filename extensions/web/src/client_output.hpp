@@ -11,13 +11,8 @@ class ClientRuntime;
 
 namespace bg::web::details {
 
-template <template <typename, auto...> typename Field> struct ClientReply {
-    Field<i64> client_sequence;
-    Field<Bundle<HttpResponse>> response;
-};
-
 template <template <typename, auto...> typename Field> struct ClientOutput {
-    Field<TSD<i64, TS<Bundle<ClientReply>>>> replies;
+    Field<TSD<i64, TS<Bundle<HttpResponse>>>> replies;
     Field<TS<string>> errors;
     Field<TS<Opaque<ClientRuntime *>>> runtime;
 };

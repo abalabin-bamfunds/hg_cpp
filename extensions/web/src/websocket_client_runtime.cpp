@@ -174,7 +174,7 @@ class WebSocketClientImplementation final {
                 if (found == active_.end() || found->second.sequence != sequence) return;
                 auto connection = std::move(found->second.connection);
                 active_.erase(found);
-                clear_bucket(client_id, sequence, true);
+                clear_bucket(client_id, sequence, std::nullopt);
                 if (connection) connection->cancel();
             });
         } catch (...) {
@@ -566,8 +566,10 @@ class WebSocketClientImplementation final {
             if (found != active_.end()) {
                 auto previous = std::move(found->second);
                 active_.erase(found);
-                clear_bucket(client_id, previous.sequence, false);
+                clear_bucket(client_id, previous.sequence, sequence);
                 if (previous.connection) previous.connection->cancel();
+            } else {
+                publish_current_sequence(client_id, sequence);
             }
             auto connection = std::make_shared<Connection>(*this, client_id, sequence);
             active_.emplace(client_id, ActiveConnection{.sequence = sequence, .connection = connection});
@@ -636,21 +638,35 @@ class WebSocketClientImplementation final {
         }
     }
 
-    void clear_bucket(i64 client_id, i64 sequence, bool remove_client) noexcept {
+    void publish_current_sequence(i64 client_id, i64 sequence) noexcept {
+        try {
+            const auto accepted = output_.write(literal::TimeSeriesLiteral{
+                {util::symbol{"current_sequences"}, {{client_id, sequence}}}});
+            if (!accepted && !stopped_.load(std::memory_order_acquire)) {
+                record_failure(std::make_exception_ptr(std::runtime_error{"WebSocket client output queue is closed"}));
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
+    }
+
+    void clear_bucket(i64 client_id, i64 sequence, std::optional<i64> next_sequence) noexcept {
         try {
             if (message_queue_attached_) {
-                if (remove_client) {
+                if (!next_sequence) {
                     (void)messages_.write(literal::TimeSeriesLiteral{{client_id, literal::REMOVE}});
                 } else {
                     (void)messages_.write(literal::TimeSeriesLiteral{{client_id, {{sequence, literal::REMOVE}}}});
                 }
             }
-            if (remove_client) {
+            if (!next_sequence) {
                 (void)output_.write(literal::TimeSeriesLiteral{
+                    {util::symbol{"current_sequences"}, {{client_id, literal::REMOVE}}},
                     {util::symbol{"connect_responses"}, {{client_id, literal::REMOVE}}},
                     {util::symbol{"closes"}, {{client_id, literal::REMOVE}}}});
             } else {
                 (void)output_.write(literal::TimeSeriesLiteral{
+                    {util::symbol{"current_sequences"}, {{client_id, *next_sequence}}},
                     {util::symbol{"connect_responses"}, {{client_id, {{sequence, literal::REMOVE}}}}},
                     {util::symbol{"closes"}, {{client_id, {{sequence, literal::REMOVE}}}}}});
             }

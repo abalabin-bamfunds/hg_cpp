@@ -1,10 +1,6 @@
 #include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/details/engine_wakeup.hpp>
 #include <bg/literal/scalar_literal.hpp>
+#include <bg/map.hpp>
 #include <bg/node.hpp>
 #include <bg/queue_node.hpp>
 #include <bg/run_graph.hpp>
@@ -16,7 +12,6 @@
 #include <bg/web/http_server.hpp>
 #include <bg/web/auth.hpp>
 
-#include "../src/client_output.hpp"
 #include "../src/http_header.hpp"
 
 #include <array>
@@ -70,14 +65,6 @@ ScalarValue<Bundle<HttpResponse>> make_response(i64 status, HeaderValues headers
     auto memory = allocator{};
     return bundle<HttpResponse>(memory, "status"_n = status_value.view(), "headers"_n = headers_value.view(),
                                 "body"_n = body_value.view());
-}
-
-ScalarValue<Bundle<bg::web::details::ClientReply>> make_client_reply(i64 client_sequence,
-                                                                     Scalar<Bundle<HttpResponse>> response) {
-    auto client_sequence_value = ScalarValue<i64>{client_sequence};
-    auto memory = allocator{};
-    return bundle<bg::web::details::ClientReply>(memory, "client_sequence"_n = client_sequence_value.view(),
-                                                 "response"_n = response);
 }
 
 struct ObservedResponse {
@@ -273,118 +260,64 @@ TEST_CASE("HTTP client preserves binary payloads, ordered headers, and sequentia
     CHECK(responses[1].body.empty());
 }
 
-TEST_CASE("HTTP client dispatch rejects replies from a removed client sequence",
-          "[feature:http][feature:service][feature:lifecycle][transition:removal][queue]") {
-    const auto requests = queue<TSD<service_client_id_t, TS<Bundle<HttpClientRequest>>>>(start = [](Queue) {});
-    const auto implementation = http_client_impl();
-    auto request_point = WiringPoint{};
-    auto response_point = WiringPoint{};
-    auto observed_statuses = std::vector<i64>{};
-    auto client_present = false;
+TEST_CASE("HTTP client returns queue replies for mapped callers",
+          "[feature:http][feature:service][feature:map][feature:realtime]"
+          "[feature:lifecycle][transition:invalidation][transition:revalidation]") {
+    const auto client_id = service_client_id_t{42};
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(http_client, http_client_impl(), std::span<const WiringArgument>{});
 
-    auto wiring = GraphWiring{};
-    {
-        const auto context = WiringContext{wiring};
-        request_point = requests();
-        const auto output = (*implementation)(request_point);
-        REQUIRE(output.has_value());
-        response_point = *output;
-        (void)node([&](In<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>> replies) {
-            if (!replies.valid() || !replies.modified()) return;
-            client_present = replies.contains(service_client_id_t{42});
-            const auto observe_reply = [&](const auto &client_id) {
-                const auto reply = replies[client_id];
-                if (reply.valid() && reply.modified()) {
-                    observed_statuses.push_back(scalar_cast<i64>(reply.value()[0]).value());
+    auto request_writer = Queue{};
+    const auto requests = queue<TSD<service_client_id_t, TS<Bundle<HttpClientRequest>>>>(
+        start = [client_id, &request_writer](Queue queue) {
+            request_writer = queue;
+            const auto request = make_request("GET", "file:///invalid");
+            if (!queue.write(literal::TimeSeriesLiteral{{client_id, request.view()}})) {
+                throw std::runtime_error{"could not queue the mapped HTTP client request"};
+            }
+        });
+    const auto client = graph([](wp<TS<Bundle<HttpClientRequest>>> request) { return http_client(request); });
+
+    auto observed = std::vector<ObservedResponse>{};
+    auto activation = 0;
+    run_graph(
+        [&] {
+            const auto replies = map(client, requests());
+            (void)node([&](In<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>> values) {
+                if (!values.valid() || !values.modified() || !values.contains(client_id)) return;
+                const auto response = values[client_id];
+                if (activation == 1 && !response.valid()) {
+                    activation = 2;
+                    const auto replacement = make_request("BAD METHOD", "http://127.0.0.1/");
+                    if (!request_writer.write(literal::TimeSeriesLiteral{{client_id, replacement.view()}})) {
+                        throw std::runtime_error{"could not queue the reactivated HTTP client request"};
+                    }
+                    return;
                 }
-            };
-            replies.for_each_modified(observe_reply);
-        })(response_point);
-    }
-    wiring.finalize();
-    const auto compiled = CompiledGraph{wiring};
-    auto source_index = compiled.node_count();
-    for (auto index = std::size_t{}; index < compiled.node_count(); ++index) {
-        const auto &node = compiled.node(index);
-        if (node.has_output_runtime_type() &&
-            &node.output_runtime_type().type() == &TSB<bg::web::details::ClientOutput>::type()) {
-            source_index = index;
-            break;
-        }
-    }
-    REQUIRE(source_index < compiled.node_count());
+                if (!response.valid() || !response.modified()) return;
+                observed.push_back(observe(response.value()));
+                if (activation == 0) {
+                    activation = 1;
+                    if (!request_writer.write(literal::TimeSeriesLiteral{{client_id, literal::INVALID}})) {
+                        throw std::runtime_error{"could not withdraw the HTTP client request"};
+                    }
+                    return;
+                }
+                if (activation == 2) stop.request_stop();
+            })(replies);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{3},
+                        .stop_token = stop.get_token()});
 
-    auto global_state = GlobalState{};
-    auto wakeup = bg::details::EngineWakeup{};
-    auto runtime = RuntimeGraph{compiled, global_state};
-    runtime.bind_queue_wakeup(wakeup);
-    runtime.start(MIN_DT + std::chrono::microseconds{1});
-    auto request_queue = runtime.make_queue(wiring.output_node_index(request_point));
-    auto source_queue = runtime.make_queue(source_index);
-    const auto wait_for_committed_queue = [&] {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds{2};
-        while (!runtime.has_committed_queue_messages() && std::chrono::steady_clock::now() < deadline) {
-            (void)wakeup.wait_until(deadline);
-        }
-        return runtime.has_committed_queue_messages();
-    };
-    const auto cycle = [&](i64 microseconds) { runtime.evaluate(MIN_DT + std::chrono::microseconds{microseconds}); };
-    const auto reply_client_sequence = [&] {
-        const auto source = runtime.node(source_index);
-        const auto input = In<TS_T>{source.output_last_updated(), source.output_value(),
-                                    compiled.node(source_index).output_runtime_type()};
-        const auto output = input.as<TSB<bg::web::details::ClientOutput>>();
-        const auto reply = output->replies[service_client_id_t{42}];
-        REQUIRE(reply.valid());
-        return scalar_cast<i64>(reply.value()[0]).value();
-    };
-
-    const auto first_request = make_request("GET", "file:///invalid");
-    REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, first_request.view()}}));
-    cycle(2);
-    REQUIRE(wait_for_committed_queue());
-    cycle(3);
-    CHECK(observed_statuses == std::vector<i64>{599});
-    const auto first_client_sequence = reply_client_sequence();
-
-    REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, literal::REMOVE}}));
-    cycle(4);
-    REQUIRE(wait_for_committed_queue());
-    cycle(5);
-    CHECK_FALSE(client_present);
-
-    const auto stale_response = make_response(200, {});
-    const auto stale_reply = make_client_reply(first_client_sequence, stale_response.view());
-    REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
-        {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply.view()}}}}));
-    cycle(6);
-    CHECK_FALSE(client_present);
-    CHECK(observed_statuses == std::vector<i64>{599});
-
-    const auto second_request = make_request("GET", "file:///invalid");
-    REQUIRE(request_queue.write(literal::TimeSeriesLiteral{{service_client_id_t{42}, second_request.view()}}));
-    cycle(7);
-    CHECK(client_present);
-    CHECK(observed_statuses == std::vector<i64>{599});
-    REQUIRE(wait_for_committed_queue());
-    cycle(8);
-    CHECK(observed_statuses == std::vector<i64>{599, 599});
-    const auto second_client_sequence = reply_client_sequence();
-    CHECK(second_client_sequence != first_client_sequence);
-    CHECK(client_present);
-
-    const auto stale_response_after_readd = make_response(202, {});
-    const auto stale_reply_after_readd = make_client_reply(first_client_sequence, stale_response_after_readd.view());
-    REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
-        {util::symbol{"replies"}, {{service_client_id_t{42}, stale_reply_after_readd.view()}}}}));
-    cycle(9);
-    CHECK(observed_statuses == std::vector<i64>{599, 599});
-
-    const auto current_response = make_response(201, {});
-    const auto current_reply = make_client_reply(second_client_sequence, current_response.view());
-    REQUIRE(source_queue.write(literal::TimeSeriesLiteral{
-        {util::symbol{"replies"}, {{service_client_id_t{42}, current_reply.view()}}}}));
-    cycle(10);
-    CHECK(observed_statuses == std::vector<i64>{599, 599, 201});
-    runtime.stop();
+    REQUIRE(activation == 2);
+    REQUIRE(observed.size() == 2);
+    CHECK(observed[0].status == 599);
+    CHECK(std::string{reinterpret_cast<const char *>(observed[0].body.data()), observed[0].body.size()} ==
+          "URL scheme must be http or https");
+    CHECK(observed[1].status == 599);
+    CHECK(std::string{reinterpret_cast<const char *>(observed[1].body.data()), observed[1].body.size()} ==
+          "HTTP method is not a valid token");
 }

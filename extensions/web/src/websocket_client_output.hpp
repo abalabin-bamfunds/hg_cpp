@@ -10,6 +10,7 @@ class WebSocketClientRuntime;
 namespace details {
 
 template <template <typename, auto...> typename Field> struct WebSocketClientOutput {
+    Field<TSD<i64, TS<i64>>> current_sequences;
     Field<TSD<i64, TSD<i64, TS<Bundle<HttpResponse>>>>> connect_responses;
     Field<TSD<i64, TSD<i64, TS<Bundle<WebSocketClose>>>>> closes;
     Field<TS<string>> errors;

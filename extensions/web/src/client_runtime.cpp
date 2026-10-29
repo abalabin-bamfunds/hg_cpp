@@ -1,6 +1,5 @@
 #include "client_runtime.hpp"
 
-#include "client_output.hpp"
 #include "http_header.hpp"
 
 #include <bg/literal/time_series_literal.hpp>
@@ -425,13 +424,13 @@ class ClientImplementation final {
                                                    std::move(*command.request));
         transfer->read_request();
         if (const auto error = transfer->validate()) {
-            write_response(command.client_id, command.client_sequence, error_response(*error));
+            write_response(command.client_id, error_response(*error));
             return;
         }
         transfer->easy = curl_easy_init();
         if (transfer->easy == nullptr) throw std::runtime_error{"libcurl request initialization failed"};
         if (const auto error = transfer->configure(options_)) {
-            write_response(command.client_id, command.client_sequence, error_response(*error));
+            write_response(command.client_id, error_response(*error));
             return;
         }
 
@@ -480,8 +479,7 @@ class ClientImplementation final {
                 continue;
             }
             if (transfer->response_too_large) {
-                write_response(transfer->client_id, transfer->client_sequence,
-                               error_response("HTTP response body exceeds configured limit"));
+                write_response(transfer->client_id, error_response("HTTP response body exceeds configured limit"));
                 continue;
             }
             if (result != CURLE_OK) {
@@ -489,7 +487,7 @@ class ClientImplementation final {
                                              ? std::string{"HTTP request timed out"}
                                              : std::string{"HTTP request failed: "} +
                                                    transfer->curl_error(result);
-                write_response(transfer->client_id, transfer->client_sequence, error_response(description));
+                write_response(transfer->client_id, error_response(description));
                 continue;
             }
 
@@ -500,22 +498,18 @@ class ClientImplementation final {
                                          curl_easy_strerror(info_result)};
             }
             if (status == 101) {
-                write_response(transfer->client_id, transfer->client_sequence,
-                               error_response("HTTP protocol upgrade is not supported"));
+                write_response(transfer->client_id, error_response("HTTP protocol upgrade is not supported"));
                 continue;
             }
             auto response = response_value(static_cast<i64>(status), std::move(transfer->response_headers),
                                            std::move(transfer->response_body).finish());
-            write_response(transfer->client_id, transfer->client_sequence, std::move(response));
+            write_response(transfer->client_id, std::move(response));
         }
     }
 
-    void write_response(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpResponse>> response) {
-        auto memory = allocator{};
-        const auto reply = bundle<details::ClientReply>(memory, "client_sequence"_n = client_sequence,
-                                                        "response"_n = response.view());
+    void write_response(i64 client_id, ScalarValue<Bundle<HttpResponse>> response) {
         const auto accepted = output_.write(literal::TimeSeriesLiteral{
-            {util::symbol{"replies"}, {{client_id, reply.view()}}}});
+            {util::symbol{"replies"}, {{client_id, response.view()}}}});
         if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
             record_failure(std::make_exception_ptr(std::runtime_error{"HTTP response queue is closed"}));
         }
