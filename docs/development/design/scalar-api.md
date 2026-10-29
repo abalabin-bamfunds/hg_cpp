@@ -203,6 +203,10 @@ Wiring applies the same conversion to raw C++ scalar arguments before type
 resolution. An explicit `ScalarValue<T>` retains a concrete `T` as its semantic
 type. For a generic declaration, wiring uses the value's resolved type.
 
+An unregistered C++ object can bind directly to a fixed `Opaque<T>` parameter
+when its source type is exactly `T`. This conversion requires a concrete
+parameter and does not apply to generic or variadic parameters.
+
 `ScalarValue<Tuple<...>>` accepts `std::pair` and `std::tuple` sources whose
 items match the declared tuple items. `ScalarValue<List<Tuple<...>>>` accepts a
 contiguous range of those sources and owns each constructed item.

@@ -5,6 +5,7 @@
 #include <bg/graph/graph_argument.hpp>
 #include <bg/graph/wiring_point.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
+#include <bg/scalar/opaque.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type.hpp>
@@ -27,7 +28,9 @@ inline constexpr bool supported_scalar_argument =
     scalar_declaration_traits<std::remove_cvref_t<T>>::supports_implicit_argument &&
     requires { cpp_scalar_type<canonical_scalar_type_t<T>>(); };
 
-template <typename T> struct optional_scalar_argument : std::false_type {};
+template <typename T> struct optional_scalar_argument {
+    static constexpr bool value = false;
+};
 
 template <typename T>
 struct optional_scalar_argument<std::optional<T>> : std::bool_constant<supported_scalar_argument<T>> {
@@ -65,6 +68,24 @@ struct WiringArgumentExpansion {
     WiringAnnotations annotations;
 };
 
+template <typename T>
+concept opaque_source_argument = [] {
+    using Source = std::remove_cvref_t<T>;
+    if constexpr (std::same_as<Source, WiringArgument> || std::same_as<Source, WiringArgumentExpansion>) {
+        return false;
+    } else if constexpr (requires { cpp_scalar_type<canonical_scalar_type_t<Source>>(); } ||
+                         requires { typename optional_scalar_argument<Source>::value_type; } ||
+                         requires { typename scalar_value_argument<Source>::scalar_type; } ||
+                         graph_scalar_view_argument<T> || wiring_point_argument<T> || graph_argument_facade<T> ||
+                         is_named_argument_v<T> || is_opaque_v<Source> || std::same_as<Source, GraphArgument>) {
+        return false;
+    } else if constexpr (!std::copy_constructible<Source>) {
+        return false;
+    } else {
+        return true;
+    }
+}();
+
 } // namespace bg::details
 
 namespace bg {
@@ -97,14 +118,23 @@ class WiringArgument {
         const details::ScalarData *view{};
     };
 
+    struct OpaqueScalarCandidate {
+        ScalarArgument scalar;
+    };
+
+    static_assert(sizeof(OpaqueScalarCandidate) == sizeof(ScalarArgument));
+    static_assert(sizeof(std::variant<TimeSeriesArgument, ScalarArgument, OpaqueScalarCandidate, GraphArgument>) ==
+                  sizeof(std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument>));
+
   public:
     WiringArgument(const WiringArgument &other)
         : value_{copy_value(other)}, name_{other.name_}, variadic_capture_mode_{other.variadic_capture_mode_},
           match_fixed_parameter_by_name_{other.match_fixed_parameter_by_name_} {
-        if (auto *scalar = std::get_if<ScalarArgument>(&value_); scalar != nullptr && other.scalar_has_value()) {
-            scalar->owned.emplace(other.scalar());
-            scalar->data = nullptr;
-            scalar->view = nullptr;
+        if (is_scalar() && other.scalar_has_value()) {
+            auto &scalar = scalar_argument();
+            scalar.owned.emplace(other.scalar());
+            scalar.data = nullptr;
+            scalar.view = nullptr;
         }
     }
 
@@ -148,6 +178,13 @@ class WiringArgument {
     WiringArgument(T &&value) : value_(make_scalar_argument(std::forward<T>(value))) {}
 
     template <typename T>
+        requires details::opaque_source_argument<T>
+    explicit WiringArgument(T &&value)
+        : value_(OpaqueScalarCandidate{ScalarArgument{cpp_scalar_type<Opaque<std::remove_cvref_t<T>>>(),
+                                                      cpp_scalar_runtime_type<Opaque<std::remove_cvref_t<T>>>(),
+                                                      std::addressof(value)}}) {}
+
+    template <typename T>
         requires details::supported_optional_scalar_argument<T>
     WiringArgument(T &&value) : value_(make_optional_scalar_argument(std::forward<T>(value))) {}
 
@@ -186,7 +223,10 @@ class WiringArgument {
     }
 
     bool is_time_series() const noexcept { return std::holds_alternative<TimeSeriesArgument>(value_); }
-    bool is_scalar() const noexcept { return std::holds_alternative<ScalarArgument>(value_); }
+    bool is_scalar() const noexcept {
+        return std::holds_alternative<ScalarArgument>(value_) || std::holds_alternative<OpaqueScalarCandidate>(value_);
+    }
+    bool is_opaque_candidate() const noexcept { return std::holds_alternative<OpaqueScalarCandidate>(value_); }
     bool is_graph() const noexcept { return std::holds_alternative<GraphArgument>(value_); }
     bool requires_optional() const noexcept {
         const auto *time_series = std::get_if<TimeSeriesArgument>(&value_);
@@ -197,8 +237,11 @@ class WiringArgument {
         return time_series == nullptr ? details::WiringAnnotations{} : time_series->annotations;
     }
     bool present() const noexcept {
-        const auto *scalar = std::get_if<ScalarArgument>(&value_);
-        return scalar == nullptr || scalar->owned.has_value() || scalar->data != nullptr || scalar->view != nullptr;
+        if (!is_scalar()) {
+            return true;
+        }
+        const auto &scalar = scalar_argument();
+        return scalar.owned.has_value() || scalar.data != nullptr || scalar.view != nullptr;
     }
     std::optional<util::symbol> name() const noexcept { return name_; }
     const Type &type() const noexcept {
@@ -276,8 +319,16 @@ class WiringArgument {
     bool matches_fixed_parameter_by_name() const noexcept { return match_fixed_parameter_by_name_; }
 
     const ScalarRuntimeType &scalar_runtime_type() const noexcept {
-        const auto &scalar = std::get<ScalarArgument>(value_);
+        const auto &scalar = scalar_argument();
         return scalar.owned ? scalar.owned->runtime_type() : *scalar.runtime_type;
+    }
+
+    void bind_opaque_candidate(const Type &expected_type) {
+        if (!is_opaque_candidate() || &scalar_type() != &expected_type) {
+            throw WiringError{"an opaque C++ argument requires an exact matching fixed parameter"};
+        }
+        auto scalar = std::move(std::get<OpaqueScalarCandidate>(value_).scalar);
+        value_.emplace<ScalarArgument>(std::move(scalar));
     }
 
     WiringArgument clone(allocator &memory) const {
@@ -285,8 +336,10 @@ class WiringArgument {
             return *this;
         }
 
-        auto result = WiringArgument{ScalarArgument{scalar_type(), scalar_runtime_type()}};
-        std::get<ScalarArgument>(result.value_).owned.emplace(scalar(), memory);
+        auto result = is_opaque_candidate()
+                          ? WiringArgument{OpaqueScalarCandidate{ScalarArgument{scalar_type(), scalar_runtime_type()}}}
+                          : WiringArgument{ScalarArgument{scalar_type(), scalar_runtime_type()}};
+        result.scalar_argument().owned.emplace(scalar(), memory);
         result.name_ = name_;
         result.variadic_capture_mode_ = variadic_capture_mode_;
         result.match_fixed_parameter_by_name_ = match_fixed_parameter_by_name_;
@@ -294,30 +347,49 @@ class WiringArgument {
     }
 
   private:
+    explicit WiringArgument(OpaqueScalarCandidate candidate) : value_(std::move(candidate)) {}
+
+    ScalarArgument &scalar_argument() noexcept {
+        if (auto *scalar = std::get_if<ScalarArgument>(&value_)) {
+            return *scalar;
+        }
+        return std::get<OpaqueScalarCandidate>(value_).scalar;
+    }
+    const ScalarArgument &scalar_argument() const noexcept {
+        if (const auto *scalar = std::get_if<ScalarArgument>(&value_)) {
+            return *scalar;
+        }
+        return std::get<OpaqueScalarCandidate>(value_).scalar;
+    }
     const ScalarType &scalar_type() const noexcept {
-        const auto &scalar = std::get<ScalarArgument>(value_);
+        const auto &scalar = scalar_argument();
         return scalar.type != nullptr ? *scalar.type : scalar.owned->type();
     }
-    const void *scalar_data() const noexcept { return std::get<ScalarArgument>(value_).data; }
+    const void *scalar_data() const noexcept { return scalar_argument().data; }
     const details::ScalarData *scalar_view() const noexcept {
-        const auto &scalar = std::get<ScalarArgument>(value_);
+        const auto &scalar = scalar_argument();
         return scalar.owned ? &details::scalar_data(*scalar.owned) : scalar.view;
     }
     bool scalar_has_value() const noexcept { return scalar_data() != nullptr || scalar_view() != nullptr; }
 
-    static std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> copy_value(const WiringArgument &other) {
+    static std::variant<TimeSeriesArgument, ScalarArgument, OpaqueScalarCandidate, GraphArgument>
+    copy_value(const WiringArgument &other) {
         if (other.is_time_series()) {
             return std::get<TimeSeriesArgument>(other.value_);
         }
         if (other.is_graph()) {
             return std::get<GraphArgument>(other.value_);
         }
-        return ScalarArgument{other.scalar_type(), other.scalar_runtime_type(), other.scalar_data(),
-                              other.scalar_view()};
+        auto scalar = ScalarArgument{other.scalar_type(), other.scalar_runtime_type(), other.scalar_data(),
+                                     other.scalar_view()};
+        if (other.is_opaque_candidate()) {
+            return OpaqueScalarCandidate{std::move(scalar)};
+        }
+        return scalar;
     }
 
     explicit WiringArgument(ScalarArgument scalar) : value_(std::move(scalar)) {}
-    explicit WiringArgument(std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> value)
+    explicit WiringArgument(std::variant<TimeSeriesArgument, ScalarArgument, OpaqueScalarCandidate, GraphArgument> value)
         : value_(std::move(value)) {}
 
     template <typename T> static ScalarArgument make_scalar_argument(T &&value) {
@@ -341,7 +413,7 @@ class WiringArgument {
         return make_scalar_argument(*value);
     }
 
-    std::variant<TimeSeriesArgument, ScalarArgument, GraphArgument> value_;
+    std::variant<TimeSeriesArgument, ScalarArgument, OpaqueScalarCandidate, GraphArgument> value_;
     std::optional<util::symbol> name_;
     details::VariadicMode variadic_capture_mode_{details::VariadicMode::none};
     bool match_fixed_parameter_by_name_{};
@@ -353,7 +425,8 @@ namespace bg::details {
 
 template <typename T>
 concept graph_code_argument_value =
-    wiring_point_argument<T> || supported_scalar_argument<T> || supported_optional_scalar_argument<T> ||
+    wiring_point_argument<T> || supported_scalar_argument<T> || opaque_source_argument<T> ||
+    supported_optional_scalar_argument<T> ||
     supported_scalar_value_argument<T> || graph_scalar_view_argument<T> ||
     std::same_as<std::remove_cvref_t<T>, GraphArgument> ||
     std::same_as<std::remove_cvref_t<T>, WiringArgument> ||

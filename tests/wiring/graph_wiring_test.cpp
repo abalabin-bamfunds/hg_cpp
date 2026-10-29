@@ -433,6 +433,24 @@ struct unhashable_wiring_value {
     int value;
 };
 
+struct unregistered_opaque_wiring_value {
+    int value;
+};
+
+struct unregistered_opaque_wiring_node {
+    Scalar<Opaque<unregistered_opaque_wiring_value>> value;
+    Out<TS<float>> output;
+
+    void evaluate() const {}
+};
+
+struct unregistered_opaque_pointer_wiring_node {
+    Scalar<Opaque<unregistered_opaque_wiring_value *>> value;
+    Out<TS<float>> output;
+
+    void evaluate() const {}
+};
+
 } // namespace
 
 TEST_CASE("wiring does not reuse calls with an unhashable scalar", "[graph_wiring][feature:wiring][scalar:opaque]") {
@@ -448,6 +466,66 @@ TEST_CASE("wiring does not reuse calls with an unhashable scalar", "[graph_wirin
 
     (void)wiring.complete_pending_wiring();
     CHECK(wiring.nodes().size() == 2);
+}
+
+TEST_CASE("unregistered C++ values bind to exact opaque scalar parameters",
+          "[graph_wiring][feature:wiring][scalar:opaque][lifetime:retained]") {
+    using namespace bg::literals;
+
+    const auto source = node<unregistered_opaque_wiring_node>();
+    const auto pointer_source = node<unregistered_opaque_pointer_wiring_node>();
+    auto wiring = GraphWiring{};
+    auto pointed_to = unregistered_opaque_wiring_value{31};
+
+    {
+        const auto context = WiringContext{wiring};
+        auto lvalue = unregistered_opaque_wiring_value{11};
+        (void)source(lvalue);
+        lvalue.value = 12;
+        (void)source("value"_n = unregistered_opaque_wiring_value{21});
+        (void)pointer_source("value"_n = &pointed_to);
+    }
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(wiring.nodes().size() == 3);
+    REQUIRE(wiring.nodes()[0].scalar_values().size() == 1);
+    REQUIRE(wiring.nodes()[1].scalar_values().size() == 1);
+    REQUIRE(wiring.nodes()[2].scalar_values().size() == 1);
+    CHECK(&wiring.nodes()[0].scalar_values()[0].runtime_type().type() ==
+          &cpp_scalar_type<Opaque<unregistered_opaque_wiring_value>>());
+    CHECK(static_cast<const unregistered_opaque_wiring_value *>(wiring.nodes()[0].scalar_values()[0].data())->value ==
+          11);
+    CHECK(static_cast<const unregistered_opaque_wiring_value *>(wiring.nodes()[1].scalar_values()[0].data())->value ==
+          21);
+    CHECK(*static_cast<unregistered_opaque_wiring_value *const *>(wiring.nodes()[2].scalar_values()[0].data()) ==
+          &pointed_to);
+}
+
+TEST_CASE("unregistered C++ values require an exact fixed opaque parameter",
+          "[graph_wiring][feature:wiring][scalar:opaque]") {
+    const auto mismatch = node([](Scalar<Opaque<unhashable_wiring_value>>, Out<TS<float>>) {});
+    const auto generic = node([](Scalar<SCALAR>, Out<TS<float>>) {});
+    const auto value = unregistered_opaque_wiring_value{1};
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { (void)mismatch(value); }),
+                      Catch::Matchers::ContainsSubstring("exact matching fixed parameter"));
+    CHECK_THROWS_WITH(testing::test_wiring([&] { (void)generic(value); }),
+                      Catch::Matchers::ContainsSubstring("exact matching fixed parameter"));
+}
+
+TEST_CASE("opaque source candidates leave ordinary scalar inference unchanged",
+          "[graph_wiring][feature:wiring][scalar:native]") {
+    const auto sink = node([](Scalar<int>, Out<TS<float>>) {});
+    auto wiring = GraphWiring{};
+
+    {
+        const auto context = WiringContext{wiring};
+        (void)sink(42);
+    }
+
+    (void)wiring.complete_pending_wiring();
+    REQUIRE(wiring.nodes().size() == 1);
+    CHECK(wiring.nodes()[0].signature().parameters[0].type == &cpp_scalar_type<int>());
 }
 
 TEST_CASE("wiring does not reuse outputless node calls", "[graph_wiring][feature:wiring]") {

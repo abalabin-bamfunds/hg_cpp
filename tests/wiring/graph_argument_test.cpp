@@ -139,6 +139,15 @@ struct opaque_value {
     int value;
 };
 
+struct wiring_argument_constructible_value {
+    int value;
+
+    explicit wiring_argument_constructible_value(const WiringArgument &) : value{} {}
+};
+
+static_assert(std::copy_constructible<wiring_argument_constructible_value>);
+static_assert(details::opaque_source_argument<wiring_argument_constructible_value &>);
+
 struct opaque_source_node {
     Scalar<Opaque<opaque_value>> value;
     Out<TS<i64>> output;
@@ -1132,6 +1141,33 @@ TEST_CASE("variadic parameters reject graph arguments",
 
     CHECK_THROWS_WITH(testing::test_wiring([&] { variadic(argument(identity_structure())); }),
                       "a variadic parameter cannot capture a graph argument");
+}
+
+TEST_CASE("variadic parameters reject unregistered opaque source values",
+          "[feature:wiring][feature:variadic-wiring][scalar:opaque]") {
+    const auto variadic = graph("name"_n = "variadic_opaque_source",
+                                [](wp<TSB<graph_value_bundle>, var_args>) {});
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { variadic(opaque_value{1}); }),
+                      Catch::Matchers::ContainsSubstring("raw C++ value cannot bind to a variadic parameter"));
+}
+
+TEST_CASE("copies of unregistered opaque source arguments own their value",
+          "[feature:wiring][feature:graph-argument][scalar:opaque][lifetime:retained]") {
+    auto value = opaque_value{1};
+    const auto original = WiringArgument{value};
+    const auto copy = WiringArgument{original};
+    const auto borrowed = WiringArgument::borrow(original);
+    auto memory = allocator{};
+    const auto cloned = original.clone(memory);
+
+    value.value = 2;
+    CHECK(copy.is_opaque_candidate());
+    CHECK(scalar_cast<Opaque<opaque_value>>(copy.scalar()).value().value == 1);
+    CHECK(borrowed.is_opaque_candidate());
+    CHECK(scalar_cast<Opaque<opaque_value>>(borrowed.scalar()).value().value == 2);
+    CHECK(cloned.is_opaque_candidate());
+    CHECK(scalar_cast<Opaque<opaque_value>>(cloned.scalar()).value().value == 1);
 }
 
 TEST_CASE("a graph argument cannot become node runtime storage",

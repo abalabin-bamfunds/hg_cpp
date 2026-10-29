@@ -284,12 +284,18 @@ PreparedWiringArguments prepare_arguments(const Signature &signature, std::span<
         }
 
         auto value = WiringArgument::borrow(*argument);
+        if (value.is_opaque_candidate()) {
+            value.bind_opaque_candidate(*parameter.type);
+        }
         value.clear_name();
         prepared.arguments.push_back(std::move(value));
         prepared.supplied_argument_indices.push_back(fixed_supplied_indices[index]);
     }
 
     for (const auto &[argument, supplied_index] : variadic) {
+        if (argument->is_opaque_candidate()) {
+            throw WiringError{"a raw C++ value cannot bind to a variadic parameter"};
+        }
         prepared.arguments.push_back(WiringArgument::borrow(*argument));
         prepared.supplied_argument_indices.push_back(supplied_index);
     }
