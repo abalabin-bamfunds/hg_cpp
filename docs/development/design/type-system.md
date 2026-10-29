@@ -44,9 +44,11 @@ Static declaration helpers cache references to registered objects. Dynamic
 composition can register unnamed types automatically. This is required to retain
 type pointers after a graph or wiring template is destroyed.
 
-Registration runs on one thread during setup or wiring. An exception aborts
-setup; continued registry use after a registration failure is unsupported.
-Completed descriptors can be read concurrently after registration.
+Registration and canonical lookup run on one thread during wiring, compilation,
+or evaluation. Node code can discover a concrete scalar subtype when constructing
+a value during evaluation. Registration failures propagate and abort the current
+operation; continued registry use after a registration failure is unsupported.
+Completed descriptors support concurrent reads.
 
 Registries, canonical lookup indexes, and registered descriptors remain alive
 through process shutdown. An extension that provides a registered descriptor
@@ -72,7 +74,7 @@ Descriptor, key, and hash types identify separate cache families.
 Factories can request other types but must not request their own key recursively.
 Recursive descriptor construction registers a stable descriptor before resolving
 its children. It connects the children, finalizes derived properties, and validates
-the completed descriptors before returning to the setup caller.
+the completed descriptors before returning to the caller.
 
 `VariableRegistry` retains non-type metadata such as guarantee and size variables.
 Type variables register through `TypeRegistry`; their variable interface shares

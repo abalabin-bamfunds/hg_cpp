@@ -48,8 +48,8 @@ class BG_EXPORT TypeRegistry {
   public:
     static TypeRegistry &instance() noexcept;
 
-    // Registration runs on the setup thread. Factories must return a new descriptor and must not request their own
-    // key recursively. Completed descriptors can be read concurrently after registration finishes.
+    // Registration runs on one thread, including during evaluation. Factories must return a new descriptor and
+    // must not request their own key recursively. Completed descriptors support concurrent reads.
     template <typename Descriptor, typename Hash, typename Key, typename Factory>
         requires std::derived_from<Descriptor, Type> &&
                  requires(Factory &candidate_factory) {

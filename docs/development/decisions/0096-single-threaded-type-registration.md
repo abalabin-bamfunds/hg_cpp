@@ -4,10 +4,11 @@ Status: accepted
 
 ## Decision
 
-Register semantic and runtime descriptors on one thread during setup or wiring.
-Registration failures propagate and abort setup. Continued registry use after a
-registration failure is unsupported. Completed descriptors support concurrent
-reads.
+Register semantic and runtime descriptors on one thread during wiring,
+compilation, or evaluation. Node code can discover a concrete scalar subtype
+when constructing a value during evaluation. Registration failures propagate
+and abort the current operation. Continued registry use after a registration
+failure is unsupported. Completed descriptors support concurrent reads.
 
 Recursive construction registers a stable descriptor before resolving its
 children. Completion connects children, finalizes derived properties, and

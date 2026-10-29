@@ -515,8 +515,9 @@ Built-in scalar descriptors provide their factory directly. Structural scalar
 descriptors return a recorded trait factory when present; otherwise they return
 a factory for composed storage that resolves component defaults recursively.
 Creating composed storage does not prevent a later C++ declaration from
-recording its trait factory during setup. Default resolution invokes this
-callback and validates the returned runtime's semantic type and interface.
+recording its trait factory when that declaration is first used. Default
+resolution invokes this callback and validates the returned runtime's semantic
+type and interface.
 
 `scalar_declaration_traits<T>` controls whether graph signatures accept the
 declaration as a collection, an implicit scalar argument, or a time series
