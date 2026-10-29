@@ -8,7 +8,8 @@ The review uses hgraph 0.5.42 at
 [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be)
 and hgraph 0.8.37 at
 [`b9305bb23f8e54337cd1941447b940e5fd43ec59`](https://github.com/hhenson/hgraph/tree/b9305bb23f8e54337cd1941447b940e5fd43ec59).
-The BG branch is based on `8058a013`.
+The original suite validation uses BG `8058a013`. The review lane is now based
+on `cab5c342` for the retargeting investigation.
 
 ## Findings
 
@@ -39,3 +40,17 @@ The nested-retarget reproduction retains its output assertion and stays
 excluded from default test runs. `as<TSD<i64, TS<i64>>>()` is retained because
 it supplies compile-time map inference; this is a wiring type requirement, not
 an observed runtime defect.
+
+## Retargeting investigation, 2026-10-29
+
+The unchanged reproduction still fails after rebuilding against BG `cab5c342`.
+The map test translation unit's 30 ordinary cases pass (42 assertions). Direct
+and nested reference selection produce correct dictionary deltas; adding a
+reference-returning map reproduces the missing held-item updates in both cases.
+
+An observer before `copy_tick` reads key 2 as `2, 20, 2, 2`. On both target
+changes, `input.item_modified(2)` is true but `input[2].modified()` is false,
+and the item's last-updated time remains at the first cycle. The defect is in
+the dereferenced dictionary representation's scalar-item sampling metadata.
+See the [investigation report](reference-retarget-investigation-2026-10-29.md)
+for the stage comparisons, source locations, and verification commands.

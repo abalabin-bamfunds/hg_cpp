@@ -13,7 +13,8 @@ The upstream references were fetched from
 | Source | Revision |
 | --- | --- |
 | BG initial baseline | `11ba59a4` |
-| BG final review base | `8058a013` |
+| BG 2026-10-28 suite validation base | `8058a013` |
+| BG 2026-10-29 reference investigation base | `cab5c342` |
 | hgraph `release/0.5`, latest tag `v_0.5.42` | [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be) |
 | hgraph `main`, latest tag `0.8.37` | [`b9305bb23f8e54337cd1941447b940e5fd43ec59`](https://github.com/hhenson/hgraph/tree/b9305bb23f8e54337cd1941447b940e5fd43ec59) |
 
@@ -72,6 +73,14 @@ Passing additions exercise key removal/readdition, independent reference-backed
 contexts, leaf updates and validity, nested free structures, pass-through
 selection identity, and map/switch/mesh/reduce combinations. The detailed
 reports identify exact ports, partial coverage, and new BG combinations.
+
+The [2026-10-29 retargeting investigation](reference-retarget-investigation-2026-10-29.md)
+confirms the first reproduction on BG `cab5c342` and isolates a scalar-item
+sampling defect in the dereferenced dictionary representation. The item value
+and dictionary change set are correct, but the item retains its source update
+time, so `copy_tick` skips it. A nested graph is not required to trigger this
+defect. The other findings and complete-suite counts retain their original
+2026-10-28 validation scope.
 
 ## Verification boundaries
 
