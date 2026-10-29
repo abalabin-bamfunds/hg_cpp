@@ -11,7 +11,7 @@ added or changed in predicate columns, then applies membership changes to its
 row selection. It forwards changes in other columns for selected rows without
 reevaluating the predicate.
 
-See [projection and filtering](../../README.md#projection-and-filtering-helpers)
+See [filtering helpers](../../README.md#filtering-helpers)
 for the public API and incremental behavior.
 
 ## Reason

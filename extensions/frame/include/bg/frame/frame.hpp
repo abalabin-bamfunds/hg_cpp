@@ -6,6 +6,7 @@
 #include <bg/frame/tsc.hpp>
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/library/operators.hpp>
 #include <bg/node.hpp>
 #include <bg/node/input_fwd.hpp>
 #include <bg/node/input_properties.hpp>
@@ -27,7 +28,6 @@
 #include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/opaque.hpp>
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/contiguous_bunch.hpp>
 #include <bg/util/hash_dictionary.hpp>
@@ -39,10 +39,10 @@
 #include <atomic>
 #include <deque>
 #include <functional>
+#include <initializer_list>
 #include <limits>
 #include <memory>
 #include <mutex>
-#include <numeric>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -148,6 +148,24 @@ using RowPatch = Schema<PatchCell>;
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct TSF : TimeSeriesDeclaration<TSF<Schema, Properties...>, Properties...> {};
+
+template <template <typename, auto...> typename Field>
+using RESULT = SchemaVariableDeclaration<"RESULT">;
+
+} // namespace bg::frame
+
+namespace bg::operators {
+
+template <template <typename, auto...> typename Field>
+using FIELDS = BundleSchemaVariableDeclaration<"FIELDS", Field>;
+
+extern BG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> with_columns;
+extern BG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> select;
+extern BG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> rename;
+
+} // namespace bg::operators
+
+namespace bg::frame {
 
 template <util::compile_time_string... Names> struct ColumnNames {};
 template <util::compile_time_string... Names> constexpr auto columns() noexcept { return ColumnNames<Names...>{}; }
@@ -2919,7 +2937,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source, util::symbol name) {
         throw std::invalid_argument{"frame column selection requires a resolved frame schema"};
     const auto *field = schema->find(name);
     if (field == nullptr)
-        throw std::out_of_range{"frame column selection names an unknown field"};
+        throw WiringError{"frame column selection names an unknown field"};
     const auto fields = schema->fields();
     const auto index = static_cast<std::size_t>(field - fields.data());
 
@@ -2937,7 +2955,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
     if (schema == nullptr)
         throw std::invalid_argument{"frame column selection requires a resolved frame schema"};
     if (index >= schema->field_count())
-        throw std::out_of_range{"frame column selection index is outside the resolved schema"};
+        throw WiringError{"frame column selection index is outside the resolved schema"};
     return select_column<Cell>(source, schema->field(index).name);
 }
 
@@ -2991,36 +3009,25 @@ auto filter(wp<TSF<Schema, Properties...>> source, Predicate &&predicate, Bindin
     return operators::filter_(std::forward<Predicate>(predicate), source).template as<TSF<Schema>>();
 }
 
-namespace details {
-
-template <template <typename, auto...> typename Field>
-using WITH_COLUMNS_RESULT_SCHEMA = SchemaVariableDeclaration<"FRAME_WITH_COLUMNS_RESULT_SCHEMA">;
-template <template <typename, auto...> typename Field>
-using PROJECTION_RESULT_SCHEMA = SchemaVariableDeclaration<"FRAME_PROJECTION_RESULT_SCHEMA">;
-
-BG_FRAME_EXPORT WiringPoint with_columns(WiringPoint source, std::span<const WiringArgument> assignments);
-BG_FRAME_EXPORT WiringPoint with_columns(WiringPoint source, std::span<const WiringArgument> assignments,
-                                         const Schema &result_schema);
-BG_FRAME_EXPORT WiringPoint project(WiringPoint source, std::span<const util::symbol> names,
-                                    const Schema *result_schema = nullptr);
-BG_FRAME_EXPORT WiringPoint rename(WiringPoint source,
-                                   std::span<const std::pair<util::symbol, util::symbol>> mappings);
-BG_FRAME_EXPORT WiringPoint drop(WiringPoint source, std::span<const util::symbol> names);
-
-} // namespace details
-
-template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
-wp<TSF<details::WITH_COLUMNS_RESULT_SCHEMA>>
+template <auto... Properties, template <template <typename, auto...> typename> typename Schema>
+wp<TSF<RESULT>>
 with_columns(wp<TSF<Schema, Properties...>> source, std::span<const WiringArgument> assignments) {
-    return wp<TSF<details::WITH_COLUMNS_RESULT_SCHEMA>>{
-        details::with_columns(static_cast<WiringPoint>(source), assignments)};
+    const auto packed = bundle(assignments);
+    return wp<TSF<RESULT>>{operators::with_columns(source, packed)};
 }
 
-template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
-          typename... Assignments>
+template <template <template <typename, auto...> typename> typename TargetSchema,
+          template <template <typename, auto...> typename> typename SourceSchema, auto... Properties>
+wp<TSF<TargetSchema>> with_columns(wp<TSF<SourceSchema, Properties...>> source,
+                                   std::span<const WiringArgument> assignments) {
+    const auto packed = bundle(assignments);
+    return wp<TSF<TargetSchema>>{operators::with_columns[type<TSF<TargetSchema>>](source, packed)};
+}
+
+template <typename... Assignments, template <template <typename, auto...> typename> typename Schema,
+          auto... Properties>
     requires(bg::details::is_named_bundle_wiring_field<Assignments> && ...)
-wp<TSF<details::WITH_COLUMNS_RESULT_SCHEMA>> with_columns(wp<TSF<Schema, Properties...>> source,
-                                                           Assignments &&...assignments) {
+wp<TSF<RESULT>> with_columns(wp<TSF<Schema, Properties...>> source, Assignments &&...assignments) {
     auto fields = std::array<WiringArgument, sizeof...(Assignments)>{
         WiringArgument{std::forward<Assignments>(assignments)}...};
     return with_columns(source, std::span<const WiringArgument>{fields});
@@ -3033,35 +3040,31 @@ template <template <template <typename, auto...> typename> typename TargetSchema
 wp<TSF<TargetSchema>> with_columns(wp<TSF<SourceSchema, Properties...>> source, Assignments &&...assignments) {
     auto fields = std::array<WiringArgument, sizeof...(Assignments)>{
         WiringArgument{std::forward<Assignments>(assignments)}...};
-    const auto &target_schema = static_cast<const Schema &>(frame_schema_type<TargetSchema>());
-    return wp<TSF<TargetSchema>>{
-        details::with_columns(static_cast<WiringPoint>(source), std::span<const WiringArgument>{fields},
-                              target_schema)};
+    return with_columns<TargetSchema>(source, std::span<const WiringArgument>{fields});
 }
 
 namespace details {
 
 template <typename T>
-inline constexpr bool frame_column_name = std::same_as<std::remove_cvref_t<T>, util::symbol> ||
-                                          std::convertible_to<T, std::string_view>;
+inline constexpr bool frame_column_name_argument = std::same_as<std::remove_cvref_t<T>, util::symbol> ||
+                                                   std::convertible_to<T, std::string_view>;
 
 inline util::symbol frame_column_symbol(util::symbol name) { return name; }
 
 inline util::symbol frame_column_symbol(std::string_view name) { return util::symbol{name}; }
 
-template <typename Name>
-    requires(!std::same_as<std::remove_cvref_t<Name>, util::symbol> &&
-             std::convertible_to<Name, std::string_view>)
-util::symbol frame_column_symbol(Name &&name) {
-    return util::symbol{std::string_view{std::forward<Name>(name)}};
-}
-
 } // namespace details
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select(wp<TSF<Schema, Properties...>> source, std::span<const util::symbol> names) {
-    return wp<TSF<details::PROJECTION_RESULT_SCHEMA>>{
-        details::project(static_cast<WiringPoint>(source), names)};
+    auto selections = std::vector<WiringArgument>{};
+    selections.reserve(names.size());
+    for (const auto name : names) {
+        auto expression = col(name);
+        selections.emplace_back(name, ScalarValue<>{ScalarValue<Expression>{std::move(expression)}});
+    }
+    const auto packed = bundle(std::span<const WiringArgument>{selections});
+    return wp<TSF<RESULT>>{operators::select(source, packed)};
 }
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
@@ -3069,19 +3072,41 @@ auto select(wp<TSF<Schema, Properties...>> source) {
     return select(source, std::span<const util::symbol>{});
 }
 
-template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
-          typename... Names>
-    requires(sizeof...(Names) != 0 && (details::frame_column_name<Names> && ...))
-auto select(wp<TSF<Schema, Properties...>> source, Names &&...names) {
-    auto selected = std::array<util::symbol, sizeof...(Names)>{
-        details::frame_column_symbol(std::forward<Names>(names))...};
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+auto select(wp<TSF<Schema, Properties...>> source, std::initializer_list<std::string_view> names) {
+    auto selected = std::vector<util::symbol>{};
+    selected.reserve(names.size());
+    for (const auto name : names)
+        selected.emplace_back(name);
     return select(source, std::span<const util::symbol>{selected});
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename... Arguments>
+    requires(sizeof...(Arguments) != 0 &&
+             ((details::frame_column_name_argument<Arguments> ||
+               bg::details::is_named_bundle_wiring_field<std::remove_cvref_t<Arguments>>) && ...))
+auto select(wp<TSF<Schema, Properties...>> source, Arguments &&...arguments) {
+    auto selections = std::vector<WiringArgument>{};
+    selections.reserve(sizeof...(Arguments));
+    const auto append = [&](auto &&argument) {
+        if constexpr (details::frame_column_name_argument<decltype(argument)>) {
+            const auto name = details::frame_column_symbol(std::forward<decltype(argument)>(argument));
+            auto expression = col(name);
+            selections.emplace_back(name, ScalarValue<>{ScalarValue<Expression>{std::move(expression)}});
+        } else {
+            selections.emplace_back(std::forward<decltype(argument)>(argument));
+        }
+    };
+    (append(std::forward<Arguments>(arguments)), ...);
+    const auto packed = bundle(std::span<const WiringArgument>{selections});
+    return wp<TSF<RESULT>>{operators::select(source, packed)};
 }
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties, typename Range>
     requires std::ranges::input_range<Range> &&
-             details::frame_column_name<std::ranges::range_value_t<Range>> &&
-             (!details::frame_column_name<Range>)
+             details::frame_column_name_argument<std::ranges::range_value_t<Range>> &&
+             (!details::frame_column_name_argument<Range>)
 auto select(wp<TSF<Schema, Properties...>> source, Range &&names) {
     auto selected = std::vector<util::symbol>{};
     for (auto &&name : names)
@@ -3092,8 +3117,12 @@ auto select(wp<TSF<Schema, Properties...>> source, Range &&names) {
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto rename(wp<TSF<Schema, Properties...>> source,
             std::span<const std::pair<util::symbol, util::symbol>> mappings) {
-    return wp<TSF<details::PROJECTION_RESULT_SCHEMA>>{
-        details::rename(static_cast<WiringPoint>(source), mappings)};
+    auto fields = std::vector<WiringArgument>{};
+    fields.reserve(mappings.size());
+    for (const auto &[old_name, new_name] : mappings)
+        fields.emplace_back(old_name, new_name);
+    const auto packed = bundle(std::span<const WiringArgument>{fields});
+    return wp<TSF<RESULT>>{operators::rename(source, packed)};
 }
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties, typename Range>
@@ -3121,13 +3150,22 @@ auto rename(wp<TSF<Schema, Properties...>> source,
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto drop(wp<TSF<Schema, Properties...>> source, std::span<const util::symbol> names) {
-    return wp<TSF<details::PROJECTION_RESULT_SCHEMA>>{
-        details::drop(static_cast<WiringPoint>(source), names)};
+    auto packed = ScalarValue<List<symbol>>{names};
+    return wp<TSF<RESULT>>{operators::drop(source, packed)};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+auto drop(wp<TSF<Schema, Properties...>> source, std::initializer_list<std::string_view> names) {
+    auto removed = std::vector<util::symbol>{};
+    removed.reserve(names.size());
+    for (const auto name : names)
+        removed.emplace_back(name);
+    return drop(source, std::span<const util::symbol>{removed});
 }
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
           typename... Names>
-    requires(sizeof...(Names) != 0 && (details::frame_column_name<Names> && ...))
+    requires(sizeof...(Names) != 0 && (details::frame_column_name_argument<Names> && ...))
 auto drop(wp<TSF<Schema, Properties...>> source, Names &&...names) {
     auto removed = std::array<util::symbol, sizeof...(Names)>{
         details::frame_column_symbol(std::forward<Names>(names))...};
@@ -3136,8 +3174,8 @@ auto drop(wp<TSF<Schema, Properties...>> source, Names &&...names) {
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties, typename Range>
     requires std::ranges::input_range<Range> &&
-             details::frame_column_name<std::ranges::range_value_t<Range>> &&
-             (!details::frame_column_name<Range>)
+             details::frame_column_name_argument<std::ranges::range_value_t<Range>> &&
+             (!details::frame_column_name_argument<Range>)
 auto drop(wp<TSF<Schema, Properties...>> source, Range &&names) {
     auto removed = std::vector<util::symbol>{};
     for (auto &&name : names)
@@ -4595,9 +4633,20 @@ template <template <template <typename, auto...> typename> typename TargetSchema
           util::compile_time_string... Names,
           template <template <typename, auto...> typename> typename SourceSchema, auto... Properties>
 auto project(wp<TSF<SourceSchema, Properties...>> source) {
-    auto names = std::array<util::symbol, sizeof...(Names)>{util::symbol{Names.view()}...};
     const auto &target_schema = static_cast<const Schema &>(frame_schema_type<TargetSchema>());
-    return wp<TSF<TargetSchema>>{details::project(static_cast<WiringPoint>(source), names, &target_schema)};
+    if (target_schema.field_count() != sizeof...(Names))
+        throw WiringError{"frame::project target schema has a different number of columns"};
+
+    const auto source_names = std::array<util::symbol, sizeof...(Names)>{util::symbol{Names.view()}...};
+    auto selections = std::vector<WiringArgument>{};
+    selections.reserve(sizeof...(Names));
+    for (auto index = std::size_t{}; index != sizeof...(Names); ++index) {
+        auto expression = col(source_names[index]);
+        selections.emplace_back(target_schema.field(index).name,
+                                ScalarValue<>{ScalarValue<Expression>{std::move(expression)}});
+    }
+    const auto packed = bundle(std::span<const WiringArgument>{selections});
+    return wp<TSF<TargetSchema>>{operators::select[type<TSF<TargetSchema>>](source, packed)};
 }
 
 } // namespace bg::frame

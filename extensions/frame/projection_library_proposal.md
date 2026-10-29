@@ -59,24 +59,26 @@ uses the existing expression and materialisation implementation.
   annotation. C++ declarations and wiring-time schemas use the same calculation.
 - `select` emits fields in argument order. `drop` preserves retained
   field order. `rename` preserves field positions and exact cell types.
-- Reject missing names, repeated selections or removals, repeated rename
-  sources, and duplicate output names during wiring.
+- Reject missing names, repeated removals, repeated rename sources, and
+  duplicate output names during wiring. A source column may appear under
+  several distinct output names.
 - Selecting no columns produces a zero-column frame with the source's rows.
 - Produce an anonymous schema and preserve applicable source metadata.
   Transform the frame key metadata as described below.
 
-Proposed key rule, requiring review: preserve the complete ordered key tuple
-when all its fields remain; rewrite its names for renames. If any key field
-is omitted, produce an unkeyed output. This selects an unkeyed output schema;
-it does not relax the existing rule for keyed view outputs. No value scan is
-required.
+Preserve the complete ordered key tuple when all its fields remain borrowed;
+rewrite its names for renames. If any key field is omitted, produce an unkeyed
+output. This selects the output schema according to the existing
+[keyed view contract](README.md#tsf-inputoutput-surface), without a value scan.
+When a key field has several borrowed aliases, use its first selected alias.
+The output key tuple retains the source key order.
 
 ### Runtime implementation
 
 One generic projection node declares independent source and result schema
 variables. Wiring calculates the result schema and source-column ordinals in
 result-field order. Evaluation calls the existing
-`Out<TSF<RESULT_SCHEMA>, frame::view>::bind_projection` operation.
+`Out<TSF<RESULT>, frame::view>::bind_projection` operation.
 
 Selecting existing columns, renaming, and dropping share that node and the
 existing borrowed runtime. They preserve source rows, traversal order, row IDs,
@@ -98,9 +100,21 @@ the target declaration controls output order and metadata. Follow the
 
 ## Standard operator ownership
 
-BG owns existing operator declarations. The frame extension registers its
-overloads and implements its provider operations. Frame-specific schema
-transformations remain in `bg::frame`.
+The frame extension declares `select`, `rename`, and `with_columns` in
+`bg::operators` and registers their graph implementations. It registers a
+column-removal overload on the existing `bg::operators::drop`. These declarations
+and implementations belong to the extension; they require no frame-specific
+code in BG core.
+
+The `frame::select`, `frame::rename`, `frame::drop`, and `frame::with_columns`
+functions prepare C++ call syntax and invoke the operators. Preparation converts
+name collections, packages named arguments, and supplies explicit target types.
+The selected graph implementation owns schema calculation, expression binding,
+key inference, and construction of projection or assembly nodes. Operator
+dispatch provides normal overload selection and wiring diagnostics.
+
+BG owns the other existing operator declarations. The frame extension registers
+its overloads and implements its provider operations.
 
 | Existing operator | Proposed TSF/TSC support |
 | --- | --- |

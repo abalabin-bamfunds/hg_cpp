@@ -5,7 +5,7 @@ Updated: 2026-10-29.
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is rebased onto main `ac6ab2da` and includes
+`agent/frame-with-columns`. The lane is rebased onto main `68f4b900` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
@@ -17,8 +17,8 @@ semantic-only literal source change and default runtime registration remain
 there. The frame lane does not contain the transaction draft.
 
 Scalar constant and scalar time series broadcasting in `with_columns` is
-implemented in `98ad0b2d`. Next are explicit output schema validation and the
-remaining binding and materialisation checks listed below.
+implemented in `98ad0b2d`. The current uncommitted change adds schema-driven
+projection and explicit output schema validation as described below.
 
 Verification after separation:
 
@@ -34,6 +34,59 @@ use typed input annotation in the TSC literal rejection test.
 The provider test reconstructs its input descriptor after state changes because
 `TimeSeriesInputData` stores a state copy. These changes are committed as
 `cc0435ea` after rebasing onto `ac6ab2da`.
+
+## Current projection work
+
+The [projection proposal](projection_library_proposal.md) defines this stage.
+Changes in `include/bg/frame/frame.hpp` and `src/with_columns.cpp` add
+`select`, `rename`, `drop`, standard column access, and
+`with_columns<TargetSchema>`. The extension declares `select`, `rename`, and
+`with_columns` in `bg::operators` and registers graph implementations. Column
+removal overloads the existing `operators::drop`. C++ wrappers prepare arguments
+and explicit output mappings; selected graphs calculate schemas and wire nodes.
+One projection node handles declared and wiring-time schemas through the
+existing borrowed output binder. Explicit `project<TargetSchema, Names...>`
+uses `operators::select` and retains positional source-to-target mapping.
+
+Public operator declarations use `OUT`, `SCHEMA`, and `operators::FIELDS`.
+Inferred wrappers return `wp<TSF<frame::RESULT>>`; the separate result variable
+allows a surrounding graph to change its input schema.
+
+An ordinary free TSB preserves original scalar, expression, and time series
+arguments until the selected graph reads them. Positional selections own their
+generated `col(name)` expressions. The existing expression binder runs before
+borrowed-column classification. Column removal passes a scalar `List<symbol>`.
+
+Key inference uses the first selected borrowed alias for each source key field
+and retains the source key tuple order.
+
+The approved BG metadata API is `SchemaMetadata::copy_with(overrides, remove)`.
+It removes listed names, then applies overrides, and replaces `with_overrides`.
+The isolated core change is in `.lanes/schema-metadata-copy` on
+`agent/schema-metadata-copy` at `ff57649a`, included in this lane as `28243002`.
+Its Release engine build succeeded; focused schema tests passed 11 cases and
+50 assertions. The core change is not merged into main.
+
+Projection uses `copy_with({}, {"bg.frame.key"})` when key columns are omitted,
+preserving unrelated metadata. Regression tests cover declared and anonymous
+schemas. Verification against the core change passed as listed below.
+Keep this work on the frame lane until review and integration are authorized.
+
+Verification against the current changes:
+
+- Matching BG Release build and install succeeded at `28243002`, based on main `68f4b900`.
+  Its opaque-source constraint excludes span-compatible containers, allowing
+  wiring arrays to select the existing span overloads.
+- Release frame build with Arrow enabled succeeded. All nine CTest executables
+  passed (0.48 seconds).
+- `bg_frame_with_columns_test` passed 26 cases and 206 assertions. New cases
+  cover runtime name collections, derived schemas through a base annotation,
+  borrowed and computed selections, key aliases, positional target mapping,
+  explicit target validation, unselected-column notification suppression,
+  direct operator calls with original argument categories, invalid requested
+  output types, empty selection retaining source rows, and preservation of
+  unrelated metadata when omitting key columns.
+- `git diff --check` passed.
 
 ## Adding and replacing frame columns
 
@@ -55,7 +108,6 @@ lane. It uses the BG install at `build/bg-release-install`.
 
 Remaining stages:
 
-- Add explicit concrete output schema validation.
 - Complete coverage for source additions and removals, independent column
   updates, rebinding, and invalidation.
 - Verify shared materialisation and measure expression and assembly nodes

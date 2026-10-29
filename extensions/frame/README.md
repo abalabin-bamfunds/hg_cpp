@@ -548,7 +548,8 @@ Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
 | Borrowed column assignments | `output.bind_columns(source, assigned_columns)` |
 | `Out<TSF<Schema>, frame::computed<"mid">>` | `schema`, `bind(source)`, `set<"mid">`, `set_batch<"mid">`, `invalidate` |
 | `Out<TSF<Schema>, frame::computed<>>` | `schema`, `bind(source)`, runtime-selected `set(name/ordinal, ...)`, `set_batch(name/ordinal, ...)`, `invalidate` |
-| Column selection | `select_column<"bid">(frame)` returns a `wp<TSC<T>>` |
+| Column selection | `frame["bid"]`, `operators::getattr(frame, "bid")`, or `select_column<"bid">(frame)` returns a TSC |
+| Schema-driven projection | `select(frame, "bid", "ask")`, `rename(frame, {{"bid", "best_bid"}})`, `drop(frame, "venue")` |
 | Projection helper | `project<TargetSchema, "bid", "ask">(frame)` |
 | Filter helper | `filter(frame, col("size") > threshold)` |
 
@@ -619,10 +620,16 @@ The result preserves source schema metadata and keys. Duplicate assignment names
 and assignments to key fields are wiring errors. Expressions read the source
 frame; chain calls when an expression needs a previously assigned field.
 
-The helper binds expressions against the source and passes concrete column
-results to one generic assembly node. That node uses `bind_columns`, with the
-binding and change-propagation rules above. Source, assignment, and result
-schemas resolve independently; no concrete C++ schema declaration is required.
+The registered `operators::with_columns` graph binds expressions against the
+source and passes concrete column results to one generic assembly node. That
+node uses `bind_columns`, with the binding and change-propagation rules above.
+Source, assignment, and result schemas resolve independently; no concrete C++
+schema declaration is required.
+
+`with_columns<TargetSchema>(source, assignments...)` uses a declared output
+schema. Its fields and exact cell types must match the inferred result. The
+target controls field order and non-key metadata; it must preserve the source's
+ordered key tuple. Validation occurs during wiring.
 
 A scalar assignment broadcasts over the source's visible rows. A scalar tick
 fills all current rows; otherwise, only added rows are filled. Source cell
@@ -676,11 +683,59 @@ output.set<"mid">(row, 101.5);
 output.set_batch<"mid">(rows, batch);
 ```
 
-### Projection and filtering helpers
+### Projection helpers
+
+The frame extension declares `operators::select`, `operators::rename`, and
+`operators::with_columns` and registers their graph implementations. Column
+removal overloads the existing `operators::drop`. The `frame::` functions
+prepare C++ arguments and call these operators; selected graph implementations
+calculate schemas and create nodes.
+
+Direct operator calls pass named selections or assignments in an ordinary free TSB:
+
+```cpp
+auto assignments = bundle("mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
+auto enriched = operators::with_columns(quotes, assignments);
+```
+
+`select` retains requested fields in argument order. `rename` applies an
+old-name to new-name mapping simultaneously. `drop` preserves the order of the
+remaining fields. These operations calculate an anonymous output schema from
+the actual source schema during wiring, including derived fields observed
+through a base annotation.
+
+```cpp
+auto prices = frame::select(quotes, "bid", "ask");
+auto labelled = frame::rename(prices, {{"bid", "best_bid"}});
+auto trimmed = frame::drop(quotes, "venue");
+auto displayed = frame::select(
+    quotes, "symbol", "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
+auto bid = quotes["bid"];
+```
+
+`select` accepts named expressions, scalar values, and scalar time series with
+the same assignment rules as `with_columns`. Expressions read the original
+source frame. Positional strings select columns; a named string assignment
+supplies a scalar value. Use `col(name)` for a named column reference.
+
+Name collections such as `std::vector<std::string>` support selection and
+dropping when configuration supplies the names. Names and the output schema
+remain fixed during evaluation. Missing names and duplicate output names are
+wiring errors. Selecting no fields retains the source rows.
+
+Borrowed projections retain source row IDs, row order, and column buffers.
+They publish changes only for selected columns and row membership. Computed
+selections use the existing expression nodes and column assembly operation.
+When a key column has several borrowed aliases, its first selected alias
+identifies the output key. Composite keys retain the source key order.
+Inferred projections preserve unrelated source metadata. Omitting any key
+column produces an unkeyed frame.
 
 `project<TargetSchema, "bid", "ask">(frame)` creates a projection node that
 binds the named source columns to the target schema in order. The projection
-shares the source cells.
+shares the source cells. Target field names can differ from source names.
+
+### Filtering helpers
 
 The filter output retains the source schema and has the ordinary TSF
 guarantee. `frame::view` selects its borrowed runtime layout, which shares the

@@ -1,10 +1,10 @@
 # Adding and replacing frame columns
 
-Status: approved design; inferred-schema column assignments are implemented.
+Status: approved design; inferred and explicit output schemas are implemented.
 
 The current implementation accepts concrete `TSC<T>` inputs, column expressions,
-scalar constants, and scalar time series. Explicit concrete output schema
-validation and shared-materialisation profiling remain future work.
+scalar constants, and scalar time series. Shared-materialisation profiling
+remains future work.
 
 Combined BG and Arrow-on frame Release verification passes all nine frame CTest
 executables. The test that resolves the inferred schema inside an enclosing
@@ -33,8 +33,7 @@ The returned wiring point carries a resolved anonymous output schema.
 Runtime assignment names use a span of named `WiringArgument` values, following
 BG's existing dynamic argument API.
 
-An optional concrete output schema will validate the calculated result in a
-future stage:
+An optional concrete output schema validates the calculated result:
 
 ```cpp
 auto priced = frame::with_columns<EnrichedQuotes>(
@@ -42,8 +41,14 @@ auto priced = frame::with_columns<EnrichedQuotes>(
     "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
 ```
 
-The current API provides the inferred-schema form. Both forms are intended to
-use the same schema calculation and runtime node.
+Both forms use the same schema calculation and runtime node. Explicit target
+validation runs before wiring the assembly node with the target schema.
+
+The frame extension declares `bg::operators::with_columns` and registers its
+graph implementation. The C++ functions prepare named arguments as an ordered
+free TSB and supply an explicit output type when requested. The selected graph
+reads the original scalar and time series arguments, binds expressions, and
+constructs the assembly node.
 
 An assignment accepts an unbound expression, a bound column expression, a
 concrete `TSC<T>`, or a scalar constant or scalar time series of a supported cell
@@ -146,8 +151,8 @@ calculation with inferred output and dynamic assignment names. BG resolves the
 graph output schema from the selected graph result after the graph body runs
 once. Combined Release verification passes all nine frame CTest executables.
 
-Outstanding stages add concrete output schema validation and complete the
-remaining binding and materialisation checks. Verification must cover concrete
+Outstanding stages complete the remaining binding and materialisation checks.
+Verification must cover concrete
 and runtime schemas, replacement, keys, nulls, source additions and removals,
 independent column updates, scalar captures, rebinding, and invalidation. Verify borrowed buffers and row domains
 are shared. Verify that shared expression results materialise once, then measure

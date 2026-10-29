@@ -3,6 +3,7 @@
 #include <bg/frame/expression.hpp>
 #include <bg/frame/frame.hpp>
 #include <bg/graph.hpp>
+#include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/list/scalar.hpp>
 
@@ -30,6 +31,86 @@ template <template <typename, auto...> typename Field> struct KeyedQuotes {
     static SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
+template <template <typename, auto...> typename Field> struct CompositeKeyedQuotes {
+    Field<i64> tenant;
+    Field<string> id;
+    Field<double> price;
+
+    static SchemaMetadata metadata() { return key_metadata<"tenant", "id">(); }
+};
+
+template <template <typename, auto...> typename Field> struct KeyedQuotesWithExtraMetadata {
+    Field<string> id;
+    Field<double> price;
+
+    static SchemaMetadata metadata() {
+        const auto marker = ScalarValue<i64>{42};
+        return key_metadata<"id">().copy_with(
+            make_schema_metadata({schema_metadata_entry("frame.target", marker)}));
+    }
+};
+
+template <template <typename, auto...> typename Field> struct UnkeyedStringIdTarget {
+    Field<string> id;
+    Field<double> price;
+
+    static SchemaMetadata metadata() {
+        const auto marker = ScalarValue<i64>{24};
+        return make_schema_metadata({schema_metadata_entry("frame.target", marker)});
+    }
+};
+
+template <template <typename, auto...> typename Field> struct ExplicitQuotes {
+    Field<double> price;
+    Field<double> premium;
+    Field<i64> id;
+
+    static SchemaMetadata metadata() {
+        const auto marker = ScalarValue<i64>{42};
+        return make_schema_metadata({schema_metadata_entry("frame.target", marker)});
+    }
+};
+
+template <template <typename, auto...> typename Field> struct DuplicatePriceProjection {
+    Field<double> best;
+    Field<double> reference;
+};
+
+template <template <typename, auto...> typename Field> struct DirectOperatorSelection {
+    Field<i64> source;
+    Field<double> expression;
+    Field<double> series;
+    Field<double> column;
+};
+
+template <template <typename, auto...> typename Field> struct WrongTargetFields {
+    Field<double> price;
+    Field<double> premium;
+    Field<i64> other_id;
+};
+
+template <template <typename, auto...> typename Field> struct WrongTargetType {
+    Field<i64> id;
+    Field<i64> price;
+    Field<double> premium;
+};
+
+template <template <typename, auto...> typename Field> struct UnkeyedKeyTarget {
+    Field<string> id;
+    Field<double> price;
+    Field<double> premium;
+};
+
+template <template <typename, auto...> typename Field> struct ProjectionBase {
+    Field<i64> id;
+    Field<double> price;
+};
+
+template <template <typename, auto...> typename Field>
+struct ProjectionDerived : schema_extends<ProjectionBase, Field> {
+    Field<double> volume;
+};
+
 template <template <typename, auto...> typename Field> struct EmptySchema {};
 
 template <template <typename, auto...> typename Field>
@@ -38,6 +119,12 @@ template <template <typename, auto...> typename Field>
 using ResultRuntimeSchema = SchemaVariableDeclaration<"WITH_COLUMNS_TEST_RESULT_SCHEMA">;
 template <template <typename, auto...> typename Field>
 using UnchangedRuntimeSchema = SchemaVariableDeclaration<"WITH_COLUMNS_TEST_UNCHANGED_SCHEMA">;
+template <template <typename, auto...> typename Field>
+using SelectRuntimeSchema = SchemaVariableDeclaration<"FRAME_SELECT_TEST_RESULT_SCHEMA">;
+template <template <typename, auto...> typename Field>
+using RenameRuntimeSchema = SchemaVariableDeclaration<"FRAME_RENAME_TEST_RESULT_SCHEMA">;
+template <template <typename, auto...> typename Field>
+using DropRuntimeSchema = SchemaVariableDeclaration<"FRAME_DROP_TEST_RESULT_SCHEMA">;
 
 struct SourceState {
     row_id_t row{no_row};
@@ -55,6 +142,17 @@ struct QuoteSource {
             output.set(state->row, RowPatch<Quotes>{.price = 12.0});
         if (*command == 3)
             output.set(state->row, RowPatch<Quotes>{.price = 8.0});
+    }
+};
+
+struct ProjectionSource {
+    In<TS<i64>> command;
+    Out<TSF<ProjectionDerived>> output;
+
+    void evaluate() const {
+        if (*command == 1)
+            output.add(ProjectionDerived<Cell>{ProjectionBase<Cell>{Cell<i64>{7}, Cell<double>{8.0}},
+                                               Cell<double>{100.0}});
     }
 };
 
@@ -178,6 +276,40 @@ struct BorrowedBroadcastObservation {
     std::vector<row_id_t> broadcast_changed;
     std::vector<std::optional<i64>> source_values;
     std::vector<std::optional<i64>> broadcast_values;
+};
+
+struct MixedSelectionObservation {
+    bool valid{};
+    bool shares_row_domain{};
+    bool borrows_price{};
+    std::vector<std::optional<i64>> ids;
+    std::vector<std::optional<double>> prices;
+    std::vector<std::optional<double>> doubled_prices;
+};
+
+struct ProjectionObservation {
+    bool valid{};
+    bool shares_row_domain{};
+    bool selected_borrows_columns{};
+    bool renamed_borrows_column{};
+    bool dropped_borrows_column{};
+    std::vector<std::string> selected_names;
+    std::vector<std::string> renamed_names;
+    std::vector<std::string> dropped_names;
+    std::vector<std::optional<i64>> selected_ids;
+    std::vector<std::optional<double>> selected_prices;
+    std::vector<std::optional<double>> renamed_prices;
+    std::vector<std::optional<double>> dropped_prices;
+};
+
+struct ExplicitTargetObservation {
+    bool same_schema_valid{};
+    bool target_valid{};
+    bool shares_row_domain{};
+    bool has_target_metadata{};
+    std::vector<std::string> target_names;
+    std::vector<std::optional<double>> same_schema_prices;
+    std::vector<std::optional<double>> premiums;
 };
 
 TEST_CASE("with_columns infers its result schema in an enclosing graph template",
@@ -629,8 +761,8 @@ TEST_CASE("with_columns reports unsupported scalar and TS cell types as wiring e
             source, "unsupported_scalar"_n = ScalarValue<List<i64>>{std::array<i64, 1>{1}}));
     });
     REQUIRE(scalar_error);
-    CHECK(std::string_view{scalar_error->what()} ==
-          "frame::with_columns supports only bool, i64, double, string, or symbol values");
+    CHECK(std::string_view{scalar_error->what()}.contains(
+        "frame::with_columns supports only bool, i64, double, string, or symbol values"));
 
     const auto unsupported_series_node = node([](Out<TS<List<i64>>>) {});
     const auto unsupported_series = unsupported_series_node();
@@ -638,8 +770,8 @@ TEST_CASE("with_columns reports unsupported scalar and TS cell types as wiring e
         static_cast<void>(frame::with_columns(source, "unsupported_series"_n = unsupported_series));
     });
     REQUIRE(series_error);
-    CHECK(std::string_view{series_error->what()} ==
-          "frame::with_columns supports only bool, i64, double, string, or symbol values");
+    CHECK(std::string_view{series_error->what()}.contains(
+        "frame::with_columns supports only bool, i64, double, string, or symbol values"));
     static_cast<void>(context);
 }
 
@@ -668,6 +800,525 @@ TEST_CASE("with_columns writes the bool batch tail after 128 rows",
     CHECK(result.equals<i64>({129}));
     CHECK(observed_rows == 129);
     CHECK(observed_true == 129);
+}
+
+TEST_CASE("select combines positional columns, borrowed accessors, and computed expressions",
+          "[feature:frame][feature:select]") {
+    auto observations = std::vector<MixedSelectionObservation>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<Quotes>> source, In<TSF<SelectRuntimeSchema>, optional> result,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto observation = MixedSelectionObservation{
+            .valid = result.valid(),
+            .shares_row_domain = result.valid() && source.row_domain() == result.row_domain()};
+        if (result.valid()) {
+            const auto source_storage = source.extension_descriptor();
+            const auto result_storage = result.extension_descriptor();
+            observation.borrows_price =
+                result_storage.column(1).native == source_storage.column(1).native;
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                observation.ids.push_back(result.column("id").input<i64>().cell(id));
+                observation.prices.push_back(result.column("price_alias").input<double>().cell(id));
+                observation.doubled_prices.push_back(result.column("double").input<double>().cell(id));
+            });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto result = frame::select(source, "id", "price_alias"_n = source["price"],
+                                          "double"_n = col("price") * 2.0);
+        return observe(source, result, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2, 3}), input<TS<i64>>({0, 1, 2}));
+
+    REQUIRE(result.equals<i64>({0, 1, 2}));
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].shares_row_domain);
+    CHECK(observations[0].borrows_price);
+    CHECK(observations[0].ids == std::vector<std::optional<i64>>{7});
+    CHECK(observations[0].prices == std::vector<std::optional<double>>{8.0});
+    CHECK(observations[0].doubled_prices == std::vector<std::optional<double>>{16.0});
+    CHECK(observations[1].prices == std::vector<std::optional<double>>{12.0});
+    CHECK(observations[1].doubled_prices == std::vector<std::optional<double>>{24.0});
+    CHECK(observations[2].prices == std::vector<std::optional<double>>{8.0});
+    CHECK(observations[2].doubled_prices == std::vector<std::optional<double>>{16.0});
+}
+
+TEST_CASE("select operator transports named scalar, expression, TS, and TSC fields",
+          "[feature:frame][feature:projection][operator]") {
+    auto observed = std::vector<std::array<std::optional<double>, 3>>{};
+    auto source_values = std::vector<std::optional<i64>>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<DirectOperatorSelection>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        if (result.valid()) {
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                source_values.push_back(result.column("source").input<i64>().cell(id));
+                observed.push_back({result.column("expression").input<double>().cell(id),
+                                    result.column("series").input<double>().cell(id),
+                                    result.column("column").input<double>().cell(id)});
+            });
+        }
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<double>> series, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto selections = bundle("source"_n = i64{19}, "expression"_n = col("price") * 2.0,
+                                       "series"_n = series, "column"_n = source["price"]);
+        const auto result = operators::select[type<TSF<DirectOperatorSelection>>](source, selections);
+        return observe(result, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1}), input<TS<double>>({3.5}), input<TS<i64>>({0}));
+
+    CHECK(result.equals<i64>({0}));
+    CHECK(source_values == std::vector<std::optional<i64>>{19});
+    CHECK(observed == std::vector<std::array<std::optional<double>, 3>>{{16.0, 3.5, 8.0}});
+}
+
+TEST_CASE("select, rename, and drop preserve borrowed columns and row membership",
+          "[feature:frame][feature:projection]") {
+    auto observations = std::vector<ProjectionObservation>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<Quotes>> source, In<TSF<SelectRuntimeSchema>, optional> selected,
+                                  In<TSF<RenameRuntimeSchema>, optional> renamed,
+                                  In<TSF<DropRuntimeSchema>, optional> dropped, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto observation = ProjectionObservation{
+            .valid = selected.valid() && renamed.valid() && dropped.valid(),
+            .shares_row_domain = selected.valid() && source.row_domain() == selected.row_domain()};
+        if (observation.valid) {
+            const auto source_storage = source.extension_descriptor();
+            const auto selected_storage = selected.extension_descriptor();
+            const auto renamed_storage = renamed.extension_descriptor();
+            const auto dropped_storage = dropped.extension_descriptor();
+            observation.selected_borrows_columns =
+                selected_storage.column(0).native == source_storage.column(1).native &&
+                selected_storage.column(1).native == source_storage.column(0).native;
+            observation.renamed_borrows_column =
+                renamed_storage.column(1).native == source_storage.column(1).native;
+            observation.dropped_borrows_column =
+                dropped_storage.column(0).native == source_storage.column(1).native;
+            for (const auto &field : selected.schema().fields())
+                observation.selected_names.emplace_back(field.name.text());
+            for (const auto &field : renamed.schema().fields())
+                observation.renamed_names.emplace_back(field.name.text());
+            for (const auto &field : dropped.schema().fields())
+                observation.dropped_names.emplace_back(field.name.text());
+            selected.for_each_row([&](row_id_t id, std::size_t) {
+                observation.selected_prices.push_back(selected.column("price").input<double>().cell(id));
+                observation.selected_ids.push_back(selected.column("id").input<i64>().cell(id));
+                observation.renamed_prices.push_back(renamed.column("cost").input<double>().cell(id));
+                observation.dropped_prices.push_back(dropped.column("price").input<double>().cell(id));
+            });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto selected = frame::select(source, {"price", "id"});
+        const auto renamed = frame::rename(source, {{"id", "quote_id"}, {"price", "cost"}});
+        const auto dropped = frame::drop(source, {"id"});
+        return observe(source, selected, renamed, dropped, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2}), input<TS<i64>>({0, 1}));
+
+    REQUIRE(result.equals<i64>({0, 1}));
+    REQUIRE(observations.size() == 2);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].shares_row_domain);
+    CHECK(observations[0].selected_borrows_columns);
+    CHECK(observations[0].renamed_borrows_column);
+    CHECK(observations[0].dropped_borrows_column);
+    CHECK(observations[0].selected_names == std::vector<std::string>{"price", "id"});
+    CHECK(observations[0].renamed_names == std::vector<std::string>{"quote_id", "cost"});
+    CHECK(observations[0].dropped_names == std::vector<std::string>{"price"});
+    CHECK(observations[0].selected_prices == std::vector<std::optional<double>>{8.0});
+    CHECK(observations[0].selected_ids == std::vector<std::optional<i64>>{7});
+    CHECK(observations[1].selected_prices == std::vector<std::optional<double>>{12.0});
+    CHECK(observations[1].renamed_prices == std::vector<std::optional<double>>{12.0});
+    CHECK(observations[1].dropped_prices == std::vector<std::optional<double>>{12.0});
+}
+
+TEST_CASE("select accepts runtime names from an anonymous projection of a base annotation",
+          "[feature:frame][feature:projection]") {
+    auto names = std::vector<std::string>{"volume", "price"};
+    auto selected_names = std::vector<std::string>{"price"};
+    auto observed = std::vector<std::optional<double>>{};
+    const auto source_node = node<ProjectionSource>();
+    const auto observe = node([&](In<TSF<SelectRuntimeSchema>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        if (result.valid())
+            result.for_each_row([&](row_id_t id, std::size_t) {
+                observed.push_back(result.column("price").input<double>().cell(id));
+            });
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto derived = source_node(command);
+        const auto base = derived.template as<TSF<ProjectionBase>>();
+        const auto first = frame::select(base, names);
+        const auto selected = frame::select(first, selected_names);
+        return observe(selected, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1}), input<TS<i64>>({0}));
+
+    REQUIRE(result.equals<i64>({0}));
+    CHECK(observed == std::vector<std::optional<double>>{8.0});
+}
+
+TEST_CASE("explicit positional project can rename and repeat a non-key source column",
+          "[feature:frame][feature:projection]") {
+    auto observed = std::optional<std::array<std::optional<double>, 2>>{};
+    auto shares_storage = false;
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<Quotes>> source, In<TSF<DuplicatePriceProjection>, optional> projected,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        if (projected.valid()) {
+            const auto source_column = source.column("price").input<double>().extension_descriptor().storage;
+            const auto best_column = projected.column("best").input<double>().extension_descriptor().storage;
+            const auto reference_column = projected.column("reference").input<double>().extension_descriptor().storage;
+            shares_storage = source_column.native == best_column.native &&
+                             source_column.native == reference_column.native;
+            projected.for_each_row([&](row_id_t id, std::size_t) {
+                observed = std::array{projected.column("best").input<double>().cell(id),
+                                      projected.column("reference").input<double>().cell(id)};
+            });
+        }
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        return observe(source, frame::project<DuplicatePriceProjection, "price", "price">(source), tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1}), input<TS<i64>>({0}));
+
+    REQUIRE(result.equals<i64>({0}));
+    REQUIRE(observed);
+    CHECK(shares_storage);
+    CHECK(*observed == std::array<std::optional<double>, 2>{8.0, 8.0});
+}
+
+TEST_CASE("explicit project metadata replaces keyed source metadata",
+          "[feature:frame][feature:projection][feature:schema-metadata]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<KeyedQuotesWithExtraMetadata>>) {});
+    const auto source = source_node();
+    const auto projected = frame::project<UnkeyedStringIdTarget, "id", "price">(source);
+    const auto &frame_type = dynamic_cast<const FrameSeriesType &>(projected.type());
+    const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
+
+    CHECK(schema.metadata().find("bg.frame.key") == nullptr);
+    CHECK(schema.metadata().find("frame.target") != nullptr);
+    static_cast<void>(context);
+}
+
+TEST_CASE("select and drop preserve unrelated metadata when omitting key columns",
+          "[feature:frame][feature:projection][feature:schema-metadata]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<KeyedQuotesWithExtraMetadata>>) {});
+    const auto source = source_node();
+    const auto retained = frame::select(source, "id", "price");
+    const auto selected_without_key = frame::select(source, "price");
+    const auto dropped = frame::drop(source, "id");
+    const auto dropped_from_anonymous = frame::drop(retained, "id");
+    const auto schema_of = [](const auto &point) -> const Schema & {
+        const auto &frame_type = dynamic_cast<const FrameSeriesType &>(point.type());
+        return dynamic_cast<const Schema &>(frame_type.schema_type());
+    };
+    const auto marker_value = [](const Schema &schema) -> std::optional<i64> {
+        const auto *marker = schema.metadata().find("frame.target");
+        if (marker == nullptr)
+            return std::nullopt;
+        return Scalar<i64>::from(marker->runtime_type(), marker->data()).value();
+    };
+
+    const auto &retained_schema = schema_of(retained);
+    const auto &selected_schema = schema_of(selected_without_key);
+    const auto &dropped_schema = schema_of(dropped);
+    const auto &anonymous_schema = schema_of(dropped_from_anonymous);
+    CHECK(retained_schema.metadata().find("bg.frame.key") != nullptr);
+    CHECK(selected_schema.metadata().find("bg.frame.key") == nullptr);
+    CHECK(dropped_schema.metadata().find("bg.frame.key") == nullptr);
+    CHECK(anonymous_schema.metadata().find("bg.frame.key") == nullptr);
+    CHECK(marker_value(retained_schema) == 42);
+    CHECK(marker_value(selected_schema) == 42);
+    CHECK(marker_value(dropped_schema) == 42);
+    CHECK(marker_value(anonymous_schema) == 42);
+    static_cast<void>(context);
+}
+
+TEST_CASE("select preserves key metadata for accessor and column expression aliases",
+          "[feature:frame][feature:projection]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<KeyedQuotes>>) {});
+    const auto source = source_node();
+    const auto from_accessor = frame::select(source, "accessor_id"_n = source["id"]);
+    const auto from_expression = frame::select(source, "expression_id"_n = col("id"));
+    const auto key_names = [](const auto &point) {
+        const auto &frame_type = dynamic_cast<const FrameSeriesType &>(point.type());
+        const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
+        const auto *key = schema.metadata().find("bg.frame.key");
+        if (key == nullptr)
+            return std::vector<std::string>{};
+        const auto values = Scalar<List<string>>::from(key->runtime_type(), key->data());
+        auto result = std::vector<std::string>{};
+        for (auto index = std::size_t{}; index != values.size(); ++index)
+            result.emplace_back(values[index].value());
+        return result;
+    };
+
+    CHECK(key_names(from_accessor) == std::vector<std::string>{"accessor_id"});
+    CHECK(key_names(from_expression) == std::vector<std::string>{"expression_id"});
+    static_cast<void>(context);
+}
+
+TEST_CASE("select uses the first selected alias for a duplicated key column",
+          "[feature:frame][feature:projection]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<KeyedQuotes>>) {});
+    const auto source = source_node();
+    const auto accessor_first = frame::select(source, "accessor_id"_n = source["id"],
+                                              "expression_id"_n = col("id"));
+    const auto expression_first = frame::select(source, "expression_id"_n = col("id"),
+                                                "accessor_id"_n = source["id"]);
+    const auto key_names = [](const auto &point) {
+        const auto &frame_type = dynamic_cast<const FrameSeriesType &>(point.type());
+        const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
+        const auto *key = schema.metadata().find("bg.frame.key");
+        if (key == nullptr)
+            return std::vector<std::string>{};
+        const auto values = Scalar<List<string>>::from(key->runtime_type(), key->data());
+        auto result = std::vector<std::string>{};
+        for (auto index = std::size_t{}; index != values.size(); ++index)
+            result.emplace_back(values[index].value());
+        return result;
+    };
+
+    CHECK(key_names(accessor_first) == std::vector<std::string>{"accessor_id"});
+    CHECK(key_names(expression_first) == std::vector<std::string>{"expression_id"});
+    static_cast<void>(context);
+}
+
+TEST_CASE("select preserves source key tuple order when output aliases are reordered",
+          "[feature:frame][feature:projection]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<CompositeKeyedQuotes>>) {});
+    const auto source = source_node();
+    const auto selected = frame::select(source, "id_first"_n = source["id"],
+                                        "id_second"_n = col("id"),
+                                        "tenant_first"_n = col("tenant"),
+                                        "tenant_second"_n = source["tenant"]);
+    const auto &frame_type = dynamic_cast<const FrameSeriesType &>(selected.type());
+    const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
+    const auto *key = schema.metadata().find("bg.frame.key");
+    REQUIRE(key != nullptr);
+    const auto values = Scalar<List<string>>::from(key->runtime_type(), key->data());
+    auto key_names = std::vector<std::string>{};
+    for (auto index = std::size_t{}; index != values.size(); ++index)
+        key_names.emplace_back(values[index].value());
+
+    CHECK(key_names == std::vector<std::string>{"tenant_first", "id_first"});
+    static_cast<void>(context);
+}
+
+TEST_CASE("select reports missing and duplicate positional names as wiring errors",
+          "[feature:frame][feature:projection][error:wiring]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<Quotes>>) {});
+    const auto source = source_node();
+    const auto capture_wiring_error = [](auto &&operation) {
+        auto error = std::optional<WiringError>{};
+        try {
+            operation();
+        } catch (const WiringError &caught) {
+            error = caught;
+        }
+        return error;
+    };
+
+    const auto missing = capture_wiring_error([&] { static_cast<void>(frame::select(source, "missing")); });
+    const auto duplicate = capture_wiring_error([&] { static_cast<void>(frame::select(source, "id", "id")); });
+
+    REQUIRE(missing);
+    CHECK(std::string_view{missing->what()}.contains("unknown field"));
+    REQUIRE(duplicate);
+    CHECK(std::string_view{duplicate->what()}.contains("a schema has duplicate field names"));
+    static_cast<void>(context);
+}
+
+TEST_CASE("select with no fields preserves the source row domain", "[feature:frame][feature:projection]") {
+    auto observed = std::array<bool, 3>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<Quotes>> source, In<TSF<SelectRuntimeSchema>, optional> selected,
+                                  In<TS<i64>> tick, Out<TS<i64>> output) {
+        auto source_rows = std::size_t{};
+        auto selected_rows = std::size_t{};
+        source.for_each_row([&](row_id_t, std::size_t) { ++source_rows; });
+        if (selected.valid())
+            selected.for_each_row([&](row_id_t, std::size_t) { ++selected_rows; });
+        observed = {selected.valid() && selected.schema().field_count() == 0,
+                    selected.valid() && source.row_domain() == selected.row_domain(),
+                    source_rows == selected_rows};
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        return observe(source, frame::select(source), tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1}), input<TS<i64>>({0}));
+
+    CHECK(result.equals<i64>({0}));
+    CHECK(observed == (std::array<bool, 3>{true, true, true}));
+}
+
+TEST_CASE("select does not notify for an unselected source column change",
+          "[feature:frame][feature:projection][transition:update]") {
+    auto modifications = std::vector<bool>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<SelectRuntimeSchema>, optional> result, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        modifications.push_back(result.modified());
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        return observe(frame::select(source, "id"), tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2}), input<TS<i64>>({0, 1}));
+
+    CHECK(result.equals<i64>({0, 1}));
+    CHECK(modifications == std::vector<bool>{true, false});
+}
+
+TEST_CASE("with_columns validates explicit target fields, types, keys, and span calls",
+          "[feature:frame][feature:with_columns][error:wiring]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<Quotes>>) {});
+    const auto source = source_node();
+    const auto assignment = std::array<WiringArgument, 1>{WiringArgument{"premium"_n = 2.0}};
+    const auto overwrite_assignment = std::array<WiringArgument, 1>{WiringArgument{"price"_n = 2.0}};
+    const auto capture_wiring_error = [](auto &&operation) {
+        auto error = std::optional<WiringError>{};
+        try {
+            operation();
+        } catch (const WiringError &caught) {
+            error = caught;
+        }
+        return error;
+    };
+
+    const auto field_error = capture_wiring_error([&] {
+        static_cast<void>(frame::with_columns<WrongTargetFields>(source, std::span<const WiringArgument>{assignment}));
+    });
+    const auto type_error = capture_wiring_error([&] {
+        static_cast<void>(frame::with_columns<WrongTargetType>(source, std::span<const WiringArgument>{assignment}));
+    });
+
+    REQUIRE(field_error);
+    CHECK(std::string_view{field_error->what()}.contains("result schema"));
+    REQUIRE(type_error);
+    CHECK(std::string_view{type_error->what()}.contains("result schema"));
+
+    const auto same_schema =
+        frame::with_columns<Quotes>(source, std::span<const WiringArgument>{overwrite_assignment});
+    CHECK(same_schema.type().is_resolved());
+
+    auto keyed_wiring = GraphWiring{};
+    const auto keyed_context = WiringContext{keyed_wiring};
+    const auto keyed_source_node = node([](Out<TSF<KeyedQuotes>>) {});
+    const auto keyed_source = keyed_source_node();
+    const auto key_error = capture_wiring_error([&] {
+        static_cast<void>(frame::with_columns<UnkeyedKeyTarget>(keyed_source,
+                                                                 std::span<const WiringArgument>{assignment}));
+    });
+    REQUIRE(key_error);
+    CHECK(std::string_view{key_error->what()}.contains("ordered key fields"));
+
+    static_cast<void>(keyed_context);
+    static_cast<void>(context);
+}
+
+TEST_CASE("frame operator rejects a non-frame mapped output", "[feature:frame][feature:projection][error:wiring]") {
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto source_node = node([](Out<TSF<Quotes>>) {});
+    const auto source = source_node();
+    auto error = std::optional<WiringError>{};
+    try {
+        static_cast<void>(operators::select[type<TS<double>>](source, bundle("id"_n = source["id"])));
+    } catch (const WiringError &caught) {
+        error = caught;
+    }
+
+    REQUIRE(error);
+    CHECK(std::string_view{error->what()}.contains("TSF output type"));
+    static_cast<void>(context);
+}
+
+TEST_CASE("with_columns validates same-schema and reordered explicit targets",
+          "[feature:frame][feature:with_columns]") {
+    auto observations = std::vector<ExplicitTargetObservation>{};
+    const auto source_node = node<QuoteSource>();
+    const auto observe = node([&](In<TSF<Quotes>> source, In<TSF<Quotes>, optional> same_schema,
+                                  In<TSF<ExplicitQuotes>, optional> explicit_target, In<TS<i64>> tick,
+                                  Out<TS<i64>> output) {
+        auto observation = ExplicitTargetObservation{
+            .same_schema_valid = same_schema.valid(),
+            .target_valid = explicit_target.valid(),
+            .shares_row_domain = same_schema.valid() && explicit_target.valid() &&
+                                 source.row_domain() == explicit_target.row_domain(),
+            .has_target_metadata = explicit_target.valid() &&
+                                   explicit_target.schema().metadata().find("frame.target") != nullptr};
+        if (same_schema.valid() && explicit_target.valid()) {
+            for (const auto &field : explicit_target.schema().fields())
+                observation.target_names.emplace_back(field.name.text());
+            explicit_target.for_each_row([&](row_id_t id, std::size_t) {
+                observation.same_schema_prices.push_back(same_schema.column("price").input<double>().cell(id));
+                observation.premiums.push_back(explicit_target.column("premium").input<double>().cell(id));
+            });
+        }
+        observations.push_back(std::move(observation));
+        output.set(*tick);
+    });
+    const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) {
+        const auto source = source_node(command);
+        const auto same_schema = frame::with_columns<Quotes>(source, "price"_n = col("price") * 2.0);
+        const auto explicit_target =
+            frame::with_columns<ExplicitQuotes>(source, "premium"_n = col("price") * 2.0);
+        return observe(source, same_schema, explicit_target, tick);
+    };
+
+    const auto result = run_graph(graph, input<TS<i64>>({1, 2}), input<TS<i64>>({0, 1}));
+
+    REQUIRE(result.equals<i64>({0, 1}));
+    REQUIRE(observations.size() == 2);
+    CHECK(observations[0].same_schema_valid);
+    CHECK(observations[0].target_valid);
+    CHECK(observations[0].shares_row_domain);
+    CHECK(observations[0].has_target_metadata);
+    CHECK(observations[0].target_names == std::vector<std::string>{"price", "premium", "id"});
+    CHECK(observations[0].same_schema_prices == std::vector<std::optional<double>>{16.0});
+    CHECK(observations[0].premiums == std::vector<std::optional<double>>{16.0});
+    CHECK(observations[1].same_schema_prices == std::vector<std::optional<double>>{24.0});
+    CHECK(observations[1].premiums == std::vector<std::optional<double>>{24.0});
 }
 
 } // namespace
