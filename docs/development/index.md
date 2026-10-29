@@ -48,3 +48,4 @@ history and are marked `superseded`.
 ## Reports
 
 - [hgraph graph-pattern review](reports/hgraph-pattern-review-2026-10-28.md): source patterns, additional tests, and classified findings.
+- [hgraph pattern recheck](reports/hgraph-pattern-recheck-2026-10-29.md): remaining failures after the reference identity correction.
