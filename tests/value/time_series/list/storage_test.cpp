@@ -42,10 +42,14 @@ TEST_CASE("fixed list validity is derived from its items",
     const auto item = runtime_type.item_layout(1);
     auto &last_updated =
         *reinterpret_cast<TimeSeriesState *>(static_cast<std::byte *>(storage) + item.last_updated_offset);
-    last_updated.publish(MIN_DT + std::chrono::microseconds{1});
+    const auto published_time = MIN_DT + std::chrono::microseconds{1};
+    last_updated.publish(published_time);
+    REQUIRE(runtime_type.mark_item_modified(storage, 1, published_time, false, allocator));
     CHECK(runtime_type.collection_valid(storage));
 
-    last_updated.invalidate(MIN_DT + std::chrono::microseconds{2});
+    const auto invalidated_time = MIN_DT + std::chrono::microseconds{2};
+    last_updated.invalidate(invalidated_time);
+    REQUIRE(runtime_type.mark_item_modified(storage, 1, invalidated_time, true, allocator));
     CHECK_FALSE(runtime_type.collection_valid(storage));
 
     runtime_type.destroy_value(storage, allocator);

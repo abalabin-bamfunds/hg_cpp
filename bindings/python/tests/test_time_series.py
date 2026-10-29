@@ -361,13 +361,19 @@ def test_nested_collection_delta_views_expose_child_deltas():
 
     @bg.compute_node
     def inspect(value: bg.TSD[int, bg.TSL[bg.TS[int], 2]]) -> bg.TS[object]:
-        return sum(item or 0 for item in value[1].value), dict(value.delta_value[1])
+        delta = value.delta_value[1]
+        if 1 in value.added_keys():
+            return sum(item or 0 for item in value[1].value), ("added", list(delta))
+        return sum(item or 0 for item in value[1].value), ("updated", dict(delta))
 
     @bg.graph
     def graph(trigger: bg.TS[int]) -> bg.TS[object]:
         return inspect(make_nested(trigger))
 
-    assert bg.run_graph(graph, [1, 2]) == [(10, {0: 10}), (30, {1: 20})]
+    assert bg.run_graph(graph, [1, 2]) == [
+        (10, ("added", [10, None])),
+        (30, ("updated", {1: 20})),
+    ]
 
 
 def test_reference_delta_can_be_forwarded_and_dereferenced():
@@ -693,7 +699,7 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
         return inspect(make_values(trigger))
 
     assert bg.run_graph(graph, [1, 2]) == [
-        (30, {1: 10, 2: 20}, {1: 10, 2: 20}, {1: 10, 2: 20}, [1, 2], [], [], {1, 2}, True, 10),
+        (30, {1: 10, 2: 20}, {1: 10, 2: 20}, {1: 10, 2: 20}, [1, 2], [], [1, 2], {1, 2}, True, 10),
         (
             51,
             {2: 21, 3: 30},
@@ -701,7 +707,7 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
             {1: bg.REMOVE, 2: 21, 3: 30},
             [3],
             [1],
-            [2],
+            [2, 3],
             {2, 3},
             True,
             bg.REMOVE,
@@ -709,6 +715,97 @@ def test_lazy_tsd_views_cover_removal_key_set_and_expiration():
     ]
     with pytest.raises(RuntimeError, match="outside its callback"):
         list(captured[0])
+
+
+def test_tsd_change_views_separate_updates_from_inclusive_modifications():
+    @bg.compute_node
+    def make_values(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        if trigger.value == 1:
+            return {1: 10, 2: 20}
+        return {1: bg.REMOVE, 2: 21, 3: 30}
+
+    @bg.compute_node
+    def inspect(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        def entry_values(entries):
+            return [entry.value if entry.valid else None for entry in entries]
+
+        def entry_items(entries):
+            return [(key, value.value if value.valid else None) for key, value in entries]
+
+        return (
+            list(values.added_keys()),
+            list(values.updated_keys()),
+            list(values.modified_keys()),
+            list(values.removed_keys()),
+            entry_values(values.added_values()),
+            entry_values(values.updated_values()),
+            entry_values(values.modified_values()),
+            entry_values(values.removed_values()),
+            entry_items(values.added_items()),
+            entry_items(values.updated_items()),
+            entry_items(values.modified_items()),
+            entry_items(values.removed_items()),
+        )
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
+        return inspect(make_values(trigger))
+
+    assert bg.run_graph(graph, [1, 2]) == [
+        (
+            [1, 2],
+            [],
+            [1, 2],
+            [],
+            [10, 20],
+            [],
+            [10, 20],
+            [],
+            [(1, 10), (2, 20)],
+            [],
+            [(1, 10), (2, 20)],
+            [],
+        ),
+        (
+            [3],
+            [2],
+            [2, 3],
+            [1],
+            [30],
+            [21],
+            [21, 30],
+            [10],
+            [(3, 30)],
+            [(2, 21)],
+            [(2, 21), (3, 30)],
+            [(1, 10)],
+        ),
+    ]
+
+
+def test_tsd_updated_selection_membership_and_callback_lifetime():
+    captured = []
+
+    @bg.compute_node
+    def make_values(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+        return {1: 10, 2: 20} if trigger.value == 1 else {2: 21}
+
+    @bg.compute_node
+    def inspect(values: bg.TSD[int, bg.TS[int]]) -> bg.TS[object]:
+        updated_keys = values.updated_keys()
+        captured.append(updated_keys)
+        captured.append(iter(updated_keys))
+        return (list(updated_keys), 2 in updated_keys, 1 in updated_keys, 2 in values.delta_value)
+
+    @bg.graph
+    def graph(trigger: bg.TS[int]) -> bg.TS[object]:
+        return inspect(make_values(trigger))
+
+    assert bg.run_graph(graph, [1, 2]) == [([], False, False, True), ([2], True, False, True)]
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        list(captured[0])
+    with pytest.raises(RuntimeError, match="outside its callback"):
+        next(captured[1])
 
 
 def test_tsd_key_set_tracks_key_changes_and_keeps_its_update_time():

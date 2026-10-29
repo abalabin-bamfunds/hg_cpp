@@ -294,7 +294,7 @@ struct emit_overloads {
                     }
                 };
                 value.for_each_added(append_item);
-                value.for_each_modified(append_item);
+                value.for_each_updated(append_item);
             }
             if (*pending != nullptr) {
                 (*pending)->publish(*context, [&](dictionary_value &item) {

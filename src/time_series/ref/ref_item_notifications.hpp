@@ -50,6 +50,27 @@ class ItemNotifications {
     void notify_root(OutputChangeContext &context, OutputChange change);
     void notify(const ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context, OutputChange change);
     bool has_item_notifications(const ReferenceSubscriptionDetail &subscriptions) const noexcept;
+    template <typename IsInternalDestination>
+    bool has_external_item_notifications(const ReferenceSubscriptionDetail &subscriptions,
+                                         IsInternalDestination is_internal_destination) const noexcept {
+        const auto &descriptor = subscriptions.item_notification_descriptor();
+        if (descriptor.empty()) {
+            return false;
+        }
+
+        const auto is_external = [&](DestinationItem item) {
+            return !is_internal_destination(destinations_[item.destination_index].destination_representation);
+        };
+        if (!descriptor.has_destination_item_group()) {
+            return is_external(inline_destination_item(descriptor));
+        }
+        for (const auto item : destination_item_group_for(descriptor).items) {
+            if (is_external(item)) {
+                return true;
+            }
+        }
+        return false;
+    }
     void begin_batch() noexcept;
     void cancel_batch() noexcept;
     void publish_batch(OutputChangeContext &context);

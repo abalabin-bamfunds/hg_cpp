@@ -150,6 +150,7 @@ add_library(
     src/time_series/tsl/tsl_runtime_type.cpp
     src/time_series/tsl/wiring.cpp
     src/time_series/tsl/operators.cpp
+    src/time_series/fixed/fixed_reference_sample.cpp
     src/time_series/fixed/fixed_reference_representation.cpp
     src/time_series/tsb/tsb_type.cpp
     src/time_series/tsb/tsb_runtime_type.cpp
@@ -237,6 +238,7 @@ add_library(
     src/library/operators.cpp
     src/library/collection.cpp
     src/library/tss.cpp
+    src/library/tsd_transform.cpp
     src/library/string.cpp
     src/library/string_regex.cpp
     src/library/string_collection.cpp

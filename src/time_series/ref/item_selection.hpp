@@ -419,7 +419,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         } callback{this, &collection, &context, &resolved};
 
         collection.view_runtime_type->for_each_updated_item(
-            *resolved.last_updated, resolved.storage, &callback, [](void *value, item_id_t id) {
+            resolved.last_updated, resolved.storage, &callback, [](void *value, item_id_t id) {
                 auto &callback = *static_cast<Callback *>(value);
                 if (auto *entry = callback.collection->items.find(id)) {
                     callback.owner->refresh_selection(*callback.context, *entry, *callback.resolved);

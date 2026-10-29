@@ -101,6 +101,51 @@ TEST_CASE("an index finds the next set position", "[index][coverage-exempt]") {
     CHECK(fixed.first_set(129) == fixed.size());
 }
 
+TEST_CASE("an index finds the first set position in either index", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto empty = util::index<>{};
+    CHECK(empty.first_set_union(empty) == 0);
+    CHECK(empty.first_set_union(empty, 1) == 0);
+
+    auto inline_left = util::index<>{};
+    auto inline_right = util::index<>{};
+    CHECK(inline_left.set(3, memory));
+    CHECK(inline_right.set(55, memory));
+    CHECK(inline_left.first_set_union(inline_right) == 3);
+    CHECK(inline_left.first_set_union(inline_right, 4) == 55);
+    CHECK(inline_left.first_set_union(inline_right, 56) == 56);
+    CHECK(inline_left.first_set_union(inline_right, 60) == 56);
+
+    auto mixed_inline = util::index<>{};
+    auto mixed_allocated = util::index<>{};
+    CHECK(mixed_inline.set(2, memory));
+    CHECK(mixed_inline.set(55, memory));
+    CHECK(mixed_allocated.set(2, memory));
+    CHECK(mixed_allocated.set(64, memory));
+    CHECK(mixed_allocated.set(129, memory));
+    CHECK(mixed_inline.first_set_union(mixed_allocated) == 2);
+    CHECK(mixed_inline.first_set_union(mixed_allocated, 3) == 55);
+    CHECK(mixed_inline.first_set_union(mixed_allocated, 56) == 64);
+    CHECK(mixed_inline.first_set_union(mixed_allocated, 65) == 129);
+    mixed_allocated.release(memory);
+
+    auto allocated_left = util::index<>{};
+    auto allocated_right = util::index<>{};
+    CHECK(allocated_left.set(63, memory));
+    CHECK(allocated_left.set(130, memory));
+    CHECK(allocated_right.set(64, memory));
+    CHECK(allocated_right.set(511, memory));
+    CHECK(allocated_left.first_set_union(allocated_right) == 63);
+    CHECK(allocated_left.first_set_union(allocated_right, 64) == 64);
+    CHECK(allocated_left.first_set_union(allocated_right, 65) == 130);
+    CHECK(allocated_left.first_set_union(allocated_right, 131) == 511);
+    CHECK(allocated_left.first_set_union(allocated_right, 512) == 512);
+
+    allocated_left.release(memory);
+    allocated_right.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
 TEST_CASE("a runtime-sized index retains its state when growth fails", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto index = util::index<>{};

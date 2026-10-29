@@ -20,18 +20,26 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
 
     auto &graph = context.runtime_graph();
     auto &input = *static_cast<ReferenceInputStorage *>(graph.storage_at(input_offset()));
+    const auto previous_reference = input.reference();
+    auto previous_view_was_valid = false;
+    if (previous_reference) {
+        const auto previous = ResolvedTimeSeries::resolve(previous_reference);
+        if (previous.runtime_type != nullptr) {
+            previous_view_was_valid = previous.last_updated.valid_before(context.evaluation_time());
+        }
+    }
+    const auto current = new_reference ? ResolvedTimeSeries::resolve(new_reference) : ResolvedTimeSeries{};
     if (!sampled_reference()) {
-        if (input.value != new_reference) {
+        if (previous_reference != new_reference) {
             const auto needs_subscription = active() || required() || notification != nullptr || controlled_activity();
-            if (input.value && needs_subscription) {
-                ReferenceProvider::remove_subscriber(input.value, graph, input_offset());
+            if (previous_reference && needs_subscription) {
+                ReferenceProvider::remove_subscriber(previous_reference, graph, input_offset());
             }
             if (new_reference && needs_subscription) {
                 ReferenceProvider::add_subscriber(new_reference, graph, static_cast<std::uint32_t>(input_offset()),
                                                   notification_data, static_cast<std::uint32_t>(node_index()),
                                                   active(), required(), notification, controlled_activity());
             }
-            input.value = new_reference;
         }
     } else {
         auto *sample_storage = static_cast<ReferenceInputSampleStorage *>(
@@ -43,19 +51,21 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
                 graph.remove_cycle_callback(sample_storage);
             }
         }};
-        const auto current = new_reference ? ResolvedTimeSeries::resolve(new_reference) : ResolvedTimeSeries{};
-        if (input.value != new_reference) {
+        if (previous_reference != new_reference) {
             const auto has_sample = !sample_storage->empty();
             auto previous = has_sample ? sample_storage->previous()
-                                       : (input.value ? ResolvedTimeSeries::resolve(input.value) : ResolvedTimeSeries{});
-            const auto previous_was_valid = has_sample ? previous.valid() : sample_storage->target_was_valid();
+                                       : (previous_reference ? ResolvedTimeSeries::resolve(previous_reference)
+                                                             : ResolvedTimeSeries{});
+            const auto previous_was_valid = previous.runtime_type != nullptr
+                                                ? previous.last_updated.valid_before(context.evaluation_time())
+                                                : previous_view_was_valid;
             auto previous_state = TimeSeriesState{};
             if (previous_was_valid && previous.runtime_type != nullptr && previous.storage != nullptr &&
                 !previous.valid()) {
                 previous_state.publish(context.evaluation_time());
-                previous.last_updated = &previous_state;
+                previous.last_updated = previous_state;
             }
-            new_sample = samples.get(input.value, new_reference, previous, current,
+            new_sample = samples.get(previous_reference, new_reference, previous, current,
                                      requested_runtime_type(), context.evaluation_time());
             if (new_sample && sample_storage->empty()) {
                 const auto clear_sample = [](void *value, EvaluationContext &) noexcept {
@@ -73,29 +83,25 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
                 ReferenceProvider::remove_subscriber(new_reference, graph, input_offset());
             }
         }};
-        if (input.value != new_reference && new_reference && needs_subscription) {
+        if (previous_reference != new_reference && new_reference && needs_subscription) {
             ReferenceProvider::add_subscriber(new_reference, graph, static_cast<std::uint32_t>(input_offset()),
                                               notification_data, static_cast<std::uint32_t>(node_index()), active(),
                                               required(), notification, controlled_activity());
             new_subscription_added = true;
         }
-        if (input.value != new_reference) {
-            const auto previous_reference = input.value;
+        if (previous_reference != new_reference) {
             if (previous_reference && needs_subscription) {
                 ReferenceProvider::remove_subscriber(previous_reference, graph, input_offset());
             }
-            input.value = new_reference;
             sample_storage->clear();
             if (new_sample) {
                 sample_storage->set(new_sample);
             }
-            sample_storage->set_target_was_valid(current.valid());
-        } else {
-            sample_storage->set_target_was_valid(current.valid());
         }
         remove_new_callback.release();
         remove_new_subscription.release();
     }
+    input.set(new_reference, previous_view_was_valid);
 
     if (required()) {
         context.schedule_validity_check(graph, node_index());

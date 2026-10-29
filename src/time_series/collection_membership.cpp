@@ -332,10 +332,10 @@ class CollectionMembershipSubscriptions final : public ReferenceProviderComponen
         if (type_cast<TimeSeriesDictionaryType>(&resolved.runtime_type->type()) == nullptr) {
             const auto &runtime_type = static_cast<const TimeSeriesSetRuntimeType &>(*resolved.runtime_type);
             for (auto range : {TimeSeriesSetRuntimeType::Range::added, TimeSeriesSetRuntimeType::Range::removed}) {
-                auto id = runtime_type.set_next_item_id(*resolved.last_updated, resolved.storage, range, 0);
+                auto id = runtime_type.set_next_item_id(resolved.last_updated, resolved.storage, range, 0);
                 while (id != util::occupancy_index::npos) {
                     function(id);
-                    id = runtime_type.set_next_item_id(*resolved.last_updated, resolved.storage, range, id + 1);
+                    id = runtime_type.set_next_item_id(resolved.last_updated, resolved.storage, range, id + 1);
                 }
             }
             return;
@@ -344,21 +344,21 @@ class CollectionMembershipSubscriptions final : public ReferenceProviderComponen
         const auto &runtime_type = static_cast<const TimeSeriesDictionaryRuntimeType &>(*resolved.runtime_type);
         for (const auto range : {TimeSeriesDictionaryRuntimeType::ItemRange::added,
                                  TimeSeriesDictionaryRuntimeType::ItemRange::removed}) {
-            auto id = runtime_type.next_item_id(*resolved.last_updated, resolved.storage, range, 0);
+            auto id = runtime_type.next_item_id(resolved.last_updated, resolved.storage, range, 0);
             while (id != util::occupancy_index::npos) {
                 function(id);
-                id = runtime_type.next_item_id(*resolved.last_updated, resolved.storage, range, id + 1);
+                id = runtime_type.next_item_id(resolved.last_updated, resolved.storage, range, id + 1);
             }
         }
         if (!valid_items) {
             return;
         }
-        auto id = runtime_type.next_item_id(*resolved.last_updated, resolved.storage,
-                                            TimeSeriesDictionaryRuntimeType::ItemRange::modified, 0);
+        auto id = runtime_type.next_item_id(resolved.last_updated, resolved.storage,
+                                            TimeSeriesDictionaryRuntimeType::ItemRange::updated, 0);
         while (id != util::occupancy_index::npos) {
             function(id);
-            id = runtime_type.next_item_id(*resolved.last_updated, resolved.storage,
-                                          TimeSeriesDictionaryRuntimeType::ItemRange::modified, id + 1);
+            id = runtime_type.next_item_id(resolved.last_updated, resolved.storage,
+                                          TimeSeriesDictionaryRuntimeType::ItemRange::updated, id + 1);
         }
     }
 

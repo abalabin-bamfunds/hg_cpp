@@ -53,8 +53,11 @@ class ReferenceRepresentation {
     void initialize_reference(std::uint32_t index) noexcept {
         reference_ = RepresentationReference{base_reference_, index};
     }
+    // Removes outgoing subscriptions while referenced objects are alive. It may be called again.
+    virtual void detach() noexcept {}
     virtual ResolvedTimeSeries resolve() const = 0;
     virtual void notify(OutputChangeContext &context, OutputChange change) = 0;
+    // Releases representation-owned storage after detach.
     virtual void destroy(allocator &memory) noexcept = 0;
 
   private:
@@ -145,7 +148,7 @@ class ReferenceProvider {
     void notify_subscriptions(const ReferenceSubscriptionDetail &subscriptions, OutputChangeContext &context,
                               OutputChange change);
 
-    void begin_item_notification_batch() noexcept;
+    void begin_item_notification_batch();
     void cancel_item_notification_batch() noexcept;
     void publish_item_notification_batch(OutputChangeContext &context);
 
@@ -203,6 +206,7 @@ class ReferenceProvider {
     void add_item_notification_record(Reference reference, RuntimeGraph &graph, void *destination_representation,
                                       item_id_t destination_item_id, ItemChangeNotificationFunction notify_item_change,
                                       ItemChangePublicationFunction publish_item_changes);
+    ItemNotifications &require_item_notifications();
     void remove_item_notification_record(Reference reference, RuntimeGraph &graph,
                                          const void *destination_representation, item_id_t destination_item_id,
                                          ItemChangeNotificationFunction notify_item_change) noexcept;

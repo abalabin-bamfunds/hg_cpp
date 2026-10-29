@@ -145,7 +145,7 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     }
 
     Reference bound_reference(std::size_t parameter_index) const noexcept {
-        return Node{*node_, runtime_storage_}.reference_input(parameter_index)->value;
+        return Node{*node_, runtime_storage_}.reference_input(parameter_index)->reference();
     }
 
     const void *scalar_data(std::size_t parameter_index) const noexcept {
@@ -190,13 +190,13 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
             }
         }
         const auto input = runtime_node.input_data(parameter_index, *context_);
-        const auto modified = input.last_updated->time() == context_->evaluation_time();
+        const auto modified = input.last_updated.time() == context_->evaluation_time();
         if constexpr (details::direct_time_series_input<Input> && !details::input_requires_runtime_type<Input>) {
-            return Input{*input.last_updated, static_cast<const typename Input::storage_type *>(input.value), modified,
+            return Input{input.last_updated, static_cast<const typename Input::storage_type *>(input.value), modified,
                          activity};
         } else {
             const auto data = TimeSeriesInputData{
-                runtime_node.time_series_input_runtime_type(parameter_index, *context_), *input.last_updated,
+                runtime_node.time_series_input_runtime_type(parameter_index, *context_), input.last_updated,
                 input.value, modified};
             return Input{data, activity};
         }
@@ -228,7 +228,6 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     void initialize_output_reference(details::RootReference &reference) const noexcept {
         reference.owner_graph = &context_->runtime_graph();
         reference.set_output_node(*node_);
-        reference.referenced_runtime_type = &node_->output_runtime_type();
     }
 
     template <typename Value = CompiledData>

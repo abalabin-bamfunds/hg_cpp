@@ -467,11 +467,17 @@ struct dereferenced_dictionary_change_queries {
         const auto key = Scalar<i64>::from(key_value);
         const auto id = input.find_item_id(key);
         auto modified_ids = std::vector<item_id_t>{};
+        auto updated_selection_ids = std::vector<item_id_t>{};
         auto updated_ids = std::vector<item_id_t>{};
         auto modified_item_ids = std::vector<item_id_t>{};
         auto cursor_ids = std::vector<item_id_t>{};
 
-        input.for_each_modified([&](const auto &modified_key) {
+        input.for_each_updated_key([&](const auto &updated_key) {
+            if (*updated_key == *key) {
+                updated_selection_ids.push_back(input.find_item_id(updated_key));
+            }
+        });
+        input.for_each_modified_key([&](const auto &modified_key) {
             if (*modified_key == *key) {
                 modified_ids.push_back(input.find_item_id(modified_key));
             }
@@ -494,19 +500,23 @@ struct dereferenced_dictionary_change_queries {
             ++cursor;
         }
 
-        changes.push_back({id, input.find_modified_id(key), input.item_modified(key),
+        changes.push_back({id, input.find_updated_id(key), input.find_modified_id(key), input.item_updated(key),
+                           input.item_modified(key),
                            id != util::occupancy_index::npos &&
                                input.runtime_type().item_updated(input.last_updated_state(), input.data(), id),
-                           std::move(modified_ids), std::move(updated_ids), std::move(modified_item_ids),
-                           std::move(cursor_ids)});
+                           std::move(modified_ids), std::move(updated_selection_ids), std::move(updated_ids),
+                           std::move(modified_item_ids), std::move(cursor_ids)});
     }
 
     struct Change {
         item_id_t id;
+        item_id_t found_updated_id;
         item_id_t found_modified_id;
+        bool input_updated;
         bool item_modified;
-        bool item_updated;
+        bool runtime_item_updated;
         std::vector<item_id_t> modified_ids;
+        std::vector<item_id_t> updated_selection_ids;
         std::vector<item_id_t> updated_ids;
         std::vector<item_id_t> modified_item_ids;
         std::vector<item_id_t> cursor_ids;
@@ -566,13 +576,25 @@ TEST_CASE("a dereferenced dictionary reports later target changes after adding i
 
     CHECK(actual.equals<i64>({10, std::nullopt, 20, 21}));
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 4);
+    const auto &addition = dereferenced_dictionary_change_queries::changes.front();
+    REQUIRE(addition.id != util::occupancy_index::npos);
+    CHECK(addition.found_updated_id == util::occupancy_index::npos);
+    CHECK(addition.found_modified_id == addition.id);
+    CHECK_FALSE(addition.input_updated);
+    CHECK(addition.item_modified);
+    CHECK(addition.modified_ids == std::vector<item_id_t>{addition.id});
+    CHECK(addition.updated_selection_ids.empty());
+    CHECK(addition.cursor_ids == std::vector<item_id_t>{addition.id});
     for (auto index = std::size_t{1}; index < dereferenced_dictionary_change_queries::changes.size(); ++index) {
         const auto &change = dereferenced_dictionary_change_queries::changes[index];
         REQUIRE(change.id != util::occupancy_index::npos);
+        CHECK(change.found_updated_id == change.id);
         CHECK(change.found_modified_id == change.id);
+        CHECK(change.input_updated);
         CHECK(change.item_modified);
-        CHECK(change.item_updated);
+        CHECK(change.runtime_item_updated);
         CHECK(change.modified_ids == std::vector<item_id_t>{change.id});
+        CHECK(change.updated_selection_ids == std::vector<item_id_t>{change.id});
         CHECK(change.updated_ids == std::vector<item_id_t>{change.id});
         CHECK(change.modified_item_ids == std::vector<item_id_t>{change.id});
         CHECK(change.cursor_ids == std::vector<item_id_t>{change.id});
@@ -609,10 +631,13 @@ TEST_CASE("a dereferenced dictionary reports one update when a stored reference 
     REQUIRE(dereferenced_dictionary_change_queries::changes.size() == 2);
     const auto &change = dereferenced_dictionary_change_queries::changes.back();
     REQUIRE(change.id != util::occupancy_index::npos);
+    CHECK(change.found_updated_id == change.id);
     CHECK(change.found_modified_id == change.id);
+    CHECK(change.input_updated);
     CHECK(change.item_modified);
-    CHECK(change.item_updated);
+    CHECK(change.runtime_item_updated);
     CHECK(change.modified_ids == std::vector<item_id_t>{change.id});
+    CHECK(change.updated_selection_ids == std::vector<item_id_t>{change.id});
     CHECK(change.updated_ids == std::vector<item_id_t>{change.id});
     CHECK(change.modified_item_ids == std::vector<item_id_t>{change.id});
     CHECK(change.cursor_ids == std::vector<item_id_t>{change.id});
@@ -665,7 +690,7 @@ TEST_CASE("a dereferenced dictionary reports a removed item once",
     CHECK(removed.id == util::occupancy_index::npos);
     CHECK(removed.found_modified_id == util::occupancy_index::npos);
     CHECK_FALSE(removed.item_modified);
-    CHECK_FALSE(removed.item_updated);
+    CHECK_FALSE(removed.input_updated);
     CHECK(removed.modified_ids.empty());
     CHECK(removed.cursor_ids.empty());
     CHECK(std::count(removed.updated_ids.begin(), removed.updated_ids.end(), added.id) == 1);
@@ -976,11 +1001,11 @@ TEST_CASE("dereferencing a dictionary item samples a new dictionary target",
         const auto item = input[0];
         auto added = 0;
         auto removed = 0;
-        auto modified = 0;
+        auto updated = 0;
         item.for_each_added([&](const auto &key) { added |= 1 << *key; });
         item.for_each_removed([&](const auto &key) { removed |= 1 << *key; });
-        item.for_each_modified([&](const auto &key) { modified |= 1 << *key; });
-        output.set(added * 100 + removed * 10 + modified);
+        item.for_each_updated([&](const auto &key) { updated |= 1 << *key; });
+        output.set(added * 100 + removed * 10 + updated);
     });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
@@ -1132,11 +1157,11 @@ TEST_CASE("a contained dictionary target sample recurses into modified items",
             const auto nested = input[0][2];
             auto added = 0;
             auto removed = 0;
-            auto modified = 0;
+            auto updated = 0;
             nested.for_each_added([&](const auto &key) { added += static_cast<int>(*key); });
             nested.for_each_removed([&](const auto &key) { removed += static_cast<int>(*key); });
-            nested.for_each_modified([&](const auto &key) { modified += static_cast<int>(*key); });
-            output.set(added * 10'000 + removed * 100 + modified);
+            nested.for_each_updated([&](const auto &key) { updated += static_cast<int>(*key); });
+            output.set(added * 10'000 + removed * 100 + updated);
         });
 
     const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> first,
@@ -1469,6 +1494,41 @@ TEST_CASE("sampled dictionary queries work before change enumeration",
          {{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}, {{2, 200}, {3, 300}}});
 
     CHECK(actual.equals({1, 1, 1, 1, 1, 4, 4, 1}));
+}
+
+TEST_CASE("sampled dictionary modifications include additions but exclude removals",
+          "[evaluation][series:tsd][feature:reference][feature:sampling][feature:collection-change]"
+          "[transition:addition][transition:removal][binding:reference-to-value]") {
+    struct observation {
+        i64 added;
+        i64 updated;
+        i64 modified;
+        i64 removed;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
+                                In<REF<TSD<i64, TS<i64>>>> second,
+                                Out<REF<TSD<i64, TS<i64>>>> output) {
+        output.copy(*use_second ? second : first);
+    });
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>> input) {
+        auto result = observation{};
+        input.for_each_added_key([&](const auto &key) { result.added += *key; });
+        input.for_each_updated_key([&](const auto &key) { result.updated += *key; });
+        input.for_each_modified_key([&](const auto &key) { result.modified += *key; });
+        input.for_each_removed_key([&](const auto &key) { result.removed += *key; });
+        return result;
+    });
+
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> first, wp<TSD<i64, TS<i64>>> second,
+                           wp<TS<bool>> use_second) { return inspect(select(use_second, first, second)); };
+
+    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}}, {false, true});
+
+    CHECK(actual.equals<observation>({observation{1, 0, 1, 0}, observation{2, 0, 2, 1}}));
 }
 
 TEST_CASE("a dictionary item samples nested graph stop and restart",

@@ -138,6 +138,67 @@ struct CycleCallbackOwner {
     void evaluate() const noexcept {}
 };
 
+struct CycleCallbackRemovalDuringRun {
+    static constexpr bool uses_cycle_callbacks = true;
+
+    In<TS<i64>> input;
+    State<bool> registered;
+    bool call_on_stop;
+
+    void evaluate(EvaluationContext *context) const {
+        if (*registered) {
+            return;
+        }
+        context->add_cycle_callback(&target_receiver, run_target, call_on_stop);
+        context->add_cycle_callback(&remover_receiver, remove_target, call_on_stop);
+        *registered = true;
+    }
+
+    static void run_target(void *, EvaluationContext &) noexcept { ++target_calls; }
+    static void run_added(void *, EvaluationContext &) noexcept { ++added_calls; }
+
+    static void remove_target(void *, EvaluationContext &context) noexcept {
+        ++remover_calls;
+        context.runtime_graph().remove_cycle_callback(&target_receiver);
+        context.add_cycle_callback(&added_receiver, run_added);
+    }
+
+    inline static int target_receiver{};
+    inline static int remover_receiver{};
+    inline static int added_receiver{};
+    inline static int target_calls{};
+    inline static int remover_calls{};
+    inline static int added_calls{};
+};
+
+TEST_CASE("removing a pending cycle callback during callback execution is safe",
+          "[evaluation][lifecycle][feature:nested-graph][transition:removal]") {
+    CycleCallbackRemovalDuringRun::target_calls = 0;
+    CycleCallbackRemovalDuringRun::remover_calls = 0;
+    CycleCallbackRemovalDuringRun::added_calls = 0;
+    const auto remove_callback = bg::node<CycleCallbackRemovalDuringRun>();
+
+    bg::run_graph([&](wp<TS<i64>> input) { remove_callback(input, false); }, {1, 2, 3});
+
+    CHECK(CycleCallbackRemovalDuringRun::remover_calls == 1);
+    CHECK(CycleCallbackRemovalDuringRun::target_calls == 0);
+    CHECK(CycleCallbackRemovalDuringRun::added_calls == 1);
+}
+
+TEST_CASE("removing a pending cycle callback during stop is safe",
+          "[evaluation][lifecycle][feature:nested-graph][transition:stop][transition:removal]") {
+    CycleCallbackRemovalDuringRun::target_calls = 0;
+    CycleCallbackRemovalDuringRun::remover_calls = 0;
+    CycleCallbackRemovalDuringRun::added_calls = 0;
+    const auto remove_callback = bg::node<CycleCallbackRemovalDuringRun>();
+
+    bg::run_graph([&](wp<TS<i64>> input) { remove_callback(input, true); }, {1});
+
+    CHECK(CycleCallbackRemovalDuringRun::remover_calls == 1);
+    CHECK(CycleCallbackRemovalDuringRun::target_calls == 0);
+    CHECK(CycleCallbackRemovalDuringRun::added_calls == 0);
+}
+
 struct NestedGraphLifetime {
     bg::State<int> marker;
     int id;

@@ -41,10 +41,10 @@ struct ResolvedTimeSeries {
     static ResolvedTimeSeries resolve(Reference reference);
 
     bool valid() const noexcept {
-        return runtime_type != nullptr && storage != nullptr && last_updated != nullptr && last_updated->valid();
+        return runtime_type != nullptr && storage != nullptr && last_updated.valid();
     }
 
-    const TimeSeriesState *last_updated{};
+    TimeSeriesState last_updated{};
     const void *storage{};
     const TimeSeriesRuntimeType *runtime_type{};
 };
@@ -191,7 +191,6 @@ struct RootReference {
     void clear_notifications() noexcept { notifications_.destination = nullptr; }
 
     RuntimeGraph *owner_graph{};
-    const TimeSeriesRuntimeType *referenced_runtime_type{};
 
   private:
     void set_node(const CompiledNode &node, bool output) noexcept {
@@ -213,8 +212,11 @@ static_assert(sizeof(ReferenceSubscriptionDetail) == 3 * sizeof(std::uint32_t));
 static_assert(sizeof(ItemReference) == 3 * sizeof(void *));
 static_assert(sizeof(RepresentationReference) == 3 * sizeof(void *));
 static_assert(sizeof(RootNotifications) == 2 * sizeof(void *));
-static_assert(sizeof(RootReference) == 5 * sizeof(void *));
+static_assert(sizeof(RootReference) == 4 * sizeof(void *));
 static_assert(sizeof(Reference) == sizeof(void *));
+static_assert(alignof(RootReference) >= 8);
+static_assert(alignof(ItemReference) >= 8);
+static_assert(alignof(RepresentationReference) >= 8);
 static_assert(std::is_trivially_copyable_v<ReferenceSubscriptionDetail>);
 static_assert(std::is_trivially_copyable_v<ItemReference>);
 static_assert(std::is_trivially_copyable_v<RepresentationReference>);

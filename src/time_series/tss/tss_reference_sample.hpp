@@ -30,8 +30,6 @@ struct SampledSet {
 
     const TimeSeriesSetRuntimeType *runtime_type;
     std::size_t reference_count{1};
-    TimeSeriesState previous_last_updated;
-    TimeSeriesState current_last_updated;
     ResolvedTimeSeries previous;
     ResolvedTimeSeries current;
     TimeSeriesState sampled_last_updated;

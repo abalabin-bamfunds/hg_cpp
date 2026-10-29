@@ -83,6 +83,13 @@ decltype(keys_where_true) keys_where_true{"keys_where_true", {"mask"}};
 decltype(bit_or) bit_or{"bit_or", {"lhs", "rhs"}};
 decltype(bit_and) bit_and{"bit_and", {"lhs", "rhs"}};
 decltype(bit_xor) bit_xor{"bit_xor", {"lhs", "rhs"}};
+decltype(rekey) rekey{"rekey", {"ts", "new_keys"}};
+decltype(partition) partition{"partition", {"ts", "partitions", "remove_empty"_n = true}};
+decltype(unpartition) unpartition{"unpartition", {"ts"}};
+decltype(flip) flip{"flip", {"ts", "unique"_n = true}};
+decltype(flip_keys) flip_keys{"flip_keys", {"ts", "remove_empty"_n = true}};
+decltype(collapse_keys) collapse_keys{"collapse_keys", {"ts"}};
+decltype(uncollapse_keys) uncollapse_keys{"uncollapse_keys", {"ts", "remove_empty"_n = true}};
 decltype(sum_) sum_{"sum_", {"values"}};
 decltype(min_) min_{"min_", {"values"}};
 decltype(max_) max_{"max_", {"values"}};
@@ -112,6 +119,7 @@ const auto registered = [] {
     details::register_collection_operators();
     details::register_collection_reduction_operators();
     details::register_tss_operators();
+    details::register_tsd_transform_operators();
     return true;
 }();
 

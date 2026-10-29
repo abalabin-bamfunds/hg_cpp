@@ -115,7 +115,8 @@ current state.
 | --- | --- | --- |
 | TSD current valid items | `valid_items()` / `valid_values()` | Key/value traversal and child views |
 | TSD additions and removals | `added_items()` / `removed_items()` | Added/removed key traversal |
-| TSD modified items | `modified_items()` | Modified child traversal |
+| TSD updates excluding additions | `updated_items()` | `for_each_updated_key_value` |
+| TSD additions and updates | `modified_items()` | `for_each_modified_key_value` |
 | TSS membership changes | `added()` / `removed()` | Added/removed member traversal |
 
 The [input-view reference](../../reference/input-views.md#collection-views) specifies
@@ -137,7 +138,7 @@ from bg.operators import sum_
 @compute_node
 def adjust(readings: TSD[int, TS[int]]) -> TSD[int, TS[int]]:
     delta = {key: REMOVE for key in readings.removed_keys()}
-    for key in (*readings.added_keys(), *readings.modified_keys()):
+    for key in readings.modified_keys():
         item = readings[key]
         if item.valid:
             delta[key] = item.value + 2
@@ -183,7 +184,6 @@ const auto adjust = node([](In<TSD<i64, TS<i64>>> readings, Out<TSD<i64, TS<i64>
             output[key].invalidate();
         }
     };
-    readings.for_each_added(publish);
     readings.for_each_modified(publish);
     readings.for_each_removed([&](const auto& key) { output.erase(key); });
 });

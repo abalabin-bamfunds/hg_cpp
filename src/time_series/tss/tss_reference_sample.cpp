@@ -49,19 +49,9 @@ class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
 SampledSet::SampledSet(const TimeSeriesSetRuntimeType &shape, ResolvedTimeSeries previous, ResolvedTimeSeries current,
                        EvaluationTime evaluation_time, allocator &memory)
     : runtime_type{&SampledSetRuntimeType::for_shape(shape)},
-      previous_last_updated{previous.last_updated == nullptr ? initial_time_series_state : *previous.last_updated},
-      current_last_updated{current.last_updated == nullptr ? initial_time_series_state : *current.last_updated},
       previous{previous}, current{current}, item_id_remappings{&memory.memory_resource()}, memory{memory} {
-    this->previous.last_updated = &previous_last_updated;
-    this->current.last_updated = &current_last_updated;
-    if (this->previous.valid()) {
-        sampled_last_updated = previous_last_updated;
-    }
-    if (this->current.valid()) {
-        sampled_last_updated.publish(evaluation_time);
-    } else if (this->previous.valid()) {
-        sampled_last_updated.invalidate(evaluation_time);
-    }
+    sampled_last_updated = TimeSeriesState::from_validity_transition(
+        evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid());
 }
 
 SampledSet::~SampledSet() {
@@ -75,11 +65,11 @@ bool SampledSet::previous_contains(const ScalarData &key) const {
     }
 
     const auto &previous_type = static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type);
-    const auto changed_this_cycle = previous_last_updated.time() == sampled_last_updated.time();
+    const auto changed_this_cycle = previous.last_updated.time() == sampled_last_updated.time();
     if (previous_type.set_contains(previous.storage, key)) {
-        return !changed_this_cycle || !previous_type.set_was_added(previous_last_updated, previous.storage, key);
+        return !changed_this_cycle || !previous_type.set_was_added(previous.last_updated, previous.storage, key);
     }
-    return changed_this_cycle && previous_type.set_was_removed(previous_last_updated, previous.storage, key);
+    return changed_this_cycle && previous_type.set_was_removed(previous.last_updated, previous.storage, key);
 }
 
 void SampledSet::populate_changes() const {
@@ -96,7 +86,7 @@ void SampledSet::populate_changes() const {
     }};
 
     const auto previous_changed_this_cycle =
-        previous.valid() && previous_last_updated.time() == sampled_last_updated.time();
+        previous.valid() && previous.last_updated.time() == sampled_last_updated.time();
     const auto *previous_type = previous.valid()
                                     ? &static_cast<const TimeSeriesSetRuntimeType &>(*previous.runtime_type)
                                     : nullptr;
@@ -107,7 +97,7 @@ void SampledSet::populate_changes() const {
     const auto record_previous_item = [&](item_id_t id) {
         const auto key = ScalarData{previous_type->key_runtime_type(), previous_type->set_key(previous.storage, id)};
         if (previous_changed_this_cycle &&
-            previous_type->set_was_added(previous_last_updated, previous.storage, key)) {
+            previous_type->set_was_added(previous.last_updated, previous.storage, key)) {
             return;
         }
 
@@ -121,19 +111,19 @@ void SampledSet::populate_changes() const {
     };
 
     if (previous_type != nullptr) {
-        for (auto id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+        for (auto id = previous_type->set_next_item_id(previous.last_updated, previous.storage,
                                                        TimeSeriesSetRuntimeType::Range::current, 0);
              id != util::occupancy_index::npos;
-             id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+             id = previous_type->set_next_item_id(previous.last_updated, previous.storage,
                                                   TimeSeriesSetRuntimeType::Range::current, id + 1)) {
             record_previous_item(id);
         }
 
         if (previous_changed_this_cycle) {
-            for (auto id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+            for (auto id = previous_type->set_next_item_id(previous.last_updated, previous.storage,
                                                            TimeSeriesSetRuntimeType::Range::removed, 0);
                  id != util::occupancy_index::npos;
-                 id = previous_type->set_next_item_id(previous_last_updated, previous.storage,
+                 id = previous_type->set_next_item_id(previous.last_updated, previous.storage,
                                                       TimeSeriesSetRuntimeType::Range::removed, id + 1)) {
                 record_previous_item(id);
             }
@@ -141,10 +131,10 @@ void SampledSet::populate_changes() const {
     }
 
     if (current_type != nullptr) {
-        for (auto id = current_type->set_next_item_id(current_last_updated, current.storage,
+        for (auto id = current_type->set_next_item_id(current.last_updated, current.storage,
                                                       TimeSeriesSetRuntimeType::Range::current, 0);
              id != util::occupancy_index::npos;
-             id = current_type->set_next_item_id(current_last_updated, current.storage,
+             id = current_type->set_next_item_id(current.last_updated, current.storage,
                                                  TimeSeriesSetRuntimeType::Range::current, id + 1)) {
             const auto key = ScalarData{current_type->key_runtime_type(), current_type->set_key(current.storage, id)};
             if (!previous_contains(key)) {
@@ -271,7 +261,7 @@ item_id_t SampledSetRuntimeType::set_next_item_id(const TimeSeriesState &last_up
             return util::occupancy_index::npos;
         }
         return static_cast<const TimeSeriesSetRuntimeType &>(*sampled.current.runtime_type)
-            .set_next_item_id(*sampled.current.last_updated, sampled.current.storage, Range::current, start);
+            .set_next_item_id(sampled.current.last_updated, sampled.current.storage, Range::current, start);
     }
     sampled.populate_changes();
     if (last_updated.time() != sampled.sampled_last_updated.time() ||

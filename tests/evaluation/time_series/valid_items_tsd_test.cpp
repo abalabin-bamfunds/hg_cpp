@@ -228,9 +228,9 @@ TEST_CASE("a valid_items dictionary input filters items and classifies validity 
         return result;
     });
 
-    const auto modified = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
+    const auto updated = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto result = i64{};
-        input.for_each_modified([&](const auto &key) { result += *key; });
+        input.for_each_updated([&](const auto &key) { result += *key; });
         return result;
     });
 
@@ -240,8 +240,8 @@ TEST_CASE("a valid_items dictionary input filters items and classifies validity 
     const auto removed_keys = bg::run_graph(
         [&](wp<TSD<i64, TS<i64>>> input) { return removed(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
-    const auto modified_keys = bg::run_graph(
-        [&](wp<TSD<i64, TS<i64>>> input) { return modified(input); },
+    const auto updated_keys = bg::run_graph(
+        [&](wp<TSD<i64, TS<i64>>> input) { return updated(input); },
         {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
     CHECK(actual.equals<i64>({10, 31, 21}));
@@ -251,7 +251,7 @@ TEST_CASE("a valid_items dictionary input filters items and classifies validity 
     CHECK(second_key_visible.equals({false, true, true}));
     CHECK(added_keys.equals<i64>({1, 2, 0}));
     CHECK(removed_keys.equals<i64>({0, 0, 1}));
-    CHECK(modified_keys.equals<i64>({0, 1, 2}));
+    CHECK(updated_keys.equals<i64>({0, 1, 2}));
 }
 
 TEST_CASE("valid_items reports removal of valid keys but hides removed invalid keys",
@@ -333,12 +333,18 @@ TEST_CASE("valid_items exposes filtered change cursors and key lookups",
         return removed;
     });
 
+    const auto sum_updated = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
+        auto updated = i64{};
+        for (auto id = input.next_updated_id(0); id != util::occupancy_index::npos;
+             id = input.next_updated_id(id + 1)) {
+            updated += *input.key_at(id);
+        }
+        return updated;
+    });
+
     const auto sum_modified = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
         auto modified = i64{};
-        for (auto id = input.next_modified_id(0); id != util::occupancy_index::npos;
-             id = input.next_modified_id(id + 1)) {
-            modified += *input.key_at(id);
-        }
+        input.for_each_modified_key([&](const auto &key) { modified += *key; });
         return modified;
     });
 
@@ -346,18 +352,23 @@ TEST_CASE("valid_items exposes filtered change cursors and key lookups",
 
     const auto removed_graph = [&](wp<TSD<i64, TS<i64>>> input) { return sum_removed(input); };
 
+    const auto updated_graph = [&](wp<TSD<i64, TS<i64>>> input) { return sum_updated(input); };
+
     const auto modified_graph = [&](wp<TSD<i64, TS<i64>>> input) { return sum_modified(input); };
 
     const auto added_keys = bg::run_graph(
         added_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
     const auto removed_keys = bg::run_graph(
         removed_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
+    const auto updated_keys = bg::run_graph(
+        updated_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
     const auto modified_keys = bg::run_graph(
         modified_graph, {{{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}}, {{1, literal::INVALID}, {2, 21}}});
 
     CHECK(added_keys.equals<i64>({1, 2, 0}));
     CHECK(removed_keys.equals<i64>({0, 0, 1}));
-    CHECK(modified_keys.equals<i64>({0, 1, 2}));
+    CHECK(updated_keys.equals<i64>({0, 1, 2}));
+    CHECK(modified_keys.equals<i64>({1, 3, 2}));
 }
 
 TEST_CASE("valid_items key lookups classify revalidation, invalidation, and item updates",
@@ -368,16 +379,45 @@ TEST_CASE("valid_items key lookups classify revalidation, invalidation, and item
         const auto key_two_value = i64{2};
         const auto key_one = Scalar<i64>::from(key_one_value);
         const auto key_two = Scalar<i64>::from(key_two_value);
-        auto result = false;
-        if (*command == 1) {
-            result = input.find_added_id(key_one) != util::occupancy_index::npos;
-        } else if (*command == 2) {
-            result = input.find_added_id(key_two) != util::occupancy_index::npos && input.item_modified(key_one);
-        } else {
-            result = input.find_removed_id(key_one) != util::occupancy_index::npos &&
-                     input.find_modified_id(key_two) != util::occupancy_index::npos;
+        auto cursor_found_key_one = false;
+        auto cursor_found_key_two = false;
+        for (auto id = input.next_modified_id(0); id != util::occupancy_index::npos;
+             id = input.next_modified_id(id + 1)) {
+            const auto key = input.key_at(id);
+            cursor_found_key_one |= *key == 1;
+            cursor_found_key_two |= *key == 2;
         }
-        return result;
+        auto updated_cursor_found_key_one = false;
+        auto updated_cursor_found_key_two = false;
+        for (auto id = input.next_updated_id(0); id != util::occupancy_index::npos;
+             id = input.next_updated_id(id + 1)) {
+            const auto key = input.key_at(id);
+            updated_cursor_found_key_one |= *key == 1;
+            updated_cursor_found_key_two |= *key == 2;
+        }
+        if (*command == 1) {
+            return input.find_added_id(key_one) != util::occupancy_index::npos &&
+                   input.find_modified_id(key_one) != util::occupancy_index::npos &&
+                   input.find_modified_id(key_two) == util::occupancy_index::npos && !input.item_modified(key_two) &&
+                   cursor_found_key_one && !cursor_found_key_two &&
+                   input.find_updated_id(key_one) == util::occupancy_index::npos && !updated_cursor_found_key_one &&
+                   !updated_cursor_found_key_two;
+        }
+        if (*command == 2) {
+            return input.find_added_id(key_two) != util::occupancy_index::npos && input.item_modified(key_one) &&
+                   input.find_updated_id(key_one) != util::occupancy_index::npos &&
+                   input.find_updated_id(key_two) == util::occupancy_index::npos && input.item_updated(key_one) &&
+                   !input.item_updated(key_two) && updated_cursor_found_key_one && !updated_cursor_found_key_two &&
+                   input.find_modified_id(key_two) != util::occupancy_index::npos && cursor_found_key_one &&
+                   cursor_found_key_two;
+        }
+        return input.find_removed_id(key_one) != util::occupancy_index::npos &&
+               input.find_modified_id(key_one) == util::occupancy_index::npos &&
+               input.find_modified_id(key_two) != util::occupancy_index::npos && !input.item_modified(key_one) &&
+               cursor_found_key_two && !cursor_found_key_one &&
+               input.find_updated_id(key_two) != util::occupancy_index::npos &&
+               input.find_updated_id(key_one) == util::occupancy_index::npos && updated_cursor_found_key_two &&
+               !updated_cursor_found_key_one;
     });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input, wp<TS<i64>> command) { return inspect(input, command); };

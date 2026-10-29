@@ -7,6 +7,7 @@
 #include <bg/scalar/canonical.hpp>
 #include <bg/scalar/details/allocation_context.hpp>
 #include <bg/scalar/scalar.hpp>
+#include <bg/scalar/value.hpp>
 #include <bg/time_series/details/output_state.hpp>
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
@@ -43,6 +44,27 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     bool valid() const noexcept { return state_->valid(); }
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
+    std::size_t size() const noexcept {
+        return valid() ? state_->runtime_type().item_count(state_->data()) : 0;
+    }
+    bool empty() const noexcept { return size() == 0; }
+    bool contains(const Scalar<K> &key) const { return valid() && item_id(key) != util::occupancy_index::npos; }
+
+    bool contains(const Scalar<> &key) const {
+        return valid() && item_id(details::scalar_data(key)) != util::occupancy_index::npos;
+    }
+
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
+    bool contains(Source &&key) const {
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
+        return valid() && item_id(details::make_scalar_source<K>(value)) != util::occupancy_index::npos;
+    }
+
+    bool contains(const literal::ScalarLiteral &key) const {
+        const auto value = ScalarValue<>::from_literal(key_runtime_type(), key);
+        return valid() && item_id(details::scalar_data(value)) != util::occupancy_index::npos;
+    }
     void invalidate() const { state_->invalidate(); }
 
     // Visits borrowed keys of current entries. The callback may erase the key it receives, but must not insert.
@@ -70,6 +92,11 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         requires details::scalar_variable<K>
     {
         return item(details::scalar_data(key));
+    }
+
+    Out<Item> operator[](const literal::ScalarLiteral &key) const {
+        const auto value = ScalarValue<>::from_literal(key_runtime_type(), key);
+        return item(details::scalar_data(value));
     }
 
     template <typename Source>
@@ -103,6 +130,11 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         return erase(details::scalar_data(key));
     }
 
+    bool erase(const literal::ScalarLiteral &key) const {
+        const auto value = ScalarValue<>::from_literal(key_runtime_type(), key);
+        return erase(details::scalar_data(value));
+    }
+
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool erase(Source &&key) const {
@@ -118,8 +150,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
         value.clear(key_runtime_type(), key_layout(), item_runtime_type(), item_layout(), item_value_offset(), memory);
 
         if (should_publish) {
-            value.key_storage().last_updated.publish(state_->context().evaluation_time());
-            state_->publish_item(state_->runtime_type(), key_set_item_id);
+            state_->publish_item(key_set_item_id, value.key_storage().last_updated);
         }
     }
 
@@ -140,7 +171,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
 
         input.for_each_added([&](const auto &key) { (*this)[key].copy(input[key]); });
         input.for_each_removed([&](const auto &key) { erase(key); });
-        input.for_each_modified([&](const auto &key) { (*this)[key].copy_tick(input[key]); });
+        input.for_each_updated([&](const auto &key) { (*this)[key].copy_tick(input[key]); });
     }
 
     template <typename InputItem, auto... InputTimeSeriesProperties, auto... InputProperties>
@@ -260,8 +291,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
                                        item_value_offset(), memory);
 
         if (result.change == details::time_series_set_change::added) {
-            value.key_storage().last_updated.publish(state_->context().evaluation_time());
-            state_->publish_item(state_->runtime_type(), key_set_item_id);
+            state_->publish_item(key_set_item_id, value.key_storage().last_updated);
         } else if (result.change == details::time_series_set_change::restored) {
             value.mark_item_resurrected(result.position, state_->context().evaluation_time(), memory);
             state_->publish();
@@ -280,8 +310,7 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
                                         item_value_offset(), memory);
 
         if (result.change == details::time_series_set_change::removed) {
-            value.key_storage().last_updated.publish(state_->context().evaluation_time());
-            state_->publish_item(state_->runtime_type(), key_set_item_id);
+            state_->publish_item(key_set_item_id, value.key_storage().last_updated);
         }
         return result.change != details::time_series_set_change::none;
     }

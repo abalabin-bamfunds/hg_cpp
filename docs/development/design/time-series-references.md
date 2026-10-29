@@ -131,6 +131,11 @@ representations and subscriber groups. A subscriber identifies a receiving
 runtime graph, node, and input slot. It updates the input and applies the
 input's activity and validity rules.
 
+Representations own any item references they create for recursive adaptation.
+Provider teardown detaches all representation subscriptions before freeing
+representation storage. This is required because a child representation can
+be created after its parent when a dictionary gains a key.
+
 Root references and collection membership values store their first node
 subscriber directly. A second distinct node subscriber requires an allocated
 subscriber collection. A root input callback also requires that collection.
@@ -162,18 +167,22 @@ does not depend on whether the receiving inner graph has evaluated.
 
 When a reference changes target:
 
-1. Remove any receiving input subscription from the old target.
-2. Store the new reference.
-3. Add a subscription to the new target when the input is active, has a
+1. Adapt the new target to the receiving input's requested type.
+2. Retain the old selected view's validity before the current cycle.
+3. Remove the old target subscription and store the new reference.
+4. Add a subscription to the new target when the input is active, has a
    `required` or `all_valid` constraint, or updates another logical output.
-4. Sample the new target.
+5. Sample the new target.
 
 The node subscription schedules the receiving node when the input is active.
 
 For the receiving input, the reference update time becomes the sampled view's
 last updated time. View construction selects the later of the reference and
-target update times. Target invalidity makes the view invalid. Later target
-updates schedule the destination directly.
+target update times. The input is valid when its selected target is valid.
+During the switching cycle, its validity transition compares the retained
+pre-cycle validity with the current target validity. Later target updates use
+the target's own state and schedule the destination directly. Target references
+and shared representations do not retain receiving inputs' switching history.
 
 View construction uses the current target's runtime type. A reference
 can therefore select between different runtime types of the same time series
@@ -192,8 +201,11 @@ first update. Removing an item target reports its previous collection value as
 removed.
 
 A TSS target switch compares current membership with the previous target's
-membership before the current cycle. A TSD target switch compares keys and
-recursively samples contained TSS and TSD items.
+membership before the current cycle. A TSD target switch compares keys.
+A TSL or TSB target switch samples corresponding items by position or field.
+Collection samples apply sampling recursively to contained collections. Each
+sampled item reports the sampling time and the validity transition between its
+pre-cycle and current views without changing either source's state.
 One reference notification shares a sample among subscribers with the same old
 and new references, resolved previous target state, and requested representation.
 The sample materializes change data on its first query. Inputs retain it until
@@ -204,7 +216,7 @@ the node observes:
 
 - TSD additions are the keys in `B` but not `A`.
 - TSD removals are the keys in `A` but not `B`.
-- A TSD item present in both is modified unless both entries identify the same
+- A TSD item present in both is updated unless both entries identify the same
   item time series.
 - A contained TSD applies the same rules recursively.
 

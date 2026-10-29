@@ -1913,6 +1913,7 @@ TEST_CASE("queue dictionary updates, removal, no-op removal, and recreation publ
     REQUIRE(events.size() == 4);
     CHECK(events[0].value == 10);
     CHECK(events[0].added == 1);
+    CHECK(events[0].modified == 1);
     CHECK(events[0].time == time(2));
     CHECK(events[1].value == 11);
     CHECK(events[1].modified == 1);
@@ -1922,6 +1923,7 @@ TEST_CASE("queue dictionary updates, removal, no-op removal, and recreation publ
     CHECK(events[2].time == time(4));
     CHECK(events[3].value == 12);
     CHECK(events[3].added == 1);
+    CHECK(events[3].modified == 1);
     CHECK(events[3].time == time(6));
     runtime.stop();
 }

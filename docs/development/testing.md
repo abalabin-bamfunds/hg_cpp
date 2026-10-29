@@ -690,6 +690,10 @@ For each reusable node and graph, test:
 - TSS and TSD membership with scalar and time series keys, repeated equal key ticks,
   physical versus valid-item membership, immediate reference-item validity,
   retained missing keys, reference samples, and output guarantees
+- TSD rekeying, partitioning, inversion, key transposition, collapse, and expansion;
+  simultaneous removals and assignments, collision behavior, empty-group retention,
+  independent source and mapping changes, reference rebinding and item-ID remapping,
+  target-only updates without routing-node evaluation, and C++ and Python wiring
 - delayed ticks and invalidation, collection delta replay, periodic tick limits,
   throttle publication times and latest-state reconciliation, simultaneous
   timers and input changes, duration bounds, and nested-graph stop cleanup

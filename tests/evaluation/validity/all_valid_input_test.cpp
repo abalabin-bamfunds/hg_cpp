@@ -3,11 +3,14 @@
 #include <bg/operator.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/time_series/tsb/tsb_storage.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/time_series/tsl/tsl_storage.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <array>
 #include <chrono>
 #include <optional>
 #include <vector>
@@ -51,7 +54,168 @@ struct NestedValidityDerivedBundle : bundle_extends<NestedValidityBaseBundle, Fi
     Field<i64> extra;
 };
 
+template <template <typename, auto...> typename Field> struct ValiditySwapBundle {
+    Field<i64> first;
+    Field<i64> second;
+};
+
+struct CollectionValidityObservation {
+    bool valid;
+    bool became_valid;
+    bool became_invalid;
+    bool all_valid;
+
+    bool operator==(const CollectionValidityObservation &) const = default;
+};
+
 } // namespace
+
+TEST_CASE("owned collections retain cycle-start validity across item swaps",
+          "[evaluation][validity][feature:validity][series:fixed-tsl][series:tsb]"
+          "[feature:collection-change][transition:invalidation][transition:revalidation]") {
+    auto list_observations = std::vector<CollectionValidityObservation>{};
+    const auto write_list = node([](In<TS<i64>> step, Out<TSL<TS<i64>, 2>> output) {
+        if (*step == 0) {
+            output[0].set(10);
+        } else {
+            output[0].invalidate();
+            output[1].set(20);
+        }
+    });
+    const auto observe_list = node([&](In<TSL<TS<i64>, 2>, optional> input) {
+        list_observations.push_back(
+            {input.valid(), input.became_valid(), input.became_invalid(), input.all_valid()});
+    });
+    const auto list_graph = [&](wp<TS<i64>> step) { observe_list(write_list(step)); };
+
+    auto bundle_observations = std::vector<CollectionValidityObservation>{};
+    const auto write_bundle = node([](In<TS<i64>> step, Out<TSB<ValiditySwapBundle>> output) {
+        if (*step == 0) {
+            output->first.set(10);
+        } else {
+            output->first.invalidate();
+            output->second.set(20);
+        }
+    });
+    const auto observe_bundle = node([&](In<TSB<ValiditySwapBundle>, optional> input) {
+        bundle_observations.push_back(
+            {input.valid(), input.became_valid(), input.became_invalid(), input.all_valid()});
+    });
+    const auto bundle_graph = [&](wp<TS<i64>> step) { observe_bundle(write_bundle(step)); };
+
+    auto copied_list_observations = std::vector<CollectionValidityObservation>{};
+    const auto copy_list = node([](In<TSL<TS<i64>, 2>> input, Out<TSL<TS<i64>, 2>> output) {
+        output.copy(input);
+    });
+    const auto observe_copied_list = node([&](In<TSL<TS<i64>, 2>, optional> input) {
+        copied_list_observations.push_back(
+            {input.valid(), input.became_valid(), input.became_invalid(), input.all_valid()});
+    });
+    const auto copied_list_graph = [&](wp<TSL<TS<i64>, 2>> input) { observe_copied_list(copy_list(input)); };
+
+    auto copied_bundle_observations = std::vector<CollectionValidityObservation>{};
+    const auto copy_bundle = node([](In<TSB<ValiditySwapBundle>> input, Out<TSB<ValiditySwapBundle>> output) {
+        output.copy(input);
+    });
+    const auto observe_copied_bundle = node([&](In<TSB<ValiditySwapBundle>, optional> input) {
+        copied_bundle_observations.push_back(
+            {input.valid(), input.became_valid(), input.became_invalid(), input.all_valid()});
+    });
+    const auto copied_bundle_graph = [&](wp<TSB<ValiditySwapBundle>> input) {
+        observe_copied_bundle(copy_bundle(input));
+    };
+
+    bg::run_graph(list_graph, std::array{i64{0}, i64{1}});
+    bg::run_graph(bundle_graph, std::array{i64{0}, i64{1}});
+    bg::run_graph(copied_list_graph, {{{0, 10}}, {{0, literal::INVALID}, {1, 20}}});
+    bg::run_graph(copied_bundle_graph, {{{"first", 10}}, {{"first", literal::INVALID}, {"second", 20}}});
+
+    REQUIRE(list_observations.size() == 2);
+    CHECK((list_observations[0] == CollectionValidityObservation{true, true, false, false}));
+    CHECK((list_observations[1] == CollectionValidityObservation{true, false, false, false}));
+
+    REQUIRE(bundle_observations.size() == 2);
+    CHECK((bundle_observations[0] == CollectionValidityObservation{true, true, false, false}));
+    CHECK((bundle_observations[1] == CollectionValidityObservation{true, false, false, false}));
+
+    REQUIRE(copied_list_observations.size() == 2);
+    CHECK((copied_list_observations[0] == CollectionValidityObservation{true, true, false, false}));
+    CHECK((copied_list_observations[1] == CollectionValidityObservation{true, false, false, false}));
+
+    REQUIRE(copied_bundle_observations.size() == 2);
+    CHECK((copied_bundle_observations[0] == CollectionValidityObservation{true, true, false, false}));
+    CHECK((copied_bundle_observations[1] == CollectionValidityObservation{true, false, false, false}));
+}
+
+TEST_CASE("retained output views publish the child's validity at mutation time",
+          "[evaluation][validity][feature:validity][series:fixed-tsl][feature:collection-change]"
+          "[transition:invalidation][transition:revalidation]") {
+    auto validity_during_write = std::vector<bool>{};
+    auto observations = std::vector<CollectionValidityObservation>{};
+    const auto write = node([&](In<TS<i64>> step, Out<TSL<TS<i64>, 1>> output) {
+        const auto first = output[0];
+        const auto second = output[0];
+
+        if (*step == 0) {
+            first.set(10);
+            second.set(20);
+            validity_during_write.push_back(output.valid());
+        } else {
+            first.invalidate();
+            validity_during_write.push_back(output.valid());
+            second.invalidate();
+            validity_during_write.push_back(output.valid());
+        }
+    });
+    const auto observe = node([&](In<TSL<TS<i64>, 1>, optional> input) {
+        observations.push_back({input.valid(), input.became_valid(), input.became_invalid(), input.all_valid()});
+    });
+    const auto graph = [&](wp<TS<i64>> step) { observe(write(step)); };
+
+    bg::run_graph(graph, std::array{i64{0}, i64{1}});
+
+    CHECK(validity_during_write == std::vector<bool>{true, false, false});
+    REQUIRE(observations.size() == 2);
+    CHECK((observations[0] == CollectionValidityObservation{true, true, false, true}));
+    CHECK((observations[1] == CollectionValidityObservation{false, false, true, false}));
+}
+
+TEST_CASE("nested owned collections track first and last valid children",
+          "[evaluation][validity][feature:validity][series:fixed-tsl][feature:collection-change]"
+          "[transition:first-tick][transition:invalidation][transition:revalidation]") {
+    struct NestedObservation {
+        CollectionValidityObservation outer;
+        CollectionValidityObservation inner;
+    };
+
+    auto observations = std::vector<NestedObservation>{};
+    const auto write = node([](In<TS<i64>> step, Out<TSL<TSL<TS<i64>, 2>, 1>> output) {
+        if (*step == 0) {
+            output[0][0].set(10);
+        } else if (*step == 1) {
+            output[0][0].invalidate();
+            output[0][1].set(20);
+        } else {
+            output[0][1].invalidate();
+        }
+    });
+    const auto observe = node([&](In<TSL<TSL<TS<i64>, 2>, 1>, optional> input) {
+        const auto &inner = input[0];
+        observations.push_back({{input.valid(), input.became_valid(), input.became_invalid(), input.all_valid()},
+                                 {inner.valid(), inner.became_valid(), inner.became_invalid(), inner.all_valid()}});
+    });
+    const auto graph = [&](wp<TS<i64>> step) { observe(write(step)); };
+
+    bg::run_graph(graph, std::array{i64{0}, i64{1}, i64{2}});
+
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].outer == CollectionValidityObservation{true, true, false, true});
+    CHECK(observations[0].inner == CollectionValidityObservation{true, true, false, false});
+    CHECK(observations[1].outer == CollectionValidityObservation{true, false, false, true});
+    CHECK(observations[1].inner == CollectionValidityObservation{true, false, false, false});
+    CHECK(observations[2].outer == CollectionValidityObservation{false, false, true, false});
+    CHECK(observations[2].inner == CollectionValidityObservation{false, false, true, false});
+}
 
 TEST_CASE("all_valid rejects an unpopulated fixed-list position",
           "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl]"

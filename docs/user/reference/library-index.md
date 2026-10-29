@@ -18,6 +18,7 @@ imports and headers.
 | `bit_xor` | [Reference](library-collections.md#time-series-set-operations) |
 | `casefold` | [Reference](library-text.md#construction-and-queries) |
 | `clip` | [Reference](library-numeric.md#clip) |
+| `collapse_keys` | [Reference](library-collections.md#dictionary-transforms) |
 | `collect` | [Reference](library-collections.md#construction-and-conversion) |
 | `combine` | [Reference](library-collections.md#construction-and-conversion) |
 | `const_` | [Reference](sources.md#const_) |
@@ -35,6 +36,8 @@ imports and headers.
 | `eq` | [Reference](library-numeric.md#arithmetic) |
 | `ewma` | [Reference](library-stateful.md#ewma) |
 | `filter_` | [Reference](library-selection.md#filter_) |
+| `flip` | [Reference](library-collections.md#dictionary-transforms) |
+| `flip_keys` | [Reference](library-collections.md#dictionary-transforms) |
 | `floordiv` | [Reference](library-numeric.md#arithmetic) |
 | `format_` | [Reference](library-text.md#formatting-and-printing) |
 | `ge` | [Reference](library-numeric.md#arithmetic) |
@@ -72,11 +75,13 @@ imports and headers.
 | `nothing` | [Reference](sources.md#nothing) |
 | `opt` | [Reference](graph-code.md#optional-arguments) |
 | `or_` | [Reference](library-numeric.md#arithmetic) |
+| `partition` | [Reference](library-collections.md#dictionary-transforms) |
 | `pass_through` | [Reference](higher-order.md#map) |
 | `pos` | [Reference](library-numeric.md#arithmetic) |
 | `pow` | [Reference](library-numeric.md#arithmetic) |
 | `print_` | [Reference](library-text.md#formatting-and-printing) |
 | `reduce` (C++) | [Reference](higher-order.md#reduce) |
+| `rekey` | [Reference](library-collections.md#dictionary-transforms) |
 | `replace` | [Reference](library-text.md#regular-expressions) |
 | `resample` | [Reference](library-time.md#resample) |
 | `round` | [Reference](library-numeric.md#arithmetic) |
@@ -92,6 +97,8 @@ imports and headers.
 | `switch_` | [Reference](higher-order.md#switch_) |
 | `take` | [Reference](library-selection.md#take-drop-step) |
 | `throttle` | [Reference](library-time.md#throttle) |
+| `uncollapse_keys` | [Reference](library-collections.md#dictionary-transforms) |
+| `unpartition` | [Reference](library-collections.md#dictionary-transforms) |
 | `upper` | [Reference](library-text.md#construction-and-queries) |
 | `valid` | [Reference](library-selection.md#valid) |
 | `valid_items` | [Reference](graph-code.md#optional-arguments) |

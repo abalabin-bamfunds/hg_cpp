@@ -47,7 +47,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
 
     struct ConstItem {
         const TimeSeriesRuntimeType &runtime_type;
-        const TimeSeriesState &last_updated;
+        TimeSeriesState last_updated;
         const void *value;
     };
 
@@ -91,7 +91,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     // The declared type must accept this runtime type; a bundle declaration limits the fields checked.
     virtual bool all_valid(const TimeSeriesState &, const void *, const TimeSeriesType &declared_type) const noexcept;
     virtual bool all_valid(const TimeSeriesInputData &, const TimeSeriesType &declared_type) const noexcept;
-    [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &,
+    [[nodiscard]] virtual bool mark_item_modified(void *, item_id_t, EvaluationTime, bool,
                                                   allocator &) const noexcept {
         return false;
     }

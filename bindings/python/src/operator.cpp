@@ -238,6 +238,13 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "bit_or", operators::bit_or);
     export_operator(operators_module, "bit_and", operators::bit_and);
     export_operator(operators_module, "bit_xor", operators::bit_xor);
+    export_operator(operators_module, "rekey", operators::rekey);
+    export_operator(operators_module, "partition", operators::partition);
+    export_operator(operators_module, "unpartition", operators::unpartition);
+    export_operator(operators_module, "flip", operators::flip);
+    export_operator(operators_module, "flip_keys", operators::flip_keys);
+    export_operator(operators_module, "collapse_keys", operators::collapse_keys);
+    export_operator(operators_module, "uncollapse_keys", operators::uncollapse_keys);
     export_operator(operators_module, "const_", operators::const_);
     export_operator(operators_module, "default_", operators::default_);
     const auto nothing_type_parameters = operators::nothing.explicit_type_parameters();

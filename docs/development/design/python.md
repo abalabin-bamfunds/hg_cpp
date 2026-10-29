@@ -650,7 +650,9 @@ change. A fixed `TSL` provides child input iteration. Fixed `TSL` and `TSB`
 inputs provide child access through `keys()`, `values()`, `items()`,
 `modified_*()`, and `valid_*()` methods. `TSB` fields also support attribute
 access. `TSD` inputs provide mapping access, `key_set`, and separate
-`added_*()`, `removed_*()`, `modified_*()`, and `valid_*()` methods. Collection
+`added_*()`, `updated_*()`, `modified_*()`, `removed_*()`, and `valid_*()` methods.
+The [input-view reference](../../user/reference/input-views.md#dictionary-change-selections)
+defines the dictionary change selections. Collection
 `value` and `delta_value` are lazy set, sequence, or mapping views according to
 their time-series shape. Use `copy()`, `list(...)`, `set(...)`, or `dict(...)`
 to materialize one.
@@ -667,9 +669,9 @@ Output deltas use these forms:
 | `TSD[K, TS_T]` | `{key: item_delta}`; use `REMOVE` as an item delta to remove a key |
 
 `InputView.delta_value` uses the same mapping form for TSD changes. A removed
-key maps to `REMOVE`; added and modified keys map to their item deltas. A TSS
-input delta has lazy `added` and `removed` views. Collection item deltas recur
-through the same table.
+key maps to `REMOVE`; an added key maps to its complete current item value;
+an updated key maps to its item delta. A TSS input delta has lazy `added` and
+`removed` views. Collection item deltas recur through the same table.
 
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
 `datetime.timedelta`, and `bg.Symbol`. Durations map to signed 64-bit

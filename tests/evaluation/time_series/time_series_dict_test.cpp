@@ -25,6 +25,149 @@ TEST_CASE("a dictionary graph preserves its input updates",
     CHECK(actual.equals({{{1, 10}, {2, 20}}, {{1, 11}}}));
 }
 
+TEST_CASE("dictionary change selections distinguish updates from modifications",
+          "[evaluation][tsd][feature:collection-change][series:tsd][transition:addition][transition:update]"
+          "[transition:removal][scalar:integer][binding:direct]") {
+    struct selection_counts {
+        i64 keys;
+        i64 values;
+        i64 key_values;
+
+        bool operator==(const selection_counts &) const = default;
+    };
+
+    struct cursor_counts {
+        i64 updated;
+        i64 modified;
+        i64 removed;
+
+        bool operator==(const cursor_counts &) const = default;
+    };
+
+    struct observation {
+        selection_counts added;
+        selection_counts updated;
+        selection_counts modified;
+        selection_counts removed;
+        cursor_counts cursors;
+        bool first_key_found_as_updated;
+        bool first_key_found_as_modified;
+        bool second_key_found_as_modified;
+        bool first_key_updated;
+        bool second_key_modified;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>> input) {
+        auto result = observation{};
+        input.for_each_added_key([&](const auto &) { ++result.added.keys; });
+        input.for_each_updated_key([&](const auto &) { ++result.updated.keys; });
+        input.for_each_modified_key([&](const auto &) { ++result.modified.keys; });
+        input.for_each_removed_key([&](const auto &) { ++result.removed.keys; });
+        input.for_each_added_value([&](const auto &) { ++result.added.values; });
+        input.for_each_updated_value([&](const auto &) { ++result.updated.values; });
+        input.for_each_modified_value([&](const auto &) { ++result.modified.values; });
+        input.for_each_removed_value([&](const auto &) { ++result.removed.values; });
+        input.for_each_added_key_value([&](const auto &, const auto &) { ++result.added.key_values; });
+        input.for_each_updated_key_value([&](const auto &, const auto &) { ++result.updated.key_values; });
+        input.for_each_modified_key_value([&](const auto &, const auto &) { ++result.modified.key_values; });
+        input.for_each_removed_key_value([&](const auto &, const auto &) { ++result.removed.key_values; });
+
+        for (auto id = input.next_updated_id(0); id != util::occupancy_index::npos;
+             id = input.next_updated_id(id + 1)) {
+            ++result.cursors.updated;
+        }
+        for (auto id = input.next_modified_id(0); id != util::occupancy_index::npos;
+             id = input.next_modified_id(id + 1)) {
+            ++result.cursors.modified;
+        }
+        for (auto id = input.next_removed_id(0); id != util::occupancy_index::npos;
+             id = input.next_removed_id(id + 1)) {
+            ++result.cursors.removed;
+        }
+
+        const auto first_key_value = i64{1};
+        const auto second_key_value = i64{2};
+        const auto first_key = Scalar<i64>::from(first_key_value);
+        const auto second_key = Scalar<i64>::from(second_key_value);
+        result.first_key_found_as_updated = input.find_updated_id(first_key) != util::occupancy_index::npos;
+        result.first_key_found_as_modified = input.find_modified_id(first_key) != util::occupancy_index::npos;
+        result.second_key_found_as_modified = input.find_modified_id(second_key) != util::occupancy_index::npos;
+        result.first_key_updated = input.item_updated(first_key);
+        result.second_key_modified = input.item_modified(second_key);
+        return result;
+    });
+
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
+    const auto actual = bg::run_graph(
+        graph, {{{1, literal::INVALID}}, {{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}},
+                {{1, literal::REMOVE}, {2, literal::REMOVE}}});
+
+    CHECK(actual.equals<observation>({
+        observation{{1, 1, 1}, {}, {1, 1, 1}, {}, {0, 1, 0}, false, true, false, false, false},
+        observation{{1, 1, 1}, {1, 1, 1}, {2, 2, 2}, {}, {1, 2, 0}, true, true, true, true, true},
+        observation{{}, {2, 2, 2}, {2, 2, 2}, {}, {2, 2, 0}, true, true, true, true, true},
+        observation{{}, {}, {}, {2, 2, 2}, {0, 0, 2}, false, false, false, false, false},
+    }));
+}
+
+TEST_CASE("dictionary updated selections exclude additions and modified selections include them",
+          "[evaluation][tsd][feature:collection-change][series:tsd][transition:addition][transition:update]"
+          "[scalar:integer][binding:direct]") {
+    struct observation {
+        i64 added_keys;
+        i64 updated_keys;
+        i64 modified_keys;
+        i64 removed_keys;
+        i64 added_values;
+        i64 updated_values;
+        i64 modified_values;
+        i64 removed_values;
+        i64 added_key_values;
+        i64 updated_key_values;
+        i64 modified_key_values;
+        i64 removed_key_values;
+
+        bool operator==(const observation &) const = default;
+    };
+
+    const auto inspect = node([](In<TSD<i64, TS<i64>>> input) {
+        auto result = observation{};
+        input.for_each_added_key([&](const auto &key) { result.added_keys += *key; });
+        input.for_each_updated_key([&](const auto &key) { result.updated_keys += *key; });
+        input.for_each_modified_key([&](const auto &key) { result.modified_keys += *key; });
+        input.for_each_removed_key([&](const auto &key) { result.removed_keys += *key; });
+        input.for_each_added_value([&](const auto &value) { result.added_values += value.valid() ? *value : 0; });
+        input.for_each_updated_value([&](const auto &value) { result.updated_values += value.valid() ? *value : 0; });
+        input.for_each_modified_value([&](const auto &value) { result.modified_values += value.valid() ? *value : 0; });
+        input.for_each_removed_value([&](const auto &value) { result.removed_values += value.valid() ? *value : 0; });
+        input.for_each_added_key_value([&](const auto &key, const auto &value) {
+            result.added_key_values += *key + (value.valid() ? *value : 0);
+        });
+        input.for_each_updated_key_value([&](const auto &key, const auto &value) {
+            result.updated_key_values += *key + (value.valid() ? *value : 0);
+        });
+        input.for_each_modified_key_value([&](const auto &key, const auto &value) {
+            result.modified_key_values += *key + (value.valid() ? *value : 0);
+        });
+        input.for_each_removed_key_value([&](const auto &key, const auto &value) {
+            result.removed_key_values += *key + (value.valid() ? *value : 0);
+        });
+        return result;
+    });
+
+    const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
+    const auto actual = bg::run_graph(
+        graph, {{{1, 10}}, {{1, 11}, {2, 20}}, {{1, literal::REMOVE}}});
+
+    CHECK(actual.equals<observation>({
+        observation{1, 0, 1, 0, 10, 0, 10, 0, 11, 0, 11, 0},
+        observation{2, 1, 3, 0, 20, 11, 31, 0, 22, 12, 34, 0},
+        observation{0, 0, 0, 1, 0, 0, 0, 11, 0, 0, 0, 12},
+    }));
+}
+
 TEST_CASE("a node can read one dictionary item",
           "[evaluation][tsd][feature:getitem][series:tsd][scalar:integer][binding:direct][transition:update]") {
     const auto select = node([](In<TSD<i64, TS<i64>>> input, Out<TS<i64>> output) {
@@ -142,11 +285,12 @@ TEST_CASE("a time series dictionary publishes item and key changes",
                                              {{2, 21}}});
 
     CHECK(actual.equals<i64>({2, 2, 3, std::nullopt, 1, 2}));
-    CHECK(snapshots == std::vector<Snapshot>{Snapshot{.size = 2, .first_value = 10, .added = {1, 2}},
-                                             Snapshot{.size = 2, .first_value = 11, .modified = {1}},
-                                             Snapshot{.size = 3, .first_value = 12, .added = {3}, .modified = {1}},
-                                             Snapshot{.size = 1, .first_value = 12, .removed = {2, 3}},
-                                             Snapshot{.size = 2, .first_value = 12, .added = {2}}});
+    CHECK(snapshots == std::vector<Snapshot>{
+                           Snapshot{.size = 2, .first_value = 10, .added = {1, 2}, .modified = {1, 2}},
+                           Snapshot{.size = 2, .first_value = 11, .modified = {1}},
+                           Snapshot{.size = 3, .first_value = 12, .added = {3}, .modified = {1, 3}},
+                           Snapshot{.size = 1, .first_value = 12, .removed = {2, 3}},
+                           Snapshot{.size = 2, .first_value = 12, .added = {2}, .modified = {2}}});
 }
 
 namespace {
@@ -206,8 +350,8 @@ TEST_CASE("a TSD update removes an entry with REMOVE",
     });
     const auto actual = bg::run_graph([&] { return inspect(source()); });
 
-    CHECK(actual.equals<observation>({observation{true, true, false, 2, 0}, observation{false, true, false, 0, 0},
-                                      observation{true, true, false, 1, 0}}));
+    CHECK(actual.equals<observation>({observation{true, true, false, 2, 2}, observation{false, true, false, 0, 0},
+                                      observation{true, true, false, 1, 1}}));
     CHECK(removed_keys == std::vector<std::vector<i64>>{{}, {1}, {}});
 }
 
@@ -283,7 +427,7 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     CHECK(dictionary_cursor_definition::valid == std::vector<std::vector<item_id_t>>{{0, 1}, {0, 1}, {0}});
     CHECK(dictionary_cursor_definition::added == std::vector<std::vector<item_id_t>>{{0, 1}, {}, {}});
     CHECK(dictionary_cursor_definition::removed == std::vector<std::vector<item_id_t>>{{}, {}, {1}});
-    CHECK(dictionary_cursor_definition::modified == std::vector<std::vector<item_id_t>>{{}, {0}, {}});
+    CHECK(dictionary_cursor_definition::modified == std::vector<std::vector<item_id_t>>{{0, 1}, {0}, {}});
     CHECK(dictionary_cursor_definition::removed_physical == dictionary_cursor_definition::removed);
 }
 
@@ -339,13 +483,23 @@ TEST_CASE("a time series dictionary valid cursor skips invalid items",
 TEST_CASE("dictionary item queries distinguish addition from modification",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:update][binding:direct]") {
-    const auto modified = node([](In<TSD<i64, TS<i64>>> input) { return input.item_modified(1); });
+    struct item_changes {
+        bool updated;
+        bool modified;
+
+        bool operator==(const item_changes &) const = default;
+    };
+
+    const auto modified = node([](In<TSD<i64, TS<i64>>> input) {
+        return item_changes{input.item_updated(1), input.item_modified(1)};
+    });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return modified(input); };
 
     const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
-    CHECK(actual.equals({false, true, false}));
+    CHECK(actual.equals<item_changes>(
+        {item_changes{false, true}, item_changes{true, true}, item_changes{false, false}}));
 }
 
 TEST_CASE("a value dictionary provides a source-backed reference representation",
@@ -651,6 +805,7 @@ TEST_CASE("resurrecting a dictionary item reports a modification",
         i64 size;
         i64 value;
         i64 added;
+        i64 updated;
         i64 removed;
         i64 modified;
 
@@ -662,15 +817,17 @@ TEST_CASE("resurrecting a dictionary item reports a modification",
     const auto inspect = node([](In<TSD<i64, TS<i64>>> input) {
         auto added = i64{};
         input.for_each_added([&](const auto &) { ++added; });
+        auto updated = i64{};
+        input.for_each_updated([&](const auto &) { ++updated; });
         auto removed = i64{};
         input.for_each_removed([&](const auto &) { ++removed; });
         auto modified = i64{};
         input.for_each_modified([&](const auto &) { ++modified; });
-        return observation{static_cast<i64>(input.size()), *input[1], added, removed, modified};
+        return observation{static_cast<i64>(input.size()), *input[1], added, updated, removed, modified};
     });
     const auto actual = bg::run_graph([&] { return inspect(source()); });
 
-    CHECK(actual.equals<observation>({observation{1, 10, 1, 0, 0}, observation{1, 20, 0, 0, 1}}));
+    CHECK(actual.equals<observation>({observation{1, 10, 1, 0, 0, 1}, observation{1, 20, 0, 1, 0, 1}}));
 }
 
 namespace {
@@ -698,16 +855,25 @@ TEST_CASE("resurrecting a dictionary collection item reports a modification",
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {
     const auto source = node<nested_item_resurrecting_source_definition>();
 
+    struct change_counts {
+        i64 updated;
+        i64 modified;
+
+        bool operator==(const change_counts &) const = default;
+    };
+
     const auto count = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input) {
+        auto updated_count = int{};
+        input.for_each_updated([&](const auto &) { ++updated_count; });
         auto modified_count = int{};
         input.for_each_modified([&](const auto &) { ++modified_count; });
-        return modified_count;
+        return change_counts{updated_count, modified_count};
     });
     const auto graph = [&] { return count(source()); };
 
     const auto actual = bg::run_graph(graph);
 
-    CHECK(actual.equals({0, 1}));
+    CHECK(actual.equals<change_counts>({change_counts{0, 1}, change_counts{1, 1}}));
 }
 
 TEST_CASE("a generic dictionary view uses its resolved item type",
@@ -885,7 +1051,7 @@ TEST_CASE("a dictionary view accepts its exact non-canonical key type",
           "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][transition:addition][transition:removal][binding:direct]") {
     const auto read = node([](In<TSD<i64, TS<i64>>> input) {
-        return input.contains(7) && !input.item_modified(7) ? *input[7] : -1;
+        return input.contains(7) && !input.item_updated(7) ? *input[7] : -1;
     });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return read(input); };

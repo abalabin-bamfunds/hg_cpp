@@ -104,7 +104,7 @@ class LiveTickFormatter {
             write(*context_, ": ");
             format_live_child((*input)[key], now_, *context_);
         });
-        input->for_each_modified([&](const Scalar<SCALAR> &key) {
+        input->for_each_updated([&](const Scalar<SCALAR> &key) {
             append_separator(first);
             format_scalar(Scalar<>::from(key), *context_);
             write(*context_, ": ");

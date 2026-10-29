@@ -68,7 +68,8 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     }
 
     bool all_valid(const TimeSeriesState &last_updated, const void *value) const noexcept final {
-        return fields_all_valid(last_updated, value, fields_.size());
+        return last_updated.valid() && value != nullptr &&
+               static_cast<const time_series_bundle_storage *>(value)->valid_child_count == fields_.size();
     }
 
     bool all_valid(const TimeSeriesState &last_updated, const void *value,
@@ -83,19 +84,29 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
             return TimeSeriesRuntimeType::all_valid(last_updated, value, declared_type);
         }
 
+        if (field_count == fields_.size()) {
+            return all_valid(last_updated, value);
+        }
+
         return fields_all_valid(last_updated, value, field_count);
     }
 
     bool item_updated(const TimeSeriesState &last_updated, const void *value,
                                     item_id_t id) const noexcept final {
+        if (!last_updated.valid() || value == nullptr) {
+            return false;
+        }
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
-        return last_updated.valid() && storage.change_time == last_updated.time() && storage.modified.contains(id);
+        return storage.change_time == last_updated.time() && storage.modified.contains(id);
     }
 
     void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const final {
+        if (!last_updated.valid() || value == nullptr) {
+            return;
+        }
         const auto &storage = *static_cast<const time_series_bundle_storage *>(value);
-        if (!last_updated.valid() || storage.change_time != last_updated.time()) {
+        if (storage.change_time != last_updated.time()) {
             return;
         }
         for (const auto index : storage.modified) {
@@ -108,20 +119,26 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
     void copy(const TimeSeriesInputData &input, OutputState &output) const final;
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          const TimeSeriesState &, allocator &memory) const noexcept final {
+                                          bool item_was_valid, allocator &memory) const noexcept final {
         auto &storage = *static_cast<time_series_bundle_storage *>(value);
         if (storage.change_time != evaluation_time) {
             storage.modified.clear();
             storage.change_time = evaluation_time;
         }
+
+        const auto item_is_valid = item(value, id).last_updated.valid();
+        if (item_was_valid != item_is_valid) {
+            if (item_is_valid) {
+                ++storage.valid_child_count;
+            } else {
+                --storage.valid_child_count;
+            }
+        }
         return storage.modified.set(id, memory);
     }
 
     bool collection_valid(const void *value) const noexcept final {
-        const auto *bytes = static_cast<const std::byte *>(value);
-        return std::ranges::any_of(fields_, [&](const auto &field) {
-            return reinterpret_cast<const TimeSeriesState *>(bytes + field.last_updated_offset)->valid();
-        });
+        return static_cast<const time_series_bundle_storage *>(value)->valid_child_count != 0;
     }
 
     const ReferenceRepresentationFactory *reference_representation_factory() const noexcept final;

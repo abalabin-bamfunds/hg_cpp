@@ -384,44 +384,67 @@ class RuntimeGraph::CycleCallbacks {
     }
 
     void remove(const void *receiver) noexcept {
-        std::erase_if(records_, [=](const auto &record) { return record.receiver == receiver; });
+        for (auto &record : records_) {
+            if (record.receiver == receiver) {
+                record.function = nullptr;
+            }
+        }
     }
 
     void remove(RuntimeGraph &owner, EvaluationContext &context) noexcept {
         const auto *inputs = &context.runtime_graph() == &owner ? context.runtime_graph_inputs() : nullptr;
         auto callback_context = context.child(owner, inputs);
-        for (auto record = records_.rbegin(); record != records_.rend(); ++record) {
-            if (&record->owner() == &owner && record->call_on_stop()) {
-                record->function(record->receiver, callback_context);
+        const auto count = records_.size();
+        for (auto i = count; i != 0; --i) {
+            auto record = records_[i - 1];
+            if (record.function == nullptr || &record.owner() != &owner || !record.call_on_stop()) {
+                continue;
+            }
+
+            records_[i - 1].function = nullptr;
+            record.function(record.receiver, callback_context);
+        }
+        for (auto &record : records_) {
+            if (record.function != nullptr && &record.owner() == &owner) {
+                record.function = nullptr;
             }
         }
-        std::erase_if(records_, [&](const auto &record) {
-            return &record.owner() == &owner;
-        });
     }
 
     void run(EvaluationContext &context) noexcept {
         const auto count = records_.size();
         for (auto i = count; i != 0; --i) {
-            const auto record = records_[i - 1];
-            const auto &owner = record.owner();
+            auto record = records_[i - 1];
+            if (record.function == nullptr) {
+                continue;
+            }
+
+            records_[i - 1].function = nullptr;
+            auto &owner = record.owner();
             const auto *inputs = &context.runtime_graph() == &owner ? context.runtime_graph_inputs() : nullptr;
             auto callback_context = context.child(record.owner(), inputs);
             record.function(record.receiver, callback_context);
         }
-        records_.erase(records_.begin(), records_.begin() + static_cast<std::ptrdiff_t>(count));
+        std::erase_if(records_, [](const auto &record) { return record.function == nullptr; });
     }
 
     void clear(EvaluationContext &context) noexcept {
-        for (auto record = records_.rbegin(); record != records_.rend(); ++record) {
-            if (record->call_on_stop()) {
-                const auto &owner = record->owner();
-                const auto *inputs = &context.runtime_graph() == &owner ? context.runtime_graph_inputs() : nullptr;
-                auto callback_context = context.child(record->owner(), inputs);
-                record->function(record->receiver, callback_context);
+        const auto count = records_.size();
+        for (auto i = count; i != 0; --i) {
+            auto record = records_[i - 1];
+            if (record.function == nullptr || !record.call_on_stop()) {
+                continue;
             }
+
+            records_[i - 1].function = nullptr;
+            auto &owner = record.owner();
+            const auto *inputs = &context.runtime_graph() == &owner ? context.runtime_graph_inputs() : nullptr;
+            auto callback_context = context.child(owner, inputs);
+            record.function(record.receiver, callback_context);
         }
-        records_.clear();
+        for (auto &record : records_) {
+            record.function = nullptr;
+        }
     }
 
   private:
@@ -885,12 +908,12 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
             for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count();
                  ++parameter_index) {
                 auto *input = runtime_node.reference_input(parameter_index);
-                if (input == nullptr || !input->value) {
+                if (input == nullptr || !input->reference()) {
                     continue;
                 }
 
                 const auto offset = static_cast<std::size_t>(reinterpret_cast<std::byte *>(input) - storage_);
-                details::ReferenceProvider::remove_subscriber(input->value, *this, offset);
+                details::ReferenceProvider::remove_subscriber(input->reference(), *this, offset);
             }
         }
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
@@ -1665,7 +1688,7 @@ bool RuntimeGraph::inputs_are_valid(const CompiledNode &node, const EvaluationCo
     for (const auto &descriptor : node.all_valid_input_descriptors()) {
         const auto input = runtime_node.input_data(descriptor.parameter_index, runtime_graph_inputs);
         const auto &runtime_type = runtime_node.all_valid_input_runtime_type(descriptor, context);
-        if (!runtime_type.all_valid(*input.last_updated, input.value, *descriptor.declared_type)) {
+        if (!runtime_type.all_valid(input.last_updated, input.value, *descriptor.declared_type)) {
             return false;
         }
     }

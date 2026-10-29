@@ -18,7 +18,7 @@ namespace bg {
 class Node {
   public:
     struct InputData {
-        const TimeSeriesState *last_updated;
+        TimeSeriesState last_updated;
         const void *value;
     };
 
@@ -40,23 +40,23 @@ class Node {
         return default_descriptor(compiled_node_->parameters()[parameter_index]);
     }
 
-    const TimeSeriesState &input_last_updated(std::size_t parameter_index) const noexcept {
-        return *input_data(parameter_index).last_updated;
+    TimeSeriesState input_last_updated(std::size_t parameter_index) const noexcept {
+        return input_data(parameter_index).last_updated;
     }
 
-    const TimeSeriesState &input_last_updated(std::size_t parameter_index,
-                                              const RuntimeGraphInput *runtime_graph_inputs) const {
-        return *input_data(parameter_index, runtime_graph_inputs).last_updated;
+    TimeSeriesState input_last_updated(std::size_t parameter_index,
+                                      const RuntimeGraphInput *runtime_graph_inputs) const {
+        return input_data(parameter_index, runtime_graph_inputs).last_updated;
     }
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time) const noexcept {
-        const auto &state = input_last_updated(parameter_index);
+        const auto state = input_last_updated(parameter_index);
         return evaluation_time != MIN_DT && state.time() == evaluation_time;
     }
 
     bool input_modified(std::size_t parameter_index, EvaluationTime evaluation_time,
                         const RuntimeGraphInput *runtime_graph_inputs) const {
-        const auto &state = input_last_updated(parameter_index, runtime_graph_inputs);
+        const auto state = input_last_updated(parameter_index, runtime_graph_inputs);
         return evaluation_time != MIN_DT && state.time() == evaluation_time;
     }
 
@@ -67,12 +67,12 @@ class Node {
             const auto &descriptor = default_descriptor(binding);
             const auto &source = descriptor.source;
             const auto source_data = binding_data(source, source.mode());
-            const auto *last_updated = &default_input(binding).last_updated;
-            if (!last_updated->valid()) {
+            auto last_updated = default_input(binding).last_updated;
+            if (!last_updated.valid()) {
                 last_updated =
-                    reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + descriptor.start_time_offset);
+                    *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + descriptor.start_time_offset);
             }
-            if (!source_data.last_updated->valid()) {
+            if (!source_data.last_updated.valid()) {
                 return {last_updated, descriptor.fallback};
             }
 
@@ -92,12 +92,12 @@ class Node {
             const auto &descriptor = default_descriptor(binding);
             if (descriptor.source.mode() == ParameterBindingMode::borrowed) {
                 const auto source_data = borrowed_input_data(descriptor.source, runtime_graph_inputs);
-                const auto *last_updated = &default_input(binding).last_updated;
-                if (!last_updated->valid()) {
-                    last_updated = reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
-                                                                            descriptor.start_time_offset);
+                auto last_updated = default_input(binding).last_updated;
+                if (!last_updated.valid()) {
+                    last_updated = *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
+                                                                             descriptor.start_time_offset);
                 }
-                return {last_updated, source_data.last_updated->valid() ? source_data.value : descriptor.fallback};
+                return {last_updated, source_data.last_updated.valid() ? source_data.value : descriptor.fallback};
             }
         }
         return input_data(parameter_index);
@@ -116,12 +116,12 @@ class Node {
         const auto &descriptor = default_descriptor(binding);
         if (descriptor.source.mode() == ParameterBindingMode::borrowed) {
             const auto source_data = borrowed_input_data(descriptor.source, context.runtime_graph_inputs());
-            const auto *last_updated = &default_input(binding).last_updated;
-            if (!last_updated->valid()) {
-                last_updated = reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
-                                                                         descriptor.start_time_offset);
+            auto last_updated = default_input(binding).last_updated;
+            if (!last_updated.valid()) {
+                last_updated = *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ +
+                                                                          descriptor.start_time_offset);
             }
-            return {last_updated, source_data.last_updated->valid() ? source_data.value : descriptor.fallback};
+            return {last_updated, source_data.last_updated.valid() ? source_data.value : descriptor.fallback};
         }
         return input_data(parameter_index);
     }
@@ -132,7 +132,7 @@ class Node {
         const auto &binding = compiled_node_->parameters()[parameter_index];
         if (binding.mode() == ParameterBindingMode::default_value) {
             const auto &descriptor = default_descriptor(binding);
-            if (!binding_data(descriptor.source, descriptor.source.mode()).last_updated->valid()) {
+            if (!binding_data(descriptor.source, descriptor.source.mode()).last_updated.valid()) {
                 return compiled_node_->time_series_input_runtime_type(parameter_index);
             }
         }
@@ -174,9 +174,9 @@ class Node {
             if (source.mode() == ParameterBindingMode::borrowed) {
                 const auto &input = borrowed_input(source, context.runtime_graph_inputs());
                 return input.last_updated->valid() ? *input.runtime_type
-                                                    : compiled_node_->time_series_input_runtime_type(parameter_index);
+                                                   : compiled_node_->time_series_input_runtime_type(parameter_index);
             }
-            if (!binding_data(source, source.mode()).last_updated->valid()) {
+            if (!binding_data(source, source.mode()).last_updated.valid()) {
                 return compiled_node_->time_series_input_runtime_type(parameter_index);
             }
         }
@@ -218,24 +218,24 @@ class Node {
             return &sample->input().runtime_type;
         }
         const auto *input = reference_input(parameter_index);
-        if (input == nullptr || input->value == nullptr) {
+        if (input == nullptr || !input->reference()) {
             return nullptr;
         }
 
-        return details::ResolvedTimeSeries::resolve(input->value).runtime_type;
+        return details::ResolvedTimeSeries::resolve(input->reference()).runtime_type;
     }
 
     In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time = MIN_DT) const noexcept {
         const auto input = input_data(parameter_index);
-        return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index),
-                evaluation_time != MIN_DT && input.last_updated->time() == evaluation_time};
+        return {input.last_updated, input.value, time_series_input_runtime_type(parameter_index),
+                evaluation_time != MIN_DT && input.last_updated.time() == evaluation_time};
     }
 
     In<TS_T> time_series_input(std::size_t parameter_index, EvaluationTime evaluation_time,
                                const EvaluationContext &context) const {
         const auto input = input_data(parameter_index, context);
-        return {*input.last_updated, input.value, time_series_input_runtime_type(parameter_index, context),
-                evaluation_time != MIN_DT && input.last_updated->time() == evaluation_time};
+        return {input.last_updated, input.value, time_series_input_runtime_type(parameter_index, context),
+                evaluation_time != MIN_DT && input.last_updated.time() == evaluation_time};
     }
 
     bool *input_activity(std::size_t controlled_input_index) const noexcept {
@@ -293,7 +293,7 @@ class Node {
     InputData borrowed_input_data(const ParameterBinding &binding,
                                   const RuntimeGraphInput *runtime_graph_inputs) const {
         const auto &input = borrowed_input(binding, runtime_graph_inputs);
-        return {input.last_updated, input.value};
+        return {*input.last_updated, input.value};
     }
 
     InputData binding_data(const ParameterBinding &binding, ParameterBindingMode mode) const noexcept {
@@ -303,35 +303,33 @@ class Node {
         if (mode == ParameterBindingMode::time_series) {
             const auto &last_updated =
                 *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
-            return {&last_updated, runtime_storage_ + binding.value_offset()};
+            return {last_updated, runtime_storage_ + binding.value_offset()};
         }
 
         const auto *wired_last_updated =
             reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
         if (mode == ParameterBindingMode::constant) {
-            return {wired_last_updated, binding.constant_data()};
+            return {*wired_last_updated, binding.constant_data()};
         }
         if (mode != ParameterBindingMode::reference) {
-            return {wired_last_updated, runtime_storage_ + binding.value_offset()};
+            return {*wired_last_updated, runtime_storage_ + binding.value_offset()};
         }
 
         if (const auto *sample = reference_input_sample(&binding); sample != nullptr && !sample->empty()) {
             const auto input = sample->input();
-            return {&input.last_updated, input.value};
+            return {input.last_updated, input.value};
         }
 
-        const auto reference =
-            reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + binding.value_offset())->value;
+        const auto &reference_input =
+            *reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + binding.value_offset());
+        const auto reference = reference_input.reference();
         if (!reference) {
-            return {wired_last_updated->valid() ? &initial_time_series_state : wired_last_updated, nullptr};
+            const auto target = details::ResolvedTimeSeries{};
+            return {reference_input.observed_state(*wired_last_updated, target), nullptr};
         }
 
         const auto resolved = details::ResolvedTimeSeries::resolve(reference);
-        if (!resolved.last_updated->valid() || !wired_last_updated->later_than(*resolved.last_updated)) {
-            return {resolved.last_updated, resolved.storage};
-        }
-
-        return {wired_last_updated, resolved.storage};
+        return {reference_input.observed_state(*wired_last_updated, resolved), resolved.storage};
     }
 
     details::ReferenceInputSampleStorage *reference_input_sample(const ParameterBinding *binding) const noexcept {

@@ -25,6 +25,25 @@ TEST_CASE("a time series set publishes only new items",
     CHECK(actual.equals({{1}, {2}, literal::SKIP}));
 }
 
+TEST_CASE("a set output reports its current size and membership",
+          "[evaluation][tss][feature:node-api][series:tss][scalar:integer]") {
+    const auto inspect = node([](i64, Out<TSS<i64>> output) {
+        output.clear();
+        CHECK(output.size() == 0);
+        CHECK(output.empty());
+        CHECK_FALSE(output.contains(1));
+
+        CHECK(output.insert(1));
+        CHECK(output.size() == 1);
+        CHECK_FALSE(output.empty());
+        CHECK(output.contains(1));
+        CHECK(output.erase(1));
+        CHECK(output.empty());
+    });
+
+    bg::run_graph(inspect, {0});
+}
+
 TEST_CASE("a time series set becomes valid on its first empty tick and remains valid",
           "[evaluation][tss][series:tss][validity][feature:collection-change][transition:first-tick]"
           "[scalar:integer][representation:native][declaration:concrete][binding:direct]") {

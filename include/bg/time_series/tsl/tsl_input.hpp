@@ -51,9 +51,7 @@ class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
     std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
 
     In<Item> operator[](std::size_t index) const {
-        const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
-        return In<Item>{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value,
-                                            data_.modified() && item.last_updated.time() == data_.last_updated()}};
+        return In<Item>{data_.item(static_cast<item_id_t>(index))};
     }
 
     bool item_updated(std::size_t index) const noexcept {

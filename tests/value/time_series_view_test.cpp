@@ -43,28 +43,43 @@ TEST_CASE("a set input preserves its packed validity state when type erased",
 
     const auto first_update = MIN_DT + std::chrono::microseconds{1};
     state.publish(first_update);
-    CHECK(erased.valid());
-    CHECK_FALSE(erased.became_valid());
-    const auto updated = In<TS_T>{state, nullptr, runtime_type, true};
+    const auto updated = In<TSS<i64>>{state, nullptr, runtime_type};
+    const auto erased_updated = In<TS_T>{updated.last_updated_state(), updated.data(), updated.runtime_type(),
+                                         updated.modified()};
 
-    const auto became_valid =
-        updated.visit([](const In<TSS<SCALAR>> *value) { return value->became_valid(); }, ddv::noop);
+    CHECK(erased_updated.valid());
+    CHECK_FALSE(erased_updated.became_valid());
+    const auto updated_notification = In<TSS<i64>>{state, nullptr, runtime_type, true};
+
+    const auto erased_updated_notification =
+        In<TS_T>{updated_notification.last_updated_state(), updated_notification.data(),
+                 updated_notification.runtime_type(), updated_notification.modified()};
+    const auto became_valid = erased_updated_notification.visit(
+        [](const In<TSS<SCALAR>> *value) { return value->became_valid(); }, ddv::noop);
 
     REQUIRE(became_valid);
     CHECK(*became_valid);
-    CHECK(erased.last_updated() == first_update);
+    CHECK(erased_updated.last_updated() == first_update);
 
     const auto invalidation_time = first_update + std::chrono::microseconds{1};
     state.invalidate(invalidation_time);
-    CHECK_FALSE(erased.valid());
-    const auto invalidated = In<TS_T>{state, nullptr, runtime_type, true};
+    const auto invalidated = In<TSS<i64>>{state, nullptr, runtime_type};
+    const auto erased_invalidated = In<TS_T>{invalidated.last_updated_state(), invalidated.data(),
+                                             invalidated.runtime_type(), invalidated.modified()};
 
-    const auto became_invalid =
-        invalidated.visit([](const In<TSS<SCALAR>> *value) { return value->became_invalid(); }, ddv::noop);
+    CHECK_FALSE(erased_invalidated.valid());
+    CHECK_FALSE(erased_invalidated.became_invalid());
+    const auto invalidation_notification = In<TSS<i64>>{state, nullptr, runtime_type, true};
+
+    const auto erased_invalidation_notification =
+        In<TS_T>{invalidation_notification.last_updated_state(), invalidation_notification.data(),
+                 invalidation_notification.runtime_type(), invalidation_notification.modified()};
+    const auto became_invalid = erased_invalidation_notification.visit(
+        [](const In<TSS<SCALAR>> *value) { return value->became_invalid(); }, ddv::noop);
 
     REQUIRE(became_invalid);
     CHECK(*became_invalid);
-    CHECK(erased.last_updated() == invalidation_time);
+    CHECK(erased_invalidated.last_updated() == invalidation_time);
 }
 
 namespace {

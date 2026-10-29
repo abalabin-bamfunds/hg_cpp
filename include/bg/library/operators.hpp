@@ -32,6 +32,7 @@ using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 using SIGNAL = TimeSeriesVariable<"SIGNAL">;
 using TRUE_TS = TimeSeriesVariable<"TRUE_TS">;
 using FALSE_TS = TimeSeriesVariable<"FALSE_TS">;
+using K1 = ScalarVariable<"K1", Hashable>;
 
 // Arithmetic and unary operators.
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
@@ -126,6 +127,16 @@ extern BG_LIBRARY_EXPORT operator_<auto(TSD<K, TS<bool>>) -> TSS<K>> keys_where_
 extern BG_LIBRARY_EXPORT operator_<auto(TSS<K>, TSS<K>) -> TSS<K>> bit_or;
 extern BG_LIBRARY_EXPORT operator_<auto(TSS<K>, TSS<K>) -> TSS<K>> bit_and;
 extern BG_LIBRARY_EXPORT operator_<auto(TSS<K>, TSS<K>) -> TSS<K>> bit_xor;
+extern BG_LIBRARY_EXPORT operator_<auto(TSD<K, TS_T>, TSD<K, TS<K1>>) -> TSD<K1, REF<TS_T>>> rekey;
+extern BG_LIBRARY_EXPORT
+    operator_<auto(TSD<K, TS_T>, TSD<K, TS<K1>>, bool) -> TSD<K1, TSD<K, REF<TS_T>>>> partition;
+extern BG_LIBRARY_EXPORT operator_<auto(TSD<K1, TSD<K, TS_T>>) -> TSD<K, REF<TS_T>>> unpartition;
+extern BG_LIBRARY_EXPORT operator_<auto(TSD<K, TS<K1>>, bool) -> TSD<K1, TS<K>>> flip;
+extern BG_LIBRARY_EXPORT
+    operator_<auto(TSD<K, TSD<K1, TS_T>>, bool) -> TSD<K1, TSD<K, REF<TS_T>>>> flip_keys;
+extern BG_LIBRARY_EXPORT operator_<auto(TSD<K, TSD<K1, TS_T>>) -> TSD<Tuple<K, K1>, REF<TS_T>>> collapse_keys;
+extern BG_LIBRARY_EXPORT
+    operator_<auto(TSD<Tuple<K, K1>, TS_T>, bool) -> TSD<K, TSD<K1, REF<TS_T>>>> uncollapse_keys;
 
 // Collection reductions.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> sum_;

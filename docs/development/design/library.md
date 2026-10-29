@@ -765,6 +765,14 @@ Set operations and equality process changed keys incrementally. Initial
 evaluation and recovery enumerate current membership. Equality retains a
 mismatch count; neither implementation retains a second set of keys.
 
+## Dictionary transform implementation
+
+The [dictionary transform contracts](../../user/reference/library-collections.md#dictionary-transforms)
+define routing, invalidation, and collision behavior. Transforms process changes
+incrementally. `rekey`, `partition`, and `flip` retain previous destinations for
+routed source keys so changes and removals can remove old routes. They retain no
+collision-owner index. Reference outputs route target updates directly to consumers.
+
 ## Wiring syntax
 
 C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+` and `-`,

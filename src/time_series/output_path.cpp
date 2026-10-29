@@ -54,22 +54,21 @@ EvaluationContext &output_path_context(void *path) noexcept {
     return static_cast<OutputPath *>(path)->context();
 }
 
-void publish_output_path(void *output_path) noexcept {
+void publish_output_path(void *output_path, bool item_was_valid) noexcept {
     auto *path = static_cast<OutputPath *>(output_path);
     while (path != nullptr) {
         auto &entry = *path;
         auto &context = entry.context();
+        const auto now = context.evaluation_time();
+        const auto parent_item_was_valid = entry.last_updated->valid();
         const auto modified = entry.runtime_type->mark_item_modified(
-            entry.value, entry.id, context.evaluation_time(), *entry.last_updated,
-            current_scalar_allocator());
-        if (entry.runtime_type->collection_valid(entry.value)) {
-            entry.last_updated->publish(context.evaluation_time());
-        } else if (entry.last_updated->valid()) {
-            entry.last_updated->invalidate(context.evaluation_time());
-        }
-        if (!modified) {
+            entry.value, entry.id, now, item_was_valid, current_scalar_allocator());
+        const auto is_valid = entry.runtime_type->collection_valid(entry.value);
+        if (!modified && parent_item_was_valid == is_valid) {
             return;
         }
+        entry.last_updated->update_collection_validity(now, is_valid);
+        item_was_valid = parent_item_was_valid;
         path = entry.parent();
     }
 }

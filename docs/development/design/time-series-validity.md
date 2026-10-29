@@ -15,6 +15,11 @@ the update time, and schedules subscribers. A `deduplicated` time series always
 publishes revalidation because an invalid time series has no current value for
 comparison.
 
+Within one node invocation, do not both invalidate and publish the same value
+or reference output. Updating distinct collection items can change their
+collection's validity more than once. Consumers observe the transition from
+validity before the outer cycle to validity after the node completes.
+
 An input view can become invalid while its source time series remains valid.
 Source guarantees and input-view validity are therefore separate wiring
 properties.
@@ -28,7 +33,7 @@ visible value can change in either direction.
 When a reference becomes invalid, each receiving binding:
 
 1. removes its subscription from the old target
-2. clears its target pointer and sampling state
+2. clears its target pointer and samples the removal for the current cycle
 3. makes its input view invalid
 4. applies required-input invalidation behavior or schedules an active optional
    input

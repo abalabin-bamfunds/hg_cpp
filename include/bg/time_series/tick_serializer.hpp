@@ -140,7 +140,7 @@ class TimeSeriesTickWrite {
             const auto item = (*input)[key];
             write_child(item, TickOperation::add, now, [&] { write_scalar(key); });
         });
-        input->for_each_modified([&](const auto &key) {
+        input->for_each_updated([&](const auto &key) {
             const auto item = (*input)[key];
             write_child(item, TickOperation::tick, now, [&] { write_scalar(key); });
         });

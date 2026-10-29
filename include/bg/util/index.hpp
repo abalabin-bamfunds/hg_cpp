@@ -265,6 +265,36 @@ template <> class index<dynamic_index_extent> {
         }
     }
 
+    // Returns the first set position in either index at or after start. The maximum
+    // index size is the no-match sentinel.
+    size_type first_set_union(const index &other, size_type start = 0) const noexcept {
+        const auto extent = std::max(size(), other.size());
+        if (start >= extent) {
+            return extent;
+        }
+
+        const auto words = std::max(word_count(), other.word_count());
+        auto word_index = start / bits_per_word;
+        const auto this_words = word_count();
+        const auto other_words = other.word_count();
+        auto bits = (word_index < this_words ? word(word_index) : 0) |
+                    (word_index < other_words ? other.word(word_index) : 0);
+        bits &= std::numeric_limits<std::uint64_t>::max() << (start % bits_per_word);
+
+        while (true) {
+            if (bits != 0) {
+                return word_index * bits_per_word + static_cast<size_type>(std::countr_zero(bits));
+            }
+
+            ++word_index;
+            if (word_index == words) {
+                return extent;
+            }
+            bits = (word_index < this_words ? word(word_index) : 0) |
+                   (word_index < other_words ? other.word(word_index) : 0);
+        }
+    }
+
     size_type first_unset(size_type start = 0) const noexcept {
         if (start >= size()) {
             return size();

@@ -80,6 +80,11 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         }
     }
 
+    void for_each_updated(const TimeSeriesState &last_updated, const void *value, void *context,
+                          ItemIdFunction function) const override {
+        representation(value).for_each_updated(last_updated, context, function);
+    }
+
     void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
                            ItemIdFunction function) const override {
         representation(value).for_each_modified(last_updated, context, function);
@@ -88,6 +93,9 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
     item_id_t next_item_id(const TimeSeriesState &last_updated, const void *value, ItemRange range,
                            item_id_t start) const override {
         const auto &view = representation(value);
+        if (range == ItemRange::updated) {
+            return view.next_updated_item_id(last_updated, start);
+        }
         if (range == ItemRange::modified) {
             return view.next_modified_item_id(last_updated, start);
         }
@@ -98,7 +106,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
     }
 
     bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const override {
-        return representation(value).item_modified(last_updated, id);
+        return representation(value).is_modified_item(last_updated, id);
     }
 
     ItemLayout item_layout(item_id_t id) const override {
@@ -126,7 +134,7 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         throw std::logic_error{"a TSD reference representation is immutable"};
     }
 
-    bool mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &, allocator &) const
+    bool mark_item_modified(void *, item_id_t, EvaluationTime, bool, allocator &) const
         noexcept override {
         std::terminate();
     }
@@ -188,10 +196,15 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
   protected:
     bool item_in_range(const TimeSeriesState &last_updated, const void *value, ItemRange range,
                        item_id_t id) const override {
-        if (range == ItemRange::modified) {
-            return representation(value).item_modified(last_updated, id);
+        if (range == ItemRange::updated) {
+            return representation(value).is_updated_item(last_updated, id);
         }
-        return next_item_id(last_updated, value, range, id) == id;
+        if (range == ItemRange::modified) {
+            return representation(value).is_modified_item(last_updated, id);
+        }
+        const auto base = representation(value).base_time_series();
+        return base.storage != nullptr &&
+               base_runtime_type(base).item_in_range(last_updated, base.storage, range, id);
     }
 
   private:
@@ -209,6 +222,9 @@ bool representation_required(const TimeSeriesRuntimeType &provided, const TimeSe
     const auto &requested_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(requested);
     if (provided_tsd.item_runtime_type().is_reference() != requested_tsd.item_runtime_type().is_reference()) {
         return true;
+    }
+    if (provided_tsd.item_runtime_type().is_reference()) {
+        return false;
     }
     return ReferenceProvider::representation_required(provided_tsd.item_runtime_type(),
                                                       requested_tsd.item_runtime_type());
@@ -235,6 +251,11 @@ const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntime
         return time_series_dictionary_representation_runtime_type(requested_type, provided_tsd.key_runtime_type(),
                                                                   requested_tsd.item_runtime_type());
     }
+    if (!provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
+        return time_series_dictionary_representation_runtime_type(
+            static_cast<const TimeSeriesDictionaryType &>(requested_tsd.type()), provided_tsd.key_runtime_type(),
+            requested_tsd.item_runtime_type());
+    }
 
     throw std::invalid_argument{"the requested TSD representation is not implemented"};
 }
@@ -255,6 +276,10 @@ ReferenceRepresentation *create_representation(ReferenceProvider &provider, Refe
     if (provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
         return make_dereferenced_tsd_representation(provider, base_reference, requested_type, provided_tsd,
                                                     requested_tsd.item_runtime_type(), memory);
+    }
+    if (!provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
+        return make_recursive_tsd_representation(provider, base_reference, requested_type, provided_tsd,
+                                                 requested_tsd.item_runtime_type(), memory);
     }
 
     throw std::invalid_argument{"the requested TSD representation is not implemented"};

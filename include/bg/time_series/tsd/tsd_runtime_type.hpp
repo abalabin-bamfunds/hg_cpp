@@ -26,7 +26,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
   public:
     using TimeSeriesRuntimeType::all_valid;
 
-    enum class ItemRange : std::uint8_t { current, added, removed, modified };
+    enum class ItemRange : std::uint8_t { current, added, updated, modified, removed };
 
     TimeSeriesDictionaryRuntimeType(const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key,
                                     const TimeSeriesRuntimeType &item)
@@ -85,6 +85,11 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return find_changed(last_updated, value, key, ItemRange::removed);
     }
 
+    virtual item_id_t find_updated(const TimeSeriesState &last_updated, const void *value,
+                                   const ScalarData &key) const {
+        return find_changed(last_updated, value, key, ItemRange::updated);
+    }
+
     virtual item_id_t find_modified(const TimeSeriesState &last_updated, const void *value,
                                     const ScalarData &key) const {
         return find_changed(last_updated, value, key, ItemRange::modified);
@@ -121,8 +126,8 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         for_each_removed(last_updated, value, context, function);
     }
 
-    virtual void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
-                                   ItemIdFunction function) const {
+    virtual void for_each_updated(const TimeSeriesState &last_updated, const void *value, void *context,
+                                  ItemIdFunction function) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
             return;
@@ -132,6 +137,22 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
             if (!keys.added().contains(id)) {
                 function(context, id);
             }
+        }
+    }
+
+    virtual void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
+                                   ItemIdFunction function) const {
+        const auto &storage = *static_cast<const time_series_dict_storage *>(value);
+        if (!last_updated.valid() || storage.change_time() != last_updated.time()) {
+            return;
+        }
+
+        const auto &keys = storage.key_storage().value;
+        const auto &added = keys.added();
+        const auto &updated = storage.modified();
+        const auto end = std::max(added.size(), updated.size());
+        for (auto id = added.first_set_union(updated); id != end; id = added.first_set_union(updated, id + 1)) {
+            function(context, id);
         }
     }
 
@@ -162,13 +183,18 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         if (range == ItemRange::removed) {
             return next(keys.removed());
         }
-
-        auto id = next(storage.modified());
-        while (id != util::occupancy_index::npos && keys.added().contains(id)) {
-            const auto next_id = storage.modified().first_set(id + 1);
-            id = next_id == storage.modified().size() ? util::occupancy_index::npos : next_id;
+        if (range == ItemRange::updated) {
+            auto id = next(storage.modified());
+            while (id != util::occupancy_index::npos && keys.added().contains(id)) {
+                const auto next_id = storage.modified().first_set(id + 1);
+                id = next_id == storage.modified().size() ? util::occupancy_index::npos : next_id;
+            }
+            return id;
         }
-        return id;
+        const auto &added = keys.added();
+        const auto &updated = storage.modified();
+        const auto id = added.first_set_union(updated, start);
+        return id == std::max(added.size(), updated.size()) ? util::occupancy_index::npos : id;
     }
 
     virtual bool has_item_id_remapping(const void *) const { return false; }
@@ -177,8 +203,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     virtual bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
         return last_updated.valid() && storage.change_time() == last_updated.time() &&
-               storage.modified().contains(id) &&
-               !storage.key_storage().value.added().contains(id);
+               (storage.modified().contains(id) || storage.key_storage().value.added().contains(id));
     }
 
     virtual bool item_was_valid(const TimeSeriesState &last_updated, const void *value, item_id_t id) const {
@@ -287,8 +312,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     }
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          const TimeSeriesState &,
-                                          allocator &memory) const noexcept override {
+                                          bool, allocator &memory) const noexcept override {
         if (id == key_set_item_id) {
             return true;
         }
@@ -355,7 +379,6 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
 
     const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;
 
-  private:
     virtual bool item_in_range(const TimeSeriesState &last_updated, const void *value, ItemRange range,
                                item_id_t id) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);
@@ -370,9 +393,13 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         if (range == ItemRange::removed) {
             return keys.removed().contains(id);
         }
-        return storage.modified().contains(id) && !keys.added().contains(id);
+        if (range == ItemRange::updated) {
+            return storage.modified().contains(id) && !keys.added().contains(id);
+        }
+        return storage.modified().contains(id) || keys.added().contains(id);
     }
 
+  private:
     item_id_t find_changed(const TimeSeriesState &last_updated, const void *value, const ScalarData &key,
                            ItemRange range) const {
         if (value == nullptr) {

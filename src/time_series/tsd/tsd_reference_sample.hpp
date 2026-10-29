@@ -38,16 +38,12 @@ struct SampledDictionary {
 
     const TimeSeriesDictionaryRuntimeType *runtime_type;
     std::size_t reference_count{1};
-    TimeSeriesState previous_last_updated;
-    TimeSeriesState current_last_updated;
-    mutable TimeSeriesState previous_key_set_last_updated;
-    mutable TimeSeriesState current_key_set_last_updated;
     ResolvedTimeSeries previous;
     ResolvedTimeSeries current;
     TimeSeriesState sampled_last_updated;
     mutable util::index<> added;
     mutable util::index<> removed;
-    mutable util::index<> modified;
+    mutable util::index<> updated;
     mutable std::pmr::vector<Child> children;
     mutable std::pmr::vector<ItemIdRemapping> item_id_remappings;
     mutable SampledSet *key_set_sample{};

@@ -45,18 +45,28 @@ struct time_series_list_storage {
     static constexpr bool supports_byte_copy_initialization = true;
 
     EvaluationTime change_time{MIN_DT};
+    std::uint32_t valid_child_count{};
     util::index<> updated;
 
-    [[nodiscard]] bool mark(std::size_t index, EvaluationTime evaluation_time, allocator &memory) noexcept {
+    [[nodiscard]] bool mark(std::size_t index, EvaluationTime evaluation_time, bool item_was_valid,
+                            bool item_is_valid, allocator &memory) noexcept {
         if (change_time != evaluation_time) {
             updated.clear();
             change_time = evaluation_time;
         }
 
+        if (item_was_valid != item_is_valid) {
+            if (item_is_valid) {
+                ++valid_child_count;
+            } else {
+                --valid_child_count;
+            }
+        }
         return updated.set(static_cast<std::uint32_t>(index), memory);
     }
 };
 
 static_assert(util::byte_copy_initializable<time_series_list_storage>);
+static_assert(sizeof(time_series_list_storage) == 24);
 
 } // namespace bg::details

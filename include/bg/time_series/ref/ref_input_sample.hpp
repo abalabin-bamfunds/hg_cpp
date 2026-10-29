@@ -16,10 +16,12 @@ namespace bg::details {
 
 struct SampledSet;
 struct SampledDictionary;
+struct SampledFixedCollection;
 
 struct SampledReferenceChange
-    : util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary> {
-    using Base = util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary>;
+    : util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary, SampledFixedCollection> {
+    using Base = util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary,
+                                                  SampledFixedCollection>;
     using Base::Base;
 
     static SampledReferenceChange create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
@@ -101,53 +103,23 @@ struct ReferenceInputSampleStorage {
         assert(sample);
         assert(empty());
         sample.retain();
-        const auto set_sample = sample.get<SampledSet>();
-        const auto dictionary_sample = sample.get<SampledDictionary>();
-        const auto pointer = reinterpret_cast<std::uintptr_t>(set_sample != nullptr
-                                                                  ? static_cast<void *>(set_sample)
-                                                                  : static_cast<void *>(dictionary_sample));
-        assert((pointer & ~pointer_mask) == 0);
-        bits_ = pointer | (bits_ & target_valid_flag) |
-                (dictionary_sample != nullptr ? dictionary_sample_flag : std::uintptr_t{});
+        sample_ = sample;
     }
-    SampledReferenceChange sample() const noexcept {
-        const auto pointer = reinterpret_cast<void *>(bits_ & pointer_mask);
-        if (pointer == nullptr) {
-            return {};
-        }
-        if ((bits_ & dictionary_sample_flag) != 0) {
-            return SampledReferenceChange{static_cast<SampledDictionary *>(pointer)};
-        }
-        return SampledReferenceChange{static_cast<SampledSet *>(pointer)};
+    SampledReferenceChange sample() const noexcept { return sample_; }
+    void clear() noexcept {
+        const auto previous = sample_;
+        sample_ = {};
+        previous.release();
     }
-    void clear() noexcept { clear_pointer(); }
-    void reset() noexcept {
-        clear_pointer();
-        set_target_was_valid(false);
-    }
-    bool empty() const noexcept { return (bits_ & pointer_mask) == 0; }
+    bool empty() const noexcept { return !sample_; }
     static constexpr std::size_t offset_for(std::size_t input_offset, bool dynamic_activity) noexcept {
         const auto after_input = input_offset + sizeof(ReferenceInputStorage) +
                                  (dynamic_activity ? sizeof(bool) : std::size_t{});
         return (after_input + alignof(ReferenceInputSampleStorage) - 1) &
                ~(alignof(ReferenceInputSampleStorage) - 1);
     }
-    bool target_was_valid() const noexcept { return (bits_ & target_valid_flag) != 0; }
-    void set_target_was_valid(bool valid) noexcept {
-        bits_ = (bits_ & ~target_valid_flag) | (valid ? target_valid_flag : std::uintptr_t{});
-    }
-    void clear_pointer() noexcept {
-        const auto previous = sample();
-        bits_ &= target_valid_flag;
-        previous.release();
-    }
-
   private:
-    static constexpr std::uintptr_t target_valid_flag = 1;
-    static constexpr std::uintptr_t dictionary_sample_flag = 2;
-    static constexpr std::uintptr_t pointer_mask = ~std::uintptr_t{3};
-
-    std::uintptr_t bits_{};
+    SampledReferenceChange sample_;
 };
 
 static_assert(sizeof(ReferenceInputSampleStorage) == sizeof(void *));

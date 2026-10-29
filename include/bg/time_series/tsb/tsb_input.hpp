@@ -23,10 +23,8 @@ class bundle_input_factory {
     explicit bundle_input_factory(const TimeSeriesInputData &data) noexcept : data_{&data} {}
 
     template <typename SchemaField> [[nodiscard]] auto make(std::size_t index) const {
-        const auto item = data_->runtime_type().item(data_->data(), static_cast<item_id_t>(index));
         using Input = typename SchemaField::template rebind<bundle_input_field>;
-        const auto modified = data_->modified() && item.last_updated.time() == data_->last_updated();
-        return Input{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value, modified}};
+        return Input{data_->item(static_cast<item_id_t>(index))};
     }
 
   private:
@@ -133,9 +131,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
         return static_cast<const TimeSeriesBundleType &>(data_.runtime_type().type()).item_name(index);
     }
     In<TS_T> operator[](std::size_t index) const {
-        const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
-        return In<TS_T>{TimeSeriesInputData{item.runtime_type, item.last_updated, item.value,
-                                            data_.modified() && item.last_updated.time() == data_.last_updated()}};
+        return In<TS_T>{data_.item(static_cast<item_id_t>(index))};
     }
     bool item_updated(std::size_t index) const noexcept {
         return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(), static_cast<item_id_t>(index));

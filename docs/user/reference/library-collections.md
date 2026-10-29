@@ -196,6 +196,49 @@ produce ordinary outputs. Boolean outputs publish on each evaluation unless thei
 resolved guarantee suppresses an equal result.
 
 
+## Dictionary transforms
+
+Key-routing transforms change keys or grouping without copying item values.
+Their reference outputs identify source items. Target updates reach downstream
+consumers without evaluating the transform again.
+
+In this table, `V` denotes a time series type:
+
+| Operator | Input | Output |
+| --- | --- | --- |
+| `rekey(ts, new_keys)` | `TSD<K, V>`, `TSD<K, TS<K1>>` | `TSD<K1, REF<V>>` |
+| `partition(ts, partitions)` | `TSD<K, V>`, `TSD<K, TS<P>>` | `TSD<P, TSD<K, REF<V>>>` |
+| `unpartition(ts)` | `TSD<P, TSD<K, V>>` | `TSD<K, REF<V>>` |
+| `flip_keys(ts)` | `TSD<K, TSD<K1, V>>` | `TSD<K1, TSD<K, REF<V>>>` |
+| `collapse_keys(ts)` | `TSD<K, TSD<K1, V>>` | `TSD<Tuple<K, K1>, REF<V>>` |
+| `uncollapse_keys(ts)` | `TSD<Tuple<K, K1>, V>` | `TSD<K, TSD<K1, REF<V>>>` |
+
+Existing reference items retain their targets without adding another reference
+layer. Invalid item targets retain their keys. An absent or invalid mapping item
+in `rekey` or `partition` removes that source item's route. Source and mapping
+changes both update routes. An input becoming invalid through reference rebinding
+removes its routes. A valid empty source establishes a valid empty result.
+
+`partition`, `flip_keys`, and `uncollapse_keys` remove empty output groups by
+default. Pass `remove_empty=false` to retain groups after their last item is
+removed. Python spells the value `False`.
+
+`flip(ts, unique=true)` reverses a `TSD<K, TS<V>>` into `TSD<V, TS<K>>`.
+Keys and values must support hashing. An invalid source item has no reverse entry.
+With `unique=false`, the result is `TSD<V, TSS<K>>`: each value groups all source
+keys that hold it. Removing the last key removes the group. The `unique` argument
+is a wiring-time scalar; Python uses `True` and `False`.
+
+`rekey` requires distinct destination keys. Unique `flip` requires distinct valid
+values. `unpartition` requires distinct item keys across its input groups. These
+requirements are not checked during evaluation. Removals run before assignments.
+Each removal erases its destination, including a destination overwritten by another
+source. Later assignments win in update iteration order. No replacement source is
+selected automatically; a later assignment can restore the destination.
+
+Key collapse and expansion support exactly two key levels. Python represents
+`Tuple<K, K1>` with `tuple[K, K1]`.
+
 ## getitem and getattr
 
 `collection[key]` selects one TSL or TSD item. C++ also supports this syntax for a TSB

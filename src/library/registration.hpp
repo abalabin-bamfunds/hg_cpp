@@ -20,5 +20,6 @@ void register_timed_operators();
 void register_collection_operators();
 void register_collection_reduction_operators();
 void register_tss_operators();
+void register_tsd_transform_operators();
 
 } // namespace bg::operators::details

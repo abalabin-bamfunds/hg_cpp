@@ -21,6 +21,7 @@
 #include <chrono>
 #include <new>
 #include <optional>
+#include <ranges>
 #include <vector>
 
 using namespace bg;
@@ -58,6 +59,50 @@ struct changing_reference_target {
     }
 };
 
+struct invalidating_then_revalidating_reference_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.invalidate();
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        } else {
+            output.set(20);
+        }
+        ++*step;
+    }
+};
+
+struct delayed_revalidating_reference_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.invalidate();
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        } else {
+            output.set(20);
+        }
+        ++*step;
+    }
+};
+
 struct reference_pass {
     In<REF<TS<i64>>> input;
     Out<REF<TS<i64>>> output;
@@ -76,6 +121,18 @@ struct optional_reference_consumer {
     void evaluate() const {}
 };
 
+struct sampled_left_source {
+    Out<TS<i64>> output;
+    void start() const { output.set(10); }
+    void evaluate() const {}
+};
+
+struct sampled_right_source {
+    Out<TS<i64>> output;
+    void start() const { output.set(20); }
+    void evaluate() const {}
+};
+
 template <template <typename, auto...> typename Field> struct DictionaryBundle {
     Field<TSD<i64, TS<i64>>> dictionary;
 };
@@ -88,6 +145,21 @@ template <template <typename, auto...> typename Field> struct NativeReferenceBun
 template <template <typename, auto...> typename Field> struct AdaptedReferenceBundle {
     Field<REF<TS<i64>>> value;
     Field<TS<i64>> selected;
+};
+
+template <template <typename, auto...> typename Field> struct NestedReferenceBundle {
+    Field<TSL<TS<i64>, 1>> values;
+};
+
+struct ReferenceObservation {
+    bool valid;
+    bool modified;
+    bool became_valid;
+    bool became_invalid;
+    i64 value;
+    EvaluationTime last_updated;
+
+    bool operator==(const ReferenceObservation &) const = default;
 };
 
 } // namespace
@@ -406,6 +478,37 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
     CHECK(evaluations == 1);
 }
 
+TEST_CASE("an ordinary reference republishes the same target without repeating its validity transition",
+          "[evaluation][reference][validity][series:value][transition:first-tick][transition:update]"
+          "[guarantee:ordinary][binding:reference-to-value][feature:reference]") {
+    struct republish_reference {
+        In<TS<i64>> trigger;
+        In<REF<TS<i64>>, passive> source;
+        Out<REF<TS<i64>, TimeSeriesGuarantee::ordinary>> output;
+
+        void start() const { output.copy(source); }
+        void evaluate() const { output.copy(source); }
+    };
+
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto source = node<sampled_left_source>();
+    const auto republish = node<republish_reference>();
+    const auto observe = node([&](In<TS<i64>, optional> input) {
+        observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                input.valid() ? *input : i64{}, input.last_updated()});
+    });
+    const auto graph = [&](wp<TS<i64>> republish_trigger) { observe(republish(republish_trigger, source())); };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  bg::input<TS<i64>>({literal::SKIP, 1}));
+
+    REQUIRE(observations.size() == 2);
+    CHECK(observations[0] == ReferenceObservation{true, true, true, false, 10, start_time});
+    CHECK(observations[1] == ReferenceObservation{true, true, false, false, 10,
+                                                  start_time + std::chrono::microseconds{1}});
+}
+
 TEST_CASE("reference provider access preserves lazy allocation",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value]") {
@@ -600,18 +703,6 @@ TEST_CASE("dynamic node subscriber storage promotes transactionally",
 
 namespace {
 
-struct sampled_left_source {
-    Out<TS<i64>> output;
-    void start() const { output.set(10); }
-    void evaluate() const {}
-};
-
-struct sampled_right_source {
-    Out<TS<i64>> output;
-    void start() const { output.set(20); }
-    void evaluate() const {}
-};
-
 struct sampled_condition_source {
     static constexpr bool uses_timed_scheduling = true;
 
@@ -625,6 +716,31 @@ struct sampled_condition_source {
     void evaluate() const { output.set(1); }
 };
 
+struct invalidating_reference_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.invalidate(); }
+};
+
+struct revalidating_reference_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.set(20); }
+};
+
 struct reference_selector {
     In<TS<i64>> condition;
     In<REF<TS<i64>>, passive, optional> left;
@@ -632,14 +748,6 @@ struct reference_selector {
     Out<REF<TS<i64>>> output;
 
     void evaluate() const { *condition ? output.copy(right) : output.copy(left); }
-};
-
-struct passive_reference_value {
-    In<TS<i64>, passive, optional> input;
-    In<TS<i64>> trigger;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input); }
 };
 
 struct dynamic_reference_value {
@@ -716,6 +824,493 @@ TEST_CASE("changing a reference samples its target",
     }));
 }
 
+TEST_CASE("a dereferenced reference reports the transition of the selected value",
+          "[evaluation][reference][sampling][validity][feature:reference][series:value]"
+          "[binding:reference-to-value][transition:update][transition:invalidation][transition:revalidation]") {
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto select = node(
+        [](In<TS<i64>> selection, In<REF<TS<i64>>, passive> first,
+           In<REF<TS<i64>>, passive> second, In<REF<TS<i64>>, passive> third,
+           Out<REF<TS<i64>>> output) {
+            output.copy(*selection == 0 ? first : *selection == 1 ? second : third);
+        });
+    const auto observe = node([&](In<TS<i64>, optional> input) {
+        observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                input.valid() ? *input : i64{}, input.last_updated()});
+    });
+    const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third,
+                           wp<TS<i64>> selection) {
+        observe(select(selection, first, second, third));
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  bg::input<TS<i64>>({10, literal::INVALID, literal::SKIP, literal::SKIP, 12, literal::INVALID}),
+                  bg::input<TS<i64>>({literal::INVALID, literal::SKIP, literal::SKIP, 20, literal::SKIP,
+                                      literal::SKIP}),
+                  bg::input<TS<i64>>({40, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
+                                      literal::SKIP}),
+                  bg::input<TS<i64>>({0, 2, 1, 2, 0, 1}));
+
+    const auto time = [&](int cycle) { return start_time + std::chrono::microseconds{cycle - 1}; };
+    const auto expected = std::vector<ReferenceObservation>{
+        {true, true, true, false, 10, time(1)},
+        {true, true, false, false, 40, time(2)},
+        {false, true, false, true, 0, time(3)},
+        {true, true, true, false, 40, time(4)},
+        {true, true, false, false, 12, time(5)},
+        {true, true, false, false, 20, time(6)},
+    };
+    REQUIRE(observations.size() == expected.size());
+    for (auto index = std::size_t{}; index < expected.size(); ++index) {
+        const auto actual_time = observations[index].last_updated.time_since_epoch().count();
+        const auto expected_time = expected[index].last_updated.time_since_epoch().count();
+        CAPTURE(index);
+        CAPTURE(actual_time, expected_time);
+        CHECK(observations[index].valid == expected[index].valid);
+        CHECK(observations[index].modified == expected[index].modified);
+        CHECK(observations[index].became_valid == expected[index].became_valid);
+        CHECK(observations[index].became_invalid == expected[index].became_invalid);
+        CHECK(observations[index].value == expected[index].value);
+        CHECK(observations[index].last_updated == expected[index].last_updated);
+    }
+}
+
+TEST_CASE("reference outputs retain independent cycle-start validity across rebinding",
+          "[evaluation][reference][sampling][validity][feature:reference][series:value]"
+          "[transition:invalidation][transition:revalidation]") {
+    struct repeated_reference_route {
+        In<TS<i64>> step;
+        In<REF<TS<i64>>, passive, optional> initial;
+        In<REF<TS<i64>>, passive, optional> invalid;
+        In<REF<TS<i64>>, passive, optional> final;
+        Out<REF<TS<i64>>> output;
+
+        void evaluate() const {
+            if (*step == 0) {
+                output.copy(initial);
+            } else if (*step == 1) {
+                output.copy(invalid);
+            } else {
+                output.copy(final);
+            }
+        }
+    };
+    struct value_target {
+        i64 value;
+        Out<TS<i64>> output;
+
+        void start() const { output.set(value); }
+    };
+    struct invalid_target_a {
+        Out<TS<i64>> output;
+
+        void evaluate() const {}
+    };
+    struct invalid_target_b {
+        Out<TS<i64>> output;
+
+        void evaluate() const {}
+    };
+
+    auto previously_valid = std::vector<ReferenceObservation>{};
+    auto previously_invalid = std::vector<ReferenceObservation>{};
+    const auto route = node<repeated_reference_route>();
+    const auto valid_source = node<value_target>();
+    const auto empty_source_a = node<invalid_target_a>();
+    const auto empty_source_b = node<invalid_target_b>();
+    const auto observe = node([&](In<TS<i64>, optional> was_valid, In<TS<i64>, optional> was_invalid) {
+        const auto observation = [](const auto &input) {
+            return ReferenceObservation{input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                        input.valid() ? *input : i64{}, input.last_updated()};
+        };
+        previously_valid.push_back(observation(was_valid));
+        previously_invalid.push_back(observation(was_invalid));
+    });
+    const auto graph = [&](wp<TS<i64>> step) {
+        const auto valid = valid_source(10);
+        const auto invalid_a = empty_source_a();
+        const auto invalid_b = empty_source_b();
+        const auto final = valid_source(30);
+        observe(route(step, valid, invalid_b, final), route(step, invalid_a, invalid_b, final));
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}});
+
+    REQUIRE(previously_valid.size() == 3);
+    REQUIRE(previously_invalid.size() == 3);
+    CHECK(previously_valid[0].valid);
+    CHECK(previously_valid[0].became_valid);
+    CHECK_FALSE(previously_invalid[0].valid);
+    CHECK_FALSE(previously_invalid[0].became_valid);
+    CHECK_FALSE(previously_valid[1].valid);
+    CHECK(previously_valid[1].became_invalid);
+    CHECK_FALSE(previously_invalid[1].valid);
+    CHECK_FALSE(previously_invalid[1].became_valid);
+    CHECK_FALSE(previously_invalid[1].became_invalid);
+    CHECK(previously_valid[1].modified);
+    CHECK(previously_invalid[1].modified);
+    CHECK(previously_valid[1].last_updated == start_time + std::chrono::microseconds{1});
+    CHECK(previously_invalid[1].last_updated == start_time + std::chrono::microseconds{1});
+    CHECK(previously_valid[2].valid);
+    CHECK(previously_valid[2].became_valid);
+    CHECK(previously_invalid[2].valid);
+    CHECK(previously_invalid[2].became_valid);
+    CHECK(previously_valid[2].value == 30);
+    CHECK(previously_invalid[2].value == 30);
+}
+
+TEST_CASE("a newly added reference dictionary item observes the binding time",
+          "[evaluation][reference][sampling][tsd][feature:reference][series:tsd][series:value]"
+          "[binding:reference-to-value][transition:addition][transition:update]") {
+    auto observations = std::vector<ReferenceObservation>{};
+    auto source_times = std::vector<EvaluationTime>{};
+    auto previous_key = i64{};
+    const auto route = node([&](In<TS<i64>> key, In<REF<TS<i64>>, passive> value,
+                                Out<TSD<i64, REF<TS<i64>>>> output) {
+        if (*key == previous_key) {
+            return;
+        }
+        if (previous_key != 0) {
+            output.erase(previous_key);
+        }
+        output[*key].copy(value);
+        previous_key = *key;
+    });
+    const auto observe = node([&](In<TSD<i64, TS<i64>>> input, In<TS<i64>, passive> source) {
+        if (!input.contains(2)) {
+            return;
+        }
+        const auto item = input[2];
+        observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                item.valid() ? *item : i64{}, item.last_updated()});
+        source_times.push_back(source.last_updated());
+    });
+    const auto graph = [&](wp<TS<i64>> value, wp<TS<i64>> key) {
+        observe(route(key, value), value);
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  bg::input<TS<i64>>({10, 11, literal::SKIP}), bg::input<TS<i64>>({1, 1, 2}));
+
+    REQUIRE(observations.size() == 1);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].modified);
+    CHECK(observations[0].became_valid);
+    CHECK_FALSE(observations[0].became_invalid);
+    CHECK(observations[0].value == 11);
+    CHECK(observations[0].last_updated == start_time + std::chrono::microseconds{2});
+    CHECK(source_times[0] == start_time + std::chrono::microseconds{1});
+}
+
+TEST_CASE("a graph-first dictionary of references propagates target invalidation and revalidation",
+          "[evaluation][reference][tsd][validity][series:tsd][series:value][transition:addition]"
+          "[transition:invalidation][transition:revalidation][binding:reference-to-value][feature:reference]") {
+    struct store_reference {
+        In<REF<TS<i64>>> input;
+        Out<TSD<i64, REF<TS<i64>>>> output;
+
+        void start() const { output[1].copy(input); }
+    };
+
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto target = node<invalidating_then_revalidating_reference_target>();
+    const auto store = node<store_reference>();
+    const auto observe = node([&](In<TSD<i64, TS<i64>>, optional> input) {
+        const auto item = input[1];
+        observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                item.valid() ? *item : i64{}, item.last_updated()});
+    });
+    const auto graph = [&] { observe(store(target())); };
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0] == ReferenceObservation{true, true, true, false, 10, start_time});
+    CHECK(observations[1] == ReferenceObservation{false, true, false, true, 0,
+                                                  start_time + std::chrono::microseconds{1}});
+    CHECK(observations[2] == ReferenceObservation{true, true, true, false, 20,
+                                                  start_time + std::chrono::microseconds{2}});
+}
+
+TEST_CASE("a passive dictionary of references reads the latest target state on a later trigger",
+          "[evaluation][reference][tsd][validity][activity:passive][series:tsd][series:value]"
+          "[transition:invalidation][transition:revalidation][binding:reference-to-value][feature:reference]") {
+    struct store_reference {
+        In<REF<TS<i64>>> input;
+        Out<TSD<i64, REF<TS<i64>>>> output;
+
+        void start() const { output[1].copy(input); }
+    };
+
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto target = node<delayed_revalidating_reference_target>();
+    const auto store = node<store_reference>();
+    const auto observe = node([&](In<TSD<i64, TS<i64>>, passive, optional> input, In<TS<i64>> trigger) {
+        const auto item = input[1];
+        observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                item.valid() ? *item : i64{}, item.last_updated()});
+    });
+    const auto graph = [&](wp<TS<i64>> trigger) { observe(store(target()), trigger); };
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  bg::input<TS<i64>>({1, literal::SKIP, 2, literal::SKIP, 3}));
+
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].modified);
+    CHECK(observations[0].became_valid);
+    CHECK(observations[0].value == 10);
+    CHECK(observations[1].valid == false);
+    CHECK_FALSE(observations[1].modified);
+    CHECK_FALSE(observations[1].became_invalid);
+    CHECK(observations[1].last_updated == start_time + std::chrono::microseconds{1});
+    CHECK(observations[2].valid);
+    CHECK_FALSE(observations[2].modified);
+    CHECK(observations[2].value == 20);
+    CHECK_FALSE(observations[2].became_valid);
+    CHECK(observations[2].last_updated == start_time + std::chrono::microseconds{3});
+}
+
+TEST_CASE("a reference dictionary item replacement, removal, and re-addition keep item history current",
+          "[evaluation][reference][tsd][validity][series:tsd][series:value]"
+          "[transition:update][transition:removal][transition:revalidation][feature:reference]") {
+    struct route_reference {
+        In<TS<i64>> action;
+        In<REF<TS<i64>>, passive> first;
+        In<REF<TS<i64>>, passive> second;
+        Out<TSD<i64, REF<TS<i64>>>> output;
+
+        void start() const { output[1].copy(first); }
+
+        void evaluate() const {
+            if (*action == 1) {
+                output[1].copy(second);
+            } else if (*action == 2) {
+                output.erase(1);
+            } else if (*action == 3) {
+                output[1].copy(first);
+            }
+        }
+    };
+    struct DictionaryObservation {
+        bool contains;
+        ReferenceObservation item;
+    };
+
+    auto observations = std::vector<DictionaryObservation>{};
+    const auto first_source = node([](Out<TS<i64>> output) { output.set(10); });
+    const auto second_source = node([](Out<TS<i64>> output) { output.set(20); });
+    const auto route = node<route_reference>();
+    const auto observe = node([&](In<TSD<i64, TS<i64>>, optional> input) {
+        if (input.contains(1)) {
+            const auto item = input[1];
+            observations.push_back({true, {item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                           item.valid() ? *item : i64{}, item.last_updated()}});
+            return;
+        }
+
+        const auto key = i64{1};
+        const auto id = input.find_removed_id(Scalar<i64>::from(key));
+        REQUIRE(id != util::occupancy_index::npos);
+        const auto item = input.item_at(id);
+        observations.push_back({false, {item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                        item.valid() ? *item : i64{}, item.last_updated()}});
+    });
+    const auto graph = [&](wp<TS<i64>> action) {
+        observe(route(action, first_source(), second_source()));
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}, i64{3}});
+
+    REQUIRE(observations.size() == 4);
+    CHECK(observations[0].contains);
+    CHECK(observations[0].item == ReferenceObservation{true, true, true, false, 10, start_time});
+    CHECK(observations[1].contains);
+    CHECK(observations[1].item == ReferenceObservation{true, true, false, false, 20,
+                                                       start_time + std::chrono::microseconds{1}});
+    CHECK_FALSE(observations[2].contains);
+    CHECK_FALSE(observations[2].item.valid);
+    CHECK_FALSE(observations[2].item.modified);
+    CHECK(observations[3].contains);
+    CHECK(observations[3].item == ReferenceObservation{true, true, true, false, 10,
+                                                       start_time + std::chrono::microseconds{3}});
+}
+
+TEST_CASE("an adapted reference to a list of references observes the target item state",
+          "[evaluation][reference][sampling][tsl][validity][feature:reference]"
+          "[series:fixed-tsl][binding:reference-to-value][transition:revalidation]") {
+    auto raw_list_states = std::vector<std::pair<bool, bool>>{};
+    auto dereferenced_list_states = std::vector<std::pair<bool, bool>>{};
+    auto item_observations = std::vector<ReferenceObservation>{};
+    const auto invalid_source = node([](Out<TS<i64>>) {});
+    const auto valid_source = node<sampled_right_source>();
+    const auto make_list = node([](In<REF<TS<i64>>> item, Out<TSL<REF<TS<i64>>, 1>> output) {
+        output[0].copy(item);
+    });
+    const auto select = node(
+        [](In<TS<i64>> index, In<REF<TSL<REF<TS<i64>>, 1>>, passive> invalid,
+           In<REF<TSL<REF<TS<i64>>, 1>>, passive> valid, Out<REF<TSL<REF<TS<i64>>, 1>>> output) {
+            output.copy(*index == 0 ? invalid : valid);
+        });
+    const auto observe_raw = node([&](In<TSL<REF<TS<i64>>, 1>> input) {
+        raw_list_states.emplace_back(input.valid(), input.became_valid());
+    });
+    const auto observe_item = node([&](In<TSL<TS<i64>, 1>, optional> input) {
+        dereferenced_list_states.emplace_back(input.valid(), input.became_valid());
+        const auto item = input[0];
+        item_observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                     item.valid() ? *item : i64{}, item.last_updated()});
+    });
+    const auto graph = [&](wp<TS<i64>> index) {
+        const auto invalid_list = make_list(invalid_source());
+        const auto valid_list = make_list(valid_source());
+        const auto selected = select(index, invalid_list, valid_list);
+        observe_raw(selected);
+        observe_item(selected);
+    };
+
+    bg::run_graph(graph, std::array{i64{0}, i64{1}});
+
+    REQUIRE_FALSE(raw_list_states.empty());
+    REQUIRE(raw_list_states.size() == 2);
+    CHECK(raw_list_states[0] == std::pair{true, true});
+    CHECK(raw_list_states[1] == std::pair{true, false});
+    REQUIRE(dereferenced_list_states.size() == 2);
+    CHECK(dereferenced_list_states[0] == std::pair{false, false});
+    CHECK(dereferenced_list_states[1] == std::pair{true, true});
+    REQUIRE(item_observations.size() == 2);
+    CHECK_FALSE(item_observations[0].valid);
+    CHECK_FALSE(item_observations[0].became_valid);
+    CHECK(item_observations[1].valid);
+    CHECK(item_observations[1].became_valid);
+    CHECK_FALSE(item_observations[1].became_invalid);
+    CHECK(item_observations[1].value == 20);
+}
+
+TEST_CASE("a reference input switches from direct to adapted and back to direct storage",
+          "[evaluation][reference][sampling][tsl][validity][feature:reference]"
+          "[series:fixed-tsl][transition:invalidation][transition:revalidation]") {
+    struct Observation {
+        bool valid;
+        bool modified;
+        bool became_valid;
+        bool became_invalid;
+        i64 value;
+        EvaluationTime last_updated;
+        const TimeSeriesRuntimeType *runtime_type;
+        EvaluationTime first_source_time;
+        EvaluationTime final_source_time;
+
+        bool operator==(const Observation &) const = default;
+    };
+
+    auto observations = std::vector<Observation>{};
+    auto child_observations = std::vector<ReferenceObservation>{};
+    auto reference_item_observations = std::vector<ReferenceObservation>{};
+    const auto first_source = node<sampled_left_source>();
+    const auto invalid_source = node([](Out<TS<i64>>) {});
+    const auto final_source = node([](Out<TS<i64>> output) { output.set(30); });
+    const auto make_reference_list = node([](In<REF<TS<i64>>> item,
+                                             Out<TSL<REF<TS<i64>>, 1>> output) {
+        output[0].copy(item);
+    });
+    const auto select = node(
+        [](In<TS<i64>> selection, In<REF<TSL<TS<i64>, 1>>, passive, optional> first,
+           In<REF<TSL<REF<TS<i64>>, 1>>, passive, optional> adapted,
+           In<REF<TSL<TS<i64>, 1>>, passive, optional> final,
+           Out<REF<TSL<TS<i64>, 1>>> output) {
+            if (*selection == 0) {
+                output.copy(first);
+            } else if (*selection == 1) {
+                output.copy(adapted);
+            } else {
+                output.copy(final);
+            }
+        });
+    const auto observe = node([&](In<TSL<TS<i64>, 1>, optional> input,
+                                  In<TS<i64>, passive, optional> first_source,
+                                  In<TS<i64>, passive, optional> final_source) {
+        const auto item = input[0];
+        observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                item.valid() ? *item : i64{}, input.last_updated(), &input.runtime_type(),
+                                first_source.last_updated(), final_source.last_updated()});
+        child_observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                      item.valid() ? *item : i64{}, item.last_updated()});
+    });
+    const auto observe_reference_item = node([&](In<TSL<REF<TS<i64>>, 1>, optional> input) {
+        const auto item = input[0];
+        reference_item_observations.push_back({item.valid(), item.modified(), item.became_valid(),
+                                               item.became_invalid(), 0, item.last_updated()});
+    });
+    const auto graph = [&](wp<TS<i64>> selection) {
+        const auto first = first_source();
+        const auto first_list = tsl(first);
+        const auto adapted_list = make_reference_list(invalid_source());
+        const auto final = final_source();
+        const auto final_list = tsl(final);
+        const auto selected = select(selection, first_list, adapted_list, final_list);
+        observe(selected, first, final);
+        observe_reference_item(selected);
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}});
+
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].became_valid);
+    CHECK(observations[0].value == 10);
+    CHECK(observations[1].became_invalid);
+    CHECK_FALSE(observations[1].valid);
+    CHECK(observations[2].became_valid);
+    CHECK(observations[2].valid);
+    CHECK(observations[2].value == 30);
+    REQUIRE(child_observations.size() == 3);
+    CHECK(child_observations[0].valid);
+    CHECK(child_observations[0].value == 10);
+    CHECK(child_observations[1].became_invalid);
+    CHECK_FALSE(child_observations[1].valid);
+    CHECK(child_observations[2].became_valid);
+    CHECK(child_observations[2].valid);
+    CHECK(child_observations[2].value == 30);
+    REQUIRE(reference_item_observations.size() == 3);
+    const auto expected_reference_item_time = [&](std::size_t index) {
+        return start_time + std::chrono::microseconds{index};
+    };
+    CHECK(reference_item_observations[0].valid);
+    CHECK(reference_item_observations[0].modified);
+    CHECK(reference_item_observations[0].became_valid);
+    CHECK(reference_item_observations[0].last_updated == expected_reference_item_time(0));
+    CHECK(reference_item_observations[1].valid);
+    CHECK(reference_item_observations[1].modified);
+    CHECK_FALSE(reference_item_observations[1].became_valid);
+    CHECK_FALSE(reference_item_observations[1].became_invalid);
+    CHECK(reference_item_observations[1].last_updated == expected_reference_item_time(1));
+    CHECK(reference_item_observations[2].valid);
+    CHECK(reference_item_observations[2].modified);
+    CHECK_FALSE(reference_item_observations[2].became_valid);
+    CHECK_FALSE(reference_item_observations[2].became_invalid);
+    CHECK(reference_item_observations[2].last_updated == expected_reference_item_time(2));
+    CHECK(observations[0].runtime_type != observations[1].runtime_type);
+    CHECK(observations[1].runtime_type != observations[2].runtime_type);
+    for (auto index = std::size_t{}; index < observations.size(); ++index) {
+        const auto expected_time = start_time + std::chrono::microseconds{index};
+        const auto observed_time = observations[index].last_updated.time_since_epoch().count();
+        const auto expected_time_count = expected_time.time_since_epoch().count();
+        CAPTURE(index, observed_time, expected_time_count);
+        CHECK(observations[index].modified);
+        CHECK(observations[index].last_updated == expected_time);
+        CHECK(observations[index].first_source_time == start_time);
+        CHECK(observations[index].final_source_time == start_time);
+    }
+}
+
 TEST_CASE("a passive dereferenced input observes its current target",
           "[evaluation][reference][activity][feature:reference][series:value][scalar:integer]"
           "[binding:value-to-reference][binding:reference-to-value][activity:passive]") {
@@ -723,19 +1318,39 @@ TEST_CASE("a passive dereferenced input observes its current target",
 
     const auto right = node<sampled_right_source>();
 
-    const auto condition = node<sampled_condition_source>();
-
     const auto select = node<reference_selector>();
 
-    const auto value = node<passive_reference_value>();
-    const auto graph = [&] {
-        const auto trigger = condition();
-        return value(select(trigger, left(), right()), trigger);
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto value = node([&](In<TS<i64>, passive, optional> input, In<TS<i64>> trigger,
+                                Out<TS<i64>> output) {
+        (void)trigger;
+        observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                input.valid() ? *input : i64{}, input.last_updated()});
+        output.set(*input);
+    });
+    const auto graph = [&](wp<TS<i64>> selection, wp<TS<i64>> trigger) {
+        return value(select(selection, left(), right()), trigger);
     };
 
-    const auto actual = bg::run_graph(graph);
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    const auto actual = bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                                      bg::input<TS<i64>>({0, 1, literal::SKIP}),
+                                      bg::input<TS<i64>>({0, 1, 2}));
 
-    CHECK(actual.equals({10, 20}));
+    CHECK(actual.equals({10, 20, 20}));
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].became_valid);
+    CHECK(observations[0].value == 10);
+    CHECK(observations[1].valid);
+    CHECK_FALSE(observations[1].became_valid);
+    CHECK_FALSE(observations[1].became_invalid);
+    CHECK(observations[1].value == 20);
+    CHECK_FALSE(observations[2].modified);
+    CHECK_FALSE(observations[2].became_valid);
+    CHECK_FALSE(observations[2].became_invalid);
+    CHECK(observations[2].value == 20);
+    CHECK(observations[2].last_updated == observations[1].last_updated);
 }
 
 TEST_CASE("a dynamic dereferenced input rebinds while passive",
@@ -1009,6 +1624,119 @@ TEST_CASE("a native bundle adapts direct and referenced fields through its refer
     CHECK(evaluations == 4);
 }
 
+TEST_CASE("a reference to a bundle keeps the validity of each sampled field",
+          "[evaluation][reference][sampling][tsb][validity][feature:reference]"
+          "[series:tsb][transition:revalidation][binding:reference-to-value]") {
+    struct bundle_reference_selector {
+        In<TS<i64>> index;
+        In<REF<TSB<SCHEMA>>, passive, optional> first;
+        In<REF<TSB<SCHEMA>>, passive, optional> second;
+        Out<REF<TSB<SCHEMA>>> output;
+
+        void evaluate() const { output.copy(*index == 0 ? first : second); }
+    };
+    struct value_target {
+        i64 value;
+        Out<TS<i64>> output;
+
+        void start() const { output.set(value); }
+    };
+    struct invalid_target {
+        Out<TS<i64>> output;
+
+        void evaluate() const {}
+    };
+
+    auto selected_states = std::vector<ReferenceObservation>{};
+    auto value_states = std::vector<bool>{};
+    const auto make_bundle = node<native_reference_bundle_source>();
+    const auto select = node<bundle_reference_selector>();
+    const auto value_source = node<value_target>();
+    const auto invalid_source = node<invalid_target>();
+    const auto observe = node([&](In<TS_T> series, Out<TS<i64>> output) {
+        const auto input = series.as<TSB<SCHEMA>>();
+        const auto value = input[0].as<TS<i64>>();
+        const auto selected = input[1].as<TS<i64>>();
+        value_states.push_back(value.valid());
+        selected_states.push_back({selected.valid(), selected.modified(), selected.became_valid(),
+                                   selected.became_invalid(), selected.valid() ? *selected : i64{},
+                                   selected.last_updated()});
+        output.set(*value);
+    });
+    const auto graph = [&](wp<TS<i64>> index) {
+        const auto invalid = invalid_source();
+        const auto valid = value_source(20);
+        const auto first_value = value_source(100);
+        const auto second_value = value_source(200);
+        const auto first = make_bundle(first_value, invalid).as<REF<TSB<SCHEMA>>>();
+        const auto second = make_bundle(second_value, valid).as<REF<TSB<SCHEMA>>>();
+        return observe(select(index, first, second));
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    CHECK(bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}})
+              .equals({100, 200}));
+    const auto expected = std::vector<ReferenceObservation>{
+        {false, true, false, false, 0, start_time},
+        {true, true, true, false, 20, start_time + std::chrono::microseconds{1}},
+    };
+    REQUIRE(selected_states.size() == expected.size());
+    for (auto index = std::size_t{}; index < expected.size(); ++index) {
+        const auto actual_time = selected_states[index].last_updated.time_since_epoch().count();
+        const auto expected_time = expected[index].last_updated.time_since_epoch().count();
+        CAPTURE(index, actual_time, expected_time);
+        CHECK(selected_states[index].valid == expected[index].valid);
+        CHECK(selected_states[index].modified == expected[index].modified);
+        CHECK(selected_states[index].became_valid == expected[index].became_valid);
+        CHECK(selected_states[index].became_invalid == expected[index].became_invalid);
+        CHECK(selected_states[index].value == expected[index].value);
+        CHECK(selected_states[index].last_updated == expected[index].last_updated);
+    }
+    CHECK(value_states == std::vector<bool>{true, true});
+}
+
+TEST_CASE("sampling invalid bundle references updates a nested fixed-list item",
+          "[evaluation][reference][sampling][tsb][tsl][validity][feature:reference]"
+          "[series:fixed-tsl][transition:update][binding:reference-to-value]") {
+    struct bundle_reference_selector {
+        In<TS<i64>> index;
+        In<REF<TSB<NestedReferenceBundle>>, passive, optional> first;
+        In<REF<TSB<NestedReferenceBundle>>, passive, optional> second;
+        Out<REF<TSB<NestedReferenceBundle>>> output;
+
+        void evaluate() const { output.copy(*index == 0 ? first : second); }
+    };
+
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto first_source = node([](Out<TSB<NestedReferenceBundle>>) {});
+    const auto second_source = node([](Out<TSB<NestedReferenceBundle>>) {});
+    const auto select = node<bundle_reference_selector>();
+    const auto observe = node([&](In<TSB<NestedReferenceBundle>, optional> input) {
+        const auto item = input->values[0];
+        observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(), 0,
+                                item.last_updated()});
+    });
+    const auto graph = [&](wp<TS<i64>> index) {
+        const auto first = first_source().as<REF<TSB<NestedReferenceBundle>>>();
+        const auto second = second_source().as<REF<TSB<NestedReferenceBundle>>>();
+        observe(select(index, first, second));
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}});
+
+    REQUIRE(observations.size() == 2);
+    for (auto index = std::size_t{}; index < observations.size(); ++index) {
+        const auto expected_time = start_time + std::chrono::microseconds{static_cast<i64>(index)};
+        CAPTURE(index);
+        CHECK_FALSE(observations[index].valid);
+        CHECK(observations[index].modified);
+        CHECK_FALSE(observations[index].became_valid);
+        CHECK_FALSE(observations[index].became_invalid);
+        CHECK(observations[index].last_updated == expected_time);
+    }
+}
+
 TEST_CASE("a revalidated fixed-list reference resubscribes to the same target",
           "[evaluation][reference][feature:reference][tsl][series:fixed-tsl]"
           "[transition:invalidation]"
@@ -1250,10 +1978,14 @@ TEST_CASE("nested fixed collection adaptation propagates a reference item retarg
     const auto right = node<sampled_right_source>();
     const auto condition = node<sampled_condition_source>();
     const auto select = node<nested_reference_list_selector>();
+    auto observations = std::vector<ReferenceObservation>{};
     auto evaluations = 0;
     const auto observe = node([&](In<TSL<TSL<TS<i64>, 1>, 1>> input, Out<TS<i64>> output) {
         ++evaluations;
-        output.set(*input[0][0]);
+        const auto item = input[0][0];
+        observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                item.valid() ? *item : i64{}, item.last_updated()});
+        output.set(*item);
     });
     const auto graph = [&] {
         const auto collection = select(condition(), left(), right());
@@ -1261,8 +1993,20 @@ TEST_CASE("nested fixed collection adaptation propagates a reference item retarg
         return observe(reference);
     };
 
-    CHECK(bg::run_graph(graph).equals({10, 20}));
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    CHECK(bg::run_graph(graph, GraphRunOptions{.start_time = start_time}).equals({10, 20}));
     CHECK(evaluations == 2);
+    REQUIRE(observations.size() == 2);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].became_valid);
+    CHECK(observations[0].value == 10);
+    CHECK(observations[0].last_updated == start_time);
+    CHECK(observations[1].valid);
+    CHECK_FALSE(observations[1].became_valid);
+    CHECK_FALSE(observations[1].became_invalid);
+    CHECK(observations[1].modified);
+    CHECK(observations[1].value == 20);
+    CHECK(observations[1].last_updated == start_time + std::chrono::microseconds{1});
 }
 
 TEST_CASE("nested fixed collection adaptation propagates reference item validity",
@@ -1286,6 +2030,181 @@ TEST_CASE("nested fixed collection adaptation propagates reference item validity
 
     CHECK(bg::run_graph(graph).equals({30, -1, 30}));
     CHECK(evaluations == 3);
+}
+
+TEST_CASE("a reference-adapted fixed collection keeps cycle-start validity during an item swap",
+          "[evaluation][reference][tsl][validity][feature:reference][series:fixed-tsl]"
+          "[transition:invalidation][transition:revalidation][binding:reference-to-value]") {
+    struct reference_pair {
+        In<REF<TS<i64>>> first;
+        In<REF<TS<i64>>> second;
+        Out<TSL<REF<TS<i64>>, 2>> output;
+
+        void start() const {
+            output[0].copy(first);
+            output[1].copy(second);
+        }
+    };
+    struct Observation {
+        ReferenceObservation collection;
+        ReferenceObservation first;
+        ReferenceObservation second;
+    };
+
+    auto observations = std::vector<Observation>{};
+    const auto first = node<invalidating_reference_target>();
+    const auto second = node<revalidating_reference_target>();
+    const auto pair = node<reference_pair>();
+    const auto observe = node([&](In<TSL<TS<i64>, 2>, optional> input) {
+        const auto first_item = input[0];
+        const auto second_item = input[1];
+        const auto observe_item = [](const auto &item) {
+            return ReferenceObservation{item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
+                                        item.valid() ? *item : i64{}, item.last_updated()};
+        };
+        observations.push_back({
+            {input.valid(), input.modified(), input.became_valid(), input.became_invalid(), 0, input.last_updated()},
+            observe_item(first_item), observe_item(second_item)});
+    });
+    const auto graph = [&] { observe(pair(first(), second())); };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+
+    const auto final_observation = std::ranges::find_if(
+        observations | std::views::reverse,
+        [&](const auto &observation) {
+            return observation.first.last_updated == start_time + std::chrono::microseconds{1};
+        });
+    REQUIRE(final_observation != observations.rend());
+    CHECK(final_observation->collection.valid);
+    CHECK(final_observation->collection.modified);
+    CHECK_FALSE(final_observation->collection.became_valid);
+    CHECK_FALSE(final_observation->collection.became_invalid);
+    CHECK_FALSE(final_observation->first.valid);
+    CHECK(final_observation->first.became_invalid);
+    CHECK(final_observation->second.valid);
+    CHECK(final_observation->second.became_valid);
+}
+
+TEST_CASE("a free fixed collection publishes one validity transition for same-cycle item changes",
+          "[evaluation][tsl][validity][feature:validity][feature:collection-change][series:fixed-tsl]"
+          "[representation:free]"
+          "[transition:invalidation][transition:revalidation]") {
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto first = node<invalidating_reference_target>();
+    const auto second = node<revalidating_reference_target>();
+    const auto observe = node([&](In<TSL<TS<i64>, 2>, optional> input) {
+        observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(), 0,
+                                input.last_updated()});
+    });
+    const auto graph = [&] { observe(tsl(first(), second())); };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+
+    const auto final_observation = std::ranges::find_if(
+        observations | std::views::reverse, [&](const auto &observation) {
+            return observation.last_updated == start_time + std::chrono::microseconds{1};
+        });
+    REQUIRE(final_observation != observations.rend());
+    CHECK(final_observation->valid);
+    CHECK(final_observation->modified);
+    CHECK_FALSE(final_observation->became_valid);
+    CHECK_FALSE(final_observation->became_invalid);
+}
+
+TEST_CASE("sampling an outer reference updates each nested fixed-list item",
+          "[evaluation][reference][sampling][tsl][validity][feature:reference]"
+          "[series:fixed-tsl][transition:invalidation][transition:revalidation]") {
+    struct nested_reference_source {
+        In<REF<TS<i64>>> first;
+        In<REF<TS<i64>>> second;
+        Out<TSL<REF<TS<i64>>, 2>> output;
+
+        void start() const {
+            output[0].copy(first);
+            output[1].copy(second);
+        }
+    };
+    struct invalid_target {
+        Out<TS<i64>> output;
+
+        void evaluate() const {}
+    };
+    struct nested_collection_selector {
+        In<TS<i64>> index;
+        In<REF<TSL<TSL<REF<TS<i64>>, 2>, 1>>, passive, optional> first;
+        In<REF<TSL<TSL<REF<TS<i64>>, 2>, 1>>, passive, optional> second;
+        Out<REF<TSL<TSL<REF<TS<i64>>, 2>, 1>>> output;
+
+        void evaluate() const { output.copy(*index == 1 ? second : first); }
+    };
+    struct Observation {
+        ReferenceObservation first;
+        ReferenceObservation second;
+    };
+
+    auto observations = std::vector<Observation>{};
+    const auto make_inner = node<nested_reference_source>();
+    const auto select = node<nested_collection_selector>();
+    const auto invalid = node<invalid_target>();
+    const auto left = node<sampled_left_source>();
+    const auto right = node<sampled_right_source>();
+    const auto observe = node([&](In<TSL<TSL<TS<i64>, 2>, 1>> input, Out<TS<i64>> output) {
+        const auto first = input[0][0];
+        const auto second = input[0][1];
+        observations.push_back({
+            {first.valid(), first.modified(), first.became_valid(), first.became_invalid(),
+             first.valid() ? *first : i64{}, first.last_updated()},
+            {second.valid(), second.modified(), second.became_valid(), second.became_invalid(),
+             second.valid() ? *second : i64{}, second.last_updated()},
+        });
+        output.set((first.valid() ? *first : i64{-1}) * 100 + (second.valid() ? *second : i64{-1}));
+    });
+    const auto graph = [&](wp<TS<i64>> index) {
+        const auto first = tsl(make_inner(left(), invalid()));
+        const auto second = tsl(make_inner(invalid(), right()));
+        return observe(select(index, first, second));
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    const auto actual = bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                                      std::array{i64{0}, i64{1}, i64{0}});
+    CHECK(actual.equals({999, -80, 999}));
+    const auto expected = std::vector<Observation>{
+        {{true, true, true, false, 10, start_time},
+         {false, true, false, false, 0, start_time}},
+        {{false, true, false, true, 0, start_time + std::chrono::microseconds{1}},
+         {true, true, true, false, 20, start_time + std::chrono::microseconds{1}}},
+        {{true, true, true, false, 10, start_time + std::chrono::microseconds{2}},
+         {false, true, false, true, 0, start_time + std::chrono::microseconds{2}}},
+    };
+    REQUIRE(observations.size() == expected.size());
+    for (auto index = std::size_t{}; index < expected.size(); ++index) {
+        const auto &actual_first = observations[index].first;
+        const auto &expected_first = expected[index].first;
+        const auto &actual_second = observations[index].second;
+        const auto &expected_second = expected[index].second;
+        const auto actual_first_time = actual_first.last_updated.time_since_epoch().count();
+        const auto expected_first_time = expected_first.last_updated.time_since_epoch().count();
+        const auto actual_second_time = actual_second.last_updated.time_since_epoch().count();
+        const auto expected_second_time = expected_second.last_updated.time_since_epoch().count();
+        CAPTURE(index);
+        CAPTURE(actual_first_time, expected_first_time, actual_second_time, expected_second_time);
+        CHECK(actual_first.valid == expected_first.valid);
+        CHECK(actual_first.modified == expected_first.modified);
+        CHECK(actual_first.became_valid == expected_first.became_valid);
+        CHECK(actual_first.became_invalid == expected_first.became_invalid);
+        CHECK(actual_first.value == expected_first.value);
+        CHECK(actual_first.last_updated == expected_first.last_updated);
+        CHECK(actual_second.valid == expected_second.valid);
+        CHECK(actual_second.modified == expected_second.modified);
+        CHECK(actual_second.became_valid == expected_second.became_valid);
+        CHECK(actual_second.became_invalid == expected_second.became_invalid);
+        CHECK(actual_second.value == expected_second.value);
+        CHECK(actual_second.last_updated == expected_second.last_updated);
+    }
 }
 
 TEST_CASE("same-cycle target changes reach a selected native fixed-list item",
@@ -1364,11 +2283,86 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
     const auto source = node<sampled_left_source>();
 
     const auto reference = node<invalidating_reference>();
-    const auto graph = [&] { return reference(source()); };
+    auto observations = std::vector<ReferenceObservation>{};
+    const auto observe = node([&](In<TS<i64>, optional> input, Out<TS<i64>> output) {
+        observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                input.valid() ? *input : i64{}, input.last_updated()});
+        if (input.valid()) {
+            output.set(*input);
+        } else {
+            output.invalidate();
+        }
+    });
+    const auto graph = [&] { return observe(reference(source())); };
 
     const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt, 10}));
+    REQUIRE(observations.size() == 3);
+    CHECK(observations[0].became_valid);
+    CHECK(observations[1].became_invalid);
+    CHECK(observations[2].became_valid);
+}
+
+TEST_CASE("an initially unbound TSL reference permits optional nested item access",
+          "[evaluation][reference][validity][series:fixed-tsl][shape:nested]"
+          "[binding:reference-to-value][transition:invalidation][feature:reference]") {
+    auto observations = std::vector<std::array<bool, 7>>{};
+    const auto unbound = node([](Out<REF<TSL<TSL<TS<i64>, 1>, 1>>>) {});
+    const auto trigger = node([](Out<TS<i64>> output) { output.set(1); });
+    const auto observe = node([&](In<TSL<TSL<TS<i64>, 1>, 1>, optional> input, In<TS<i64>>) {
+        auto outer_updated_count = std::size_t{};
+        auto inner_updated_count = std::size_t{};
+        input.for_each_updated([&](auto) { ++outer_updated_count; });
+        input[0].for_each_updated([&](auto) { ++inner_updated_count; });
+        observations.push_back({input.valid(), input[0].valid(), input[0][0].valid(), input.item_updated(0),
+                                input[0].item_updated(0), outer_updated_count == 0, inner_updated_count == 0});
+    });
+    const auto graph = [&] { observe(unbound(), trigger()); };
+
+    bg::run_graph(graph);
+
+    REQUIRE(observations.size() == 1);
+    CHECK(observations[0] == std::array{false, false, false, false, false, true, true});
+}
+
+TEST_CASE("an initially unbound TSB reference permits optional field item access",
+          "[evaluation][reference][validity][series:tsb][shape:nested]"
+          "[binding:reference-to-value][transition:invalidation][feature:reference]") {
+    auto observations = std::vector<std::array<bool, 5>>{};
+    const auto unbound = node([](Out<REF<TSB<NestedReferenceBundle>>>) {});
+    const auto trigger = node([](Out<TS<i64>> output) { output.set(1); });
+    const auto observe = node([&](In<TSB<NestedReferenceBundle>, optional> input, In<TS<i64>>) {
+        auto updated_count = std::size_t{};
+        input.for_each_updated([&](auto) { ++updated_count; });
+        observations.push_back({input.valid(), input->values[0].valid(), input.item_updated(0),
+                                updated_count == 0, input->values.item_updated(0)});
+    });
+    const auto graph = [&] { observe(wp<TSB<NestedReferenceBundle>>{unbound()}, trigger()); };
+
+    bg::run_graph(graph);
+
+    REQUIRE(observations.size() == 1);
+    CHECK(observations[0] == std::array{false, false, false, true, false});
+}
+
+TEST_CASE("unbound native fixed collections report no updated items",
+          "[evaluation][validity][series:fixed-tsl][series:tsb][representation:native]"
+          "[feature:time-series-view][feature:reference]") {
+    const auto list = In<TSL<TS<i64>, 1>, optional>{initial_time_series_state, nullptr,
+                                                    cpp_time_series_runtime_type<TSL<TS<i64>, 1>>()};
+    const auto bundle = In<TSB<NestedReferenceBundle>, optional>{
+        initial_time_series_state, nullptr, cpp_time_series_runtime_type<TSB<NestedReferenceBundle>>()};
+
+    CHECK_FALSE(list.item_updated(0));
+    auto list_updated_count = std::size_t{};
+    list.for_each_updated([&](auto) { ++list_updated_count; });
+    CHECK(list_updated_count == 0);
+
+    CHECK_FALSE(bundle.item_updated(0));
+    auto bundle_updated_count = std::size_t{};
+    bundle.for_each_updated([&](auto) { ++bundle_updated_count; });
+    CHECK(bundle_updated_count == 0);
 }
 
 TEST_CASE("a sampled TSS output includes a same-cycle change to the previous target",

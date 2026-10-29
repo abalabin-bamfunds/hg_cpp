@@ -561,7 +561,7 @@ class CompactReduceRuntime {
                 insert_compact_leaf(id);
             }
         }
-        values.for_each_modified([&](const auto &key) {
+        values.for_each_updated([&](const auto &key) {
             const auto id = values.find_item_id(key);
             const auto item = compact_item(values, id);
             if (!item.last_updated.valid()) {
@@ -946,7 +946,7 @@ class NestedReduceRuntime {
             using_default_ = false;
             return true;
         }
-        if (!force && resolved.last_updated->time() != invocation.context().evaluation_time()) {
+        if (!force && resolved.last_updated.time() != invocation.context().evaluation_time()) {
             return true;
         }
 

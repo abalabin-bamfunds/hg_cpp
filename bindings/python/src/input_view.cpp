@@ -65,10 +65,17 @@ struct SetEntry {
     nb::object key;
 };
 
+enum class EntryChange { added, modified, removed };
+
 struct TimeSeriesEntry {
     nb::object key;
     In<TS_T> value;
-    bool removed{};
+    EntryChange change{EntryChange::modified};
+};
+
+struct DictionaryEntrySelection {
+    item_id_t id;
+    EntryChange change{EntryChange::modified};
 };
 
 struct LiveSetSelection {
@@ -224,11 +231,11 @@ struct LiveDictionarySelection {
         return id;
     }
 
-    bool removed() const noexcept { return false; }
+    EntryChange change() const noexcept { return EntryChange::modified; }
 
     template <typename Dictionary, typename Key>
-    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
-        return {dictionary.find_item_id(key), false};
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
+        return {.id = dictionary.find_item_id(key)};
     }
 
     template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) noexcept {
@@ -248,11 +255,11 @@ struct AddedDictionarySelection {
         return id;
     }
 
-    bool removed() const noexcept { return false; }
+    EntryChange change() const noexcept { return EntryChange::added; }
 
     template <typename Dictionary, typename Key>
-    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
-        return {dictionary.find_added_id(key), false};
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
+        return {.id = dictionary.find_added_id(key), .change = EntryChange::added};
     }
 
     template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
@@ -277,11 +284,11 @@ struct RemovedDictionarySelection {
         return id;
     }
 
-    bool removed() const noexcept { return true; }
+    EntryChange change() const noexcept { return EntryChange::removed; }
 
     template <typename Dictionary, typename Key>
-    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
-        return {dictionary.find_removed_id(key), true};
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
+        return {.id = dictionary.find_removed_id(key), .change = EntryChange::removed};
     }
 
     template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
@@ -306,15 +313,44 @@ struct ModifiedDictionarySelection {
         return id;
     }
 
-    bool removed() const noexcept { return false; }
+    EntryChange change() const noexcept { return EntryChange::modified; }
 
     template <typename Dictionary, typename Key>
-    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
-        return {dictionary.find_modified_id(key), false};
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
+        return {.id = dictionary.find_modified_id(key)};
     }
 
     template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
         auto selection = ModifiedDictionarySelection{};
+        auto count = std::size_t{};
+        while (selection.next(dictionary) != util::occupancy_index::npos) {
+            ++count;
+        }
+        return count;
+    }
+
+  private:
+    item_id_t cursor_{};
+};
+
+struct UpdatedDictionarySelection {
+    template <typename Dictionary> item_id_t next(const Dictionary &dictionary) {
+        const auto id = dictionary.next_updated_id(cursor_);
+        if (id != util::occupancy_index::npos) {
+            cursor_ = id + 1;
+        }
+        return id;
+    }
+
+    EntryChange change() const noexcept { return EntryChange::modified; }
+
+    template <typename Dictionary, typename Key>
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
+        return {.id = dictionary.find_updated_id(key)};
+    }
+
+    template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
+        auto selection = UpdatedDictionarySelection{};
         auto count = std::size_t{};
         while (selection.next(dictionary) != util::occupancy_index::npos) {
             ++count;
@@ -335,15 +371,15 @@ struct ValidDictionarySelection {
         return id;
     }
 
-    bool removed() const noexcept { return false; }
+    EntryChange change() const noexcept { return EntryChange::modified; }
 
     template <typename Dictionary, typename Key>
-    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
         const auto id = dictionary.find_item_id(key);
         if (id == util::occupancy_index::npos || !dictionary.item_at(id).valid()) {
-            return {util::occupancy_index::npos, false};
+            return {.id = util::occupancy_index::npos};
         }
-        return {id, false};
+        return {.id = id};
     }
 
     template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
@@ -366,7 +402,7 @@ struct ChangedDictionarySelection {
             if (phase_ == 0) {
                 id = dictionary.next_added_id(cursor_);
             } else if (phase_ == 1) {
-                id = dictionary.next_modified_id(cursor_);
+                id = dictionary.next_updated_id(cursor_);
             } else {
                 id = dictionary.next_removed_id(cursor_);
             }
@@ -383,19 +419,21 @@ struct ChangedDictionarySelection {
         }
     }
 
-    bool removed() const noexcept { return phase_ == 2; }
+    EntryChange change() const noexcept {
+        return phase_ == 0 ? EntryChange::added : phase_ == 1 ? EntryChange::modified : EntryChange::removed;
+    }
 
     template <typename Dictionary, typename Key>
-    static std::pair<item_id_t, bool> find(const Dictionary &dictionary, const Key &key) {
+    static DictionaryEntrySelection find(const Dictionary &dictionary, const Key &key) {
         auto id = dictionary.find_added_id(key);
         if (id != util::occupancy_index::npos) {
-            return {id, false};
+            return {.id = id, .change = EntryChange::added};
         }
-        id = dictionary.find_modified_id(key);
+        id = dictionary.find_updated_id(key);
         if (id != util::occupancy_index::npos) {
-            return {id, false};
+            return {.id = id};
         }
-        return {dictionary.find_removed_id(key), true};
+        return {.id = dictionary.find_removed_id(key), .change = EntryChange::removed};
     }
 
     template <typename Dictionary> static std::size_t size(const Dictionary &dictionary) {
@@ -435,7 +473,7 @@ template <typename Selection> class DictionaryCursor {
         const auto native_key = dictionary.key_at(id);
         return {.key = conversions.to_python(Scalar<>::from(native_key)),
                 .value = dictionary.item_at(id),
-                .removed = selection_.removed()};
+                .change = selection_.change()};
     }
 
     Selection selection_;
@@ -465,8 +503,13 @@ struct ValueEntryValue {
 struct DeltaEntryValue {
     static nb::object get(TimeSeriesEntry &entry, const PythonScalarConversions &conversions,
                           const std::shared_ptr<CallbackLifetime> &lifetime, std::uint64_t generation) {
-        return entry.removed ? nb::borrow<nb::object>(details::remove_sentinel())
-                             : make_delta_value(entry.value, conversions, lifetime, generation);
+        if (entry.change == EntryChange::removed) {
+            return nb::borrow<nb::object>(details::remove_sentinel());
+        }
+        if (entry.change == EntryChange::added) {
+            return make_value(entry.value, conversions, lifetime, generation);
+        }
+        return make_delta_value(entry.value, conversions, lifetime, generation);
     }
 };
 
@@ -736,13 +779,13 @@ template <typename Selection, typename EntryValue> class DictionaryMappingView f
                 auto memory = std::pmr::unsynchronized_pool_resource{};
                 auto allocation = allocator{memory};
                 const auto scalar = conversions().from_python(type.key_type(), key, allocation);
-                const auto [id, removed] = Selection::find(*dictionary, Scalar<SCALAR>::from(scalar));
-                if (id == util::occupancy_index::npos) {
+                const auto selection = Selection::find(*dictionary, Scalar<SCALAR>::from(scalar));
+                if (selection.id == util::occupancy_index::npos) {
                     PyErr_SetObject(PyExc_KeyError, key.ptr());
                     return {};
                 }
 
-                auto entry = TimeSeriesEntry{.value = dictionary->item_at(id), .removed = removed};
+                auto entry = TimeSeriesEntry{.value = dictionary->item_at(selection.id), .change = selection.change};
                 return EntryValue::get(entry, conversions(), lifetime(), generation());
             },
             ddv::noop);
@@ -780,7 +823,7 @@ template <typename Selection, typename EntryValue> class DictionaryMappingView f
                 auto memory = std::pmr::unsynchronized_pool_resource{};
                 auto allocation = allocator{memory};
                 const auto scalar = conversions().from_python(type.key_type(), key, allocation);
-                return Selection::find(*dictionary, Scalar<SCALAR>::from(scalar)).first != util::occupancy_index::npos;
+                return Selection::find(*dictionary, Scalar<SCALAR>::from(scalar)).id != util::occupancy_index::npos;
             },
             ddv::noop);
         return result.value_or(false);
@@ -1316,6 +1359,24 @@ nb::object TSDInput::added_items() const {
         input(), conversions(), lifetime(), generation()});
 }
 
+nb::object TSDInput::updated_keys() const {
+    check_lifetime();
+    return nb::cast(DictionaryEntries<UpdatedDictionarySelection, InputEntryValue, KeyProjection>{
+        input(), conversions(), lifetime(), generation()});
+}
+
+nb::object TSDInput::updated_values() const {
+    check_lifetime();
+    return nb::cast(DictionaryEntries<UpdatedDictionarySelection, InputEntryValue, ValueProjection>{
+        input(), conversions(), lifetime(), generation()});
+}
+
+nb::object TSDInput::updated_items() const {
+    check_lifetime();
+    return nb::cast(DictionaryEntries<UpdatedDictionarySelection, InputEntryValue, ItemProjection>{
+        input(), conversions(), lifetime(), generation()});
+}
+
 nb::object TSDInput::removed_keys() const {
     check_lifetime();
     return nb::cast(DictionaryEntries<RemovedDictionarySelection, InputEntryValue, KeyProjection>{
@@ -1402,7 +1463,8 @@ void bind_dictionary_iteration(nb::module_ &module, const char *name) {
     bind_iterator<DictionaryIterator<Selection, EntryValue, ItemProjection>>(module, (prefix + "ItemIterator").c_str());
 
     bind_entries<DictionaryEntries<Selection, EntryValue, KeyProjection>>(module, (prefix + "KeyEntries").c_str());
-    bind_entries<DictionaryEntries<Selection, EntryValue, ValueProjection>>(module, (prefix + "ValueEntries").c_str());
+    bind_entries<DictionaryEntries<Selection, EntryValue, ValueProjection>>(module,
+                                                                           (prefix + "ValueEntries").c_str());
     bind_entries<DictionaryEntries<Selection, EntryValue, ItemProjection>>(module, (prefix + "ItemEntries").c_str());
 }
 
@@ -1460,6 +1522,7 @@ void bind_input_iterators(nb::module_ &module) {
     bind_dictionary_iteration<AddedDictionarySelection, InputEntryValue>(module, "AddedDictionaryInput");
     bind_dictionary_iteration<RemovedDictionarySelection, InputEntryValue>(module, "RemovedDictionaryInput");
     bind_dictionary_iteration<ModifiedDictionarySelection, InputEntryValue>(module, "ModifiedDictionaryInput");
+    bind_dictionary_iteration<UpdatedDictionarySelection, InputEntryValue>(module, "UpdatedDictionaryInput");
     bind_dictionary_iteration<ValidDictionarySelection, InputEntryValue>(module, "ValidDictionaryInput");
 
     bind_set_value<LiveSetSelection>(module, "_SetValueView");

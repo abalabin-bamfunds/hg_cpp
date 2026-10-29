@@ -1542,8 +1542,8 @@ TEST_CASE("queue collection inspection stops at its first conflict",
     auto later_input = runtime_type.item(input_storage, 1);
     later_input.last_updated.publish(evaluation_time);
     static_cast<test_scalar_provider::storage *>(later_input.value)->number = 17;
-    REQUIRE(runtime_type.mark_item_modified(input_storage, 0, evaluation_time, input_time, allocator));
-    REQUIRE(runtime_type.mark_item_modified(input_storage, 1, evaluation_time, input_time, allocator));
+    REQUIRE(runtime_type.mark_item_modified(input_storage, 0, evaluation_time, false, allocator));
+    REQUIRE(runtime_type.mark_item_modified(input_storage, 1, evaluation_time, false, allocator));
 
     const auto input = In<Series>{TimeSeriesInputData{runtime_type, input_time, input_storage, true}};
     const auto buffer = util::buffer::contiguous(128);
@@ -2070,17 +2070,19 @@ TEST_CASE("a failed scalar write preserves the earlier record", "[coverage-exemp
     const auto second_time = first_time + std::chrono::microseconds{1};
     auto input_state = TimeSeriesState{};
     const auto input_storage = test_scalar_provider::storage{17};
-    const auto input = In<TS<Value>>{
-        TimeSeriesInputData{cpp_time_series_runtime_type<TS<Value>>(), input_state, &input_storage, true}};
     const auto buffer = util::buffer::contiguous(32);
     auto writer = TimeSeriesTickWriter{buffer};
     input_state.publish(first_time);
-    REQUIRE(writer.write(input, first_time));
+    const auto first_input = In<TS<Value>>{
+        TimeSeriesInputData{cpp_time_series_runtime_type<TS<Value>>(), input_state, &input_storage, true}};
+    REQUIRE(writer.write(first_input, first_time));
     const auto first_record_size = buffer.bytes().size();
     CHECK(first_record_size == 1 + sizeof(int));
 
     input_state.publish(second_time);
-    CHECK_THROWS_AS(writer.write(input, second_time), std::runtime_error);
+    const auto second_input = In<TS<Value>>{
+        TimeSeriesInputData{cpp_time_series_runtime_type<TS<Value>>(), input_state, &input_storage, true}};
+    CHECK_THROWS_AS(writer.write(second_input, second_time), std::runtime_error);
     CHECK(buffer.bytes().size() == first_record_size);
     CHECK(provider::scalar_tick_state.discards == 1);
 
@@ -2132,7 +2134,7 @@ TEST_CASE("failed provider write rolls back all payloads in its record",
     auto input_state = TimeSeriesState{};
     input_state.publish(time);
     const auto input_value = i64{17};
-    const auto input =
+    const auto first_input =
         In<Series>{TimeSeriesInputData{provider::series_runtime_type(Series::type()), input_state, &input_value, true}};
 
     provider::payload_write_count = 0;
@@ -2147,13 +2149,16 @@ TEST_CASE("failed provider write rolls back all payloads in its record",
         const auto buffer = util::buffer::chain(1, memory);
         {
             auto writer = TimeSeriesTickWriter{buffer, memory};
-            REQUIRE(writer.write(input, time));
+            REQUIRE(writer.write(first_input, time));
         }
 
         auto failing_writer = TimeSeriesTickWriter{buffer, memory};
 
         input_state.publish(time + std::chrono::microseconds{1});
-        CHECK_THROWS_AS(failing_writer.write(input, time + std::chrono::microseconds{1}), std::runtime_error);
+        const auto second_input =
+            In<Series>{TimeSeriesInputData{provider::series_runtime_type(Series::type()), input_state, &input_value,
+                                           true}};
+        CHECK_THROWS_AS(failing_writer.write(second_input, time + std::chrono::microseconds{1}), std::runtime_error);
 
         auto output_time = TimeSeriesState{};
         auto output_value = i64{};

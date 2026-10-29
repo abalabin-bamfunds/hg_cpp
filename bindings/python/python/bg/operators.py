@@ -76,6 +76,13 @@ keys_where_true = _native.keys_where_true
 bit_or = _native.bit_or
 bit_and = _native.bit_and
 bit_xor = _native.bit_xor
+rekey = _native.rekey
+partition = _native.partition
+unpartition = _native.unpartition
+flip = _native.flip
+flip_keys = _native.flip_keys
+collapse_keys = _native.collapse_keys
+uncollapse_keys = _native.uncollapse_keys
 const_ = _native.const_
 default_ = _native.default_
 nothing = _native.nothing
@@ -96,6 +103,13 @@ __all__ = [
     "bit_or",
     "bit_and",
     "bit_xor",
+    "rekey",
+    "partition",
+    "unpartition",
+    "flip",
+    "flip_keys",
+    "collapse_keys",
+    "uncollapse_keys",
     "convert",
     "combine",
     "collect",

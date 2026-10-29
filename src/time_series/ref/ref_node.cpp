@@ -67,7 +67,6 @@ class ReferenceNodeTemplate final : public NodeTemplate {
 
         root.owner_graph = &context->runtime_graph();
         root.set_input_node(node);
-        root.referenced_runtime_type = &runtime_node.time_series_input_runtime_type(0);
         output = &root;
         runtime_node.output_last_updated().publish(context->evaluation_time());
     }

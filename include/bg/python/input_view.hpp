@@ -122,6 +122,9 @@ class NB_HIDDEN TSDInput final : public InputView {
     nanobind::object added_keys() const;
     nanobind::object added_values() const;
     nanobind::object added_items() const;
+    nanobind::object updated_keys() const;
+    nanobind::object updated_values() const;
+    nanobind::object updated_items() const;
     nanobind::object removed_keys() const;
     nanobind::object removed_values() const;
     nanobind::object removed_items() const;

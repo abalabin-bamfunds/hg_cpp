@@ -85,7 +85,7 @@ class FixedCollectionRepresentationRuntimeType final : public TimeSeriesRuntimeT
     void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override;
 
-    bool mark_item_modified(void *, item_id_t, EvaluationTime, const TimeSeriesState &, allocator &) const
+    bool mark_item_modified(void *, item_id_t, EvaluationTime, bool, allocator &) const
         noexcept override {
         std::terminate();
     }
@@ -142,7 +142,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
           adapted_items_{&provider.allocation().memory_resource()},
           dereferenced_items_{&provider.allocation().memory_resource()} {
         const auto base = ResolvedTimeSeries::resolve(base_reference);
-        last_updated_ = *base.last_updated;
+        last_updated_ = base.last_updated;
         auto release_slots = util::scope_exit{[&]() noexcept {
             for (auto id = item_id_t{}; id < runtime_type_->item_count(nullptr); ++id) {
                 const auto &field = runtime_type_->field(id);
@@ -170,7 +170,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
         release_slots.release();
     }
 
-    ResolvedTimeSeries resolve() const override { return {&last_updated_, this, runtime_type_}; }
+    ResolvedTimeSeries resolve() const override { return {last_updated_, this, runtime_type_}; }
 
     void notify(OutputChangeContext &context, OutputChange change) override {
         reset_changes(context.evaluation_time());
@@ -185,7 +185,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
             const auto base = ResolvedTimeSeries::resolve(base_reference());
             bool changed = false;
             for (auto id = item_id_t{}; id < runtime_type_->item_count(base.storage); ++id) {
-                if (!base.runtime_type->item_updated(*base.last_updated, base.storage, id)) {
+                if (!base.runtime_type->item_updated(base.last_updated, base.storage, id)) {
                     continue;
                 }
 
@@ -230,16 +230,17 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
         cancel_batch.release();
     }
 
-    void destroy(allocator &memory) noexcept override {
+    void detach() noexcept override {
         if (sample_cleanup_registered_) {
             provider_->remove_cycle_callback(this);
+            sample_cleanup_registered_ = false;
         }
         for (auto id = item_id_t{}; id < runtime_type_->item_count(nullptr); ++id) {
             const auto &field = runtime_type_->field(id);
             if (field.mode == FieldMode::dereferenced) {
                 auto &item = dereferenced_items_[field.state_index];
                 unsubscribe(item.reference, id);
-                item.sample.release();
+                item.reference = {};
                 continue;
             }
             if (field.mode != FieldMode::adapted) {
@@ -247,6 +248,15 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
             }
             auto &item = adapted_items_[field.state_index];
             unsubscribe(item.representation, id);
+            item.representation = {};
+        }
+    }
+
+    void destroy(allocator &memory) noexcept override {
+        for (auto &item : dereferenced_items_) {
+            item.sample.release();
+        }
+        for (auto &item : adapted_items_) {
             if (!provider_->release_item_reference(item.source)) {
                 std::terminate();
             }
@@ -274,10 +284,10 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
         }
         if (field.mode == FieldMode::adapted) {
             const auto target = ResolvedTimeSeries::resolve(adapted_items_[field.state_index].representation);
-            if (target.last_updated == nullptr) {
+            if (target.runtime_type == nullptr) {
                 return {*field.runtime_type, initial_time_series_state, nullptr};
             }
-            return {*target.runtime_type, *target.last_updated, target.valid() ? target.storage : nullptr};
+            return {*target.runtime_type, target.last_updated, target.storage};
         }
 
         const auto &dereferenced = dereferenced_items_[field.state_index];
@@ -288,7 +298,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
             return {*field.runtime_type, dereferenced.output_last_updated, nullptr};
         }
         const auto target = ResolvedTimeSeries::resolve(dereferenced.reference);
-        if (target.last_updated == nullptr) {
+        if (target.runtime_type == nullptr) {
             return {*field.runtime_type, dereferenced.output_last_updated, nullptr};
         }
         return {*target.runtime_type, dereferenced.output_last_updated, target.storage};
@@ -443,8 +453,8 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
         refresh_snapshot(target);
         const auto current = target.reference ? ResolvedTimeSeries::resolve(target.reference) : ResolvedTimeSeries{};
         if (evaluation_time == MIN_DT) {
-            target.output_last_updated = current.last_updated == nullptr ? initial_time_series_state
-                                                                        : *current.last_updated;
+            target.output_last_updated = current.runtime_type == nullptr ? initial_time_series_state
+                                                                         : current.last_updated;
         } else {
             update_output_state(target, current.valid(), evaluation_time);
         }
@@ -459,7 +469,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
     }
 
     static ResolvedTimeSeries snapshot(const DereferencedItem &item) noexcept {
-        return {&item.last_updated, item.storage, item.runtime_type};
+        return {item.last_updated, item.storage, item.runtime_type};
     }
 
     static void refresh_snapshot(DereferencedItem &item) noexcept {
@@ -470,8 +480,8 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
             return;
         }
         const auto target = ResolvedTimeSeries::resolve(item.reference);
-        if (target.last_updated != nullptr) {
-            item.last_updated = *target.last_updated;
+        if (target.runtime_type != nullptr) {
+            item.last_updated = target.last_updated;
             item.storage = target.storage;
             item.runtime_type = target.runtime_type;
             return;
@@ -505,11 +515,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
     }
 
     static void update_output_state(DereferencedItem &item, bool valid, EvaluationTime evaluation_time) noexcept {
-        if (valid) {
-            item.output_last_updated.publish(evaluation_time);
-        } else if (item.output_last_updated.valid()) {
-            item.output_last_updated.invalidate(evaluation_time);
-        }
+        item.output_last_updated.update_collection_validity(evaluation_time, valid);
     }
 
     void notify_target(OutputChangeContext &context, item_id_t id, OutputChange change) {
@@ -553,16 +559,13 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
 
     void publish(OutputChangeContext &context, EvaluationTime time) {
         const auto valid = any_items_valid();
-        if (!valid && last_updated_.valid()) {
-            last_updated_.invalidate(time);
-            ReferenceProvider::notify(reference(), context, OutputChange::invalidation);
+        const auto was_valid = last_updated_.valid();
+        last_updated_.update_collection_validity(time, valid);
+        if (!valid && !was_valid) {
             return;
         }
-        if (!valid) {
-            return;
-        }
-        const auto change = last_updated_.valid() ? OutputChange::update : OutputChange::revalidation;
-        last_updated_.publish(time);
+        const auto change = valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
+                                  : OutputChange::invalidation;
         ReferenceProvider::notify(reference(), context, change);
     }
 
@@ -610,7 +613,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
 
     void revalidate(OutputChangeContext &context) {
         const auto base = ResolvedTimeSeries::resolve(base_reference());
-        if (base.last_updated == nullptr || base.storage == nullptr) {
+        if (base.runtime_type == nullptr || base.storage == nullptr) {
             return;
         }
         update_routed_reference_state(context.evaluation_time());
@@ -633,7 +636,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
                 auto &target = dereferenced_items_[field.state_index];
                 auto previous_last_updated = target.last_updated;
                 auto previous = snapshot(target);
-                previous.last_updated = &previous_last_updated;
+                previous.last_updated = previous_last_updated;
                 bind(target, id, field, base, context.evaluation_time());
                 const auto current = target.reference ? ResolvedTimeSeries::resolve(target.reference)
                                                       : ResolvedTimeSeries{};

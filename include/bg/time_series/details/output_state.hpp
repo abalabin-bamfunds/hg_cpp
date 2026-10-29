@@ -75,13 +75,16 @@ class OutputState {
         if (!valid()) {
             return;
         }
-        mutable_last_updated().invalidate(evaluation_time());
-        publish_containing_collections();
+        const auto now = evaluation_time();
+        mutable_last_updated().invalidate(now);
+        publish_containing_collections(true);
     }
 
     void publish() const noexcept {
-        mutable_last_updated().publish(evaluation_time());
-        publish_containing_collections();
+        const auto now = evaluation_time();
+        const auto was_valid = mutable_last_updated().valid();
+        mutable_last_updated().publish(now);
+        publish_containing_collections(was_valid);
     }
 
     [[nodiscard]] void *add_path(const TimeSeriesRuntimeType &runtime_type, item_id_t id) const {
@@ -89,9 +92,11 @@ class OutputState {
         return details::add_output_path(context(), runtime_type, mutable_last_updated(), mutable_data(), id, parent);
     }
 
-    void publish_item(const TimeSeriesRuntimeType &runtime_type, item_id_t id) const {
-        auto *path = add_path(runtime_type, id);
-        details::publish_output_path(path);
+    void publish_item(item_id_t id, TimeSeriesState &item_last_updated) const {
+        const auto item_was_valid = item_last_updated.valid();
+        item_last_updated.publish(evaluation_time());
+        auto *path = add_path(runtime_type(), id);
+        details::publish_output_path(path, item_was_valid);
         details::release_output_path(path);
     }
 
@@ -105,9 +110,9 @@ class OutputState {
     bg::allocator &allocator() const noexcept { return details::current_scalar_allocator(); }
 
   private:
-    void publish_containing_collections() const noexcept {
+    void publish_containing_collections(bool item_was_valid) const noexcept {
         if (auto *path = owner_.get<details::OutputPath>()) {
-            details::publish_output_path(path);
+            details::publish_output_path(path, item_was_valid);
         }
     }
 

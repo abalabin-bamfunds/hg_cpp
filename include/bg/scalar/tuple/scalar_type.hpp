@@ -82,7 +82,7 @@ template <typename... Items> struct scalar_declaration_traits<Tuple<Items...>> {
 
 template <typename... Items> struct declaration_variable_traits<Tuple<Items...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
-        (for_each_declaration_variable<Items>(visitor), ...);
+        (::bg::for_each_declaration_variable<Items>(visitor), ...);
     }
 };
 

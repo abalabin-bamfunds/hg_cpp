@@ -33,7 +33,7 @@ target, the target's former items or keys are reported as removals.
 | Time series set | `TSS<T>` | Added and removed items |
 | Time series list (fixed size) | `TSL<TS_T, Size>` | Updated items |
 | Time series bundle | `TSB<Schema>` | Updated items |
-| Time series dictionary | `TSD<K, TS_T>` | Added and removed keys; modified items |
+| Time series dictionary | `TSD<K, TS_T>` | Added, updated, modified, and removed items |
 
 `TSL<TS_T>` declares the semantic type for a variable-size sparse list. Its
 runtime storage and node views are not implemented.
@@ -50,10 +50,14 @@ provides the semantic type, physical layout, contained-item access, and runtime
 operations. One semantic time series type can have multiple runtime types,
 including normal and free collection layouts.
 
-`In<>` contains a runtime type pointer, last-updated pointer, and data pointer.
-`Out<>` is a one-word view of an internal mutation record. References retain the
-target runtime type because the target layout can change when the reference
-changes.
+`In<>` contains a runtime type pointer, a copied change state, and a data pointer.
+It is valid only for the node callback; its change state describes that invocation.
+`Out<>` is a one-word view of an internal mutation record. Reference resolution
+supplies the current target runtime type because the target layout can change.
+
+Owned fixed TSL and TSB storage counts valid immediate children. Item mutations
+update this count, making collection validity and full-schema `all_valid()`
+checks constant-time. A narrowed TSB input checks only its declared fields.
 
 `In<>` and `Out<>` visitors select value, reference, list, bundle, set,
 dictionary, or erased extension access. The selected view is valid for the
@@ -72,8 +76,8 @@ the item position. TSD uses its stable sparse-storage position and reserves
 items. Packed output storage also provides each item's storage layout.
 
 TSD input can enumerate keys, item IDs, values, key-value pairs, or ID-value
-pairs. Added, removed, and modified queries enumerate keys for the current
-change. `for_each_removed_physical_id` enumerates untagged storage IDs for
+pairs. Its [change selections](../../user/reference/input-views.md#dictionary-change-selections)
+apply to keys, values, and key-value pairs. `for_each_removed_physical_id` enumerates untagged storage IDs for
 removed entries. For a sampled TSD, these identify entries in the previous
 dictionary; `for_each_removed` provides their keys. A sampled TSS or TSD input
 can also report whether a logical item present in both the previous and current

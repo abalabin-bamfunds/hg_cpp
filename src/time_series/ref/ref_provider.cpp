@@ -102,16 +102,23 @@ ReferenceProvider::~ReferenceProvider() {
         component->detach();
     }
     for (auto *representation : representations_ | std::views::reverse) {
-        if (representation == nullptr) {
-            continue;
+        if (representation != nullptr) {
+            representation->detach();
         }
-        remove_observer(representation->base_reference(), owner(), representation);
     }
     for (auto *representation : representations_ | std::views::reverse) {
         if (representation == nullptr) {
             continue;
         }
-        representation->destroy(memory_);
+        remove_observer(representation->base_reference(), owner(), representation);
+    }
+    for (auto *&representation : representations_ | std::views::reverse) {
+        if (representation == nullptr) {
+            continue;
+        }
+        auto *retired = representation;
+        representation = nullptr;
+        retired->destroy(memory_);
     }
     while (components_ != nullptr) {
         auto *component = components_;
@@ -211,39 +218,40 @@ void ReferenceProvider::notify_subscriptions(const ReferenceSubscriptionDetail &
     }
 }
 
-void ReferenceProvider::begin_item_notification_batch() noexcept {
-    if (item_notifications_ != nullptr) {
-        item_notifications_->begin_batch();
-    }
+void ReferenceProvider::begin_item_notification_batch() {
+    require_item_notifications().begin_batch();
 }
 
 void ReferenceProvider::cancel_item_notification_batch() noexcept {
-    if (item_notifications_ != nullptr) {
-        item_notifications_->cancel_batch();
-    }
+    assert(item_notifications_ != nullptr);
+    item_notifications_->cancel_batch();
 }
 
 void ReferenceProvider::publish_item_notification_batch(OutputChangeContext &context) {
-    if (item_notifications_ != nullptr) {
-        item_notifications_->publish_batch(context);
+    assert(item_notifications_ != nullptr);
+    item_notifications_->publish_batch(context);
+}
+
+ItemNotifications &ReferenceProvider::require_item_notifications() {
+    if (item_notifications_ == nullptr) {
+        item_notifications_ = memory_.new_object<ItemNotifications>(memory_);
     }
+    return *item_notifications_;
 }
 
 void ReferenceProvider::add_item_notification_record(Reference reference, RuntimeGraph &graph,
                                                      void *destination_representation, item_id_t destination_item_id,
                                                      ItemChangeNotificationFunction notify_item_change,
                                                      ItemChangePublicationFunction publish_item_changes) {
-    if (item_notifications_ == nullptr) {
-        item_notifications_ = memory_.new_object<ItemNotifications>(memory_);
-    }
+    auto &item_notifications = require_item_notifications();
     if (reference.holds<RootReference>()) {
-        item_notifications_->add_root(graph, destination_representation, destination_item_id, notify_item_change,
-                                      publish_item_changes);
+        item_notifications.add_root(graph, destination_representation, destination_item_id, notify_item_change,
+                                     publish_item_changes);
         return;
     }
 
-    item_notifications_->add(subscriptions(reference), graph, destination_representation, destination_item_id,
-                             notify_item_change, publish_item_changes);
+    item_notifications.add(subscriptions(reference), graph, destination_representation, destination_item_id,
+                           notify_item_change, publish_item_changes);
 }
 
 void ReferenceProvider::remove_item_notification_record(Reference reference, RuntimeGraph &graph,
@@ -319,6 +327,60 @@ bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcep
         return false;
     };
 
+    const auto depends_on_retired_item = [&](const ReferenceRepresentation *representation) {
+        return representation != nullptr && depends_on_retired_reference(representation->base_reference());
+    };
+    const auto is_dependent_destination = [&](const void *destination) {
+        const auto found = std::ranges::find(representations_, destination);
+        return found != representations_.end() && depends_on_retired_item(*found);
+    };
+    const auto has_external_subscribers = [&](const ReferenceSubscriptionDetail &subscriptions) {
+        if (!subscriptions.has_subscriber_group()) {
+            return false;
+        }
+
+        const auto *subscribers = subscriber_groups_[subscriptions.subscriber_group_index()];
+        if (subscribers == nullptr) {
+            return false;
+        }
+
+        auto external = false;
+        subscribers->for_each_node_subscriber([&](const auto &) { external = true; });
+        subscribers->for_each_input_subscriber([&](const auto &) { external = true; });
+        subscribers->for_each_observer([&](const auto &observer) {
+            external |= !is_dependent_destination(observer.receiver);
+        });
+        return external;
+    };
+    const auto has_external_item_notifications = [&](const ReferenceSubscriptionDetail &subscriptions) {
+        return item_notifications_ != nullptr &&
+               item_notifications_->has_external_item_notifications(subscriptions, is_dependent_destination);
+    };
+    if (has_external_subscribers(reference.subscriptions()) ||
+        has_external_item_notifications(reference.subscriptions())) {
+        return false;
+    }
+    for (auto index = representations_.size(); index != 0; --index) {
+        auto *representation = representations_[index - 1];
+        if (!depends_on_retired_item(representation)) {
+            continue;
+        }
+
+        const auto &subscriptions = representation->reference().get<RepresentationReference>()->subscriptions();
+        if (has_external_subscribers(subscriptions) || has_external_item_notifications(subscriptions)) {
+            return false;
+        }
+    }
+    for (auto *representation : representations_ | std::views::reverse) {
+        if (depends_on_retired_item(representation)) {
+            representation->detach();
+        }
+    }
+    for (auto *representation : representations_ | std::views::reverse) {
+        if (depends_on_retired_item(representation)) {
+            remove_observer(representation->base_reference(), owner(), representation);
+        }
+    }
     for (auto index = representations_.size(); index != 0; --index) {
         auto *&representation = representations_[index - 1];
         if (representation == nullptr || !depends_on_retired_reference(representation->base_reference())) {
@@ -329,14 +391,12 @@ bool ReferenceProvider::release_item_reference(ItemReference &reference) noexcep
         if (!release_subscribers(representation_reference.subscriptions())) {
             return false;
         }
-        remove_observer(representation->base_reference(), owner(), representation);
-        representation->destroy(memory_);
+        auto *retired_representation = representation;
         representation = nullptr;
+        retired_representation->destroy(memory_);
     }
 
-    const auto has_item_notifications =
-        item_notifications_ != nullptr && item_notifications_->has_item_notifications(reference.subscriptions());
-    return !has_item_notifications && release_subscribers(reference.subscriptions());
+    return release_subscribers(reference.subscriptions());
 }
 
 void ReferenceProvider::add_component(ReferenceProviderComponent &component) noexcept {
@@ -371,7 +431,10 @@ Reference ReferenceProvider::make_representation(Reference base_reference,
     }
     auto *result =
         factory->create(*this, base_reference, *base_time_series.runtime_type, requested_runtime_type, memory_);
-    auto release = util::scope_exit{[&]() noexcept { result->destroy(memory_); }};
+    auto release = util::scope_exit{[&]() noexcept {
+        result->detach();
+        result->destroy(memory_);
+    }};
     result->initialize_reference(static_cast<std::uint32_t>(representations_.size()));
     representations_.push_back(result);
     auto remove_entry = util::scope_exit{[&]() noexcept { representations_.pop_back(); }};
@@ -386,12 +449,13 @@ Reference ReferenceProvider::make_representation(Reference base_reference,
 
 ResolvedTimeSeries ResolvedTimeSeries::resolve(Reference reference) {
     if (auto *root = reference.get<RootReference>()) {
-        const auto node = root->owner_graph->node(root->node());
+        const auto &compiled_node = root->node();
+        const auto node = root->owner_graph->node(compiled_node);
         if (root->references_output()) {
-            return {&node.output_last_updated(), node.output_value(), root->referenced_runtime_type};
+            return {node.output_last_updated(), node.output_value(), &compiled_node.output_runtime_type()};
         }
         const auto input = node.input_data(0);
-        return {input.last_updated, input.value, root->referenced_runtime_type};
+        return {input.last_updated, input.value, &node.time_series_input_runtime_type(0)};
     }
     if (const auto *representation = reference.get<RepresentationReference>()) {
         return ReferenceProvider::get(reference)->resolve_representation(representation->representation_index());
@@ -400,7 +464,7 @@ ResolvedTimeSeries ResolvedTimeSeries::resolve(Reference reference) {
     const auto &item_reference = *reference.get<ItemReference>();
     const auto parent_time_series = ResolvedTimeSeries::resolve(item_reference.parent());
     const auto item = parent_time_series.runtime_type->item(parent_time_series.storage, item_reference.item_id());
-    return {&item.last_updated, item.value, &item.runtime_type};
+    return {item.last_updated, item.value, &item.runtime_type};
 }
 
 Reference ReferenceProvider::representation(Reference reference, const TimeSeriesRuntimeType &requested_runtime_type) {

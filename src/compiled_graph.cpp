@@ -18,7 +18,9 @@
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/signature.hpp>
+#include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
+#include <bg/type/time_series_list_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/type/time_series_set_type.hpp>
 #include <bg/type/time_series_value_type.hpp>
@@ -587,6 +589,12 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
             }
             const auto constant_binding =
                 !default_value && input.is_output() && plan.constant_for_output(input.index()) != nullptr;
+            const auto *list_type = type_cast<TimeSeriesListType>(parameter.type);
+            const auto sampled_reference = input.dereferences_reference() &&
+                                          (type_cast<TimeSeriesSetType>(parameter.type) != nullptr ||
+                                           type_cast<TimeSeriesDictionaryType>(parameter.type) != nullptr ||
+                                           type_cast<TimeSeriesBundleType>(parameter.type) != nullptr ||
+                                           (list_type != nullptr && list_type->item_count() != std::dynamic_extent));
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
                 .wired_input = input,
@@ -594,9 +602,7 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
                 .default_value = default_value,
                 .constant_binding = constant_binding,
                 .dereferences_reference = input.dereferences_reference(),
-                .sampled_reference = input.dereferences_reference() &&
-                                     (type_cast<TimeSeriesSetType>(parameter.type) != nullptr ||
-                                      type_cast<TimeSeriesDictionaryType>(parameter.type) != nullptr),
+                .sampled_reference = sampled_reference,
                 .dynamic_activity = parameter.dynamic_activity,
                 .offset = 0,
                 .output_last_updated_offset = 0,

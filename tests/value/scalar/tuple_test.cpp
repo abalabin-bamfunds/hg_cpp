@@ -27,6 +27,9 @@ using Single = Tuple<i64>;
 using NoEquality = Tuple<Opaque<std::array<int, 2>>>;
 using ITEM = ScalarVariable<"ITEM">;
 using MismatchAfterBinding = Tuple<ITEM, i64>;
+using KEY = ScalarVariable<"KEY">;
+using KEY1 = ScalarVariable<"KEY1">;
+using GenericKeyPair = Tuple<KEY, KEY1>;
 
 template <typename T> concept HasScalarEquality = requires(const T &value) { value.equals(value); };
 template <typename T> concept HasScalarHash = requires(const T &value) { value.hash(); };
@@ -147,6 +150,16 @@ TEST_CASE("a positional scalar tuple matches and resolves each item in order",
     const auto &mismatch = cpp_scalar_type<Tuple<string, symbol>>();
     CHECK_FALSE(mismatch_after_binding.match(mismatch, partial_type_map));
     CHECK(partial_type_map.find(ITEM::type()) == nullptr);
+}
+
+TEST_CASE("a tuple declaration exposes variables from each item", "[feature:type-system][scalar:tuple][declaration:generic]") {
+    auto variables = std::size_t{};
+    for_each_declaration_variable<GenericKeyPair>([&]<typename Declaration>(const auto &) {
+        static_assert(details::scalar_variable<Declaration>);
+        ++variables;
+    });
+
+    CHECK(variables == 2);
 }
 
 TEST_CASE("positional scalar literals construct nested tuple values",

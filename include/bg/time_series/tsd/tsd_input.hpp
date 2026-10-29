@@ -91,6 +91,15 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
 
     bool item_modified(const Scalar<K> &key) const { return item_modified(details::scalar_data(key)); }
 
+    bool item_updated(const Scalar<K> &key) const { return item_updated(details::scalar_data(key)); }
+
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
+    bool item_updated(Source &&key) const {
+        const auto value = scalar_source_value<K>(std::forward<Source>(key));
+        return item_updated(details::make_scalar_source<K>(value));
+    }
+
     template <typename Source>
         requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
     bool item_modified(Source &&key) const {
@@ -155,13 +164,13 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         while (added != util::occupancy_index::npos && !make_item(added).valid()) {
             added = next(ItemRange::added, added + 1);
         }
-        auto modified = next(ItemRange::modified, start);
+        auto modified = next(ItemRange::updated, start);
         while (modified != util::occupancy_index::npos) {
             const auto item = make_item(modified);
             if (item.valid() && !was_valid_before_change(modified)) {
                 break;
             }
-            modified = next(ItemRange::modified, modified + 1);
+            modified = next(ItemRange::updated, modified + 1);
         }
         if (added == util::occupancy_index::npos) {
             return modified;
@@ -180,13 +189,13 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         while (removed != util::occupancy_index::npos && !was_valid_before_change(removed)) {
             removed = next(ItemRange::removed, removed + 1);
         }
-        auto modified = next(ItemRange::modified, start);
+        auto modified = next(ItemRange::updated, start);
         while (modified != util::occupancy_index::npos) {
             const auto item = make_item(modified);
             if (!item.valid() && was_valid_before_change(modified)) {
                 break;
             }
-            modified = next(ItemRange::modified, modified + 1);
+            modified = next(ItemRange::updated, modified + 1);
         }
         if (removed == util::occupancy_index::npos) {
             return modified;
@@ -196,18 +205,34 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         }
         return removed < modified ? removed : modified;
     }
+    item_id_t next_updated_id(item_id_t start) const {
+        if (!uses_valid_items()) {
+            return next(ItemRange::updated, start);
+        }
+
+        auto id = next(ItemRange::updated, start);
+        while (id != util::occupancy_index::npos) {
+            const auto item = make_item(id);
+            if (item.valid() && was_valid_before_change(id)) {
+                return id;
+            }
+            id = next(ItemRange::updated, id + 1);
+        }
+        return util::occupancy_index::npos;
+    }
+
     item_id_t next_modified_id(item_id_t start) const {
-        auto id = next(ItemRange::modified, start);
-        if (uses_valid_items()) {
-            while (id != util::occupancy_index::npos) {
-                const auto item = make_item(id);
-                if (item.valid() && was_valid_before_change(id)) {
-                    return id;
-                }
-                id = next(ItemRange::modified, id + 1);
+        if (!uses_valid_items()) {
+            return next(ItemRange::modified, start);
+        }
+
+        for (auto id = next(ItemRange::modified, start); id != util::occupancy_index::npos;
+             id = next(ItemRange::modified, id + 1)) {
+            if (make_item(id).valid()) {
+                return id;
             }
         }
-        return id;
+        return util::occupancy_index::npos;
     }
 
     // A sampled reference reports whether any common key has a different physical ID.
@@ -238,6 +263,10 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         return find_change(ItemRange::removed, details::scalar_data(key));
     }
 
+    item_id_t find_updated_id(const Scalar<K> &key) const {
+        return find_change(ItemRange::updated, details::scalar_data(key));
+    }
+
     item_id_t find_modified_id(const Scalar<K> &key) const {
         return find_change(ItemRange::modified, details::scalar_data(key));
     }
@@ -247,21 +276,67 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     template <typename Function> void for_each_added(Function &&function) const {
-        if (valid()) {
-            if (uses_valid_items()) {
-                apply_filtered_changes(ItemRange::added, function);
-            } else {
-                apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_added, function);
-            }
-        }
+        for_each_key_change(ItemRange::added, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_updated(Function &&function) const {
+        for_each_key_change(ItemRange::updated, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_modified(Function &&function) const {
+        for_each_key_change(ItemRange::modified, std::forward<Function>(function));
     }
 
     template <typename Function> void for_each_removed(Function &&function) const {
-        if (uses_valid_items()) {
-            apply_filtered_changes(ItemRange::removed, function);
-        } else {
-            apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_removed, function);
-        }
+        for_each_key_change(ItemRange::removed, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_added_key(Function &&function) const {
+        for_each_added(std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_updated_key(Function &&function) const {
+        for_each_updated(std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_modified_key(Function &&function) const {
+        for_each_modified(std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_removed_key(Function &&function) const {
+        for_each_removed(std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_added_value(Function &&function) const {
+        for_each_item_change(ItemRange::added, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_updated_value(Function &&function) const {
+        for_each_item_change(ItemRange::updated, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_modified_value(Function &&function) const {
+        for_each_item_change(ItemRange::modified, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_removed_value(Function &&function) const {
+        for_each_item_change(ItemRange::removed, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_added_key_value(Function &&function) const {
+        for_each_key_item_change(ItemRange::added, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_updated_key_value(Function &&function) const {
+        for_each_key_item_change(ItemRange::updated, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_modified_key_value(Function &&function) const {
+        for_each_key_item_change(ItemRange::modified, std::forward<Function>(function));
+    }
+
+    template <typename Function> void for_each_removed_key_value(Function &&function) const {
+        for_each_key_item_change(ItemRange::removed, std::forward<Function>(function));
     }
 
     template <typename Function> void for_each_removed_physical_id(Function &&function) const {
@@ -271,14 +346,6 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         dictionary_runtime_type().for_each_removed_physical_id(
             last_updated_state(), data_.data(), std::addressof(function),
             invoke_with_id<std::remove_reference_t<Function>>);
-    }
-
-    template <typename Function> void for_each_modified(Function &&function) const {
-        if (uses_valid_items()) {
-            apply_filtered_changes(ItemRange::modified, function);
-        } else {
-            apply_changes(&details::TimeSeriesDictionaryRuntimeType::for_each_modified, function);
-        }
     }
 
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
@@ -364,6 +431,10 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
         return Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id));
     }
 
+    bool item_updated(const details::ScalarData &key) const {
+        return find_change(ItemRange::updated, key) != util::occupancy_index::npos;
+    }
+
     bool item_modified(const details::ScalarData &key) const {
         if (!valid()) {
             return false;
@@ -405,34 +476,60 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
                                               invoke_with_id<decltype(callback)>);
     }
 
-    using ChangeFunction = void (details::TimeSeriesDictionaryRuntimeType::*)(
-        const TimeSeriesState &, const void *, void *, TimeSeriesRuntimeType::ItemIdFunction) const;
-
     item_id_t next(ItemRange range, item_id_t start) const {
         return dictionary_runtime_type().next_item_id(last_updated_state(), data_.data(), range, start);
     }
 
-    template <typename Function> void apply_changes(ChangeFunction changes, Function &function) const {
-        auto callback = [&](item_id_t id) { std::invoke(function, make_key(id)); };
-        (dictionary_runtime_type().*changes)(last_updated_state(), data_.data(), &callback,
-                                             invoke_with_id<decltype(callback)>);
+    item_id_t next_change(ItemRange range, item_id_t start) const {
+        if (range == ItemRange::added) {
+            return next_added_id(start);
+        }
+        if (range == ItemRange::removed) {
+            return next_removed_id(start);
+        }
+        if (range == ItemRange::updated) {
+            return next_updated_id(start);
+        }
+        return next_modified_id(start);
     }
 
-    template <typename Function> void apply_filtered_changes(ItemRange range, Function &function) const {
-        if (range == ItemRange::added) {
-            for (auto id = next_added_id(0); id != util::occupancy_index::npos; id = next_added_id(id + 1)) {
-                std::invoke(function, make_key(id));
+    template <typename Function> void for_each_selected_id(ItemRange range, Function &&function) const {
+        if (!uses_valid_items()) {
+            if (data_.data() == nullptr) {
+                return;
             }
-        } else if (range == ItemRange::removed) {
-            for (auto id = next_removed_id(0); id != util::occupancy_index::npos; id = next_removed_id(id + 1)) {
-                std::invoke(function, make_key(id));
+
+            auto callback = [&](item_id_t id) { std::invoke(function, id); };
+            const auto context = std::addressof(callback);
+            const auto invoke = invoke_with_id<decltype(callback)>;
+            const auto &runtime_type = dictionary_runtime_type();
+            if (range == ItemRange::added) {
+                runtime_type.for_each_added(last_updated_state(), data_.data(), context, invoke);
+            } else if (range == ItemRange::updated) {
+                runtime_type.for_each_updated(last_updated_state(), data_.data(), context, invoke);
+            } else if (range == ItemRange::modified) {
+                runtime_type.for_each_modified(last_updated_state(), data_.data(), context, invoke);
+            } else {
+                runtime_type.for_each_removed(last_updated_state(), data_.data(), context, invoke);
             }
-        } else {
-            for (auto id = next_modified_id(0); id != util::occupancy_index::npos;
-                 id = next_modified_id(id + 1)) {
-                std::invoke(function, make_key(id));
-            }
+            return;
         }
+
+        for (auto id = next_change(range, 0); id != util::occupancy_index::npos; id = next_change(range, id + 1)) {
+            std::invoke(function, id);
+        }
+    }
+
+    template <typename Function> void for_each_key_change(ItemRange range, Function &&function) const {
+        for_each_selected_id(range, [&](item_id_t id) { std::invoke(function, make_key(id)); });
+    }
+
+    template <typename Function> void for_each_item_change(ItemRange range, Function &&function) const {
+        for_each_selected_id(range, [&](item_id_t id) { std::invoke(function, make_item(id)); });
+    }
+
+    template <typename Function> void for_each_key_item_change(ItemRange range, Function &&function) const {
+        for_each_selected_id(range, [&](item_id_t id) { std::invoke(function, make_key(id), make_item(id)); });
     }
 
     item_id_t find_change(ItemRange range, const details::ScalarData &key) const {
@@ -446,6 +543,9 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
             if (range == ItemRange::removed) {
                 return dictionary_runtime_type().find_removed(last_updated_state(), data_.data(), key);
             }
+            if (range == ItemRange::updated) {
+                return dictionary_runtime_type().find_updated(last_updated_state(), data_.data(), key);
+            }
             return dictionary_runtime_type().find_modified(last_updated_state(), data_.data(), key);
         }
 
@@ -455,7 +555,7 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
             if (id != util::occupancy_index::npos && make_item(id).valid()) {
                 return id;
             }
-            id = dictionary_runtime_type().find_modified(last_updated_state(), data_.data(), key);
+            id = dictionary_runtime_type().find_updated(last_updated_state(), data_.data(), key);
             return id != util::occupancy_index::npos && make_item(id).valid() && !was_valid_before_change(id)
                        ? id
                        : util::occupancy_index::npos;
@@ -465,18 +565,21 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
             if (id != util::occupancy_index::npos && was_valid_before_change(id)) {
                 return id;
             }
-            id = dictionary_runtime_type().find_modified(last_updated_state(), data_.data(), key);
+            id = dictionary_runtime_type().find_updated(last_updated_state(), data_.data(), key);
             return id != util::occupancy_index::npos && !make_item(id).valid() && was_valid_before_change(id)
                        ? id
                        : util::occupancy_index::npos;
         }
 
-        id = dictionary_runtime_type().find_modified(last_updated_state(), data_.data(), key);
-        if (id == util::occupancy_index::npos) {
-            return id;
+        if (range == ItemRange::updated) {
+            id = dictionary_runtime_type().find_updated(last_updated_state(), data_.data(), key);
+            return id != util::occupancy_index::npos && make_item(id).valid() && was_valid_before_change(id)
+                       ? id
+                       : util::occupancy_index::npos;
         }
-        const auto item = make_item(id);
-        return item.valid() && was_valid_before_change(id) ? id : util::occupancy_index::npos;
+
+        id = dictionary_runtime_type().find_modified(last_updated_state(), data_.data(), key);
+        return id != util::occupancy_index::npos && make_item(id).valid() ? id : util::occupancy_index::npos;
     }
 
     details::TimeSeriesInputData data_;

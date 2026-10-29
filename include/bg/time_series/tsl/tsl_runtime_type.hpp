@@ -63,27 +63,25 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
             return false;
         }
 
-        const auto *bytes = static_cast<const std::byte *>(value);
-        for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
-            const auto offset = first_item_offset_ + index * item_stride_;
-            if (!reinterpret_cast<const TimeSeriesState *>(bytes + offset)->valid()) {
-                return false;
-            }
-        }
-
-        return true;
+        return static_cast<const time_series_list_storage *>(value)->valid_child_count == list_type().item_count();
     }
 
     bool item_updated(const TimeSeriesState &last_updated, const void *value,
                                     item_id_t id) const noexcept override {
+        if (!last_updated.valid() || value == nullptr) {
+            return false;
+        }
         const auto &storage = *static_cast<const time_series_list_storage *>(value);
-        return last_updated.valid() && storage.change_time == last_updated.time() && storage.updated.contains(id);
+        return storage.change_time == last_updated.time() && storage.updated.contains(id);
     }
 
     void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
                                ItemIdFunction function) const override {
+        if (!last_updated.valid() || value == nullptr) {
+            return;
+        }
         const auto &storage = *static_cast<const time_series_list_storage *>(value);
-        if (!last_updated.valid() || storage.change_time != last_updated.time()) {
+        if (storage.change_time != last_updated.time()) {
             return;
         }
         for (const auto index : storage.updated) {
@@ -96,18 +94,14 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     void copy(const TimeSeriesInputData &input, OutputState &output) const override;
 
     [[nodiscard]] bool mark_item_modified(void *value, item_id_t id, EvaluationTime evaluation_time,
-                                          const TimeSeriesState &, allocator &memory) const noexcept override {
-        return static_cast<time_series_list_storage *>(value)->mark(id, evaluation_time, memory);
+                                          bool item_was_valid, allocator &memory) const noexcept override {
+        const auto item_is_valid = item(value, id).last_updated.valid();
+        return static_cast<time_series_list_storage *>(value)->mark(id, evaluation_time, item_was_valid,
+                                                                    item_is_valid, memory);
     }
 
     bool collection_valid(const void *value) const noexcept override {
-        const auto *bytes = static_cast<const std::byte *>(value);
-        for (auto index = std::size_t{}; index < list_type().item_count(); ++index) {
-            if (reinterpret_cast<const TimeSeriesState *>(bytes + item_layout(index).last_updated_offset)->valid()) {
-                return true;
-            }
-        }
-        return false;
+        return static_cast<const time_series_list_storage *>(value)->valid_child_count != 0;
     }
 
     const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;

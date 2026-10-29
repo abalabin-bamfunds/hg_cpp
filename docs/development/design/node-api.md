@@ -526,6 +526,18 @@ the behavior defined by the [validity design](time-series-validity.md).
 `Out<TSS<T>>::clear()` and `Out<TSD<K, TS_T>>::clear()` remove all entries and
 produce a valid empty collection.
 
+Both outputs provide `size()`, `empty()`, and `contains(item_or_key)` without
+changing the output. Invalid outputs have size zero and contain no entries.
+These queries count present keys or set members, not valid reference targets.
+
+TSD indexing and `erase()` also accept scalar literals, including composite
+keys. Construction uses the output's resolved key type:
+
+```cpp
+output[{outer_key, inner_key}].copy(item);
+output.erase({outer_key, inner_key});
+```
+
 `Out<TSS<T>>::for_each(callback)` visits current members as `Scalar<T>` views.
 An invalid output has no members. The callback may erase the member it receives;
 it must not insert members during enumeration.

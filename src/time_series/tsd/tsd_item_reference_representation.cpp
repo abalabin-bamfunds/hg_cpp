@@ -42,7 +42,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
           provider_{&provider}, item_runtime_type_{&item_runtime_type},
           retired_{&provider.allocation().memory_resource()} {
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
-        last_updated_ = *base_time_series.last_updated;
+        last_updated_ = base_time_series.last_updated;
         struct Callback {
             TimeSeriesDictionaryReferenceRepresentation *representation;
             const ResolvedTimeSeries *base_time_series;
@@ -55,7 +55,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
     }
 
     ResolvedTimeSeries resolve() const override {
-        return {&last_updated_, this, &dictionary_runtime_type()};
+        return {last_updated_, this, &dictionary_runtime_type()};
     }
 
     ResolvedTimeSeries base_time_series() const override { return ResolvedTimeSeries::resolve(base_reference()); }
@@ -83,13 +83,38 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
                                          TimeSeriesDictionaryRuntimeType::ItemRange::removed, id) == id;
     }
 
-    bool item_modified(const TimeSeriesState &, item_id_t) const noexcept override { return false; }
+    bool is_updated_item(const TimeSeriesState &, item_id_t) const noexcept override { return false; }
 
-    item_id_t next_modified_item_id(const TimeSeriesState &, item_id_t) const noexcept override {
+    bool is_modified_item(const TimeSeriesState &last_updated, item_id_t id) const noexcept override {
+        const auto base = base_time_series();
+        return base.storage != nullptr &&
+               base_runtime_type(base).item_in_range(last_updated, base.storage,
+                                                     TimeSeriesDictionaryRuntimeType::ItemRange::added, id);
+    }
+
+    item_id_t next_updated_item_id(const TimeSeriesState &, item_id_t) const noexcept override {
         return util::occupancy_index::npos;
     }
 
-    void for_each_modified(const TimeSeriesState &, void *, TimeSeriesRuntimeType::ItemIdFunction) const override {}
+    item_id_t next_modified_item_id(const TimeSeriesState &last_updated, item_id_t start) const noexcept override {
+        const auto base = base_time_series();
+        if (base.storage == nullptr) {
+            return util::occupancy_index::npos;
+        }
+        return base_runtime_type(base).next_item_id(last_updated, base.storage,
+                                                    TimeSeriesDictionaryRuntimeType::ItemRange::added, start);
+    }
+
+    void for_each_updated(const TimeSeriesState &, void *, TimeSeriesRuntimeType::ItemIdFunction) const override {}
+
+    void for_each_modified(const TimeSeriesState &last_updated, void *context,
+                           TimeSeriesRuntimeType::ItemIdFunction function) const override {
+        const auto base = base_time_series();
+        if (base.storage == nullptr) {
+            return;
+        }
+        base_runtime_type(base).for_each_added(last_updated, base.storage, context, function);
+    }
 
     void for_each_updated_item(const TimeSeriesState &last_updated, void *context,
                                TimeSeriesRuntimeType::ItemIdFunction function) const override {
@@ -169,7 +194,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
         }
 
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference());
-        const auto input_time = base_time_series.last_updated->time();
+        const auto input_time = base_time_series.last_updated.time();
         const auto &input_runtime_type = base_runtime_type(base_time_series);
         struct Callback {
             TimeSeriesDictionaryReferenceRepresentation *representation;
@@ -178,25 +203,25 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
             EvaluationTime input_time;
         } callback{this, &context, &base_time_series, input_time};
 
-        input_runtime_type.for_each_added(*base_time_series.last_updated, base_time_series.storage, &callback,
+        input_runtime_type.for_each_added(base_time_series.last_updated, base_time_series.storage, &callback,
                                           [](void *value, item_id_t id) {
                                               auto &callback = *static_cast<Callback *>(value);
                                               callback.representation->add_item(id, callback.input_time,
                                                                                 *callback.base_time_series);
                                           });
-        input_runtime_type.for_each_modified(*base_time_series.last_updated, base_time_series.storage, &callback,
+        input_runtime_type.for_each_updated(base_time_series.last_updated, base_time_series.storage, &callback,
                                              [](void *value, item_id_t id) {
                                                  auto &callback = *static_cast<Callback *>(value);
                                                  callback.representation->update_item(
                                                      *callback.context, id, *callback.base_time_series);
                                              });
-        input_runtime_type.for_each_removed(*base_time_series.last_updated, base_time_series.storage, &callback,
+        input_runtime_type.for_each_removed(base_time_series.last_updated, base_time_series.storage, &callback,
                                             [](void *value, item_id_t id) {
                                                 auto &callback = *static_cast<Callback *>(value);
                                                 callback.representation->remove_item(*callback.context, id);
                                             });
 
-        if (!input_runtime_type.item_updated(*base_time_series.last_updated, base_time_series.storage,
+        if (!input_runtime_type.item_updated(base_time_series.last_updated, base_time_series.storage,
                                              key_set_item_id)) {
             provider_->publish_item_notification_batch(context);
             cancel_items.release();

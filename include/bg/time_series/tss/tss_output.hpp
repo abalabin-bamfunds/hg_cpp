@@ -14,6 +14,8 @@
 #include <bg/time_series/tss/tss_storage.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
+#include <utility>
+
 namespace bg {
 
 template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
@@ -41,6 +43,22 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     EvaluationTime last_updated() const noexcept { return state_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return state_->runtime_type(); }
     void invalidate() const { state_->invalidate(); }
+    std::size_t size() const noexcept { return valid() ? storage().size() : 0; }
+    bool empty() const noexcept { return size() == 0; }
+    bool contains(const Scalar<K> &item) const {
+        return valid() && storage().contains(details::scalar_data(item), key_runtime_type(), key_layout());
+    }
+
+    bool contains(const Scalar<> &item) const {
+        return valid() && storage().contains(details::scalar_data(item), key_runtime_type(), key_layout());
+    }
+
+    template <typename Source>
+        requires(!details::scalar_variable<K> && scalar_source_for<K, Source>)
+    bool contains(Source &&item) const {
+        const auto value = scalar_source_value<K>(std::forward<Source>(item));
+        return valid() && storage().contains(details::make_scalar_source<K>(value), key_runtime_type(), key_layout());
+    }
 
     void apply(const literal::TimeSeriesLiteral &literal) const {
         if (const auto sentinel = literal::Sentinel::from(literal); sentinel && *sentinel == literal::SKIP) {

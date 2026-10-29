@@ -35,10 +35,29 @@ current membership and values.
 | TSD | Mapping access, `key_set`, key/value/item traversal | `input[key]`, `contains`, `key_set`, `for_each_key_value` |
 | TSS | Set-like `value`, `added()`, `removed()`, `was_added/was_removed` | Current membership and added/removed traversal |
 
-Python fixed TSL and TSB expose `modified_*()` and `valid_*()` traversals. TSD also has
-`added_*()` and `removed_*()` traversals. A removed dictionary key is separate from an
-existing key whose item becomes invalid. TSD delta mappings use `REMOVE` for removals
-and `INVALID` for invalid item updates.
+Python fixed TSL and TSB expose `modified_*()` and `valid_*()` traversals.
+
+### Dictionary change selections
+
+TSD provides four change selections:
+
+| Selection | Items visited |
+| --- | --- |
+| `added` | New keys, including keys with invalid child time series |
+| `updated` | Existing keys whose child time series changed, including invalidation |
+| `modified` | Added and updated keys, each visited once |
+| `removed` | Removed keys |
+
+For each selection, Python provides `<selection>_keys()`, `<selection>_values()`, and
+`<selection>_items()`. Values are child input views; items are `(key, child)` pairs.
+C++ provides `for_each_<selection>_key`, `for_each_<selection>_value`, and
+`for_each_<selection>_key_value`. The shorter `for_each_added`, `for_each_updated`,
+`for_each_modified`, and `for_each_removed` methods visit keys.
+
+Use `modified` to process additions and updates together. Use separate `added` and
+`updated` traversals when they require different handling.
+A removed key is separate from an existing key whose child becomes invalid.
+TSD delta mappings use `REMOVE` for removals and `INVALID` for invalid child updates.
 
 An accepting Python dictionary parameter can use `Annotated[TSD[K, V], valid_items]`.
 C++ accepts `valid_items` on the corresponding `In<>` declaration. Calling

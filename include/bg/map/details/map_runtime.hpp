@@ -151,7 +151,7 @@ class MapRuntime {
                         }
                         boundary_updates_.push_back({&entry, static_cast<std::uint32_t>(input_index)});
                     });
-                    dictionary->for_each_modified([&](const auto &key) {
+                    dictionary->for_each_updated([&](const auto &key) {
                         if (auto *entry = entries_.find(key)) {
                             boundary_updates_.push_back({entry, static_cast<std::uint32_t>(input_index)});
                         }
