@@ -46,7 +46,7 @@ target_include_directories(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(bg_web PUBLIC bg::bg PRIVATE bg::library CURL::libcurl ${BG_WEB_BOOST_TARGETS} Threads::Threads)
+target_link_libraries(bg_web PUBLIC bg::bg PRIVATE bg::library CURL::libcurl ICU::uc ${BG_WEB_BOOST_TARGETS} Threads::Threads)
 set_target_properties(
     bg_web
     PROPERTIES
@@ -67,7 +67,7 @@ install(
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 if(BG_BUILD_PYTHON)
-    find_package(Python 3.13 COMPONENTS Interpreter REQUIRED)
+    find_package(Python 3.13 COMPONENTS Interpreter Development.Module Development.SABIModule REQUIRED)
     if(APPLE)
         set(BG_WEB_PYTHON_BUILD_RPATH
             "@loader_path/../..;@loader_path/../../../../bindings/python;@loader_path/../../../..")
@@ -123,7 +123,7 @@ if(BUILD_TESTING)
     find_package(Catch2 3 REQUIRED)
     add_executable(bg_web_tests tests/http_client_test.cpp tests/http_server_test.cpp)
     target_compile_features(bg_web_tests PRIVATE cxx_std_23)
-    target_link_libraries(bg_web_tests PRIVATE bg::web Catch2::Catch2WithMain ${BG_WEB_BOOST_TARGETS})
+    target_link_libraries(bg_web_tests PRIVATE bg::web bg::library Catch2::Catch2WithMain ${BG_WEB_BOOST_TARGETS})
     add_test(NAME bg_web_tests COMMAND bg_web_tests)
     set_tests_properties(
         bg_web_tests PROPERTIES TIMEOUT 10 ENVIRONMENT "NO_PROXY=127.0.0.1,localhost;no_proxy=127.0.0.1,localhost"

@@ -3,6 +3,7 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/library.hpp>
 #include <bg/literal/scalar_literal.hpp>
 #include <bg/map.hpp>
 #include <bg/map_argument.hpp>
@@ -27,6 +28,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <condition_variable>
 #include <exception>
 #include <functional>
@@ -181,6 +183,397 @@ const auto echo_handler = node([](In<TS<Bundle<HttpServerRequest>>> request,
     response.set_value(reply.view());
 });
 
+const auto websocket_echo_handler = graph([](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
+    const auto message = operators::emit(operators::getattr(request, util::symbol{"messages"}));
+    const std::array finished_message_bytes{std::byte{0x7f}};
+    const auto finished_message = operators::const_(ScalarValue<bytes>{
+        std::span<const std::byte>{finished_message_bytes}});
+    const auto finished = operators::eq(message, finished_message);
+    auto memory = allocator{};
+    const auto close = operators::const_(
+        bundle<WebSocketClose>(memory, "code"_n = i64{1000}, "reason"_n = "finished"));
+    const auto no_close = operators::nothing[type<TS<Bundle<WebSocketClose>>>]();
+    return bundle<WebSocketResponse<bytes>::schema>(
+        "connect_response"_n = operators::const_(make_http_response(101)), "message"_n = message,
+        "close"_n = operators::if_then_else(finished, close, no_close));
+});
+
+const auto websocket_echo_dictionary_handler = graph(
+    [](wp<TSD<i64, TSB<WebSocketServerRequest<bytes>::schema>>, "requests"_n> requests,
+       wp<TS<i64>, "ambient"_n> ambient) {
+        const auto responses = map(websocket_echo_handler, requests);
+        return bundle("response"_n = responses, "extra"_n = ambient);
+    });
+
+TEST_CASE("WebSocket handler echoes ordered binary messages, including empty messages, then closes",
+          "[feature:websocket][feature:server][feature:lifecycle]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace websocket = beast::websocket;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto handshake_status = 0U;
+    auto echoed = std::vector<std::string>{};
+    auto close_code = 0U;
+    auto close_received = false;
+    const auto route = websocket_handler("/socket", websocket_echo_handler);
+
+    server.run([&] { (void)route(); }, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = websocket::stream<tcp::socket>{context};
+        socket.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+        auto response = websocket::response_type{};
+        socket.handshake(response, "localhost", "/socket");
+        handshake_status = response.result_int();
+
+        socket.binary(true);
+        auto buffer = beast::flat_buffer{};
+        const auto first = std::array<std::byte, 4>{std::byte{0}, std::byte{0x62}, std::byte{0xff}, std::byte{0}};
+        const auto final = std::array<std::byte, 1>{std::byte{0x7f}};
+        socket.write(asio::buffer(first));
+        socket.write(asio::const_buffer{});
+        socket.write(asio::buffer(final));
+        const auto receive = [&] {
+            buffer.consume(buffer.size());
+            socket.read(buffer);
+            echoed.push_back(beast::buffers_to_string(buffer.data()));
+        };
+        receive();
+        receive();
+        receive();
+
+        auto error = beast::error_code{};
+        socket.read(buffer, error);
+        close_received = error == websocket::error::closed;
+        close_code = static_cast<unsigned>(socket.reason().code);
+        server.stop.request_stop();
+    });
+
+    CHECK(handshake_status == 101);
+    CHECK(echoed == std::vector<std::string>{std::string{"\0b\xff\0", 4}, "", std::string(1, '\x7f')});
+    CHECK(close_received);
+    CHECK(close_code == 1000);
+}
+
+const auto websocket_protocol_handler = graph([](wp<TSB<WebSocketServerRequest<bytes>::schema>>) {
+    using Header = Tuple<string, string>;
+    const auto header_values = std::vector<std::pair<std::string, std::string>>{
+        {"Sec-WebSocket-Protocol", "chat"}, {"X-Handshake", "ready"}};
+    const auto headers = ScalarValue<List<Header>>{header_values};
+    const auto body = ScalarValue<bytes>{std::span<const std::byte>{}};
+    auto memory = allocator{};
+    const auto handshake = bundle<HttpResponse>(memory, "status"_n = i64{101}, "headers"_n = headers.view(),
+                                                "body"_n = body.view());
+    const auto no_message = operators::nothing[type<TS<bytes>>]();
+    const auto no_close = operators::nothing[type<TS<Bundle<WebSocketClose>>>]();
+    return bundle<WebSocketResponse<bytes>::schema>("connect_response"_n = operators::const_(handshake.view()),
+                                                   "message"_n = no_message, "close"_n = no_close);
+});
+
+TEST_CASE("WebSocket handshake returns selected headers and text messages close with 1003",
+          "[feature:websocket][feature:server]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace websocket = beast::websocket;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto handshake_status = 0U;
+    auto selected_protocol = std::string{};
+    auto custom_header = std::string{};
+    auto close_received = false;
+    auto close_code = 0U;
+    const auto route = websocket_handler("/protocol", websocket_protocol_handler);
+
+    server.run([&] { (void)route(); }, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = websocket::stream<tcp::socket>{context};
+        socket.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+        socket.set_option(websocket::stream_base::decorator([](websocket::request_type &request) {
+            request.set(http::field::sec_websocket_protocol, "chat");
+        }));
+        auto response = websocket::response_type{};
+        socket.handshake(response, "localhost", "/protocol");
+        handshake_status = response.result_int();
+        selected_protocol = std::string{response[http::field::sec_websocket_protocol]};
+        custom_header = std::string{response["X-Handshake"]};
+
+        socket.text(true);
+        socket.write(asio::buffer("text"));
+        auto buffer = beast::flat_buffer{};
+        auto error = beast::error_code{};
+        socket.read(buffer, error);
+        close_received = error == websocket::error::closed;
+        close_code = static_cast<unsigned>(socket.reason().code);
+        server.stop.request_stop();
+    });
+
+    CHECK(handshake_status == 101);
+    CHECK(selected_protocol == "chat");
+    CHECK(custom_header == "ready");
+    CHECK(close_received);
+    CHECK(close_code == 1003);
+}
+
+const auto invalid_websocket_close_handler = graph([](wp<TSB<WebSocketServerRequest<bytes>::schema>>) {
+    auto memory = allocator{};
+    const auto close = bundle<WebSocketClose>(memory, "code"_n = i64{1005}, "reason"_n = "invalid");
+    const auto no_message = operators::nothing[type<TS<bytes>>]();
+    return bundle<WebSocketResponse<bytes>::schema>("connect_response"_n = operators::const_(make_http_response(101)),
+                                                   "message"_n = no_message,
+                                                   "close"_n = operators::const_(close));
+});
+
+struct AuthenticatedWebSocketHandler {
+    In<TSB<WebSocketServerRequest<bytes>::schema>> request;
+    In<TS<i64>> identity;
+    Out<TSB<WebSocketResponse<bytes>::schema>> response;
+
+    void start() const { ++starts; }
+
+    void evaluate() const {
+        if (!request->connect_request.valid() || !request->connect_request.modified() ||
+            response->connect_response.valid() || !identity.valid()) {
+            return;
+        }
+        const auto handshake = make_http_response(101);
+        response->connect_response.set_value(handshake.view());
+    }
+
+    inline static std::atomic<int> starts{};
+};
+
+TEST_CASE("WebSocket handler validates close codes before sending them",
+          "[feature:websocket][feature:server]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace websocket = beast::websocket;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto close_received = false;
+    auto close_code = 0U;
+    const auto route = websocket_handler("/invalid-close", invalid_websocket_close_handler);
+
+    server.run([&] { (void)route(); }, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = websocket::stream<tcp::socket>{context};
+        socket.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+        socket.handshake("localhost", "/invalid-close");
+        auto buffer = beast::flat_buffer{};
+        auto error = beast::error_code{};
+        socket.read(buffer, error);
+        close_received = error == websocket::error::closed;
+        close_code = static_cast<unsigned>(socket.reason().code);
+        server.stop.request_stop();
+    });
+
+    CHECK(close_received);
+    CHECK(close_code == 1011);
+}
+
+TEST_CASE("WebSocket authentication rejects connections and closes accepted connections on revocation",
+          "[feature:websocket][feature:service][feature:authentication][feature:validity]") {
+    auto reject_on_revocation = false;
+    SECTION("identity invalidation closes with policy code") {}
+    SECTION("later policy rejection closes with policy code") { reject_on_revocation = true; }
+
+    const auto policy = service<auto(TS<Bundle<HttpServerRequest>>) -> TS<AuthDecision<i64>>>{
+        "websocket_test_policy", {"request"}};
+    auto revocation_writer = Queue{};
+    const auto revocations = queue<TS<i64>>(start = [&](Queue writer) { revocation_writer = writer; });
+    const auto policy_node = node([&](In<TS<Bundle<HttpServerRequest>>> request, In<TS<i64>, optional> revocation,
+                                      Out<TS<AuthDecision<i64>>> decision) {
+        if (revocation.valid()) {
+            if (reject_on_revocation) {
+                const auto response = make_http_response(403);
+                const auto result = auth::reject<i64>(response.view());
+                decision.set_value(result.view());
+            } else {
+                decision.invalidate();
+            }
+            return;
+        }
+        if (!request.valid()) return;
+
+        const auto path = scalar_cast<string>(request.value()[2]).value();
+        if (path == "/auth/rejected") {
+            const auto response = make_http_response(401);
+            const auto result = auth::reject<i64>(response.view());
+            decision.set_value(result.view());
+            return;
+        }
+
+        const auto identity = ScalarValue<i64>{73};
+        const auto result = auth::accept<i64>(identity.view());
+        decision.set_value(result.view());
+    });
+    const auto policy_implementation = graph(
+        [&](wp<TSD<i64, TS<Bundle<HttpServerRequest>>>, "request"_n> requests)
+            -> wp<TSD<i64, TS<AuthDecision<i64>>>> {
+            const auto updates = revocations();
+            return map(policy_node, requests, pass_through(updates)).as<TSD<i64, TS<AuthDecision<i64>>>>();
+        });
+    AuthenticatedWebSocketHandler::starts.store(0);
+    const auto authenticated_handler = node<AuthenticatedWebSocketHandler>();
+    const auto rejected_route = websocket_handler("/auth/rejected", authenticated_handler, policy);
+    const auto accepted_route = websocket_handler("/auth/accepted", authenticated_handler, policy);
+
+    auto server = ServerTest{};
+    auto rejected_status = 0U;
+    auto accepted_status = 0U;
+    auto rejected_handler_starts = -1;
+    auto accepted_handler_starts = -1;
+    auto close_received = false;
+    auto close_code = 0U;
+    server.run_with_services(
+        [&] {
+            (void)rejected_route();
+            (void)accepted_route();
+        },
+        [&](std::uint16_t port) {
+            namespace asio = boost::asio;
+            namespace beast = boost::beast;
+            namespace websocket = beast::websocket;
+            using tcp = asio::ip::tcp;
+
+            auto context = asio::io_context{};
+            auto rejected = websocket::stream<tcp::socket>{context};
+            rejected.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            auto rejected_response = websocket::response_type{};
+            auto error = beast::error_code{};
+            rejected.handshake(rejected_response, "localhost", "/auth/rejected", error);
+            rejected_status = rejected_response.result_int();
+            rejected_handler_starts = AuthenticatedWebSocketHandler::starts.load();
+            rejected.next_layer().close();
+
+            auto accepted = websocket::stream<tcp::socket>{context};
+            accepted.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            auto accepted_response = websocket::response_type{};
+            accepted.handshake(accepted_response, "localhost", "/auth/accepted");
+            accepted_status = accepted_response.result_int();
+            accepted_handler_starts = AuthenticatedWebSocketHandler::starts.load();
+            if (!revocation_writer.write(literal::ScalarLiteral(1))) {
+                throw std::runtime_error{"could not revoke the WebSocket identity"};
+            }
+
+            auto buffer = beast::flat_buffer{};
+            accepted.read(buffer, error);
+            close_received = error == websocket::error::closed;
+            close_code = static_cast<unsigned>(accepted.reason().code);
+            server.stop.request_stop();
+        },
+        [&](ServiceCatalogue &catalogue) { catalogue.register_impl(policy, policy_implementation); });
+
+    CHECK(rejected_status == 401);
+    CHECK(rejected_handler_starts == 0);
+    CHECK(accepted_status == 101);
+    CHECK(accepted_handler_starts == 1);
+    CHECK(AuthenticatedWebSocketHandler::starts.load() == 1);
+    CHECK(close_received);
+    CHECK(close_code == 1008);
+}
+
+TEST_CASE("HTTP and WebSocket routes can share a path and WebSocket route removal closes active sessions",
+          "[feature:websocket][feature:http][feature:lifecycle][transition:removal]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    namespace websocket = beast::websocket;
+    using tcp = asio::ip::tcp;
+
+    auto writer = Queue{};
+    const auto activations = queue<TSS<i64>>(start = [&](Queue queue) {
+        writer = queue;
+        if (!queue.write(::literal::TimeSeriesLiteral{1})) {
+            throw std::runtime_error{"could not queue the initial WebSocket route activation"};
+        }
+    });
+    const auto http_handler_graph = graph([](wp<TS<Bundle<HttpServerRequest>>>) {
+        return operators::const_(make_http_response(200, "http"));
+    });
+    const auto http_route = http_handler("/shared", http_handler_graph);
+    const auto websocket_route = websocket_handler("/shared", websocket_echo_dictionary_handler);
+
+    auto server = ServerTest{};
+    auto statuses = std::vector<unsigned>{};
+    auto http_bodies = std::vector<std::string>{};
+    auto active_close_received = false;
+    auto active_close_code = 0U;
+    auto final_message = std::string{};
+    auto extra_values = std::vector<i64>{};
+    auto removed_handshake_status = 0U;
+    server.run(
+        [&] {
+            (void)http_route();
+            (void)map([&](auto key) {
+                const auto output = websocket_route("ambient"_n = operators::const_(i64{42}));
+                const auto extra = operators::getattr(output, util::symbol{"extra"});
+                (void)node([&](i64 value) { extra_values.push_back(value); })(extra);
+                return key;
+            }, activations());
+            (void)http_server();
+        },
+        [&](std::uint16_t port) {
+            auto context = asio::io_context{};
+            const auto request_http = [&] {
+                auto socket = tcp::socket{context};
+                socket.connect({asio::ip::make_address("127.0.0.1"), port});
+                auto request = http::request<http::empty_body>{http::verb::get, "/shared", 11};
+                request.set(http::field::host, "localhost");
+                http::write(socket, request);
+                auto buffer = beast::flat_buffer{};
+                auto reply = http::response<http::string_body>{};
+                http::read(socket, buffer, reply);
+                statuses.push_back(reply.result_int());
+                http_bodies.push_back(std::move(reply.body()));
+            };
+            request_http();
+            if (statuses.back() != 200) throw std::runtime_error{"the HTTP route was not available"};
+
+            auto active = websocket::stream<tcp::socket>{context};
+            active.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            active.handshake("localhost", "/shared");
+
+            const auto last_payload = std::array{std::byte{'l'}, std::byte{'a'}, std::byte{'s'}, std::byte{'t'}};
+            active.binary(true);
+            active.write(asio::buffer(last_payload));
+            auto message_buffer = beast::flat_buffer{};
+            active.read(message_buffer);
+            final_message = beast::buffers_to_string(message_buffer.data());
+
+            if (!writer.write(::literal::TimeSeriesLiteral{literal::REMOVED(1)})) {
+                throw std::runtime_error{"could not remove the WebSocket route"};
+            }
+            auto buffer = beast::flat_buffer{};
+            auto error = beast::error_code{};
+            active.read(buffer, error);
+            active_close_received = error == websocket::error::closed;
+            active_close_code = static_cast<unsigned>(active.reason().code);
+
+            request_http();
+            auto removed = websocket::stream<tcp::socket>{context};
+            removed.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            auto response = websocket::response_type{};
+            removed.handshake(response, "localhost", "/shared", error);
+            removed_handshake_status = response.result_int();
+            server.stop.request_stop();
+        });
+
+    REQUIRE(statuses.size() >= 2);
+    CHECK(statuses.front() == 200);
+    CHECK(statuses.back() == 200);
+    CHECK(http_bodies.front() == "http");
+    CHECK(http_bodies.back() == "http");
+    CHECK(active_close_received);
+    CHECK(active_close_code == 1001);
+    CHECK(final_message == "last");
+    CHECK(extra_values == std::vector<i64>{42});
+    CHECK(removed_handshake_status == 404);
+}
+
 const auto auth_policy = service<auto(TS<Bundle<HttpServerRequest>>) -> TS<AuthDecision<i64>>>{
     "http_auth_policy", {"request"}};
 
@@ -268,7 +661,6 @@ TEST_CASE("HTTP handlers accept ambient inputs and preserve mapped extra outputs
             const auto extra = map(project_extra, std::span<const MapArgument>{arguments});
             (void)node([&](In<TSD<i64, TS<i64>>> values) {
                 const auto collect = [&](const Scalar<i64> &key) { extra_values.push_back(values[key].value()); };
-                values.for_each_added(collect);
                 values.for_each_modified(collect);
             })(extra);
         },
@@ -784,7 +1176,6 @@ TEST_CASE("HTTP server route dictionaries isolate request additions and removals
                 const auto response = make_response(route);
                 responses[key].set_value(response.view());
             };
-            requests.for_each_added(respond);
             requests.for_each_modified(respond);
             requests.for_each_removed([&](const auto &key) { record("-", key); });
             route_events->push_back(changed ? std::move(invocation) : route + ":empty");

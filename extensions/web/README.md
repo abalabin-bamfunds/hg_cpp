@@ -83,6 +83,39 @@ HTTP/1.1 requests require one valid `Host` header.
 Request bodies are limited to 8 MiB. Request reads, handler responses, and
 response writes each time out after 30 seconds.
 
+## WebSocket server
+
+The WebSocket server API is currently C++ only.
+
+`websocket_handler(path, graph)` registers a WebSocket route on the HTTP server's
+listener. HTTP and WebSocket routes can use the same path. A WebSocket handler
+receives `TSB<WebSocketServerRequest<bytes>::schema>` for one connection or a
+dictionary keyed by connection ID. The request contains the HTTP
+`connect_request` and a time series of binary `messages`.
+
+The handler returns `TSB<WebSocketResponse<bytes>::schema>` or a bundle with a
+`response` field. `connect_response` accepts a connection with status 101 and an
+empty body, or rejects it with an HTTP status from 400 through 599. Its headers
+are sent with the handshake. A `Sec-WebSocket-Protocol` response header must
+select one protocol offered by the client. `message` sends a binary payload;
+`close` sends a close code and UTF-8 reason. Close codes must be 1000–1014
+excluding 1004, 1005, and 1006, or 3000–4999. Reasons are limited to 123 UTF-8
+bytes. Invalid close values are sent as close code 1011. Incoming text messages
+close the connection with code 1003. Incoming message payloads are limited to
+8 MiB.
+
+An authenticated route uses the same policy service as `http_handler`:
+
+```cpp
+auto route = bg::web::websocket_handler("/socket", handler, policy);
+```
+
+The handler receives the identity as its second input. A rejected connection
+receives the policy's HTTP response before the WebSocket handshake. If the
+policy later rejects or invalidates the identity, the server closes the
+connection with code 1008. Removing a route closes its active connections with
+code 1001.
+
 The C++ entry points are declared in `<bg/web/http_server.hpp>`:
 
 ```cpp

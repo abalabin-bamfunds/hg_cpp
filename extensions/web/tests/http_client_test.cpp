@@ -298,7 +298,6 @@ TEST_CASE("HTTP client dispatch rejects replies from a removed client sequence",
                     observed_statuses.push_back(scalar_cast<i64>(reply.value()[0]).value());
                 }
             };
-            replies.for_each_added(observe_reply);
             replies.for_each_modified(observe_reply);
         })(response_point);
     }

@@ -11,6 +11,7 @@ namespace details {
 
 template <template <typename, auto...> typename Field> struct ServerOutput {
     Field<TSD<i64, TSD<i64, TS<Bundle<HttpServerRequest>>>>> requests;
+    Field<TSD<i64, TSD<i64, TS<Bundle<HttpServerRequest>>>>> websocket_requests;
     Field<TS<string>> errors;
     Field<TS<Opaque<ServerRuntime *>>> runtime;
 };

@@ -13,6 +13,8 @@
 #include <boost/system/system_error.hpp>
 #include <boost/url.hpp>
 
+#include <unicode/utf8.h>
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -31,6 +33,7 @@
 #include <unordered_map>
 #include <unordered_set>
 #include <utility>
+#include <variant>
 #include <vector>
 
 namespace bg::web {
@@ -39,6 +42,7 @@ namespace {
 namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
+namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
 using RequestHeaders = std::vector<std::pair<std::string, std::string>>;
 using namespace bg::literals;
@@ -123,6 +127,7 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     void write_response(ScalarValue<Bundle<HttpResponse>> response);
     void await_response(i64 request_id);
     void send_error(http::status status, std::string body, bool close);
+    tcp::socket take_socket() noexcept { return std::move(socket_); }
 
   private:
     void read_request();
@@ -135,7 +140,6 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     void start_response_write_timeout();
     void finish_request();
     void close_connection() noexcept;
-
     tcp::socket socket_;
     ServerImplementation *server_;
     beast::flat_buffer buffer_;
@@ -149,6 +153,55 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     bool disconnect_watch_started_{};
     bool head_request_{};
     bool interim_response_pending_{};
+};
+
+class WebSocketSession final : public std::enable_shared_from_this<WebSocketSession> {
+  public:
+    WebSocketSession(tcp::socket socket, ServerImplementation &server, service_client_id_t client_id, i64 id,
+                     http::request<http::string_body> request);
+
+    service_client_id_t client_id() const noexcept { return client_id_; }
+    void await_response();
+    void apply_update(WebSocketResponseUpdate update);
+    void close_for_route_removal();
+    void close_for_shutdown() noexcept;
+
+  private:
+    struct MessageOperation {
+        ScalarValue<bytes> value;
+    };
+    struct CloseOperation {
+        websocket::close_reason reason;
+    };
+    using Operation = std::variant<MessageOperation, CloseOperation>;
+    enum class State { awaiting_response, accepting, open, closing, rejecting, closed };
+
+    void accept(ScalarValue<Bundle<HttpResponse>> response);
+    void reject(ScalarValue<Bundle<HttpResponse>> response);
+    void reject_with_error(http::status status, std::string body);
+    void read_message();
+    void enqueue_message(ScalarValue<bytes> message);
+    void enqueue_close(ScalarValue<Bundle<WebSocketClose>> close);
+    void run_next_operation();
+    void watch_disconnect();
+    void cancel_disconnect_watch() noexcept;
+    void start_response_write_timeout();
+    void finish() noexcept;
+    void close_socket() noexcept;
+
+    websocket::stream<tcp::socket> stream_;
+    ServerImplementation *server_;
+    service_client_id_t client_id_;
+    i64 id_;
+    http::request<http::string_body> request_;
+    beast::flat_buffer read_buffer_;
+    asio::steady_timer timeout_;
+    std::array<std::byte, 1> peek_buffer_{};
+    std::deque<Operation> operations_;
+    State state_{State::awaiting_response};
+    bool operation_started_{};
+    bool disconnect_watch_started_{};
+    bool closing_requested_{};
 };
 
 } // namespace
@@ -205,6 +258,14 @@ class ServerImplementation final {
         });
     }
 
+    void attach_websocket_queue(Queue messages) {
+        if (started_ || websocket_queue_attached_) {
+            throw std::logic_error{"the WebSocket message queue must be attached once before the server starts"};
+        }
+        websocket_messages_ = std::move(messages);
+        websocket_queue_attached_ = true;
+    }
+
     void unregister_route(service_client_id_t client_id) {
         if (!started_) {
             remove_route(client_id);
@@ -212,6 +273,30 @@ class ServerImplementation final {
         }
         if (!stopped_.load(std::memory_order_acquire)) {
             asio::post(io_, [this, client_id] { remove_route(client_id); });
+        }
+    }
+
+    void register_websocket_route(service_client_id_t client_id, std::string route) {
+        if (!started_) {
+            add_websocket_route(client_id, std::move(route));
+            return;
+        }
+        asio::post(io_, [this, client_id, route = std::move(route)]() mutable {
+            try {
+                add_websocket_route(client_id, std::move(route));
+            } catch (...) {
+                record_failure(std::current_exception());
+            }
+        });
+    }
+
+    void unregister_websocket_route(service_client_id_t client_id) {
+        if (!started_) {
+            remove_websocket_route(client_id);
+            return;
+        }
+        if (!stopped_.load(std::memory_order_acquire)) {
+            asio::post(io_, [this, client_id] { remove_websocket_route(client_id); });
         }
     }
 
@@ -231,6 +316,20 @@ class ServerImplementation final {
         });
     }
 
+    void respond_websocket(service_client_id_t client_id, i64 id, WebSocketResponseUpdate update) {
+        if (stopped_.load(std::memory_order_acquire)) {
+            return;
+        }
+        asio::post(io_, [this, client_id, id, update = std::move(update)]() mutable {
+            const auto found = websocket_sessions_.find(id);
+            if (found == websocket_sessions_.end() || found->second->client_id() != client_id) {
+                return;
+            }
+            const auto session = found->second;
+            session->apply_update(std::move(update));
+        });
+    }
+
     void stop() {
         if (stopped_.exchange(true, std::memory_order_acq_rel)) {
             if (thread_.joinable()) {
@@ -247,8 +346,13 @@ class ServerImplementation final {
         for (const auto &session : sessions_) {
             session->close_for_shutdown();
         }
+        while (!websocket_sessions_.empty()) {
+            const auto session = websocket_sessions_.begin()->second;
+            session->close_for_shutdown();
+        }
         sessions_.clear();
         pending_.clear();
+        websocket_sessions_.clear();
     }
 
     void finish_request(i64 id) {
@@ -268,6 +372,24 @@ class ServerImplementation final {
 
     void session_finished(const HttpSession *session) {
         std::erase_if(sessions_, [session](const auto &entry) { return entry.get() == session; });
+    }
+
+    void finish_websocket(i64 id) noexcept {
+        const auto found = websocket_sessions_.find(id);
+        if (found == websocket_sessions_.end()) {
+            return;
+        }
+        const auto client_id = found->second->client_id();
+        websocket_sessions_.erase(found);
+        try {
+            if (websocket_queue_attached_) {
+                (void)websocket_messages_.write(::literal::TimeSeriesLiteral{{client_id, {{id, ::literal::REMOVE}}}});
+            }
+            (void)output_.write(::literal::TimeSeriesLiteral{
+                {util::symbol{"websocket_requests"}, {{client_id, {{id, ::literal::REMOVE}}}}}});
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
     }
 
     void enqueue(const std::shared_ptr<HttpSession> &session,
@@ -303,6 +425,62 @@ class ServerImplementation final {
             return;
         }
         session->await_response(id);
+    }
+
+    void enqueue_websocket(const std::shared_ptr<HttpSession> &http_session,
+                           http::request<http::string_body> request, const ParsedTarget &target,
+                           const tcp::endpoint &peer, const RequestHeaders &request_headers) {
+        if (stopped_.load(std::memory_order_acquire)) {
+            http_session->close_for_shutdown();
+            return;
+        }
+        const auto route = websocket_routes_.find(target.path);
+        if (route == websocket_routes_.end()) {
+            http_session->send_error(http::status::not_found, "Not Found", true);
+            return;
+        }
+        if (!websocket_queue_attached_) {
+            http_session->send_error(http::status::service_unavailable, "Service Unavailable", true);
+            return;
+        }
+        if (next_id_ == 0 || next_id_ > static_cast<std::uint64_t>(std::numeric_limits<i64>::max())) {
+            next_id_ = 1;
+        }
+        const auto id = static_cast<i64>(next_id_++);
+        const auto client_id = route->second;
+        auto value = request_value(request, target, peer, request_headers);
+        auto session = std::make_shared<WebSocketSession>(http_session->take_socket(), *this, client_id, id,
+                                                         std::move(request));
+        session_finished(http_session.get());
+        websocket_sessions_.emplace(id, session);
+        try {
+            if (!output_.write(::literal::TimeSeriesLiteral{
+                    {util::symbol{"websocket_requests"}, {{client_id, {{id, value.view()}}}}}})) {
+                session->close_for_shutdown();
+                return;
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
+            session->close_for_shutdown();
+            return;
+        }
+        session->await_response();
+    }
+
+    void enqueue_websocket_message(i64 id, std::span<const std::byte> message) noexcept {
+        const auto found = websocket_sessions_.find(id);
+        if (found == websocket_sessions_.end() || !websocket_queue_attached_) {
+            return;
+        }
+        try {
+            if (!websocket_messages_.write(::literal::TimeSeriesLiteral{
+                    {found->second->client_id(), {{id, literal::ScalarLiteral(message)}}}})) {
+                found->second->close_for_shutdown();
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
+            found->second->close_for_shutdown();
+        }
     }
 
   private:
@@ -352,6 +530,51 @@ class ServerImplementation final {
         }
     }
 
+    void add_websocket_route(service_client_id_t client_id, std::string route) {
+        const auto existing_client = websocket_route_by_client_.find(client_id);
+        if (existing_client != websocket_route_by_client_.end()) {
+            if (existing_client->second != route) {
+                throw std::logic_error{"a WebSocket handler route changed while its client was active"};
+            }
+            return;
+        }
+        if (websocket_routes_.contains(route)) {
+            throw std::invalid_argument{"a WebSocket route is already registered"};
+        }
+        websocket_routes_.emplace(route, client_id);
+        websocket_route_by_client_.emplace(client_id, std::move(route));
+    }
+
+    void remove_websocket_route(service_client_id_t client_id) {
+        const auto found = websocket_route_by_client_.find(client_id);
+        if (found == websocket_route_by_client_.end()) {
+            return;
+        }
+        websocket_routes_.erase(found->second);
+        websocket_route_by_client_.erase(found);
+
+        auto sessions = std::vector<std::shared_ptr<WebSocketSession>>{};
+        for (const auto &[id, session] : websocket_sessions_) {
+            (void)id;
+            if (session->client_id() == client_id) {
+                sessions.push_back(session);
+            }
+        }
+        for (const auto &session : sessions) {
+            session->close_for_route_removal();
+        }
+
+        try {
+            if (websocket_queue_attached_) {
+                (void)websocket_messages_.write(::literal::TimeSeriesLiteral{{client_id, ::literal::REMOVE}});
+            }
+            (void)output_.write(
+                ::literal::TimeSeriesLiteral{{util::symbol{"websocket_requests"}, {{client_id, ::literal::REMOVE}}}});
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
+    }
+
     void record_failure(std::exception_ptr failure) noexcept {
         try {
             auto message = std::string{"unexpected HTTP transport failure"};
@@ -393,13 +616,18 @@ class ServerImplementation final {
 
     std::unordered_map<std::string, service_client_id_t> routes_;
     std::unordered_map<service_client_id_t, std::string> route_by_client_;
+    std::unordered_map<std::string, service_client_id_t> websocket_routes_;
+    std::unordered_map<service_client_id_t, std::string> websocket_route_by_client_;
     Queue output_;
+    Queue websocket_messages_;
+    bool websocket_queue_attached_{};
     asio::io_context io_{1};
     tcp::acceptor acceptor_;
     std::jthread thread_;
     std::uint16_t port_{};
     std::uint64_t next_id_{1};
     std::unordered_map<i64, PendingRequest> pending_;
+    std::unordered_map<i64, std::shared_ptr<WebSocketSession>> websocket_sessions_;
     std::vector<std::shared_ptr<HttpSession>> sessions_;
     std::atomic<bool> stopped_{};
     std::exception_ptr failure_;
@@ -558,6 +786,14 @@ void HttpSession::on_read(beast::error_code error) {
         return;
     }
     close_after_response_ = !request.keep_alive();
+    if (websocket::is_upgrade(request)) {
+        if (buffer_.size() != 0) {
+            send_error(http::status::bad_request, "Unexpected WebSocket Data", true);
+            return;
+        }
+        server_->enqueue_websocket(shared_from_this(), std::move(request), *target, peer, ordered_headers);
+        return;
+    }
     server_->enqueue(shared_from_this(), request, *target, peer, ordered_headers);
 }
 
@@ -801,6 +1037,417 @@ void HttpSession::close_for_shutdown() noexcept {
 
 void HttpSession::cancel() noexcept { close_connection(); }
 
+WebSocketSession::WebSocketSession(tcp::socket socket, ServerImplementation &server, service_client_id_t client_id,
+                                   i64 id, http::request<http::string_body> request)
+    : stream_{std::move(socket)}, server_{&server}, client_id_{client_id}, id_{id}, request_{std::move(request)},
+      timeout_{stream_.get_executor()} {
+    stream_.read_message_max(request_body_limit);
+    stream_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
+}
+
+void WebSocketSession::await_response() {
+    timeout_.expires_after(request_timeout);
+    auto self = shared_from_this();
+    timeout_.async_wait([self](beast::error_code error) {
+        if (error || self->state_ == State::closed || self->state_ == State::rejecting) {
+            return;
+        }
+        if (self->state_ == State::awaiting_response) {
+            self->reject_with_error(http::status::gateway_timeout, "Gateway Timeout");
+        } else {
+            self->close_socket();
+        }
+    });
+    watch_disconnect();
+}
+
+void WebSocketSession::watch_disconnect() {
+    if (disconnect_watch_started_ || state_ != State::awaiting_response) {
+        return;
+    }
+    disconnect_watch_started_ = true;
+    auto self = shared_from_this();
+    stream_.next_layer().async_receive(asio::buffer(peek_buffer_), tcp::socket::message_peek,
+                                       [self](beast::error_code error, std::size_t size) {
+                                           self->disconnect_watch_started_ = false;
+                                           if (self->state_ != State::awaiting_response) {
+                                               return;
+                                           }
+                                           if (error == asio::error::eof || (!error && size == 0)) {
+                                               self->close_socket();
+                                               return;
+                                           }
+                                           if (!error && size != 0) {
+                                               self->reject_with_error(http::status::bad_request,
+                                                                       "Unexpected WebSocket Data");
+                                               return;
+                                           }
+                                           if (error != asio::error::operation_aborted) {
+                                               self->close_socket();
+                                           }
+                                       });
+}
+
+void WebSocketSession::cancel_disconnect_watch() noexcept {
+    if (!disconnect_watch_started_) {
+        return;
+    }
+    disconnect_watch_started_ = false;
+    beast::error_code ignored;
+    stream_.next_layer().cancel(ignored);
+}
+
+void WebSocketSession::start_response_write_timeout() {
+    timeout_.expires_after(request_timeout);
+    auto self = shared_from_this();
+    timeout_.async_wait([self](beast::error_code error) {
+        if (!error && self->state_ == State::rejecting) {
+            self->close_socket();
+        }
+    });
+}
+
+void WebSocketSession::apply_update(WebSocketResponseUpdate update) {
+    if (state_ == State::closed || state_ == State::rejecting || closing_requested_) {
+        return;
+    }
+
+    if (update.connect_response && state_ == State::awaiting_response) {
+        const auto response = update.connect_response->view();
+        const auto status = scalar_cast<i64>(response[0]).value();
+        if (status == 101) {
+            accept(std::move(*update.connect_response));
+        } else {
+            reject(std::move(*update.connect_response));
+        }
+    }
+
+    if (state_ == State::rejecting || state_ == State::closed) {
+        return;
+    }
+    if (update.message) {
+        enqueue_message(std::move(*update.message));
+    }
+    if (update.close) {
+        const auto close = update.close->view();
+        const auto code = scalar_cast<i64>(close[0]).value();
+        if ((state_ != State::awaiting_response || code != 1008) && !closing_requested_) {
+            enqueue_close(std::move(*update.close));
+        }
+    }
+    run_next_operation();
+}
+
+void WebSocketSession::accept(ScalarValue<Bundle<HttpResponse>> response) {
+    const auto value = response.view();
+    const auto status = scalar_cast<i64>(value[0]).value();
+    const auto body_field = value[2];
+    const auto body = Scalar<bytes>::from(body_field).value();
+    if (status != 101 || !body.empty()) {
+        reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response");
+        return;
+    }
+
+    const auto headers_field = value[1];
+    auto headers = Scalar<List<Tuple<string, string>>>::from(headers_field);
+    auto ordered_headers = std::vector<std::pair<std::string, std::string>>{};
+    ordered_headers.reserve(headers.size());
+    auto offered_protocols = std::vector<std::string>{};
+    const auto offered = request_.equal_range(http::field::sec_websocket_protocol);
+    for (auto header = offered.first; header != offered.second; ++header) {
+        auto remaining = std::string_view{header->value().data(), header->value().size()};
+        while (true) {
+            const auto comma = remaining.find(',');
+            auto token = remaining.substr(0, comma);
+            while (!token.empty() && (token.front() == ' ' || token.front() == '\t')) token.remove_prefix(1);
+            while (!token.empty() && (token.back() == ' ' || token.back() == '\t')) token.remove_suffix(1);
+            if (!details::valid_http_header_name(token)) {
+                reject_with_error(http::status::bad_request, "Invalid WebSocket Protocol Offer");
+                return;
+            }
+            offered_protocols.emplace_back(token);
+            if (comma == std::string_view::npos) break;
+            remaining.remove_prefix(comma + 1);
+        }
+    }
+    auto selected_protocol = false;
+    for (auto index = std::size_t{}; index < headers.size(); ++index) {
+        const auto header = headers[index];
+        const auto name = std::string_view{header.template get<0>().value()};
+        const auto header_value = std::string_view{header.template get<1>().value()};
+        if (!details::valid_http_header_name(name) || beast::iequals(name, "content-length") ||
+            beast::iequals(name, "transfer-encoding") || beast::iequals(name, "connection") ||
+            beast::iequals(name, "upgrade") || beast::iequals(name, "sec-websocket-accept") ||
+            beast::iequals(name, "sec-websocket-extensions")) {
+            reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response Header");
+            return;
+        }
+        if (beast::iequals(name, "sec-websocket-protocol")) {
+            if (selected_protocol || header_value.find(',') != std::string_view::npos ||
+                !details::valid_http_header_name(header_value) ||
+                std::ranges::find(offered_protocols, header_value) == offered_protocols.end()) {
+                reject_with_error(http::status::internal_server_error, "Invalid WebSocket Subprotocol");
+                return;
+            }
+            selected_protocol = true;
+        }
+        const auto latin1 = details::utf8_header_value_to_latin1(header_value);
+        if (!latin1) {
+            reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response Header");
+            return;
+        }
+        ordered_headers.emplace_back(name, *latin1);
+    }
+
+    cancel_disconnect_watch();
+    state_ = State::accepting;
+    auto self = shared_from_this();
+    stream_.set_option(websocket::stream_base::decorator(
+        [headers = std::move(ordered_headers)](websocket::response_type &handshake) {
+            for (const auto &[name, value] : headers) {
+                handshake.insert(name, value);
+            }
+        }));
+    stream_.async_accept(request_, [self](beast::error_code error) {
+        if (error) {
+            self->close_socket();
+            return;
+        }
+        self->timeout_.cancel();
+        self->state_ = State::open;
+        self->read_message();
+        self->run_next_operation();
+    });
+}
+
+void WebSocketSession::reject(ScalarValue<Bundle<HttpResponse>> response) {
+    const auto value = response.view();
+    const auto status = scalar_cast<i64>(value[0]).value();
+    const auto body_field = value[2];
+    const auto body_value = Scalar<bytes>::from(body_field).value();
+    if (status < 400 || status > 599) {
+        reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response");
+        return;
+    }
+
+    auto body = std::string{reinterpret_cast<const char *>(body_value.data()), body_value.size()};
+    auto response_message = std::make_shared<http::response<http::string_body>>(
+        http::status{static_cast<unsigned>(status)}, request_.version());
+    response_message->body() = std::move(body);
+    response_message->keep_alive(false);
+
+    const auto headers_field = value[1];
+    const auto headers = Scalar<List<Tuple<string, string>>>::from(headers_field);
+    auto content_length_seen = false;
+    for (auto index = std::size_t{}; index < headers.size(); ++index) {
+        const auto header = headers[index];
+        const auto name_view = header.template get<0>().value();
+        const auto value_view = header.template get<1>().value();
+        const auto name = std::string_view{name_view};
+        const auto header_value = std::string_view{value_view};
+        if (!details::valid_http_header_name(name)) {
+            reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response Header");
+            return;
+        }
+        const auto latin1 = details::utf8_header_value_to_latin1(header_value);
+        if (!latin1 || beast::iequals(name, "transfer-encoding") || beast::iequals(name, "connection")) {
+            reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response Header");
+            return;
+        }
+        if (beast::iequals(name, "content-length")) {
+            if (content_length_seen) {
+                reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response Header");
+                return;
+            }
+            content_length_seen = true;
+            auto declared_length = std::uint64_t{};
+            const auto [end, error] = std::from_chars(header_value.data(), header_value.data() + header_value.size(),
+                                                       declared_length);
+            if (error != std::errc{} || end != header_value.data() + header_value.size() ||
+                declared_length != body_value.size()) {
+                reject_with_error(http::status::internal_server_error, "Invalid WebSocket Response Header");
+                return;
+            }
+        }
+        response_message->insert(name, *latin1);
+    }
+    response_message->prepare_payload();
+
+    state_ = State::rejecting;
+    cancel_disconnect_watch();
+    start_response_write_timeout();
+    auto self = shared_from_this();
+    http::async_write(stream_.next_layer(), *response_message,
+                      [self, response_message](beast::error_code, std::size_t) { self->close_socket(); });
+}
+
+void WebSocketSession::reject_with_error(http::status status, std::string body) {
+    if (state_ == State::closed || state_ == State::rejecting) {
+        return;
+    }
+    state_ = State::rejecting;
+    cancel_disconnect_watch();
+    start_response_write_timeout();
+    auto response = std::make_shared<http::response<http::string_body>>(status, request_.version());
+    response->set(http::field::content_type, "text/plain; charset=utf-8");
+    response->body() = std::move(body);
+    response->keep_alive(false);
+    response->prepare_payload();
+    auto self = shared_from_this();
+    http::async_write(stream_.next_layer(), *response, [self, response](beast::error_code, std::size_t) {
+        self->close_socket();
+    });
+}
+
+void WebSocketSession::read_message() {
+    if (state_ != State::open || closing_requested_) {
+        return;
+    }
+    auto self = shared_from_this();
+    stream_.async_read(read_buffer_, [self](beast::error_code error, std::size_t) {
+        if (error == websocket::error::closed) {
+            self->finish();
+            return;
+        }
+        if (error == websocket::error::message_too_big) {
+            self->close_socket();
+            return;
+        }
+        if (error) {
+            if (error == asio::error::operation_aborted && self->state_ == State::closing) {
+                self->run_next_operation();
+                return;
+            }
+            self->close_socket();
+            return;
+        }
+        if (self->state_ != State::open || self->closing_requested_) {
+            self->run_next_operation();
+            return;
+        }
+        if (!self->stream_.got_binary()) {
+            self->closing_requested_ = true;
+            self->operations_.emplace_back(CloseOperation{websocket::close_code::unknown_data});
+            self->run_next_operation();
+            return;
+        }
+
+        const auto data = self->read_buffer_.data();
+        const auto message = std::span<const std::byte>{static_cast<const std::byte *>(data.data()), data.size()};
+        self->server_->enqueue_websocket_message(self->id_, message);
+        self->read_buffer_.consume(self->read_buffer_.size());
+        self->read_message();
+    });
+}
+
+void WebSocketSession::enqueue_message(ScalarValue<bytes> message) {
+    if (state_ == State::rejecting || state_ == State::closed || closing_requested_) {
+        return;
+    }
+    operations_.emplace_back(MessageOperation{std::move(message)});
+}
+
+void WebSocketSession::enqueue_close(ScalarValue<Bundle<WebSocketClose>> close) {
+    if (state_ == State::rejecting || state_ == State::closed) {
+        return;
+    }
+    const auto value = close.view();
+    const auto code = scalar_cast<i64>(value[0]).value();
+    const auto reason_field = value[1];
+    const auto reason_value = Scalar<string>::from(reason_field).value();
+    auto reason = std::string{reason_value};
+    const auto standard_code = code >= 1000 && code <= 1014 && code != 1004 && code != 1005 && code != 1006;
+    const auto application_code = code >= 3000 && code <= 4999;
+    auto reason_valid = reason.size() <= 123;
+    if (reason_valid) {
+        auto index = std::int32_t{};
+        const auto size = static_cast<std::int32_t>(reason.size());
+        const auto *data = reinterpret_cast<const std::uint8_t *>(reason.data());
+        while (index < size) {
+            UChar32 code_point{};
+            U8_NEXT(data, index, size, code_point);
+            if (code_point < 0) {
+                reason_valid = false;
+                break;
+            }
+        }
+    }
+    closing_requested_ = true;
+    if ((!standard_code && !application_code) || !reason_valid) {
+        operations_.emplace_back(CloseOperation{websocket::close_code::internal_error});
+        return;
+    }
+    auto close_reason = websocket::close_reason{};
+    close_reason.code = static_cast<websocket::close_code>(code);
+    close_reason.reason = std::move(reason);
+    operations_.emplace_back(CloseOperation{std::move(close_reason)});
+}
+
+void WebSocketSession::run_next_operation() {
+    if ((state_ != State::open && state_ != State::closing) || operation_started_ || operations_.empty()) {
+        return;
+    }
+    operation_started_ = true;
+    auto self = shared_from_this();
+    if (auto *message = std::get_if<MessageOperation>(&operations_.front())) {
+        const auto payload = message->value.view().value();
+        stream_.binary(true);
+        stream_.async_write(asio::buffer(payload.data(), payload.size()), [self](beast::error_code error, std::size_t) {
+            if (error) {
+                self->close_socket();
+                return;
+            }
+            self->operations_.pop_front();
+            self->operation_started_ = false;
+            self->run_next_operation();
+        });
+        return;
+    }
+
+    auto reason = std::get<CloseOperation>(operations_.front()).reason;
+    state_ = State::closing;
+    stream_.async_close(reason, [self](beast::error_code) { self->close_socket(); });
+}
+
+void WebSocketSession::close_for_route_removal() {
+    if (state_ == State::awaiting_response) {
+        reject_with_error(http::status::service_unavailable, "WebSocket Route Removed");
+        return;
+    }
+    if (state_ == State::accepting) {
+        closing_requested_ = true;
+        operations_.emplace_back(CloseOperation{websocket::close_code::going_away});
+        return;
+    }
+    if (state_ == State::open) {
+        closing_requested_ = true;
+        operations_.emplace_back(CloseOperation{websocket::close_code::going_away});
+        run_next_operation();
+    }
+}
+
+void WebSocketSession::close_for_shutdown() noexcept { close_socket(); }
+
+void WebSocketSession::finish() noexcept {
+    if (state_ == State::closed) {
+        return;
+    }
+    state_ = State::closed;
+    try {
+        timeout_.cancel();
+    } catch (...) {
+    }
+    cancel_disconnect_watch();
+    server_->finish_websocket(id_);
+}
+
+void WebSocketSession::close_socket() noexcept {
+    finish();
+    beast::error_code ignored;
+    stream_.next_layer().shutdown(tcp::socket::shutdown_both, ignored);
+    stream_.next_layer().close(ignored);
+}
+
 } // namespace
 
 ServerRuntime::ServerRuntime(ServerOptions options, Queue output)
@@ -810,12 +1457,24 @@ ServerRuntime::~ServerRuntime() = default;
 
 std::uint16_t ServerRuntime::port() const noexcept { return implementation_->port(); }
 
-void ServerRuntime::register_route(service_client_id_t client_id, std::string route) {
+void ServerRuntime::attach_websocket_queue(Queue messages) {
+    implementation_->attach_websocket_queue(std::move(messages));
+}
+
+void ServerRuntime::register_http_route(service_client_id_t client_id, std::string route) {
     implementation_->register_route(client_id, std::move(route));
 }
 
-void ServerRuntime::unregister_route(service_client_id_t client_id) {
+void ServerRuntime::unregister_http_route(service_client_id_t client_id) {
     implementation_->unregister_route(client_id);
+}
+
+void ServerRuntime::register_websocket_route(service_client_id_t client_id, std::string route) {
+    implementation_->register_websocket_route(client_id, std::move(route));
+}
+
+void ServerRuntime::unregister_websocket_route(service_client_id_t client_id) {
+    implementation_->unregister_websocket_route(client_id);
 }
 
 void ServerRuntime::start() { implementation_->start(); }
@@ -823,6 +1482,11 @@ void ServerRuntime::start() { implementation_->start(); }
 void ServerRuntime::respond(service_client_id_t client_id, i64 request_id,
                             ScalarValue<Bundle<HttpResponse>> response) {
     implementation_->respond(client_id, request_id, std::move(response));
+}
+
+void ServerRuntime::respond_websocket(service_client_id_t client_id, i64 connection_id,
+                                      WebSocketResponseUpdate update) {
+    implementation_->respond_websocket(client_id, connection_id, std::move(update));
 }
 
 } // namespace bg::web
