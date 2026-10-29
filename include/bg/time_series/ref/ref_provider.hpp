@@ -110,6 +110,9 @@ class ReferenceProvider {
     // Returns the root's existing provider without creating one.
     static ReferenceProvider *get(Reference reference) noexcept;
 
+    // Returns the root that owns the reference.
+    static RootReference &root(Reference reference) noexcept;
+
     // Returns the root's provider, creating it when necessary.
     static ReferenceProvider &require(Reference reference);
 
@@ -184,7 +187,6 @@ class ReferenceProvider {
   private:
     static ReferenceSubscriptionDetail &subscriptions(Reference reference) noexcept;
     static Reference parent(Reference reference) noexcept;
-    static RootReference &root(Reference reference) noexcept;
     static ReferenceProvider &require(RootReference &root);
 
     void add_root_subscriber(RuntimeGraph &graph, std::uint32_t input_offset, std::size_t notification_data,

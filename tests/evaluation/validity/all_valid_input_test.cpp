@@ -445,6 +445,43 @@ TEST_CASE("all_valid follows a selected reference using the declared base schema
               .equals({1, std::nullopt, 3}));
 }
 
+TEST_CASE("all_valid refreshes on a passive valid target switch",
+          "[evaluation][validity][feature:validity][validity:all-valid][series:fixed-tsl][series:reference]"
+          "[activity:passive][binding:reference-to-value][transition:update][feature:collection-change]") {
+    const auto first = node([](Out<TSL<TS<i64>, 2>> output) {
+        output[0].set(1);
+        output[1].set(10);
+    });
+
+    const auto second = node([](Out<TSL<TS<i64>, 2>> output) {
+        output[0].set(2);
+        output[1].invalidate();
+    });
+
+    const auto select = node([](In<TS<i64>> choose_second, In<REF<TSL<TS<i64>, 2>>, passive> first,
+                                In<REF<TSL<TS<i64>, 2>>, passive> second,
+                                Out<REF<TSL<TS<i64>, 2>>> output) {
+        output.copy(*choose_second == 0 ? first : second);
+    });
+
+    auto evaluations = 0;
+
+    const auto gate = node([&](In<TSL<TS<i64>, 2>, passive, all_valid> input, In<TS<i64>> pulse) {
+        ++evaluations;
+        return *input[0] + *input[1] + *pulse;
+    });
+
+    const auto graph = [&](wp<TS<i64>> choose_second, wp<TS<i64>> pulse) -> wp<> {
+        return wp<>{gate(select(choose_second, first(), second()), pulse)};
+    };
+
+    const auto actual =
+        bg::run_graph(graph, {0, 1, 1}, {1, literal::SKIP, 2});
+
+    CHECK(actual.equals({12, literal::INVALID, literal::SKIP}));
+    CHECK(evaluations == 1);
+}
+
 TEST_CASE("all_valid ignores removed TSD items and accepts an empty live set",
           "[evaluation][validity][feature:validity][validity:all-valid][series:tsd][feature:collection-change]"
           "[transition:invalidation][transition:removal]") {

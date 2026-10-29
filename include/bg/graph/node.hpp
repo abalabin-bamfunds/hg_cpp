@@ -306,12 +306,14 @@ class Node {
             return {last_updated, runtime_storage_ + binding.value_offset()};
         }
 
-        const auto *wired_last_updated =
-            reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
         if (mode == ParameterBindingMode::constant) {
+            const auto *wired_last_updated =
+                reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
             return {*wired_last_updated, binding.constant_data()};
         }
         if (mode != ParameterBindingMode::reference) {
+            const auto *wired_last_updated =
+                reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
             return {*wired_last_updated, runtime_storage_ + binding.value_offset()};
         }
 
@@ -320,16 +322,18 @@ class Node {
             return {input.last_updated, input.value};
         }
 
-        const auto &reference_input =
-            *reinterpret_cast<const ReferenceInputStorage *>(runtime_storage_ + binding.value_offset());
+        auto &reference_input =
+            *reinterpret_cast<ReferenceInputStorage *>(runtime_storage_ + binding.value_offset());
         const auto reference = reference_input.reference();
+        const auto &reference_state =
+            *reinterpret_cast<const TimeSeriesState *>(runtime_storage_ + binding.last_updated_offset());
         if (!reference) {
             const auto target = details::ResolvedTimeSeries{};
-            return {reference_input.observed_state(*wired_last_updated, target), nullptr};
+            return {reference_input.observed_state(reference_state, target), nullptr};
         }
 
         const auto resolved = details::ResolvedTimeSeries::resolve(reference);
-        return {reference_input.observed_state(*wired_last_updated, resolved), resolved.storage};
+        return {reference_input.observed_state(reference_state, resolved), resolved.storage};
     }
 
     details::ReferenceInputSampleStorage *reference_input_sample(const ParameterBinding *binding) const noexcept {

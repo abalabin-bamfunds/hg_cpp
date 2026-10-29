@@ -2,6 +2,7 @@
 
 #include <bg/evaluation_time.hpp>
 #include <bg/graph/runtime_graph_input.hpp>
+#include <bg/time_series/time_series_state.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -27,13 +28,18 @@ class OutputChangeContext {
     explicit OutputChangeContext(RuntimeGraph &runtime_graph) noexcept;
     OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time) noexcept
         : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time} {}
+    OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time,
+                        TimeSeriesState prior_state) noexcept
+        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time}, prior_state_{prior_state},
+          has_prior_state_{true} {}
     explicit OutputChangeContext(const EvaluationContext &evaluation_context) noexcept;
 
     RuntimeGraph &runtime_graph() const noexcept { return *runtime_graph_; }
     EvaluationTime evaluation_time() const noexcept;
+    const TimeSeriesState *prior_state() const noexcept { return has_prior_state_ ? &prior_state_ : nullptr; }
     const RuntimeGraphInput *runtime_graph_inputs() const noexcept { return runtime_graph_inputs_; }
     OutputChangeContext for_graph(RuntimeGraph &graph) const noexcept {
-        return OutputChangeContext{graph, evaluation_time_, nullptr};
+        return OutputChangeContext{graph, evaluation_time_, nullptr, prior_state_, has_prior_state_};
     }
 
     void schedule_validity_check(RuntimeGraph &graph, std::size_t node_index) const noexcept;
@@ -42,12 +48,16 @@ class OutputChangeContext {
 
   private:
     OutputChangeContext(RuntimeGraph &runtime_graph, EvaluationTime evaluation_time,
-                        const RuntimeGraphInput *runtime_graph_inputs) noexcept
-        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time}, runtime_graph_inputs_{runtime_graph_inputs} {}
+                        const RuntimeGraphInput *runtime_graph_inputs, TimeSeriesState prior_state = {},
+                        bool has_prior_state = false) noexcept
+        : runtime_graph_{&runtime_graph}, evaluation_time_{evaluation_time},
+          runtime_graph_inputs_{runtime_graph_inputs}, prior_state_{prior_state}, has_prior_state_{has_prior_state} {}
 
     RuntimeGraph *runtime_graph_;
     EvaluationTime evaluation_time_;
     const RuntimeGraphInput *runtime_graph_inputs_{};
+    TimeSeriesState prior_state_{};
+    bool has_prior_state_{};
 };
 
 using OutputChangeHandler = void (*)(OutputChangeContext &, const TimeSeriesRuntimeType *, const void *, OutputChange,

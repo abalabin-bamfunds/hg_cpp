@@ -80,7 +80,7 @@ void OutputChangeContext::schedule(RuntimeGraph &graph, std::size_t node_index) 
 
 void OutputChangeContext::notify_subscribers(details::DynamicSubscribers *subscribers, OutputChange change) const {
     if (subscribers != nullptr) {
-        runtime_graph_->notify_dynamic_subscribers(*subscribers, change);
+        runtime_graph_->notify_dynamic_subscribers(*subscribers, change, *this);
     }
 }
 
@@ -562,10 +562,10 @@ class RuntimeGraph::OutputChangePublisher {
   public:
     explicit OutputChangePublisher(RuntimeGraph &graph) noexcept : graph_{&graph} {}
 
-    void publish(const CompiledNode &compiled_node, OutputChange change) {
+    void publish(const CompiledNode &compiled_node, OutputChange change, TimeSeriesState prior_state) {
         const auto runtime_node = Node{compiled_node, graph_->storage_};
         publish_modified_items(compiled_node, runtime_node);
-        publish_handlers(compiled_node.output_notification(), nullptr, runtime_node.output_value(), change);
+        publish_handlers(compiled_node.output_notification(), nullptr, runtime_node.output_value(), change, prior_state);
         graph_->notify_subscribers(compiled_node.subscribers(), change);
     }
 
@@ -595,6 +595,7 @@ class RuntimeGraph::OutputChangePublisher {
         auto &sampled_last_updated =
             *reinterpret_cast<TimeSeriesState *>(graph_->storage_ + subscription.sampled_last_updated_offset());
         const auto was_valid = sampled_last_updated.valid();
+        const auto prior_state = sampled_last_updated;
         const auto now_valid = item.last_updated->valid();
 
         if (was_valid || now_valid) {
@@ -605,7 +606,7 @@ class RuntimeGraph::OutputChangePublisher {
             }
             const auto change = now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation)
                                           : OutputChange::invalidation;
-            publish_handlers(subscription.output_notification(), item.runtime_type, item.value, change);
+            publish_handlers(subscription.output_notification(), item.runtime_type, item.value, change, prior_state);
             graph_->notify_subscribers(subscription.subscribers(), change);
         }
 
@@ -615,12 +616,12 @@ class RuntimeGraph::OutputChangePublisher {
     }
 
     void publish_handlers(const OutputNotification *handlers, const TimeSeriesRuntimeType *runtime_type,
-                          const void *value, OutputChange change) {
+                          const void *value, OutputChange change, TimeSeriesState prior_state) {
         if (handlers == nullptr) {
             return;
         }
 
-        auto context = OutputChangeContext{*graph_};
+        auto context = OutputChangeContext{*graph_, graph_->evaluation_time_, prior_state};
         handlers->notify(context, runtime_type, value, change);
     }
 
@@ -800,6 +801,7 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
     const auto &binding = requirements[index];
     auto &stored_last_updated = *reinterpret_cast<TimeSeriesState *>(storage_ + binding.last_updated_offset);
     auto &stored_reference = *reinterpret_cast<Reference *>(storage_ + binding.value_offset);
+    const auto prior_state = stored_last_updated;
     stored_reference = reference;
     if (!reference) {
         return;
@@ -807,7 +809,7 @@ void RuntimeGraph::initialize_inherited_time_series(std::size_t index, Reference
     stored_last_updated.publish(evaluation_time_);
 
     if (const auto *notification = compiled_graph_->inherited_time_series_notification(binding)) {
-        auto context = OutputChangeContext{*this};
+        auto context = OutputChangeContext{*this, evaluation_time_, prior_state};
         notification->notify(context, nullptr, &stored_reference, OutputChange::revalidation);
     }
     notify_subscribers(compiled_graph_->inherited_time_series_subscribers(binding), OutputChange::revalidation);
@@ -908,12 +910,15 @@ void RuntimeGraph::finalize(EvaluationContext &parent_context) noexcept {
             for (auto parameter_index = std::size_t{}; parameter_index < runtime_node.input_count();
                  ++parameter_index) {
                 auto *input = runtime_node.reference_input(parameter_index);
-                if (input == nullptr || !input->reference()) {
+                if (input == nullptr) {
                     continue;
                 }
 
                 const auto offset = static_cast<std::size_t>(reinterpret_cast<std::byte *>(input) - storage_);
-                details::ReferenceProvider::remove_subscriber(input->reference(), *this, offset);
+                if (const auto reference = input->reference()) {
+                    details::ReferenceProvider::remove_subscriber(reference, *this, offset);
+                }
+                input->release_deferred(input->selected_view_was_valid());
             }
         }
         for (auto node_index = compiled_graph_->node_count(); node_index != 0;) {
@@ -1120,6 +1125,7 @@ void RuntimeGraph::update_reference_output(std::size_t node_index, Reference ref
     const auto runtime_node = node(compiled_node);
     auto &stored_last_updated = runtime_node.output_last_updated();
     auto &stored_reference = *static_cast<Reference *>(runtime_node.output_value());
+    const auto prior_state = stored_last_updated;
 
     if (stored_reference == reference) {
         return;
@@ -1137,7 +1143,7 @@ void RuntimeGraph::update_reference_output(std::size_t node_index, Reference ref
     const auto now_valid = stored_last_updated.valid();
     const auto change =
         now_valid ? (was_valid ? OutputChange::update : OutputChange::revalidation) : OutputChange::invalidation;
-    publish_output(compiled_node, change);
+    publish_output(compiled_node, change, prior_state);
 }
 
 void RuntimeGraph::initialize_constant_output(std::size_t node_index, Scalar<> value,
@@ -1145,11 +1151,12 @@ void RuntimeGraph::initialize_constant_output(std::size_t node_index, Scalar<> v
     evaluation_time_ = evaluation_time;
     const auto &compiled_node = compiled_graph_->node(node_index);
     const auto runtime_node = node(compiled_node);
+    const auto prior_state = runtime_node.output_last_updated();
     const auto &runtime_type =
         static_cast<const TimeSeriesValueRuntimeType &>(compiled_node.output_runtime_type());
     runtime_type.scalar_runtime_type().assign_from_input(runtime_node.output_value(), value);
     runtime_node.output_last_updated().publish(evaluation_time);
-    publish_output(compiled_node, OutputChange::revalidation);
+    publish_output(compiled_node, OutputChange::revalidation, prior_state);
 }
 
 RuntimeGraph::CycleCallbacks *&RuntimeGraph::cycle_callbacks() noexcept {
@@ -1378,11 +1385,17 @@ std::optional<OutputChange> RuntimeGraph::current_cycle_output_change(const Comp
     return OutputChange::invalidation;
 }
 
-void RuntimeGraph::publish_output(const CompiledNode &node, OutputChange change) {
-    OutputChangePublisher{*this}.publish(node, change);
+void RuntimeGraph::publish_output(const CompiledNode &node, OutputChange change, TimeSeriesState prior_state) {
+    OutputChangePublisher{*this}.publish(node, change, prior_state);
 }
 
 void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change) {
+    const auto publication_context = OutputChangeContext{*this};
+    notify_dynamic_subscribers(subscribers, change, publication_context);
+}
+
+void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change,
+                                              const OutputChangeContext &publication_context) {
     subscribers.for_each_node_subscriber([&](const auto &subscriber) {
         auto active = subscriber.active();
         if (subscriber.controlled_activity()) {
@@ -1394,7 +1407,7 @@ void RuntimeGraph::notify_dynamic_subscribers(details::DynamicSubscribers &subsc
                                                  active && !subscriber.required(), change);
     });
 
-    const auto notification_context = OutputChangeContext{*this};
+    const auto notification_context = publication_context.for_graph(*this);
     subscribers.for_each_input_subscriber([&](const auto &subscriber) {
         auto context = notification_context.for_graph(*subscriber.graph);
         subscriber.function(context, subscriber.node_index, subscriber.data, change);
@@ -1419,8 +1432,9 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
         if (node.has_output()) {
             auto &last_updated = Node{node, storage_}.output_last_updated();
             if (last_updated.valid()) {
+                const auto prior_state = last_updated;
                 last_updated.invalidate(evaluation_time_);
-                publish_output(node, OutputChange::invalidation);
+                publish_output(node, OutputChange::invalidation, prior_state);
             }
         }
         return;
@@ -1432,7 +1446,8 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
         break;
     }
 
-    const auto output_was_valid = node.has_output() && Node{node, storage_}.output_last_updated().valid();
+    const auto prior_state = node.has_output() ? Node{node, storage_}.output_last_updated() : TimeSeriesState{};
+    const auto output_was_valid = node.has_output() && prior_state.valid();
     context.node_index_ = node_index;
     const auto allocation_context = details::ScalarAllocationContext{
         allocator_, context.global_state().scalar_allocation_pool(), this, node_index};
@@ -1441,7 +1456,7 @@ void RuntimeGraph::apply_invalidation(const CompiledNode &node, std::size_t node
 
     if (node.has_output()) {
         if (const auto change = output_change(node, output_was_valid)) {
-            publish_output(node, *change);
+            publish_output(node, *change, prior_state);
         }
     }
 }
@@ -1570,7 +1585,9 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
     for (const auto node_index : starts.nodes) {
         started_node_count = node_index;
         const auto &node = graph.compiled_graph_->node(node_index);
-        const auto output_was_valid = node.has_output() && Node{node, graph.storage_}.output_last_updated().valid();
+        const auto prior_state = node.has_output() ? Node{node, graph.storage_}.output_last_updated()
+                                                   : TimeSeriesState{};
+        const auto output_was_valid = node.has_output() && prior_state.valid();
 
         context.node_index_ = node_index;
         const auto allocation_context = details::ScalarAllocationContext{
@@ -1582,7 +1599,7 @@ void RuntimeGraphEvaluator::start(RuntimeGraph &graph, EvaluationContext &parent
 
         if (node.has_output()) {
             if (const auto change = graph.output_change(node, output_was_valid)) {
-                graph.publish_output(node, *change);
+                graph.publish_output(node, *change, prior_state);
             }
         }
     }
@@ -1856,8 +1873,8 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
         }
 
         const auto evaluate = node.evaluation_function();
-        const auto output_was_valid = evaluate != nullptr && has_output &&
-                                      Node{node, graph.storage_}.output_last_updated().valid();
+        const auto prior_state = has_output ? Node{node, graph.storage_}.output_last_updated() : TimeSeriesState{};
+        const auto output_was_valid = evaluate != nullptr && prior_state.valid();
         if (evaluate != nullptr) {
             context.node_index_ = node_index;
             const auto allocation_context = details::ScalarAllocationContext{
@@ -1886,7 +1903,7 @@ bool RuntimeGraphEvaluator::evaluate_graph(RuntimeGraph &graph, EvaluationContex
             const auto change = evaluate == nullptr ? graph.current_cycle_output_change(node)
                                                     : graph.output_change(node, output_was_valid);
             if (change) {
-                graph.publish_output(node, *change);
+                graph.publish_output(node, *change, prior_state);
             }
         }
     }

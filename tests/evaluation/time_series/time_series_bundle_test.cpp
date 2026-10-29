@@ -3,6 +3,7 @@
 #include <bg/graph/wiring_context.hpp>
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar.hpp>
@@ -16,6 +17,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
+#include <chrono>
 #include <optional>
 #include <span>
 #include <utility>
@@ -114,6 +116,57 @@ template <template <typename, auto...> typename Field> struct SharedBundle {
 };
 
 } // namespace
+
+TEST_CASE("a delayed reference in a free TSB preserves an aliased field target identity",
+          "[evaluation][tsb][series:reference][representation:free][transition:update]"
+          "[binding:value-to-reference][binding:reference-to-reference][binding:reference-to-value]") {
+    struct Observation {
+        i64 value;
+        bool modified;
+        EvaluationTime last_updated;
+
+        bool operator==(const Observation &) const = default;
+    };
+
+    const auto late_ref = node([](In<TS<i64>> bind, In<REF<TS<i64>>, passive> value,
+                                  Out<REF<TS<i64>>> output) {
+        if (bind.valid()) {
+            output.copy(value);
+        }
+    });
+
+    const auto select = node([](In<TS<bool>> choose_late, In<REF<TS<i64>>, passive, optional> first,
+                                In<REF<TS<i64>>, passive, optional> late, Out<REF<TS<i64>>> output) {
+        output.copy(*choose_late ? late : first);
+    });
+
+    const auto observe = node([](In<TS<i64>> input, In<TS<i64>>, Out<TS<Observation>> output) {
+        output.set(Observation{*input, input.modified(), input.last_updated()});
+    });
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<i64>> bind, wp<TS<bool>> choose_late,
+                             wp<TS<i64>> pulse) {
+        const auto first = bundle("value"_n = value);
+        const auto late = bundle("value"_n = late_ref(bind, value));
+        const auto selected = select(choose_late, operators::getattr(first, util::symbol{"value"}),
+                                     operators::getattr(late, util::symbol{"value"}));
+        return observe(selected, pulse);
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    const auto actual = bg::run_graph(
+        tested, GraphRunOptions{.start_time = start_time},
+        std::array<std::optional<i64>, 4>{10, std::nullopt, std::nullopt, 20},
+        std::array<std::optional<i64>, 4>{std::nullopt, 1, std::nullopt, std::nullopt},
+        std::array<bool, 4>{false, true, false, true}, std::array<i64, 4>{1, 2, 3, 4});
+    const auto expected = std::initializer_list<std::optional<Observation>>{
+        Observation{10, true, start_time},
+        Observation{10, false, start_time},
+        Observation{10, false, start_time},
+        Observation{20, true, start_time + std::chrono::microseconds{3}},
+    };
+
+    CHECK(actual.equals<Observation>(expected));
+}
 
 TEST_CASE("an empty free TSB publishes valid at graph start",
           "[evaluation][tsb][series:tsb][free][feature:wiring-materialisation][representation:free]"

@@ -7,6 +7,7 @@
 #include <bg/run_graph.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/time_series/tsd/tsd_type.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -111,6 +112,26 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
     const auto result = bg::run_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
+}
+
+TEST_CASE("a free fixed time series list preserves compound child rebinding deltas",
+          "[evaluation][tsl][series:fixed-tsl][series:tsd][series:reference][feature:collection-change]"
+          "[transition:update][transition:removal][binding:reference-to-value][representation:free]") {
+    const auto select = node([](bool use_second, In<REF<TSD<i64, TS<i64>>>, passive> first,
+                                In<REF<TSD<i64, TS<i64>>>, passive> second,
+                                Out<REF<TSD<i64, TS<i64>>>> output) {
+        output.copy(use_second ? second : first);
+    });
+    const auto graph = [&](wp<TS<bool>> choose, wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second) {
+        return tsl(select(choose, first, second));
+    };
+
+    const auto actual = bg::run_graph(graph, {false, true, false}, {{{1, 10}}}, {{{2, 20}}});
+
+    CHECK(actual.equals({{{0, {{1, 10}}}},
+                         {{0, {{1, literal::REMOVE}, {2, 20}}}},
+                         {{0, {{2, literal::REMOVE}, {1, 10}}}}}));
 }
 
 TEST_CASE("a span-backed free TSL retains its items through materialisation and evaluation",

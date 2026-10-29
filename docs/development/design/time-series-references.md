@@ -93,9 +93,20 @@ copying its value. Value-item updates notify target subscribers without changing
 those reference values. Both use the collection's stable item IDs. A direct
 binding that requires no item adaptation creates no representation.
 
-When `REF<TS_T>` is bound to its exact target type, compiled-node data records
-the reference output's last updated location. Each runtime graph stores the
-current reference used by the receiving input.
+A free TSL or TSB exposes each referenced item's target state. Its item's
+last-updated time comes from the target rather than the collection node's
+input binding. An active collection sample retains its sampled changes until
+cycle cleanup.
+
+Each dereferencing node input stores its current reference in one word. Tag
+`11` identifies an allocated two-word block containing the actual reference
+and the input's retained update state. Its allocation uses the memory resource
+of the runtime graph that owns the stored reference. The binding allocates the
+block only when suppressing a same-target reference tick requires preserving
+the input's last-updated time. Input resolution restores the direct reference
+and frees the block when the target's last-updated time is later than the
+reference's current publication time. Replacing the target or destroying the
+binding also frees it.
 
 ## Subscriptions
 
@@ -105,16 +116,15 @@ Reference subscriptions implement the dependency and publication rules of the
 Direct wired subscriptions are stored in compiled arrays and shared by runtime
 graphs with the same wiring.
 
-A `REF<TS_T>` to `TS_T` binding creates two subscriptions. The node
-subscription applies the input's activity. An output-notification record stores
+A `REF<TS_T>` to `TS_T` binding uses an output-notification record that stores
 the receiving node, resolved input-slot offset, activity, validity policy, and
 requested target runtime type.
 
 The compiled output metadata associates these records with the REF notification
 handler. After the output changes, the runtime invokes the handler once for the
 complete record span. The handler updates target pointers and dynamic
-subscriptions, then requests required-input validity checks. The runtime does
-not interpret REF storage.
+subscriptions, then applies the input's activity and validity policy to changes
+of the dereferenced input. The runtime does not interpret REF storage.
 
 The reference subsystem compares the resolved target runtime type with the
 requested runtime type. A type-specific representation factory checks contained
@@ -165,20 +175,25 @@ A dynamic input callback runs immediately. Deferred cleanup runs once at outer
 cycle entry before any inner graph can publish a change, so callback delivery
 does not depend on whether the receiving inner graph has evaluated.
 
-When a reference changes target:
+When a reference ticks at a dereferencing binding:
 
 1. Adapt the new target to the receiving input's requested type.
 2. Retain the old selected view's validity before the current cycle.
-3. Remove the old target subscription and store the new reference.
-4. Add a subscription to the new target when the input is active, has a
-   `required` or `all_valid` constraint, or updates another logical output.
-5. Sample the new target.
+3. Compare the handles. If they differ, compare their resolved storage and runtime type.
+4. Store the new handle. Replace the target subscription when the handle differs
+   and the input is active, has a `required` or `all_valid` constraint, or
+   updates another logical output.
+5. Sample the target only when the target changes.
 
-The node subscription schedules the receiving node when the input is active.
+Replacing only the handle preserves the binding's last-updated time.
+Target changes and target updates apply the input's activity and validity policy.
+An explicit `REF<TS_T>` input receives reference ticks through normal time
+series subscriptions; these dereferencing rules do not apply to it.
 
-For the receiving input, the reference update time becomes the sampled view's
-last updated time. View construction selects the later of the reference and
-target update times. The input is valid when its selected target is valid.
+When the target changes, the reference tick becomes the sampled view's
+last-updated time. View construction selects the later of the reference and
+target update times, using the retained state when present. The input is valid
+when its selected target is valid.
 During the switching cycle, its validity transition compares the retained
 pre-cycle validity with the current target validity. Later target updates use
 the target's own state and schedule the destination directly. Target references

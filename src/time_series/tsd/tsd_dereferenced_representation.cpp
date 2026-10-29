@@ -21,7 +21,8 @@ template <bool Recursive> struct ItemBindingState;
 template <> struct ItemBindingState<false> {
     explicit ItemBindingState(allocator &memory) : references{&memory.memory_resource()} {}
 
-    std::pmr::vector<ReferenceInputStorage> references;
+    // Item resolution may release deferred reference state when its target advances.
+    mutable std::pmr::vector<ReferenceInputStorage> references;
 };
 
 template <> struct ItemBindingState<true> {

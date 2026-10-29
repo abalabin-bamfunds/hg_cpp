@@ -36,7 +36,7 @@ class ReferenceInputSubscriber {
     void update_input(OutputChangeContext &context, ReferenceInputSampleLookup &samples,
                       Reference reference,
                       std::size_t notification_data,
-                      InputNotificationFunction notification, OutputChange change) const;
+                      InputNotificationFunction notification) const;
 
   private:
     static constexpr std::uint32_t active_flag = std::uint32_t{1} << 31;

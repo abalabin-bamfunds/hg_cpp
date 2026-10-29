@@ -813,12 +813,6 @@ void plan_subscribers(std::span<const WiredNode> nodes, std::span<const WiredOut
                     .sampled_reference = input.sampled_reference,
                     .notification = notification,
                 });
-                if (input.dynamic_activity) {
-                    subscriptions.controlled_inputs.push_back(
-                        {subscriber_index, static_cast<std::uint32_t>(input_index), is_required});
-                } else if (is_active) {
-                    add_subscriber(subscriptions.nodes, subscriber_index, true, false, !is_required);
-                }
             } else {
                 if (notification.function != nullptr) {
                     subscriptions.input_subscribers.push_back({

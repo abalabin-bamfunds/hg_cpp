@@ -3,12 +3,14 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/switch.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cstdint>
+#include <initializer_list>
 #include <optional>
 
 using namespace bg;
@@ -41,6 +43,99 @@ TEST_CASE("fixed TSL getitem observes only the selected item",
     const auto actual = bg::run_graph(graph, first, second, index);
 
     CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
+}
+
+TEST_CASE("fixed TSL getitem tracks target identity across references to the same target",
+          "[evaluation][series:fixed-tsl][series:reference][feature:getitem][guarantee:deduplicated]"
+          "[binding:value-to-reference][binding:reference-to-reference][binding:reference-to-value]") {
+    struct Observation {
+        i64 value;
+        bool modified;
+        EvaluationTime last_updated;
+
+        bool operator==(const Observation &) const = default;
+    };
+
+    const auto select = node([](In<TS<bool>> use_second, In<REF<TS<i64>>> first, In<REF<TS<i64>>> second,
+                                Out<REF<TS<i64>, TimeSeriesGuarantee::deduplicated>> output) {
+        output.copy(*use_second ? second : first);
+    });
+    const auto observe = node([](In<TS<i64>> input, In<TS<i64>>, Out<TS<Observation>> output) {
+        output.set(Observation{*input, input.modified(), input.last_updated()});
+    });
+
+    const auto graph = [&](wp<TS<i64>> value, wp<TS<i64>> other, wp<TS<i64>> first_index,
+                           wp<TS<i64>> second_index, wp<TS<bool>> use_second, wp<TS<i64>> trigger) {
+        const auto first = operators::getitem(tsl(value, other), first_index);
+        const auto second = operators::getitem(tsl(other, value), second_index);
+        return observe(select(use_second, first, second), trigger);
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluate = [&](std::array<bool, 5> route) {
+        return bg::run_graph(
+            graph, GraphRunOptions{.start_time = start_time},
+            std::array<std::optional<i64>, 5>{10, std::nullopt, std::nullopt, 20, 20},
+            std::array<i64, 5>{-1, -2, -3, -4, -5}, std::array<i64, 5>{0, 0, 0, 0, 0},
+            std::array<i64, 5>{1, 1, 1, 1, 1}, route, std::array<i64, 5>{1, 2, 3, 4, 5});
+    };
+
+    const auto expected = std::initializer_list<std::optional<Observation>>{
+        Observation{10, true, start_time},
+        Observation{10, false, start_time},
+        Observation{10, false, start_time},
+        Observation{20, true, start_time + std::chrono::microseconds{3}},
+        Observation{20, true, start_time + std::chrono::microseconds{4}},
+    };
+    CHECK(evaluate({false, true, false, true, false}).equals<Observation>(expected));
+    CHECK(evaluate({true, false, true, false, true}).equals<Observation>(expected));
+
+    const auto distinct_sources = bg::run_graph(
+        graph, GraphRunOptions{.start_time = start_time},
+        std::array<std::optional<i64>, 5>{10, std::nullopt, std::nullopt, std::nullopt, std::nullopt},
+        std::array<std::optional<i64>, 5>{10, std::nullopt, std::nullopt, std::nullopt, 50},
+        std::array<i64, 5>{0, 0, 0, 0, 0}, std::array<i64, 5>{1, 1, 0, 0, 0},
+        std::array<bool, 5>{false, true, true, true, true}, std::array<i64, 5>{1, 2, 3, 4, 5});
+
+    CHECK(distinct_sources.equals<Observation>({
+        Observation{10, true, start_time},
+        Observation{10, false, start_time},
+        Observation{10, true, start_time + std::chrono::microseconds{2}},
+        Observation{10, false, start_time + std::chrono::microseconds{2}},
+        Observation{50, true, start_time + std::chrono::microseconds{4}},
+    }));
+}
+
+TEST_CASE("switching between pass-through and rebuilt free lists preserves item target identity",
+          "[evaluation][feature:switch][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[representation:free][shape:nested][binding:reference-to-reference][transition:update]") {
+    const auto pass_through = graph("name"_n = "pass_free_list",
+                                    [](wp<TSL<TS<i64>, 2>> input) { return input; });
+
+    const auto rebuild = graph("name"_n = "rebuild_free_list", [](wp<TSL<TS<i64>, 2>> input) {
+        return tsl(input[0], input[1]);
+    });
+
+    const auto first_value = node([](i64 first) { return first; });
+
+    const auto select_first = graph("name"_n = "select_free_list_first", [&](wp<TSL<TS<i64>, 2>> input) {
+        return first_value(input[0]);
+    });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> first, wp<TS<i64>> second) {
+        return select_first(switch_(key, cases{case_(true, pass_through), case_(false, rebuild)},
+                                    tsl(first, second)));
+    };
+
+    const auto starts_with_pass_through =
+        bg::run_graph(tested, {true, false, true, false}, {10, literal::SKIP, literal::SKIP, 20},
+                      {-1, -2, -3, -4});
+    const auto starts_with_rebuilt =
+        bg::run_graph(tested, {false, true, false, true}, {10, literal::SKIP, literal::SKIP, 20},
+                      {-1, -2, -3, -4});
+
+    CHECK(starts_with_pass_through.equals<i64>({10, std::nullopt, std::nullopt, 20}));
+    CHECK(starts_with_rebuilt.equals<i64>({10, std::nullopt, std::nullopt, 20}));
 }
 
 TEST_CASE("fixed TSL getitem invalidates for an invalid or out-of-range time series index",

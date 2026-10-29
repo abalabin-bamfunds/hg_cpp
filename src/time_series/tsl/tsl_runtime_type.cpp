@@ -96,6 +96,17 @@ TimeSeriesRuntimeType::ConstItem FreeFixedTimeSeriesListRuntimeType::item(const 
 
     const auto &storage = *static_cast<const free_fixed_time_series_list_storage *>(value);
     const auto node = free_list_node(storage);
+    if (storage.node->parameters()[id].mode() == ParameterBindingMode::reference) {
+        if (const auto *sample = node.reference_input_sample(id); sample != nullptr && !sample->empty()) {
+            return sample->input();
+        }
+        const auto *reference_input = node.reference_input(id);
+        if (reference_input->reference()) {
+            const auto target = ResolvedTimeSeries::resolve(reference_input->reference());
+            return {*target.runtime_type, target.last_updated, target.storage};
+        }
+    }
+
     const auto input = node.time_series_input(id);
     return {input.runtime_type(), node.input_last_updated(id), input.data()};
 }
@@ -134,14 +145,10 @@ void FreeFixedTimeSeriesListRuntimeType::for_each_modified_item(
     }
 
     const auto node = free_list_node(storage);
-    const auto publish = [&](std::size_t index, const TimeSeriesState &item_last_updated) {
-        const auto input = node.time_series_input(index);
-        function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &item_last_updated, input.data()});
-    };
-
     if (!last_updated.valid()) {
         for (auto index = std::size_t{}; index < node.input_count(); ++index) {
-            publish(index, last_updated);
+            const auto input = node.time_series_input(index);
+            function(context, {static_cast<item_id_t>(index), &input.runtime_type(), &last_updated, input.data()});
         }
         return;
     }
@@ -149,7 +156,8 @@ void FreeFixedTimeSeriesListRuntimeType::for_each_modified_item(
         return;
     }
     for (const auto index : storage.updated) {
-        publish(index, node.input_last_updated(index));
+        const auto item = this->item(value, static_cast<item_id_t>(index));
+        function(context, {static_cast<item_id_t>(index), &item.runtime_type, &item.last_updated, item.value});
     }
 }
 

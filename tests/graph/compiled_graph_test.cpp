@@ -330,6 +330,7 @@ TEST_CASE("sampled reference bindings keep their mode and aligned metadata",
     }
 
     REQUIRE(sampled_bindings.size() == 2);
+    CHECK(sizeof(ReferenceInputStorage) == sizeof(void *));
     CHECK(std::ranges::count_if(sampled_bindings, [](const auto *binding) {
               return binding->reference_dynamic_activity();
           }) == 1);
@@ -580,7 +581,7 @@ struct reference_subscription_pass {
 
 struct two_reference_input_sink {
     In<TS<i64>> left;
-    In<TS<i64>> right;
+    In<TS<i64>, optional> right;
     void evaluate() const {}
 };
 
@@ -617,15 +618,15 @@ TEST_CASE("compiled reference notifications identify each receiving input slot",
     REQUIRE(reference_subscribers.size() == 2);
     CHECK(reference_subscribers[0].node_index() == 3);
     CHECK(reference_subscribers[0].input_offset() == sink_parameters[0].value_offset());
+    CHECK(reference_subscribers[0].active());
+    CHECK(reference_subscribers[0].required());
     CHECK(reference_subscribers[1].node_index() == 3);
     CHECK(reference_subscribers[1].input_offset() == sink_parameters[1].value_offset());
+    CHECK(reference_subscribers[1].active());
+    CHECK_FALSE(reference_subscribers[1].required());
 
     const auto node_subscribers = reference_node.subscribers();
-    REQUIRE(node_subscribers.size() == 1);
-    CHECK(node_subscribers[0].node_index() == 3);
-    CHECK(node_subscribers[0].active());
-    CHECK_FALSE(node_subscribers[0].required());
-    CHECK_FALSE(node_subscribers[0].active_optional());
+    CHECK(node_subscribers.empty());
 }
 
 TEST_CASE("graph wiring can compile more than once", "[compiled_graph][feature:graph-compilation]") {

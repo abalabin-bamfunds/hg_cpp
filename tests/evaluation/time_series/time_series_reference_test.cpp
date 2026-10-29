@@ -505,7 +505,7 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
     CHECK(evaluations == 1);
 }
 
-TEST_CASE("an ordinary reference republishes the same target without repeating its validity transition",
+TEST_CASE("an ordinary reference republishes ticks without changing its dereferenced target",
           "[evaluation][reference][validity][series:value][transition:first-tick][transition:update]"
           "[guarantee:ordinary][binding:reference-to-value][feature:reference]") {
     struct republish_reference {
@@ -517,23 +517,429 @@ TEST_CASE("an ordinary reference republishes the same target without repeating i
         void evaluate() const { output.copy(source); }
     };
 
-    auto observations = std::vector<ReferenceObservation>{};
+    auto reference_ticks = 0;
     const auto source = node<sampled_left_source>();
+
     const auto republish = node<republish_reference>();
+
+    const auto observe_reference = node([&](In<REF<TS<i64>>>) { ++reference_ticks; });
+
+    const auto observe_value = node([](In<TS<i64>, optional> input, In<TS<i64>, optional> trigger) {
+        (void)trigger;
+        return ReferenceObservation{input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                    input.valid() ? *input : i64{}, input.last_updated()};
+    });
+
+    const auto graph = [&](wp<TS<i64>> republish_trigger, wp<TS<i64>> observation_trigger) {
+        const auto reference = republish(republish_trigger, source());
+        observe_reference(reference);
+        return observe_value(reference, observation_trigger);
+    };
+
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    const auto actual =
+        bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, ticks({literal::SKIP, i64{1}, literal::SKIP}),
+                      ticks({literal::SKIP, literal::SKIP, i64{1}}));
+
+    const auto expected = std::initializer_list<std::optional<ReferenceObservation>>{
+        ReferenceObservation{true, true, true, false, 10, start_time},
+        std::nullopt,
+        ReferenceObservation{true, false, false, false, 10, start_time},
+    };
+    CHECK(actual.equals<ReferenceObservation>(expected));
+    CHECK(reference_ticks == 2);
+}
+
+namespace {
+
+struct deferred_state_reference_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    State<int> step;
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        auto value = i64{40};
+        if (*step == 0) {
+            value = 20;
+        } else if (*step == 1) {
+            value = 30;
+        }
+        output.set(value);
+        if (*step == 0) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{3});
+        } else if (*step == 1) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        }
+        ++*step;
+    }
+};
+
+struct deferred_state_reference_republisher {
+    static constexpr bool uses_timed_scheduling = true;
+
+    In<REF<TS<i64>>, passive> source;
+    State<int> step;
+    Out<REF<TS<i64>, TimeSeriesGuarantee::ordinary>> output;
+
+    void start(EvaluationContext *context) const {
+        output.copy(source);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        output.copy(source);
+        if (*step == 0) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        } else if (*step == 1) {
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+        }
+        ++*step;
+    }
+};
+
+struct deferred_state_trigger {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(0);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{3});
+    }
+
+    void evaluate() const { output.set(1); }
+};
+
+struct deferred_rebind_target {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.set(10);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.set(20); }
+};
+
+struct deferred_reference_rebinder {
+    static constexpr bool uses_timed_scheduling = true;
+
+    In<REF<TS<i64>>, passive> source;
+    In<REF<TS<i64>>, passive> replacement;
+    State<int> step;
+    Out<REF<TS<i64>, TimeSeriesGuarantee::ordinary>> output;
+
+    void start(EvaluationContext *context) const {
+        output.copy(source);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{2});
+    }
+
+    void evaluate(EvaluationContext *context) const {
+        if (*step == 0) {
+            output.copy(source);
+            context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+        } else {
+            output.copy(replacement);
+        }
+        ++*step;
+    }
+};
+
+} // namespace
+
+TEST_CASE("a same-target reference tick retains the target state until input resolution sees a target update",
+          "[evaluation][reference][validity][series:value][transition:update][feature:reference]"
+          "[binding:reference-to-value][lifecycle]") {
+    auto observations = std::vector<ReferenceObservation>{};
+    auto passive_observations = std::vector<ReferenceObservation>{};
+    const auto source = node<deferred_state_reference_target>();
+
+    const auto republish = node<deferred_state_reference_republisher>();
+
+    const auto trigger = node<deferred_state_trigger>();
+
     const auto observe = node([&](In<TS<i64>, optional> input) {
         observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
                                 input.valid() ? *input : i64{}, input.last_updated()});
     });
-    const auto graph = [&](wp<TS<i64>> republish_trigger) { observe(republish(republish_trigger, source())); };
-
+    const auto observe_passive = node([&](In<TS<i64>, passive, optional> input, In<TS<i64>>) {
+        passive_observations.push_back({input.valid(), input.modified(), input.became_valid(),
+                                        input.became_invalid(), input.valid() ? *input : i64{},
+                                        input.last_updated()});
+    });
+    auto wiring = GraphWiring{};
+    auto first_observer_identity = NodeCallIdentity{};
+    auto passive_observer_identity = NodeCallIdentity{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto target = source();
+        const auto reference = republish(target);
+        const auto active_arguments = std::array{WiringArgument{reference}};
+        first_observer_identity = wiring.invoke_node(observe, active_arguments).identity;
+        const auto passive_arguments = std::array{WiringArgument{reference}, WiringArgument{trigger()}};
+        passive_observer_identity = wiring.invoke_node(observe_passive, passive_arguments).identity;
+    }
+    wiring.finalize();
+    const auto first_observer_index = wiring.node_index(first_observer_identity);
+    const auto passive_observer_index = wiring.node_index(passive_observer_identity);
+    const auto compiled = CompiledGraph{wiring};
+    auto memory = counting_memory_resource{};
+    auto global_state = GlobalState{};
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
-                  bg::input<TS<i64>>({literal::SKIP, 1}));
+    const auto target_update_time = start_time + std::chrono::microseconds{1};
+    const auto reference_update_time = start_time + std::chrono::microseconds{2};
+    const auto next_target_update_time = start_time + std::chrono::microseconds{4};
 
-    REQUIRE(observations.size() == 2);
-    CHECK(observations[0] == ReferenceObservation{true, true, true, false, 10, start_time});
-    CHECK(observations[1] == ReferenceObservation{true, true, false, false, 10,
-                                                  start_time + std::chrono::microseconds{1}});
+    for (const auto allowed_allocations : {std::size_t{}, std::size_t{1}}) {
+        observations.clear();
+        passive_observations.clear();
+        {
+            auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+            runtime.start(start_time);
+            runtime.evaluate(start_time);
+            REQUIRE(observations.size() == 1);
+            CHECK(observations.front() == ReferenceObservation{true, true, true, false, 10, start_time});
+            runtime.evaluate(target_update_time);
+            REQUIRE(observations.size() == 2);
+            CHECK(observations.back() == ReferenceObservation{true, true, false, false, 20, target_update_time});
+
+            memory.fail_after(allowed_allocations);
+            CHECK_THROWS_AS(runtime.evaluate(reference_update_time), std::bad_alloc);
+            memory.allow_allocations();
+            CHECK(runtime.node(first_observer_index).reference_input(0)->has_deferred_state() ==
+                  (allowed_allocations == 1));
+            CHECK_FALSE(runtime.node(passive_observer_index).reference_input(0)->has_deferred_state());
+        }
+        CHECK(memory.allocations() == 0);
+    }
+
+    observations.clear();
+    passive_observations.clear();
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+        runtime.start(start_time);
+        runtime.evaluate(start_time);
+        REQUIRE(observations.size() == 1);
+        CHECK(observations.front() == ReferenceObservation{true, true, true, false, 10, start_time});
+        runtime.evaluate(target_update_time);
+        REQUIRE(observations.size() == 2);
+        CHECK(observations.back() == ReferenceObservation{true, true, false, false, 20, target_update_time});
+
+        const auto bytes_before_reference_update = memory.allocated_bytes();
+
+        runtime.evaluate(reference_update_time);
+        CHECK(observations.size() == 2);
+        CHECK(runtime.node(first_observer_index)
+                  .time_series_input(0, reference_update_time)
+                  .last_updated() == target_update_time);
+        const auto bytes_after_reference_update = memory.allocated_bytes();
+        const auto deferred_count = static_cast<std::size_t>(
+                                        runtime.node(first_observer_index).reference_input(0)->has_deferred_state()) +
+                                    static_cast<std::size_t>(
+                                        runtime.node(passive_observer_index).reference_input(0)->has_deferred_state());
+        REQUIRE(deferred_count == 2);
+        CHECK(bytes_after_reference_update ==
+              bytes_before_reference_update + deferred_count * sizeof(DeferredReferenceInputState));
+        CHECK(details::ReferenceProvider::get(
+                  runtime.node(first_observer_index).reference_input(0)->reference()) == nullptr);
+
+        const auto retained_reference_update_time = reference_update_time + std::chrono::microseconds{1};
+        runtime.evaluate(retained_reference_update_time);
+        CHECK(memory.allocated_bytes() == bytes_after_reference_update);
+        REQUIRE(passive_observations.size() == 2);
+        CHECK(passive_observations.back() ==
+              ReferenceObservation{true, false, false, false, 20, target_update_time});
+
+        runtime.evaluate(next_target_update_time);
+        REQUIRE(observations.size() == 3);
+        CHECK(observations.back() == ReferenceObservation{true, true, false, false, 30, next_target_update_time});
+        CHECK_FALSE(runtime.node(first_observer_index).reference_input(0)->has_deferred_state());
+        CHECK(runtime.node(passive_observer_index).reference_input(0)->has_deferred_state());
+        CHECK(memory.allocated_bytes() ==
+              bytes_after_reference_update - sizeof(DeferredReferenceInputState));
+
+        const auto passive_input =
+            runtime.node(passive_observer_index).time_series_input(0, next_target_update_time);
+        CHECK(passive_input.last_updated() == next_target_update_time);
+        CHECK(passive_input.modified());
+        CHECK_FALSE(runtime.node(passive_observer_index).reference_input(0)->has_deferred_state());
+        CHECK(memory.allocated_bytes() ==
+              bytes_after_reference_update - deferred_count * sizeof(DeferredReferenceInputState));
+    }
+
+    CHECK(memory.allocations() == 0);
+
+    observations.clear();
+    passive_observations.clear();
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+        runtime.start(start_time);
+        runtime.evaluate(start_time);
+        runtime.evaluate(target_update_time);
+        runtime.evaluate(reference_update_time);
+
+        auto *passive_input = runtime.node(passive_observer_index).reference_input(0);
+        REQUIRE(passive_input->has_deferred_state());
+
+        runtime.evaluate(start_time + std::chrono::microseconds{3});
+        runtime.evaluate(next_target_update_time);
+        CHECK(passive_input->has_deferred_state());
+
+        const auto newer_reference_update_time = next_target_update_time + std::chrono::microseconds{1};
+        runtime.evaluate(newer_reference_update_time);
+        const auto before_target_catches_up =
+            runtime.node(passive_observer_index).time_series_input(0, newer_reference_update_time);
+        CHECK(before_target_catches_up.last_updated() == next_target_update_time);
+        CHECK(passive_input->has_deferred_state());
+
+        const auto repeated_read =
+            runtime.node(passive_observer_index).time_series_input(0, newer_reference_update_time);
+        CHECK(repeated_read.last_updated() == next_target_update_time);
+        CHECK(passive_input->has_deferred_state());
+
+        const auto final_target_update_time = newer_reference_update_time + std::chrono::microseconds{1};
+        runtime.evaluate(final_target_update_time);
+        CHECK(passive_input->has_deferred_state());
+        const auto caught_up = runtime.node(passive_observer_index).time_series_input(0, final_target_update_time);
+        CHECK(caught_up.last_updated() == final_target_update_time);
+        CHECK_FALSE(passive_input->has_deferred_state());
+    }
+    CHECK(memory.allocations() == 0);
+
+    passive_observations.clear();
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+        runtime.start(start_time);
+        runtime.evaluate(start_time);
+        runtime.evaluate(target_update_time);
+        runtime.evaluate(reference_update_time);
+        auto *input = runtime.node(first_observer_index).reference_input(0);
+        REQUIRE(input->has_deferred_state());
+    }
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a failed reference rebind keeps its deferred input and releases the new subscription",
+          "[evaluation][reference][validity][feature:reference][lifecycle][allocation-failure]") {
+    auto sink_evaluations = std::size_t{};
+    auto sink_observations = std::vector<ReferenceObservation>{};
+    const auto source = node<deferred_rebind_target>();
+
+    const auto replacement = node<sampled_right_source>();
+
+    const auto pass = node<reference_pass>();
+
+    const auto rebind = node<deferred_reference_rebinder>();
+
+    const auto replacement_sink = node<optional_reference_consumer>();
+
+    const auto sink = node([&](In<TS<i64>, optional> input) {
+        ++sink_evaluations;
+        sink_observations.push_back({input.valid(), input.modified(), input.became_valid(), input.became_invalid(),
+                                    input.valid() ? *input : i64{}, input.last_updated()});
+    });
+    auto wiring = GraphWiring{};
+    auto replacement_sink_identity = NodeCallIdentity{};
+    auto sink_identity = NodeCallIdentity{};
+    {
+        const auto context = WiringContext{wiring};
+        const auto source_reference = source();
+        const auto replacement_reference = pass(replacement());
+        const auto replacement_sink_arguments = std::array{WiringArgument{replacement_reference}};
+        replacement_sink_identity = wiring.invoke_node(replacement_sink, replacement_sink_arguments).identity;
+        const auto rebind_output = rebind(source_reference, replacement_reference);
+        const auto sink_arguments = std::array{WiringArgument{rebind_output}};
+        sink_identity = wiring.invoke_node(sink, sink_arguments).identity;
+    }
+
+    wiring.finalize();
+    const auto replacement_sink_index = wiring.node_index(replacement_sink_identity);
+    const auto sink_node_index = wiring.node_index(sink_identity);
+    const auto compiled = CompiledGraph{wiring};
+    auto memory = counting_memory_resource{};
+    auto global_state = GlobalState{};
+    const auto start_time = MIN_DT + std::chrono::microseconds{1};
+    const auto target_update_time = start_time + std::chrono::microseconds{1};
+    const auto reference_tick_time = start_time + std::chrono::microseconds{2};
+    const auto rebind_time = start_time + std::chrono::microseconds{3};
+
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+        runtime.start(start_time);
+        runtime.evaluate(start_time);
+        REQUIRE(sink_observations.size() == 1);
+        CHECK(sink_observations.back() == ReferenceObservation{true, true, true, false, 10, start_time});
+        runtime.evaluate(target_update_time);
+        REQUIRE(sink_observations.size() == 2);
+        CHECK(sink_observations.back() == ReferenceObservation{true, true, false, false, 20, target_update_time});
+        runtime.evaluate(reference_tick_time);
+        auto *input = runtime.node(sink_node_index).reference_input(0);
+        REQUIRE(input->has_deferred_state());
+        auto *deferred_state = input->deferred_state();
+        const auto original_reference = deferred_state->reference;
+        auto *replacement_input = runtime.node(replacement_sink_index).reference_input(0);
+        REQUIRE(replacement_input != nullptr);
+        auto *replacement_root = replacement_input->reference().get<details::RootReference>();
+        REQUIRE(replacement_root != nullptr);
+        REQUIRE(replacement_root->has_inline_subscriber());
+
+        memory.fail_after(0);
+        CHECK_THROWS_AS(runtime.evaluate(rebind_time), std::bad_alloc);
+        memory.allow_allocations();
+
+        CHECK(input->has_deferred_state());
+        CHECK(input->deferred_state() == deferred_state);
+        CHECK(input->deferred_state()->reference == original_reference);
+        CHECK(runtime.node(sink_node_index).time_series_input(0, rebind_time).last_updated() == target_update_time);
+        CHECK(replacement_root->has_inline_subscriber());
+        CHECK_FALSE(replacement_root->has_dynamic_subscribers());
+        CHECK(sink_evaluations == 2);
+    }
+
+    CHECK(memory.allocations() == 0);
+
+    sink_evaluations = 0;
+    sink_observations.clear();
+    {
+        auto runtime = RuntimeGraph{compiled, allocator{memory}, global_state};
+        runtime.start(start_time);
+        runtime.evaluate(start_time);
+        REQUIRE(sink_observations.size() == 1);
+        CHECK(sink_observations.back() == ReferenceObservation{true, true, true, false, 10, start_time});
+        runtime.evaluate(target_update_time);
+        REQUIRE(sink_observations.size() == 2);
+        CHECK(sink_observations.back() == ReferenceObservation{true, true, false, false, 20, target_update_time});
+        runtime.evaluate(reference_tick_time);
+
+        auto *input = runtime.node(sink_node_index).reference_input(0);
+        REQUIRE(input->has_deferred_state());
+        auto *replacement_input = runtime.node(replacement_sink_index).reference_input(0);
+        REQUIRE(replacement_input != nullptr);
+        const auto replacement_reference = replacement_input->reference();
+        auto *replacement_root = replacement_reference.get<details::RootReference>();
+        REQUIRE(replacement_root != nullptr);
+
+        runtime.evaluate(rebind_time);
+
+        CHECK_FALSE(input->has_deferred_state());
+        CHECK(input->reference() == replacement_reference);
+        const auto selected = runtime.node(sink_node_index).time_series_input(0, rebind_time);
+        CHECK(selected.valid());
+        CHECK(selected.as<TS<i64>>().value() == 20);
+        CHECK(sink_evaluations == 3);
+        CHECK(sink_observations.back().last_updated == rebind_time);
+        CHECK(replacement_root->has_dynamic_subscribers());
+    }
+
+    CHECK(memory.allocations() == 0);
 }
 
 TEST_CASE("reference provider access preserves lazy allocation",

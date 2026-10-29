@@ -138,6 +138,8 @@ class RuntimeGraph {
                            bool call_on_stop = false);
     void remove_cycle_callback(const void *receiver) noexcept;
     void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change);
+    void notify_dynamic_subscribers(details::DynamicSubscribers &subscribers, OutputChange change,
+                                    const OutputChangeContext &publication_context);
     void notify_dynamic_subscriber(const details::DynamicNodeSubscriber &subscriber, OutputChange change) noexcept {
         auto active = subscriber.active();
         if (subscriber.controlled_activity()) {
@@ -186,7 +188,7 @@ class RuntimeGraph {
     void clear_cycle_callbacks(EvaluationContext &context) noexcept;
     std::optional<OutputChange> output_change(const CompiledNode &node, bool output_was_valid) const noexcept;
     std::optional<OutputChange> current_cycle_output_change(const CompiledNode &node) const noexcept;
-    void publish_output(const CompiledNode &node, OutputChange change);
+    void publish_output(const CompiledNode &node, OutputChange change, TimeSeriesState prior_state);
     void notify_subscribers(std::span<const Subscriber> subscribers, OutputChange change);
     void notify_node_subscriber(std::size_t node_index, bool active, bool required, bool active_optional,
                                 OutputChange change) noexcept;

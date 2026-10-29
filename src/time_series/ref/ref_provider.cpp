@@ -197,7 +197,9 @@ void ReferenceProvider::add_observer(ReferenceSubscriptionDetail &subscriptions,
 void ReferenceProvider::remove_subscriber(ReferenceSubscriptionDetail &subscriptions, RuntimeGraph &graph,
                                           std::size_t input_offset) noexcept {
     if (subscriptions.has_subscriber_group()) {
-        subscriber_groups_[subscriptions.subscriber_group_index()]->remove(graph, input_offset);
+        if (auto *subscribers = subscriber_groups_[subscriptions.subscriber_group_index()]) {
+            subscribers->remove(graph, input_offset);
+        }
     }
 }
 
