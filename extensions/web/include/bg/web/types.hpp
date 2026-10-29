@@ -42,6 +42,14 @@ template <template <typename, auto...> typename Field> struct HttpResponse {
     Field<bytes> body;
 };
 
+template <template <typename, auto...> typename Field> struct ClientCredentials {
+    Field<string> scheme;
+    Field<string> username;
+    Field<string> password;
+    Field<string> token;
+    Field<List<Tuple<string, string>>> headers;
+};
+
 template <template <typename, auto...> typename Field> struct WebSocketClose {
     Field<i64> code;
     Field<string> reason;

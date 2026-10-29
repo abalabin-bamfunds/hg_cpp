@@ -1,5 +1,6 @@
 #include "client_runtime.hpp"
 
+#include "client_credentials.hpp"
 #include "http_header.hpp"
 #include "runtime_logging.hpp"
 
@@ -43,18 +44,25 @@ using HeaderPair = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
 using namespace bg::literals;
 
+std::string lowercase(std::string_view value);
+
 struct Transfer {
-    Transfer(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request_value)
-        : client_id{client_id}, client_sequence{client_sequence}, request_value{std::move(request_value)} {}
+    Transfer(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request_value,
+             std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials_value)
+        : client_id{client_id}, client_sequence{client_sequence}, request_value{std::move(request_value)},
+          credentials_value{std::move(credentials_value)} {}
 
     CURL *easy{};
     curl_slist *request_headers{};
     i64 client_id{};
     i64 client_sequence{};
     ScalarValue<Bundle<HttpClientRequest>> request_value;
+    std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials_value;
+    std::optional<details::ClientCredentialsSnapshot> credentials;
     std::string method;
     std::string url;
     HeaderValues request_headers_values;
+    bool request_has_authorization{};
     HeaderValues response_headers;
     BytesBuilder response_body;
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
@@ -77,6 +85,17 @@ struct Transfer {
                 std::string{scalar_cast<string>(header.template get<0>()).value()},
                 std::string{scalar_cast<string>(header.template get<1>()).value()});
         }
+        request_has_authorization = std::ranges::any_of(request_headers_values, [](const auto &header) {
+            return lowercase(header.first) == "authorization";
+        });
+        if (credentials_value) {
+            credentials.emplace(details::snapshot_client_credentials(credentials_value->view()));
+            if (lowercase(credentials->scheme) == "headers") {
+                request_headers_values.insert(request_headers_values.end(), credentials->headers.begin(),
+                                              credentials->headers.end());
+            }
+        }
+        credentials_value.reset();
     }
 
     std::string curl_error(CURLcode code) const {
@@ -118,6 +137,8 @@ struct Transfer {
             auto line = std::string_view{data, length};
             if (line.starts_with("HTTP/")) {
                 transfer.response_headers.clear();
+                transfer.response_body = BytesBuilder{};
+                transfer.response_too_large = false;
                 return length;
             }
             while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.remove_suffix(1);
@@ -146,6 +167,7 @@ struct Command {
     i64 client_id;
     i64 client_sequence;
     std::optional<ScalarValue<Bundle<HttpClientRequest>>> request;
+    std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials;
 };
 
 struct CurlGlobal {
@@ -223,6 +245,49 @@ std::optional<std::string> Transfer::validate() const {
             return std::string{"HTTP header controls request routing or framing"};
         }
     }
+    if (!credentials) return std::nullopt;
+
+    const auto scheme = lowercase(credentials->scheme);
+    if (credentials->scheme.find('\0') != std::string::npos || credentials->username.find('\0') != std::string::npos ||
+        credentials->password.find('\0') != std::string::npos || credentials->token.find('\0') != std::string::npos) {
+        return std::string{"HTTP credentials contain a NUL byte"};
+    }
+    if (scheme == "none") {
+        if (!credentials->username.empty() || !credentials->password.empty() || !credentials->token.empty() ||
+            !credentials->headers.empty()) {
+            return std::string{"HTTP credentials with scheme none must be empty"};
+        }
+        return std::nullopt;
+    }
+    if (scheme == "basic" || scheme == "digest" || scheme == "negotiate" || scheme == "ntlm") {
+        if (!credentials->token.empty() || !credentials->headers.empty()) {
+            return std::string{"HTTP native authentication cannot include a token or headers"};
+        }
+        if (request_has_authorization) {
+            return std::string{"HTTP request Authorization header conflicts with credentials"};
+        }
+        return std::nullopt;
+    }
+    if (scheme == "bearer") {
+        if (!details::valid_bearer_token(credentials->token) || !credentials->username.empty() ||
+            !credentials->password.empty() || !credentials->headers.empty()) {
+            return std::string{"HTTP bearer credentials are invalid"};
+        }
+        if (request_has_authorization) {
+            return std::string{"HTTP request Authorization header conflicts with credentials"};
+        }
+        return std::nullopt;
+    }
+    if (scheme != "headers") return std::string{"HTTP authentication scheme is not supported"};
+    if (!credentials->username.empty() || !credentials->password.empty() || !credentials->token.empty()) {
+        return std::string{"HTTP header credentials cannot include username, password, or token"};
+    }
+    const auto authorization_count = std::ranges::count_if(credentials->headers, [](const auto &header) {
+        return lowercase(header.first) == "authorization";
+    });
+    if (authorization_count > 1 || (authorization_count != 0 && request_has_authorization)) {
+        return std::string{"HTTP credentials contain conflicting Authorization headers"};
+    }
     return std::nullopt;
 }
 
@@ -289,6 +354,21 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
     set_easy_option(easy, CURLOPT_HEADERFUNCTION, &Transfer::receive_headers);
     set_easy_option(easy, CURLOPT_HEADERDATA, this);
     set_easy_option(easy, CURLOPT_ERRORBUFFER, error_buffer.data());
+    if (credentials) {
+        const auto scheme = lowercase(credentials->scheme);
+        if (scheme == "basic" || scheme == "digest" || scheme == "negotiate" || scheme == "ntlm") {
+            const auto auth = scheme == "basic"       ? CURLAUTH_BASIC
+                              : scheme == "digest"    ? CURLAUTH_DIGEST
+                              : scheme == "negotiate" ? CURLAUTH_NEGOTIATE
+                                                       : CURLAUTH_NTLM;
+            set_easy_option(easy, CURLOPT_HTTPAUTH, auth);
+            set_easy_option(easy, CURLOPT_USERNAME, credentials->username.c_str());
+            set_easy_option(easy, CURLOPT_PASSWORD, credentials->password.c_str());
+        } else if (scheme == "bearer") {
+            set_easy_option(easy, CURLOPT_HTTPAUTH, CURLAUTH_BEARER);
+            set_easy_option(easy, CURLOPT_XOAUTH2_BEARER, credentials->token.c_str());
+        }
+    }
     const auto body = scalar_cast<bytes>(request_value.view()[3]).value();
     if (!body.empty() || method == "POST" || method == "PUT" || method == "PATCH") {
         const auto *body_data = body.empty() ? empty_body : reinterpret_cast<const char *>(body.data());
@@ -319,11 +399,13 @@ class ClientImplementation final {
         stop();
     }
 
-    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request) {
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
+                 std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
         enqueue(Command{.kind = Command::Kind::request,
                         .client_id = client_id,
                         .client_sequence = client_sequence,
-                        .request = std::move(request)});
+                        .request = std::move(request),
+                        .credentials = std::move(credentials)});
     }
 
     void cancel(i64 client_id, i64 client_sequence) noexcept {
@@ -481,7 +563,7 @@ class ClientImplementation final {
 
     void start_request(Command command) {
         auto transfer = std::make_unique<Transfer>(command.client_id, command.client_sequence,
-                                                   std::move(*command.request));
+                                                   std::move(*command.request), std::move(command.credentials));
         transfer->read_request();
         if (const auto error = transfer->validate()) {
             record_failure(*error);
@@ -651,8 +733,9 @@ ClientRuntime::ClientRuntime(HttpClientOptions options, Queue output)
 
 ClientRuntime::~ClientRuntime() = default;
 
-void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value) {
-    implementation_->request(client_id, client_sequence, std::move(value));
+void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value,
+                            std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
+    implementation_->request(client_id, client_sequence, std::move(value), std::move(credentials));
 }
 
 void ClientRuntime::cancel(i64 client_id, i64 client_sequence) noexcept {

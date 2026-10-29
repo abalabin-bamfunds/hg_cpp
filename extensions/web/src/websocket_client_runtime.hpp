@@ -25,7 +25,8 @@ class WebSocketClientRuntime {
     void update(i64 client_id, i64 sequence,
                 std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                 std::optional<ScalarValue<bytes>> message,
-                std::optional<ScalarValue<Bundle<WebSocketClose>>> close);
+                std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
+                std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials = std::nullopt);
     void cancel(i64 client_id, i64 sequence) noexcept;
 
   private:

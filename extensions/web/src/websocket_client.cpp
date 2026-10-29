@@ -62,6 +62,7 @@ struct WebSocketClientUpdateSink {
     In<TS<bytes>, optional> message;
     In<TS<Bundle<WebSocketClose>>, optional> close;
     In<TS<Opaque<WebSocketClientRuntime *>>, passive> runtime;
+    In<TS<Bundle<ClientCredentials>>, optional, passive> credentials;
     State<i64> sequence;
 
     void start() const {
@@ -84,8 +85,12 @@ struct WebSocketClientUpdateSink {
             if (close.modified() && close.valid()) close_value.emplace(close.value());
             if (!connect_value && !message_value && !close_value) return;
 
-            runtime.value()->update(client_id.value(), sequence_value, std::move(connect_value), std::move(message_value),
-                                    std::move(close_value));
+            auto credentials_value = std::optional<ScalarValue<Bundle<ClientCredentials>>>{};
+            if (connect_value && credentials.valid()) credentials_value.emplace(credentials.value());
+
+            runtime.value()->update(client_id.value(), sequence_value, std::move(connect_value),
+                                    std::move(message_value), std::move(close_value),
+                                    std::move(credentials_value));
             *sequence = sequence_value;
         } catch (...) {
             details::log_runtime_failure("WebSocket client update submission failed", std::current_exception());
@@ -119,7 +124,8 @@ std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptio
                     websocket_client_update_sink(
                         client_id, operators::getattr(request, util::symbol{"connect_request"}),
                         operators::getattr(request, util::symbol{"message"}),
-                        operators::getattr(request, util::symbol{"close"}), runtime);
+                        operators::getattr(request, util::symbol{"close"}), runtime,
+                        operators::nothing[type<TS<Bundle<ClientCredentials>>>]());
                 });
 
             const auto replies = graph(

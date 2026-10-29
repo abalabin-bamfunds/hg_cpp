@@ -1,6 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/map.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
@@ -11,6 +12,7 @@
 #include "runtime_logging.hpp"
 
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <utility>
 
@@ -42,14 +44,19 @@ struct ClientRequestSink {
     In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_sequence;
     In<TS<Bundle<HttpClientRequest>>> request;
     In<TS<Opaque<ClientRuntime *>>, passive> runtime_input;
+    In<TS<Bundle<ClientCredentials>>, optional, passive> credentials;
     State<bool> submitted;
 
     void start() const { *submitted = false; }
 
     void evaluate() const {
+        if (!request.modified() || !request.valid()) return;
         try {
+            auto credentials_value = std::optional<ScalarValue<Bundle<ClientCredentials>>>{};
+            if (credentials.valid()) credentials_value.emplace(credentials.value());
             runtime_input.value()->request(client_id.value(), client_sequence.value(),
-                                           ScalarValue<Bundle<HttpClientRequest>>{request.value()});
+                                           ScalarValue<Bundle<HttpClientRequest>>{request.value()},
+                                           std::move(credentials_value));
             *submitted = true;
         } catch (...) {
             details::log_runtime_failure("HTTP client request submission failed", std::current_exception());
@@ -79,7 +86,8 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
                    wp<TS<Bundle<HttpClientRequest>>, "request"_n> request,
                    wp<TS<Opaque<ClientRuntime *>>, "runtime"_n> runtime) {
                     const auto client_sequence = service_client_id();
-                    client_request_sink(client_id, client_sequence, request, runtime);
+                    client_request_sink(client_id, client_sequence, request, runtime,
+                                        operators::nothing[type<TS<Bundle<ClientCredentials>>>]());
                 });
 
             map(client, requests, source->runtime);
