@@ -36,6 +36,10 @@ bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realti
 catalogue. `http_server()` returns `TS[int]` containing the bound port after the
 listener is ready. Use `port=0` to let the operating system assign a port. Each
 implementation owns one server with separate runtime state for each graph run.
+Runtime failures are logged and terminate the affected request or connection;
+the listener continues serving other entries. A duplicate route registration
+is logged and rejected, leaving the existing route active. Bind and listen
+failures prevent startup and propagate to the graph.
 
 `http_handler(path, graph)` creates a callable handler. Invoke it wherever the
 route should be wired. The graph's first input receives the request. Remaining
@@ -247,6 +251,8 @@ transport failure produces `HttpResponse(status=599)` with an error message in
 the body. This includes DNS, connection, timeout, and protocol failures.
 599 is a nonstandard status; an actual server response with that status has the
 same representation.
+Runtime failures are logged. A libcurl multi-engine failure returns 599 for
+each active request, replaces the engine, and does not replay requests.
 
 `http_client_impl(timeout=timedelta(seconds=30),
 max_response_body_size=8 * 1024 * 1024)` configures each implementation. The

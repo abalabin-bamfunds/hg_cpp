@@ -260,6 +260,69 @@ TEST_CASE("HTTP client preserves binary payloads, ordered headers, and sequentia
     CHECK(responses[1].body.empty());
 }
 
+TEST_CASE("HTTP client continues after a 599 response", "[feature:http][feature:service][feature:realtime]") {
+    const auto large_body = std::array{std::byte{'x'}, std::byte{'y'}};
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(http_client, http_client_impl({.max_response_body_size = 1}),
+                            std::span<const WiringArgument>{});
+    register_http_server(catalogue);
+
+    auto request_writer = Queue{};
+    const auto requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) { request_writer = queue; });
+    const auto large_response = node([&](In<TS<Bundle<HttpServerRequest>>>, Out<TS<Bundle<HttpResponse>>> response) {
+        const auto value = make_response(200, {}, large_body);
+        response.set_value(value.view());
+    });
+    const auto small_response = node([](In<TS<Bundle<HttpServerRequest>>>, Out<TS<Bundle<HttpResponse>>> response) {
+        const auto value = make_response(200, {});
+        response.set_value(value.view());
+    });
+    const auto large_route = http_handler("/large", large_response);
+    const auto small_route = http_handler("/small", small_response);
+
+    auto responses = std::vector<ObservedResponse>{};
+    auto first_write_accepted = false;
+    auto second_write_accepted = false;
+    auto bound_port_value = i64{};
+    run_graph(
+        [&] {
+            (void)large_route();
+            (void)small_route();
+            const auto port = http_server();
+            const auto replies = http_client(requests());
+            (void)node([&](In<TS<i64>> bound_port) {
+                if (!bound_port.valid() || !bound_port.modified()) return;
+                bound_port_value = *bound_port;
+                const auto request = make_request(
+                    "GET", "http://127.0.0.1:" + std::to_string(bound_port_value) + "/large");
+                first_write_accepted = request_writer.write(literal::TimeSeriesLiteral(request.view()));
+            })(port);
+            (void)node([&](In<TS<Bundle<HttpResponse>>> reply) {
+                if (!reply.valid() || !reply.modified()) return;
+                responses.push_back(observe(reply.value()));
+                if (responses.size() == 1) {
+                    const auto request = make_request(
+                        "GET", "http://127.0.0.1:" + std::to_string(bound_port_value) + "/small");
+                    second_write_accepted = request_writer.write(literal::TimeSeriesLiteral(request.view()));
+                    return;
+                }
+                stop.request_stop();
+            })(replies);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{4},
+                        .stop_token = stop.get_token()});
+
+    CHECK(first_write_accepted);
+    CHECK(second_write_accepted);
+    REQUIRE(responses.size() == 2);
+    CHECK(responses[0].status == 599);
+    CHECK(responses[1].status == 200);
+    CHECK(responses[1].body.empty());
+}
+
 TEST_CASE("HTTP client returns queue replies for mapped callers",
           "[feature:http][feature:service][feature:map][feature:realtime]"
           "[feature:lifecycle][transition:invalidation][transition:revalidation]") {

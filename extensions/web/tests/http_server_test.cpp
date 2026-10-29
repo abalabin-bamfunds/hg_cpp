@@ -981,20 +981,30 @@ TEST_CASE("HTTP server can start without routes", "[feature:http][feature:lifecy
 }
 
 TEST_CASE("HTTP server rejects duplicate routes", "[feature:http][feature:lifecycle]") {
-    auto catalogue = ServiceCatalogue{};
-    register_http_server(catalogue);
-    const auto first = http_handler("/duplicate", echo_handler);
-    const auto second = http_handler("/duplicate", echo_handler);
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = beast::http;
+    using tcp = asio::ip::tcp;
 
-    CHECK_THROWS(run_graph(
-        [&] {
-            (void)first();
-            (void)second();
-            (void)http_server();
-        },
-        GraphRunOptions{.services = &catalogue,
-                        .engine = EvaluationEngine::realtime,
-                        .run_time = std::chrono::seconds{1}}));
+    const auto first = Route{"/duplicate", echo_handler};
+    const auto second = Route{"/duplicate", echo_handler};
+    auto server = ServerTest{};
+    auto status = 0U;
+    server.run({first, second}, [&](std::uint16_t port) {
+        auto context = asio::io_context{};
+        auto socket = tcp::socket{context};
+        socket.connect({asio::ip::make_address("127.0.0.1"), port});
+        auto request = http::request<http::empty_body>{http::verb::get, "/duplicate", 11};
+        request.set(http::field::host, "localhost");
+        http::write(socket, request);
+        auto buffer = beast::flat_buffer{};
+        auto reply = http::response<http::string_body>{};
+        http::read(socket, buffer, reply);
+        status = reply.result_int();
+        server.stop.request_stop();
+    });
+
+    CHECK(status == 200);
 }
 
 TEST_CASE("HTTP route removal withdraws the route and permits a later registration",

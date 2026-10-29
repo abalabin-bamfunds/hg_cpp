@@ -8,6 +8,7 @@
 
 #include "client_output.hpp"
 #include "client_runtime.hpp"
+#include "runtime_logging.hpp"
 
 #include <memory>
 #include <stdexcept>
@@ -46,9 +47,13 @@ struct ClientRequestSink {
     void start() const { *submitted = false; }
 
     void evaluate() const {
-        runtime_input.value()->request(client_id.value(), client_sequence.value(),
-                                       ScalarValue<Bundle<HttpClientRequest>>{request.value()});
-        *submitted = true;
+        try {
+            runtime_input.value()->request(client_id.value(), client_sequence.value(),
+                                           ScalarValue<Bundle<HttpClientRequest>>{request.value()});
+            *submitted = true;
+        } catch (...) {
+            details::log_runtime_failure("HTTP client request submission failed", std::current_exception());
+        }
     }
 
     void stop() const noexcept {
@@ -58,8 +63,6 @@ struct ClientRequestSink {
 
 const auto client_source = node<ClientSource>();
 const auto client_request_sink = node<ClientRequestSink>();
-const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error{std::string{error.value()}}; });
-
 } // namespace
 
 std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options) {
@@ -80,7 +83,6 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
                 });
 
             map(client, requests, source->runtime);
-            error_sink(source->errors);
             return wp<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>>{source->replies};
         });
     return std::make_shared<decltype(implementation)>(std::move(implementation));

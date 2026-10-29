@@ -2,6 +2,7 @@
 
 #include "http_header.hpp"
 #include "websocket_client_output.hpp"
+#include "runtime_logging.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -49,6 +50,17 @@ using namespace bg::literals;
 
 using Header = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
+
+template <typename Target, typename Function>
+auto guarded_callback(std::shared_ptr<Target> target, Function function) {
+    return [target = std::move(target), function = std::move(function)](auto &&...arguments) mutable {
+        try {
+            function(*target, std::forward<decltype(arguments)>(arguments)...);
+        } catch (...) {
+            target->runtime_failure(std::current_exception());
+        }
+    };
+}
 
 struct ParsedUrl {
     std::string host;
@@ -136,10 +148,13 @@ class WebSocketClientImplementation final {
             throw std::invalid_argument{"WebSocket maximum message size must be positive"};
         }
         thread_ = std::jthread{[this] {
-            try {
-                io_.run();
-            } catch (...) {
-                record_failure(std::current_exception());
+            while (!stopped_.load(std::memory_order_acquire)) {
+                try {
+                    io_.run();
+                    return;
+                } catch (...) {
+                    record_failure(std::current_exception());
+                }
             }
         }};
     }
@@ -160,22 +175,35 @@ class WebSocketClientImplementation final {
                 std::optional<ScalarValue<Bundle<WebSocketClose>>> close) {
         if (stopped_.load(std::memory_order_acquire)) return;
         started_ = true;
-        asio::post(io_, [this, client_id, sequence, connect = std::move(connect), message = std::move(message),
-                         close = std::move(close)]() mutable {
-            apply_update(client_id, sequence, std::move(connect), std::move(message), std::move(close));
-        });
+        try {
+            asio::post(io_, [this, client_id, sequence, connect = std::move(connect), message = std::move(message),
+                             close = std::move(close)]() mutable {
+                try {
+                    apply_update(client_id, sequence, std::move(connect), std::move(message), std::move(close));
+                } catch (...) {
+                    fail_update(client_id, sequence, std::current_exception());
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+            throw;
+        }
     }
 
     void cancel(i64 client_id, i64 sequence) noexcept {
         if (stopped_.load(std::memory_order_acquire)) return;
         try {
             asio::post(io_, [this, client_id, sequence] {
-                const auto found = active_.find(client_id);
-                if (found == active_.end() || found->second.sequence != sequence) return;
-                auto connection = std::move(found->second.connection);
-                active_.erase(found);
-                clear_bucket(client_id, sequence, std::nullopt);
-                if (connection) connection->cancel();
+                try {
+                    const auto found = active_.find(client_id);
+                    if (found == active_.end() || found->second.sequence != sequence) return;
+                    auto connection = std::move(found->second.connection);
+                    active_.erase(found);
+                    clear_bucket(client_id, sequence, std::nullopt);
+                    if (connection) connection->cancel();
+                } catch (...) {
+                    record_failure(std::current_exception());
+                }
             });
         } catch (...) {
             record_failure(std::current_exception());
@@ -251,19 +279,39 @@ class WebSocketClientImplementation final {
                 state_ = State::resolving;
                 auto self = shared_from_this();
                 timeout_.expires_after(client_.options_.handshake_timeout);
-                timeout_.async_wait([self](beast::error_code error) {
-                    if (error || !self->current() || self->state_ == State::finished || self->state_ == State::open ||
-                        self->state_ == State::closing) {
+                timeout_.async_wait(guarded_callback(self, [](Connection &connection, beast::error_code error) {
+                    if (error || !connection.current() || connection.state_ == State::finished ||
+                        connection.state_ == State::open || connection.state_ == State::closing) {
                         return;
                     }
-                    self->fail_before_handshake("WebSocket connection timed out");
-                });
+                    connection.fail_before_handshake("WebSocket connection timed out");
+                }));
                 resolver_.async_resolve(parsed_url_.host, parsed_url_.service,
-                                        [self](beast::error_code error, tcp::resolver::results_type results) {
-                                            self->on_resolve(error, std::move(results));
-                                        });
-            } catch (const std::exception &error) {
-                fail_before_handshake(error.what());
+                                        guarded_callback(self, [](Connection &connection, beast::error_code error,
+                                                                  tcp::resolver::results_type results) {
+                                            connection.on_resolve(error, std::move(results));
+                                        }));
+            } catch (...) {
+                runtime_failure(std::current_exception());
+            }
+        }
+
+        void runtime_failure(std::exception_ptr failure) noexcept {
+            client_.record_failure(failure);
+            if (state_ == State::finished) {
+                cancel();
+                client_.finish_connection(client_id_, sequence_, this);
+                return;
+            }
+            try {
+                if (state_ == State::open || state_ == State::closing) {
+                    finish_abnormally();
+                } else {
+                    fail_before_handshake("WebSocket connection failed");
+                }
+            } catch (...) {
+                cancel();
+                client_.finish_connection(client_id_, sequence_, this);
             }
         }
 
@@ -299,7 +347,6 @@ class WebSocketClientImplementation final {
         }
 
         void cancel() noexcept {
-            if (state_ == State::finished) return;
             state_ = State::finished;
             resolver_.cancel();
             try {
@@ -367,7 +414,11 @@ class WebSocketClientImplementation final {
             auto self = shared_from_this();
             asio::async_connect(stream_.next_layer(), results,
                                 [self](beast::error_code connect_error, const tcp::endpoint &) {
-                                    self->on_connect(connect_error);
+                                    try {
+                                        self->on_connect(connect_error);
+                                    } catch (...) {
+                                        self->runtime_failure(std::current_exception());
+                                    }
                                 });
         }
 
@@ -380,9 +431,9 @@ class WebSocketClientImplementation final {
             state_ = State::handshaking;
             auto self = shared_from_this();
             stream_.async_handshake(response_, parsed_url_.host_header, parsed_url_.target,
-                                    [self](beast::error_code handshake_error) {
-                                        self->on_handshake(handshake_error);
-                                    });
+                                    guarded_callback(self, [](Connection &connection, beast::error_code handshake_error) {
+                                        connection.on_handshake(handshake_error);
+                                    }));
         }
 
         void on_handshake(beast::error_code error) {
@@ -427,9 +478,10 @@ class WebSocketClientImplementation final {
         void read_next() {
             if (state_ != State::open) return;
             auto self = shared_from_this();
-            stream_.async_read(read_buffer_, [self](beast::error_code error, std::size_t) {
-                self->on_read(error);
-            });
+            stream_.async_read(read_buffer_, guarded_callback(self, [](Connection &connection, beast::error_code error,
+                                                                       std::size_t) {
+                connection.on_read(error);
+            }));
         }
 
         void on_read(beast::error_code error) {
@@ -463,15 +515,17 @@ class WebSocketClientImplementation final {
             const auto data = writes_.front().view().value();
             auto self = shared_from_this();
             stream_.binary(true);
-            stream_.async_write(asio::buffer(data.data(), data.size()), [self](beast::error_code error, std::size_t) {
-                self->write_started_ = false;
+            stream_.async_write(asio::buffer(data.data(), data.size()), guarded_callback(self, [](Connection &connection,
+                                                                                                  beast::error_code error,
+                                                                                                  std::size_t) {
+                connection.write_started_ = false;
                 if (error) {
-                    self->finish_abnormally();
+                    connection.finish_abnormally();
                     return;
                 }
-                self->writes_.pop_front();
-                self->write_next();
-            });
+                connection.writes_.pop_front();
+                connection.write_next();
+            }));
         }
 
         void close_with_code(websocket::close_code code) {
@@ -491,15 +545,15 @@ class WebSocketClientImplementation final {
             if (state_ != State::closing || close_started_) return;
             close_started_ = true;
             auto self = shared_from_this();
-            stream_.async_close(close_reason_, [self](beast::error_code error) {
+            stream_.async_close(close_reason_, guarded_callback(self, [](Connection &connection, beast::error_code error) {
                 if (error == websocket::error::closed) {
-                    self->finish_from_remote();
+                    connection.finish_from_remote();
                 } else if (error) {
-                    self->finish_abnormally();
+                    connection.finish_abnormally();
                 } else {
-                    self->finish_from_remote();
+                    connection.finish_from_remote();
                 }
-            });
+            }));
         }
 
         void finish_from_remote() {
@@ -583,6 +637,16 @@ class WebSocketClientImplementation final {
         if (found == active_.end() || found->second.sequence != sequence || !found->second.connection) return;
         if (message) found->second.connection->enqueue_message(std::move(*message));
         if (close) found->second.connection->close(std::move(*close));
+    }
+
+    void fail_update(i64 client_id, i64 sequence, std::exception_ptr failure) noexcept {
+        record_failure(failure);
+        const auto found = active_.find(client_id);
+        if (found == active_.end() || found->second.sequence != sequence) return;
+        auto connection = std::move(found->second.connection);
+        active_.erase(found);
+        clear_bucket(client_id, sequence, std::nullopt);
+        if (connection) connection->cancel();
     }
 
     bool is_current(i64 client_id, i64 sequence, const Connection *connection) const noexcept {
@@ -676,18 +740,7 @@ class WebSocketClientImplementation final {
     }
 
     void record_failure(std::exception_ptr failure) noexcept {
-        if (failure_reported_.exchange(true, std::memory_order_acq_rel)) return;
-        try {
-            auto message = std::string{"unexpected WebSocket client transport failure"};
-            try {
-                std::rethrow_exception(failure);
-            } catch (const std::exception &error) {
-                message = error.what();
-            } catch (...) {
-            }
-            (void)output_.write(literal::TimeSeriesLiteral{{util::symbol{"errors"}, message}});
-        } catch (...) {
-        }
+        details::log_runtime_failure("WebSocket client runtime failure", failure);
     }
 
     WebSocketClientOptions options_;
@@ -702,7 +755,6 @@ class WebSocketClientImplementation final {
     };
     std::unordered_map<i64, ActiveConnection> active_;
     std::atomic<bool> stopped_{};
-    std::atomic<bool> failure_reported_{};
     bool message_queue_attached_{};
     bool started_{};
 };

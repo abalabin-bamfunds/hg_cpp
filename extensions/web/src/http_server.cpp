@@ -14,6 +14,7 @@
 #include <bg/web/http_server.hpp>
 
 #include "http_server_internal.hpp"
+#include "runtime_logging.hpp"
 #include "server_output.hpp"
 #include "server_runtime.hpp"
 
@@ -74,30 +75,50 @@ struct ServerRoutes {
         auto *server = runtime.value();
         if (routes.valid()) {
             const auto update_route = [&](const Scalar<i64> &client_id) {
-                const auto route = routes[client_id];
-                if (route.valid()) {
-                    server->register_http_route(client_id.value(), std::string{route.value()});
-                } else {
-                    server->unregister_http_route(client_id.value());
+                try {
+                    const auto route = routes[client_id];
+                    if (route.valid()) {
+                        server->register_http_route(client_id.value(), std::string{route.value()});
+                    } else {
+                        server->unregister_http_route(client_id.value());
+                    }
+                } catch (...) {
+                    details::log_runtime_failure("HTTP route update failed", std::current_exception());
                 }
             };
             routes.for_each_modified(update_route);
             routes.for_each_removed(
-                [&](const Scalar<i64> &client_id) { server->unregister_http_route(client_id.value()); });
+                [&](const Scalar<i64> &client_id) {
+                    try {
+                        server->unregister_http_route(client_id.value());
+                    } catch (...) {
+                        details::log_runtime_failure("HTTP route removal failed", std::current_exception());
+                    }
+                });
         }
 
         if (websocket_routes.valid()) {
             const auto update_route = [&](const Scalar<i64> &client_id) {
-                const auto route = websocket_routes[client_id];
-                if (route.valid()) {
-                    server->register_websocket_route(client_id.value(), std::string{route.value()});
-                } else {
-                    server->unregister_websocket_route(client_id.value());
+                try {
+                    const auto route = websocket_routes[client_id];
+                    if (route.valid()) {
+                        server->register_websocket_route(client_id.value(), std::string{route.value()});
+                    } else {
+                        server->unregister_websocket_route(client_id.value());
+                    }
+                } catch (...) {
+                    details::log_runtime_failure("WebSocket route update failed", std::current_exception());
                 }
             };
             websocket_routes.for_each_modified(update_route);
             websocket_routes.for_each_removed(
-                [&](const Scalar<i64> &client_id) { server->unregister_websocket_route(client_id.value()); });
+                [&](const Scalar<i64> &client_id) {
+                    try {
+                        server->unregister_websocket_route(client_id.value());
+                    } catch (...) {
+                        details::log_runtime_failure("WebSocket route removal failed", std::current_exception());
+                    }
+                });
         }
 
         if (!port.valid()) {
@@ -113,15 +134,23 @@ const auto response_sink = node([](In<TS<Opaque<ServerRuntime *>>, passive> serv
     if (!responses.valid()) return;
 
     const auto apply_client = [&](const Scalar<i64> &client_id) {
-        const auto client_responses = responses[client_id];
-        if (!client_responses.valid()) return;
-        const auto respond = [&](const Scalar<i64> &request_id) {
-            const auto response = client_responses[request_id];
-            if (!response.valid()) return;
-            runtime->respond(client_id.value(), request_id.value(),
-                             ScalarValue<Bundle<HttpResponse>>{response.value()});
-        };
-        client_responses.for_each_modified(respond);
+        try {
+            const auto client_responses = responses[client_id];
+            if (!client_responses.valid()) return;
+            const auto respond = [&](const Scalar<i64> &request_id) {
+                try {
+                    const auto response = client_responses[request_id];
+                    if (!response.valid()) return;
+                    runtime->respond(client_id.value(), request_id.value(),
+                                     ScalarValue<Bundle<HttpResponse>>{response.value()});
+                } catch (...) {
+                    details::log_runtime_failure("HTTP response submission failed", std::current_exception());
+                }
+            };
+            client_responses.for_each_modified(respond);
+        } catch (...) {
+            details::log_runtime_failure("HTTP response batch failed", std::current_exception());
+        }
     };
     responses.for_each_modified(apply_client);
 });
@@ -132,41 +161,48 @@ const auto websocket_response_sink = node(
         auto *runtime = server.value();
         if (responses.valid()) {
             responses.for_each_modified([&](const Scalar<i64> &client_id) {
-                const auto client_responses = responses[client_id];
-                if (!client_responses.valid()) return;
-                client_responses.for_each_modified([&](const Scalar<i64> &connection_id) {
-                    const auto response = client_responses[connection_id];
-                    if (!response.valid()) return;
+                try {
+                    const auto client_responses = responses[client_id];
+                    if (!client_responses.valid()) return;
+                    client_responses.for_each_modified([&](const Scalar<i64> &connection_id) {
+                        try {
+                            const auto response = client_responses[connection_id];
+                            if (!response.valid()) return;
 
-                    auto update = WebSocketResponseUpdate{};
-                    if (response.item_updated(0)) {
-                        const auto connect_response = response->connect_response;
-                        if (connect_response.valid()) {
-                            update.connect_response.emplace(connect_response.value());
+                            auto update = WebSocketResponseUpdate{};
+                            if (response.item_updated(0)) {
+                                const auto connect_response = response->connect_response;
+                                if (connect_response.valid()) {
+                                    update.connect_response.emplace(connect_response.value());
+                                }
+                            }
+                            if (response.item_updated(1)) {
+                                const auto message = response->message;
+                                if (message.valid()) {
+                                    update.message.emplace(message.value());
+                                }
+                            }
+                            if (response.item_updated(2)) {
+                                const auto close = response->close;
+                                if (close.valid()) {
+                                    update.close.emplace(close.value());
+                                }
+                            }
+                            if (update.connect_response || update.message || update.close) {
+                                runtime->respond_websocket(client_id.value(), connection_id.value(), std::move(update));
+                            }
+                        } catch (...) {
+                            details::log_runtime_failure("WebSocket response submission failed", std::current_exception());
                         }
-                    }
-                    if (response.item_updated(1)) {
-                        const auto message = response->message;
-                        if (message.valid()) {
-                            update.message.emplace(message.value());
-                        }
-                    }
-                    if (response.item_updated(2)) {
-                        const auto close = response->close;
-                        if (close.valid()) {
-                            update.close.emplace(close.value());
-                        }
-                    }
-                    if (update.connect_response || update.message || update.close) {
-                        runtime->respond_websocket(client_id.value(), connection_id.value(), std::move(update));
-                    }
-                });
+                    });
+                } catch (...) {
+                    details::log_runtime_failure("WebSocket response batch failed", std::current_exception());
+                }
             });
         }
     });
 
 const auto server_routes = node<ServerRoutes>();
-const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error{std::string{error.value()}}; });
 const auto server_source = node<ServerSource>();
 const auto server_messages_source = node<ServerMessagesSource>();
 
@@ -273,7 +309,6 @@ WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes,
     const auto port = server_routes(routes, websocket_routes, source->runtime);
     response_sink(source->runtime, responses);
     websocket_response_sink(source->runtime, websocket_responses);
-    error_sink(source->errors);
     const auto combine_connection = graph(
         [](wp<TS<Bundle<HttpServerRequest>>> connect_request, wp<TS<List<bytes>>> messages) {
             return bundle<WebSocketServerRequest<bytes>::schema>("connect_request"_n = connect_request,

@@ -1,6 +1,7 @@
 #include "client_runtime.hpp"
 
 #include "http_header.hpp"
+#include "runtime_logging.hpp"
 
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/scalar/bundle/value.hpp>
@@ -14,9 +15,12 @@
 #include <algorithm>
 #include <atomic>
 #include <array>
+#include <chrono>
 #include <cctype>
 #include <cstddef>
+#include <condition_variable>
 #include <cstdint>
+#include <chrono>
 #include <exception>
 #include <limits>
 #include <memory>
@@ -304,13 +308,7 @@ class ClientImplementation final {
         if (options_.timeout.count() <= 0 || options_.timeout.count() > std::numeric_limits<long>::max()) {
             throw std::invalid_argument{"HTTP client timeout must be positive and fit libcurl's millisecond limit"};
         }
-        multi_.reset(curl_multi_init());
-        if (!multi_) throw std::runtime_error{"libcurl multi initialization failed"};
-        const auto set_result = curl_multi_setopt(multi_.get(), CURLMOPT_MAXCONNECTS, 8L);
-        if (set_result != CURLM_OK) {
-            throw std::runtime_error{std::string{"libcurl connection cache setup failed: "} +
-                                     curl_multi_strerror(set_result)};
-        }
+        multi_ = create_multi();
         thread_ = std::jthread{[this] { run(); }};
     }
 
@@ -343,65 +341,115 @@ class ClientImplementation final {
             if (thread_.joinable()) thread_.join();
             return;
         }
-        if (multi_) (void)curl_multi_wakeup(multi_.get());
+        {
+            const auto lock = std::lock_guard{commands_mutex_};
+            if (multi_) {
+                const auto result = curl_multi_wakeup(multi_.get());
+                if (result != CURLM_OK) record_failure(curl_multi_strerror(result));
+            }
+        }
+        commands_changed_.notify_all();
         if (thread_.joinable()) thread_.join();
     }
 
     void record_failure(std::exception_ptr failure) noexcept {
-        if (failure_reported_.exchange(true, std::memory_order_acq_rel)) return;
-        try {
-            auto message = std::string{"unexpected HTTP client transport failure"};
-            try {
-                std::rethrow_exception(failure);
-            } catch (const std::exception &error) {
-                message = error.what();
-            } catch (...) {
-            }
-            (void)output_.write(literal::TimeSeriesLiteral{{util::symbol{"errors"}, message}});
-        } catch (...) {
-        }
+        details::log_runtime_failure("HTTP client runtime failure", failure);
+    }
+
+    void record_failure(std::string_view message) noexcept {
+        details::log_runtime_failure("HTTP client runtime failure", message);
     }
 
   private:
+    using MultiHandle = std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)>;
+
+    static MultiHandle create_multi() {
+        MultiHandle multi{curl_multi_init(), curl_multi_cleanup};
+        if (!multi) throw std::runtime_error{"libcurl multi initialization failed"};
+        const auto result = curl_multi_setopt(multi.get(), CURLMOPT_MAXCONNECTS, 8L);
+        if (result != CURLM_OK) {
+            throw std::runtime_error{std::string{"libcurl connection cache setup failed: "} +
+                                     curl_multi_strerror(result)};
+        }
+        return multi;
+    }
+
     void enqueue(Command command) {
-        if (stop_requested_.load(std::memory_order_acquire)) return;
+        auto wake_result = CURLM_OK;
         {
             const auto lock = std::lock_guard{commands_mutex_};
+            if (stop_requested_.load(std::memory_order_acquire)) return;
             commands_.push_back(std::move(command));
+            if (multi_) wake_result = curl_multi_wakeup(multi_.get());
         }
-        const auto result = curl_multi_wakeup(multi_.get());
-        if (result != CURLM_OK) {
-            record_failure(std::make_exception_ptr(
-                std::runtime_error{std::string{"libcurl transport wakeup failed: "} + curl_multi_strerror(result)}));
-        }
+        commands_changed_.notify_all();
+        if (wake_result != CURLM_OK)
+            record_failure(curl_multi_strerror(wake_result));
     }
 
     void run() noexcept {
-        try {
-            while (!stop_requested_.load(std::memory_order_acquire)) {
+        while (!stop_requested_.load(std::memory_order_acquire)) {
+            try {
+                if (!multi_) {
+                    wait_for_commands(std::chrono::milliseconds{50}, true);
+                    if (stop_requested_.load(std::memory_order_acquire)) break;
+                    try {
+                        auto replacement = create_multi();
+                        const auto lock = std::lock_guard{commands_mutex_};
+                        multi_ = std::move(replacement);
+                    } catch (...) {
+                        record_failure(std::current_exception());
+                    }
+                    continue;
+                }
                 process_commands();
                 if (stop_requested_.load(std::memory_order_acquire)) break;
+                if (!multi_) continue;
                 auto running = 0;
                 auto result = curl_multi_perform(multi_.get(), &running);
                 if (result != CURLM_OK) {
-                    record_failure(std::make_exception_ptr(
-                        std::runtime_error{std::string{"libcurl transfer engine failed: "} + curl_multi_strerror(result)}));
-                    break;
+                    recover_multi(curl_multi_strerror(result));
+                    continue;
                 }
                 process_completions();
                 if (stop_requested_.load(std::memory_order_acquire)) break;
+                if (!multi_) continue;
                 auto descriptors = 0;
                 result = curl_multi_poll(multi_.get(), nullptr, 0, 1000, &descriptors);
                 if (result != CURLM_OK) {
-                    record_failure(std::make_exception_ptr(
-                        std::runtime_error{std::string{"libcurl poll failed: "} + curl_multi_strerror(result)}));
-                    break;
+                    record_failure(curl_multi_strerror(result));
+                    wait_for_commands(std::chrono::milliseconds{50}, false);
                 }
+            } catch (...) {
+                record_failure(std::current_exception());
+                wait_for_commands(std::chrono::milliseconds{50}, true);
             }
+        }
+        discard_transfers();
+    }
+
+    void wait_for_commands(std::chrono::milliseconds duration, bool stop_only) {
+        auto lock = std::unique_lock{commands_mutex_};
+        commands_changed_.wait_for(lock, duration, [&] {
+            return stop_requested_.load(std::memory_order_acquire) || (!stop_only && !commands_.empty());
+        });
+    }
+
+    void recover_multi(std::string_view message) noexcept {
+        record_failure(message);
+        for (const auto &[easy, transfer] : transfers_) {
+            (void)easy;
+            write_error(transfer->client_id, "HTTP transport engine failed");
+        }
+        discard_transfers();
+        try {
+            auto replacement = create_multi();
+            const auto lock = std::lock_guard{commands_mutex_};
+            multi_ = std::move(replacement);
         } catch (...) {
             record_failure(std::current_exception());
         }
-        discard_transfers();
+        wait_for_commands(std::chrono::milliseconds{50}, true);
     }
 
     void process_commands() {
@@ -411,10 +459,22 @@ class ClientImplementation final {
             pending.swap(commands_);
         }
         for (auto &command : pending) {
-            if (command.kind == Command::Kind::request) {
-                start_request(std::move(command));
-            } else {
-                cancel_requests(command.client_id, command.client_sequence);
+            const auto client_id = command.client_id;
+            const auto is_request = command.kind == Command::Kind::request;
+            if (is_request && !multi_) {
+                record_failure("libcurl transport is recovering; request was not started");
+                write_error(client_id, "HTTP transport is unavailable");
+                continue;
+            }
+            try {
+                if (is_request) {
+                    start_request(std::move(command));
+                } else {
+                    cancel_requests(command.client_id, command.client_sequence);
+                }
+            } catch (...) {
+                record_failure(std::current_exception());
+                if (is_request) write_error(client_id, "HTTP request could not be started");
             }
         }
     }
@@ -424,13 +484,19 @@ class ClientImplementation final {
                                                    std::move(*command.request));
         transfer->read_request();
         if (const auto error = transfer->validate()) {
-            write_response(command.client_id, error_response(*error));
+            record_failure(*error);
+            write_error(command.client_id, *error);
             return;
         }
         transfer->easy = curl_easy_init();
-        if (transfer->easy == nullptr) throw std::runtime_error{"libcurl request initialization failed"};
+        if (transfer->easy == nullptr) {
+            record_failure("libcurl request initialization failed");
+            write_error(command.client_id, "HTTP request could not be initialized");
+            return;
+        }
         if (const auto error = transfer->configure(options_)) {
-            write_response(command.client_id, error_response(*error));
+            record_failure(*error);
+            write_error(command.client_id, *error);
             return;
         }
 
@@ -440,7 +506,9 @@ class ClientImplementation final {
         const auto result = curl_multi_add_handle(multi_.get(), easy);
         if (result != CURLM_OK) {
             transfers_.erase(position);
-            throw std::runtime_error{std::string{"libcurl could not start a request: "} + curl_multi_strerror(result)};
+            const auto message = std::string{"libcurl could not start a request: "} + curl_multi_strerror(result);
+            record_failure(message);
+            write_error(command.client_id, message);
         }
     }
 
@@ -448,16 +516,24 @@ class ClientImplementation final {
         for (auto iterator = transfers_.begin(); iterator != transfers_.end();) {
             const auto &transfer = *iterator->second;
             if (transfer.client_id == client_id && transfer.client_sequence == client_sequence) {
-                (void)curl_multi_remove_handle(multi_.get(), iterator->first);
+                const auto result = curl_multi_remove_handle(multi_.get(), iterator->first);
+                if (result != CURLM_OK) {
+                    recover_multi(curl_multi_strerror(result));
+                    break;
+                }
                 iterator = transfers_.erase(iterator);
             } else {
                 ++iterator;
             }
         }
-        const auto accepted = output_.write(literal::TimeSeriesLiteral{
-            {util::symbol{"replies"}, {{client_id, literal::REMOVE}}}});
-        if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
-            record_failure(std::make_exception_ptr(std::runtime_error{"HTTP response queue is closed"}));
+        try {
+            const auto accepted = output_.write(literal::TimeSeriesLiteral{
+                {util::symbol{"replies"}, {{client_id, literal::REMOVE}}}});
+            if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
+                record_failure("HTTP response queue is closed");
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
         }
     }
 
@@ -470,56 +546,92 @@ class ClientImplementation final {
             const auto result = message->data.result;
             const auto found = transfers_.find(easy);
             if (found == transfers_.end()) continue;
+            const auto client_id = found->second->client_id;
+            const auto remove_result = curl_multi_remove_handle(multi_.get(), easy);
+            if (remove_result != CURLM_OK) {
+                recover_multi(curl_multi_strerror(remove_result));
+                return;
+            }
             auto transfer = std::move(found->second);
             transfers_.erase(found);
-            (void)curl_multi_remove_handle(multi_.get(), easy);
 
-            if (transfer->callback_failed) {
-                record_failure(std::make_exception_ptr(std::runtime_error{"libcurl response callback failed"}));
-                continue;
-            }
-            if (transfer->response_too_large) {
-                write_response(transfer->client_id, error_response("HTTP response body exceeds configured limit"));
-                continue;
-            }
-            if (result != CURLE_OK) {
-                const auto description = result == CURLE_OPERATION_TIMEDOUT
-                                             ? std::string{"HTTP request timed out"}
-                                             : std::string{"HTTP request failed: "} +
-                                                   transfer->curl_error(result);
-                write_response(transfer->client_id, error_response(description));
-                continue;
-            }
+            try {
+                if (transfer->callback_failed) {
+                    record_failure("libcurl response callback failed");
+                    write_error(client_id, "HTTP response could not be collected");
+                    continue;
+                }
+                if (transfer->response_too_large) {
+                    record_failure("HTTP response body exceeds configured limit");
+                    write_error(client_id, "HTTP response body exceeds configured limit");
+                    continue;
+                }
+                if (result != CURLE_OK) {
+                    const auto description = result == CURLE_OPERATION_TIMEDOUT
+                                                 ? std::string{"HTTP request timed out"}
+                                                 : std::string{"HTTP request failed: "} + transfer->curl_error(result);
+                    record_failure(description);
+                    write_error(client_id, description);
+                    continue;
+                }
 
-            auto status = long{};
-            const auto info_result = curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &status);
-            if (info_result != CURLE_OK) {
-                throw std::runtime_error{std::string{"libcurl response status lookup failed: "} +
-                                         curl_easy_strerror(info_result)};
+                auto status = long{};
+                const auto info_result = curl_easy_getinfo(easy, CURLINFO_RESPONSE_CODE, &status);
+                if (info_result != CURLE_OK) {
+                    const auto description = std::string{"libcurl response status lookup failed: "} +
+                                             curl_easy_strerror(info_result);
+                    record_failure(description);
+                    write_error(client_id, description);
+                    continue;
+                }
+                if (status == 101) {
+                    write_error(client_id, "HTTP protocol upgrade is not supported");
+                    continue;
+                }
+                auto response = response_value(static_cast<i64>(status), std::move(transfer->response_headers),
+                                               std::move(transfer->response_body).finish());
+                write_response(client_id, std::move(response));
+            } catch (...) {
+                record_failure(std::current_exception());
+                write_error(client_id, "HTTP response could not be processed");
             }
-            if (status == 101) {
-                write_response(transfer->client_id, error_response("HTTP protocol upgrade is not supported"));
-                continue;
-            }
-            auto response = response_value(static_cast<i64>(status), std::move(transfer->response_headers),
-                                           std::move(transfer->response_body).finish());
-            write_response(transfer->client_id, std::move(response));
         }
     }
 
-    void write_response(i64 client_id, ScalarValue<Bundle<HttpResponse>> response) {
-        const auto accepted = output_.write(literal::TimeSeriesLiteral{
-            {util::symbol{"replies"}, {{client_id, response.view()}}}});
-        if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
-            record_failure(std::make_exception_ptr(std::runtime_error{"HTTP response queue is closed"}));
+    void write_response(i64 client_id, ScalarValue<Bundle<HttpResponse>> response) noexcept {
+        try {
+            const auto accepted = output_.write(literal::TimeSeriesLiteral{
+                {util::symbol{"replies"}, {{client_id, response.view()}}}});
+            if (!accepted && !stop_requested_.load(std::memory_order_acquire)) {
+                record_failure("HTTP response queue is closed");
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
+    }
+
+    void write_error(i64 client_id, std::string_view message) noexcept {
+        try {
+            write_response(client_id, error_response(message));
+        } catch (...) {
+            record_failure(std::current_exception());
         }
     }
 
     void discard_transfers() noexcept {
-        for (auto &[easy, transfer] : transfers_) {
-            (void)curl_multi_remove_handle(multi_.get(), easy);
+        for (const auto &[easy, transfer] : transfers_) {
+            if (multi_) {
+                const auto result = curl_multi_remove_handle(multi_.get(), easy);
+                if (result != CURLM_OK) record_failure(curl_multi_strerror(result));
+            }
             (void)transfer;
         }
+        auto previous = MultiHandle{nullptr, curl_multi_cleanup};
+        {
+            const auto lock = std::lock_guard{commands_mutex_};
+            previous = std::move(multi_);
+        }
+        previous.reset();
         transfers_.clear();
     }
 
@@ -528,10 +640,10 @@ class ClientImplementation final {
     std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> multi_{nullptr, curl_multi_cleanup};
     std::jthread thread_;
     std::mutex commands_mutex_;
+    std::condition_variable commands_changed_;
     std::vector<Command> commands_;
     std::unordered_map<CURL *, std::unique_ptr<Transfer>> transfers_;
     std::atomic<bool> stop_requested_{};
-    std::atomic<bool> failure_reported_{};
 };
 
 ClientRuntime::ClientRuntime(HttpClientOptions options, Queue output)

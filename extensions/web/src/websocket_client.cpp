@@ -11,6 +11,7 @@
 
 #include "websocket_client_output.hpp"
 #include "websocket_client_runtime.hpp"
+#include "runtime_logging.hpp"
 
 #include <memory>
 #include <optional>
@@ -68,21 +69,27 @@ struct WebSocketClientUpdateSink {
     }
 
     void evaluate() const {
-        auto connect_value = std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>>{};
-        if (connect.modified() && connect.valid()) {
-            auto *client_runtime = runtime.value();
-            *sequence = client_runtime->next_connection_sequence();
-            connect_value.emplace(connect.value());
+        try {
+            auto connect_value = std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>>{};
+            auto sequence_value = *sequence;
+            if (connect.modified() && connect.valid()) {
+                auto *client_runtime = runtime.value();
+                sequence_value = client_runtime->next_connection_sequence();
+                connect_value.emplace(connect.value());
+            }
+
+            auto message_value = std::optional<ScalarValue<bytes>>{};
+            if (message.modified() && message.valid()) message_value.emplace(message.value());
+            auto close_value = std::optional<ScalarValue<Bundle<WebSocketClose>>>{};
+            if (close.modified() && close.valid()) close_value.emplace(close.value());
+            if (!connect_value && !message_value && !close_value) return;
+
+            runtime.value()->update(client_id.value(), sequence_value, std::move(connect_value), std::move(message_value),
+                                    std::move(close_value));
+            *sequence = sequence_value;
+        } catch (...) {
+            details::log_runtime_failure("WebSocket client update submission failed", std::current_exception());
         }
-
-        auto message_value = std::optional<ScalarValue<bytes>>{};
-        if (message.modified() && message.valid()) message_value.emplace(message.value());
-        auto close_value = std::optional<ScalarValue<Bundle<WebSocketClose>>>{};
-        if (close.modified() && close.valid()) close_value.emplace(close.value());
-        if (!connect_value && !message_value && !close_value) return;
-
-        runtime.value()->update(client_id.value(), *sequence, std::move(connect_value), std::move(message_value),
-                                std::move(close_value));
     }
 
     void stop() const noexcept {
@@ -93,8 +100,6 @@ struct WebSocketClientUpdateSink {
 const auto websocket_client_source = node<WebSocketClientSource>();
 const auto websocket_client_messages_source = node<WebSocketClientMessagesSource>();
 const auto websocket_client_update_sink = node<WebSocketClientUpdateSink>();
-const auto error_sink = node([](In<TS<string>> error) { throw std::runtime_error{std::string{error.value()}}; });
-
 } // namespace
 
 std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptions options) {
@@ -142,7 +147,6 @@ std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptio
             const auto reply_values = map(replies, source->current_sequences,
                                           pass_through(source->connect_responses), pass_through(messages),
                                           pass_through(source->closes));
-            error_sink(source->errors);
             return wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientReply>>>{reply_values};
         });
     return std::make_shared<decltype(implementation)>(std::move(implementation));

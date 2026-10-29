@@ -1,5 +1,6 @@
 #include "server_runtime.hpp"
 #include "http_header.hpp"
+#include "runtime_logging.hpp"
 
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/scalar/bundle/scalar.hpp>
@@ -46,6 +47,17 @@ namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
 using RequestHeaders = std::vector<std::pair<std::string, std::string>>;
 using namespace bg::literals;
+
+template <typename Target, typename Function>
+auto guarded_callback(std::shared_ptr<Target> target, Function function) {
+    return [target = std::move(target), function = std::move(function)](auto &&...arguments) mutable {
+        try {
+            function(*target, std::forward<decltype(arguments)>(arguments)...);
+        } catch (...) {
+            target->runtime_failure(std::current_exception());
+        }
+    };
+}
 
 constexpr auto request_body_limit = std::uint64_t{8 * 1024 * 1024};
 constexpr auto request_timeout = std::chrono::seconds{30};
@@ -124,6 +136,7 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     void run();
     void close_for_shutdown() noexcept;
     void cancel() noexcept;
+    void runtime_failure(std::exception_ptr failure) noexcept;
     void write_response(ScalarValue<Bundle<HttpResponse>> response);
     void await_response(i64 request_id);
     void send_error(http::status status, std::string body, bool close);
@@ -165,6 +178,7 @@ class WebSocketSession final : public std::enable_shared_from_this<WebSocketSess
     void apply_update(WebSocketResponseUpdate update);
     void close_for_route_removal();
     void close_for_shutdown() noexcept;
+    void runtime_failure(std::exception_ptr failure) noexcept;
 
   private:
     struct MessageOperation {
@@ -209,7 +223,7 @@ class WebSocketSession final : public std::enable_shared_from_this<WebSocketSess
 class ServerImplementation final {
   public:
     ServerImplementation(ServerOptions options, Queue output)
-        : output_{std::move(output)}, acceptor_{io_} {
+        : output_{std::move(output)}, acceptor_{io_}, accept_retry_{io_} {
         const auto address = asio::ip::make_address(options.host);
         const auto endpoint = tcp::endpoint{address, options.port};
         acceptor_.open(endpoint.protocol());
@@ -227,10 +241,15 @@ class ServerImplementation final {
             while (!stopped_.load(std::memory_order_acquire)) {
                 try {
                     io_.run();
-                    return;
                 } catch (...) {
                     record_failure(std::current_exception());
+                    continue;
                 }
+                if (stopped_.load(std::memory_order_acquire)) return;
+                std::this_thread::sleep_for(std::chrono::milliseconds{100});
+                if (stopped_.load(std::memory_order_acquire)) return;
+                io_.restart();
+                accept();
             }
         }};
     }
@@ -244,18 +263,30 @@ class ServerImplementation final {
 
     std::uint16_t port() const noexcept { return port_; }
 
+    void record_failure(std::exception_ptr failure) noexcept {
+        details::log_runtime_failure("HTTP server runtime failure", failure);
+    }
+
+    void record_failure(std::string_view message) noexcept {
+        details::log_runtime_failure("HTTP server runtime failure", message);
+    }
+
     void register_route(service_client_id_t client_id, std::string route) {
-        if (!started_) {
-            add_route(client_id, std::move(route));
-            return;
-        }
-        asio::post(io_, [this, client_id, route = std::move(route)]() mutable {
-            try {
+        try {
+            if (!started_) {
                 add_route(client_id, std::move(route));
-            } catch (...) {
-                record_failure(std::current_exception());
+                return;
             }
-        });
+            asio::post(io_, [this, client_id, route = std::move(route)]() mutable {
+                try {
+                    add_route(client_id, std::move(route));
+                } catch (...) {
+                    record_failure(std::current_exception());
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
     }
 
     void attach_websocket_queue(Queue messages) {
@@ -267,36 +298,60 @@ class ServerImplementation final {
     }
 
     void unregister_route(service_client_id_t client_id) {
-        if (!started_) {
-            remove_route(client_id);
-            return;
-        }
-        if (!stopped_.load(std::memory_order_acquire)) {
-            asio::post(io_, [this, client_id] { remove_route(client_id); });
+        try {
+            if (!started_) {
+                remove_route(client_id);
+                return;
+            }
+            if (!stopped_.load(std::memory_order_acquire)) {
+                asio::post(io_, [this, client_id] {
+                    try {
+                        remove_route(client_id);
+                    } catch (...) {
+                        record_failure(std::current_exception());
+                    }
+                });
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
         }
     }
 
     void register_websocket_route(service_client_id_t client_id, std::string route) {
-        if (!started_) {
-            add_websocket_route(client_id, std::move(route));
-            return;
-        }
-        asio::post(io_, [this, client_id, route = std::move(route)]() mutable {
-            try {
+        try {
+            if (!started_) {
                 add_websocket_route(client_id, std::move(route));
-            } catch (...) {
-                record_failure(std::current_exception());
+                return;
             }
-        });
+            asio::post(io_, [this, client_id, route = std::move(route)]() mutable {
+                try {
+                    add_websocket_route(client_id, std::move(route));
+                } catch (...) {
+                    record_failure(std::current_exception());
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
     }
 
     void unregister_websocket_route(service_client_id_t client_id) {
-        if (!started_) {
-            remove_websocket_route(client_id);
-            return;
-        }
-        if (!stopped_.load(std::memory_order_acquire)) {
-            asio::post(io_, [this, client_id] { remove_websocket_route(client_id); });
+        try {
+            if (!started_) {
+                remove_websocket_route(client_id);
+                return;
+            }
+            if (!stopped_.load(std::memory_order_acquire)) {
+                asio::post(io_, [this, client_id] {
+                    try {
+                        remove_websocket_route(client_id);
+                    } catch (...) {
+                        record_failure(std::current_exception());
+                    }
+                });
+            }
+        } catch (...) {
+            record_failure(std::current_exception());
         }
     }
 
@@ -304,30 +359,52 @@ class ServerImplementation final {
         if (stopped_.load(std::memory_order_acquire)) {
             return;
         }
-        asio::post(io_, [this, client_id, id, response = std::move(response)]() mutable {
-            const auto found = pending_.find(id);
-            if (found == pending_.end() || found->second.client_id != client_id) {
-                return;
-            }
-            const auto session = found->second.session.lock();
-            if (session) {
-                session->write_response(std::move(response));
-            }
-        });
+        try {
+            asio::post(io_, [this, client_id, id, response = std::move(response)]() mutable {
+                auto session = std::shared_ptr<HttpSession>{};
+                try {
+                    const auto found = pending_.find(id);
+                    if (found == pending_.end() || found->second.client_id != client_id) return;
+                    session = found->second.session.lock();
+                    if (session) session->write_response(std::move(response));
+                } catch (...) {
+                    const auto failure = std::current_exception();
+                    if (session) {
+                        session->runtime_failure(failure);
+                    } else {
+                        record_failure(failure);
+                    }
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
     }
 
     void respond_websocket(service_client_id_t client_id, i64 id, WebSocketResponseUpdate update) {
         if (stopped_.load(std::memory_order_acquire)) {
             return;
         }
-        asio::post(io_, [this, client_id, id, update = std::move(update)]() mutable {
-            const auto found = websocket_sessions_.find(id);
-            if (found == websocket_sessions_.end() || found->second->client_id() != client_id) {
-                return;
-            }
-            const auto session = found->second;
-            session->apply_update(std::move(update));
-        });
+        try {
+            asio::post(io_, [this, client_id, id, update = std::move(update)]() mutable {
+                auto session = std::shared_ptr<WebSocketSession>{};
+                try {
+                    const auto found = websocket_sessions_.find(id);
+                    if (found == websocket_sessions_.end() || found->second->client_id() != client_id) return;
+                    session = found->second;
+                    session->apply_update(std::move(update));
+                } catch (...) {
+                    const auto failure = std::current_exception();
+                    if (session) {
+                        session->runtime_failure(failure);
+                    } else {
+                        record_failure(failure);
+                    }
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
     }
 
     void stop() {
@@ -464,7 +541,11 @@ class ServerImplementation final {
             session->close_for_shutdown();
             return;
         }
-        session->await_response();
+        try {
+            session->await_response();
+        } catch (...) {
+            session->runtime_failure(std::current_exception());
+        }
     }
 
     void enqueue_websocket_message(i64 id, std::span<const std::byte> message) noexcept {
@@ -500,8 +581,16 @@ class ServerImplementation final {
         if (routes_.contains(route)) {
             throw std::invalid_argument{"an HTTP route is already registered"};
         }
-        routes_.emplace(route, client_id);
-        route_by_client_.emplace(client_id, std::move(route));
+        const auto [position, inserted] = route_by_client_.emplace(client_id, route);
+        if (!inserted) return;
+        try {
+            if (!routes_.emplace(std::move(route), client_id).second) {
+                throw std::invalid_argument{"an HTTP route is already registered"};
+            }
+        } catch (...) {
+            route_by_client_.erase(position);
+            throw;
+        }
     }
 
     void remove_route(service_client_id_t client_id) {
@@ -541,8 +630,16 @@ class ServerImplementation final {
         if (websocket_routes_.contains(route)) {
             throw std::invalid_argument{"a WebSocket route is already registered"};
         }
-        websocket_routes_.emplace(route, client_id);
-        websocket_route_by_client_.emplace(client_id, std::move(route));
+        const auto [position, inserted] = websocket_route_by_client_.emplace(client_id, route);
+        if (!inserted) return;
+        try {
+            if (!websocket_routes_.emplace(std::move(route), client_id).second) {
+                throw std::invalid_argument{"a WebSocket route is already registered"};
+            }
+        } catch (...) {
+            websocket_route_by_client_.erase(position);
+            throw;
+        }
     }
 
     void remove_websocket_route(service_client_id_t client_id) {
@@ -553,15 +650,16 @@ class ServerImplementation final {
         websocket_routes_.erase(found->second);
         websocket_route_by_client_.erase(found);
 
-        auto sessions = std::vector<std::shared_ptr<WebSocketSession>>{};
-        for (const auto &[id, session] : websocket_sessions_) {
-            (void)id;
+        for (auto current = websocket_sessions_.begin(); current != websocket_sessions_.end();) {
+            const auto session = current->second;
+            ++current;
             if (session->client_id() == client_id) {
-                sessions.push_back(session);
+                try {
+                    session->close_for_route_removal();
+                } catch (...) {
+                    session->runtime_failure(std::current_exception());
+                }
             }
-        }
-        for (const auto &session : sessions) {
-            session->close_for_route_removal();
         }
 
         try {
@@ -575,43 +673,58 @@ class ServerImplementation final {
         }
     }
 
-    void record_failure(std::exception_ptr failure) noexcept {
+    void retry_accept() noexcept {
+        if (stopped_.load(std::memory_order_acquire)) return;
         try {
-            auto message = std::string{"unexpected HTTP transport failure"};
-            try {
-                std::rethrow_exception(failure);
-            } catch (const std::exception &error) {
-                message = error.what();
-            } catch (...) {
-            }
-
-            if (failure_) {
-                return;
-            }
-            failure_ = std::move(failure);
-            (void)output_.write(::literal::TimeSeriesLiteral{{util::symbol{"errors"}, message}});
+            accept_retry_.expires_after(std::chrono::milliseconds{100});
+            accept_retry_.async_wait([this](beast::error_code error) {
+                if (error || stopped_.load(std::memory_order_acquire)) return;
+                accept();
+            });
         } catch (...) {
+            record_failure(std::current_exception());
         }
     }
 
-    void accept() {
-        acceptor_.async_accept(asio::make_strand(io_), [this](beast::error_code error, tcp::socket socket) {
-            if (stopped_.load(std::memory_order_acquire)) {
-                return;
-            }
-            if (error) {
-                if (error == asio::error::connection_aborted) {
-                    accept();
-                } else {
-                    record_failure(std::make_exception_ptr(boost::system::system_error{error}));
+    void accept() noexcept {
+        try {
+            acceptor_.async_accept(asio::make_strand(io_), [this](beast::error_code error, tcp::socket socket) {
+                if (stopped_.load(std::memory_order_acquire)) return;
+                if (error) {
+                    if (error != asio::error::connection_aborted && error != asio::error::operation_aborted) {
+                        try {
+                            throw boost::system::system_error{error};
+                        } catch (...) {
+                            record_failure(std::current_exception());
+                        }
+                        retry_accept();
+                    } else {
+                        accept();
+                    }
+                    return;
                 }
-                return;
-            }
-            auto session = std::make_shared<HttpSession>(std::move(socket), *this);
-            sessions_.push_back(session);
-            session->run();
-            accept();
-        });
+
+                auto session = std::shared_ptr<HttpSession>{};
+                try {
+                    session = std::make_shared<HttpSession>(std::move(socket), *this);
+                    sessions_.push_back(session);
+                    session->run();
+                } catch (...) {
+                    const auto failure = std::current_exception();
+                    if (session) {
+                        session->runtime_failure(failure);
+                    } else {
+                        record_failure(failure);
+                        beast::error_code ignored;
+                        socket.close(ignored);
+                    }
+                }
+                accept();
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+            retry_accept();
+        }
     }
 
     std::unordered_map<std::string, service_client_id_t> routes_;
@@ -623,6 +736,7 @@ class ServerImplementation final {
     bool websocket_queue_attached_{};
     asio::io_context io_{1};
     tcp::acceptor acceptor_;
+    asio::steady_timer accept_retry_;
     std::jthread thread_;
     std::uint16_t port_{};
     std::uint64_t next_id_{1};
@@ -630,13 +744,17 @@ class ServerImplementation final {
     std::unordered_map<i64, std::shared_ptr<WebSocketSession>> websocket_sessions_;
     std::vector<std::shared_ptr<HttpSession>> sessions_;
     std::atomic<bool> stopped_{};
-    std::exception_ptr failure_;
     bool started_{};
 };
 
 namespace {
 
 void HttpSession::run() { read_request(); }
+
+void HttpSession::runtime_failure(std::exception_ptr failure) noexcept {
+    server_->record_failure(failure);
+    close_connection();
+}
 
 void HttpSession::read_request() {
     cancel_disconnect_watch();
@@ -652,20 +770,22 @@ void HttpSession::read_request() {
     timeout_.expires_after(request_timeout);
     auto self = shared_from_this();
     const auto generation = request_generation_;
-    timeout_.async_wait([self, generation](beast::error_code error) {
-        if (error || generation != self->request_generation_) return;
-        if (self->response_started_ || self->interim_response_pending_) {
-            self->close_connection();
+    timeout_.async_wait(guarded_callback(self, [generation](HttpSession &session, beast::error_code error) {
+        if (error || generation != session.request_generation_) return;
+        if (session.response_started_ || session.interim_response_pending_) {
+            session.close_connection();
         } else {
-            self->send_error(http::status::request_timeout, "Request Timeout", true);
+            session.send_error(http::status::request_timeout, "Request Timeout", true);
         }
-    });
-    http::async_read_header(socket_, buffer_, *parser_, [self, generation](beast::error_code error, std::size_t) {
-        if (generation != self->request_generation_) {
+    }));
+    http::async_read_header(socket_, buffer_, *parser_, guarded_callback(self, [generation](HttpSession &session,
+                                                                                           beast::error_code error,
+                                                                                           std::size_t) {
+        if (generation != session.request_generation_) {
             return;
         }
-        self->on_header(error);
-    });
+        session.on_header(error);
+    }));
 }
 
 void HttpSession::on_header(beast::error_code error) {
@@ -728,28 +848,32 @@ void HttpSession::on_header(beast::error_code error) {
     auto response = std::make_shared<http::response<http::empty_body>>(http::status::continue_, 11);
     auto self = shared_from_this();
     const auto generation = request_generation_;
-    http::async_write(socket_, *response, [self, response, generation](beast::error_code write_error, std::size_t) {
-        if (generation != self->request_generation_) {
+    http::async_write(socket_, *response, guarded_callback(self, [response, generation](HttpSession &session,
+                                                                                       beast::error_code write_error,
+                                                                                       std::size_t) {
+        if (generation != session.request_generation_) {
             return;
         }
-        self->interim_response_pending_ = false;
+        session.interim_response_pending_ = false;
         if (write_error) {
-            self->close_connection();
+            session.close_connection();
             return;
         }
-        self->read_body();
-    });
+        session.read_body();
+    }));
 }
 
 void HttpSession::read_body() {
     auto self = shared_from_this();
     const auto generation = request_generation_;
-    http::async_read(socket_, buffer_, *parser_, [self, generation](beast::error_code error, std::size_t) {
-        if (generation != self->request_generation_) {
+    http::async_read(socket_, buffer_, *parser_, guarded_callback(self, [generation](HttpSession &session,
+                                                                                    beast::error_code error,
+                                                                                    std::size_t) {
+        if (generation != session.request_generation_) {
             return;
         }
-        self->on_read(error);
-    });
+        session.on_read(error);
+    }));
 }
 
 void HttpSession::on_read(beast::error_code error) {
@@ -805,11 +929,11 @@ void HttpSession::await_response(i64 request_id) {
     timeout_.expires_after(request_timeout);
     auto self = shared_from_this();
     const auto generation = request_generation_;
-    timeout_.async_wait([self, generation](beast::error_code error) {
-        if (!error && generation == self->request_generation_ && !self->response_started_) {
-            self->send_error(http::status::gateway_timeout, "Gateway Timeout", true);
+    timeout_.async_wait(guarded_callback(self, [generation](HttpSession &session, beast::error_code error) {
+        if (!error && generation == session.request_generation_ && !session.response_started_) {
+            session.send_error(http::status::gateway_timeout, "Gateway Timeout", true);
         }
-    });
+    }));
     watch_disconnect();
 }
 
@@ -821,18 +945,19 @@ void HttpSession::watch_disconnect() {
     auto self = shared_from_this();
     const auto generation = request_generation_;
     socket_.async_receive(asio::buffer(peek_buffer_), tcp::socket::message_peek,
-                          [self, generation](beast::error_code error, std::size_t size) {
-                              if (generation != self->request_generation_) {
+                          guarded_callback(self, [generation](HttpSession &session, beast::error_code error,
+                                                             std::size_t size) {
+                              if (generation != session.request_generation_) {
                                   return;
                               }
-                              self->disconnect_watch_started_ = false;
-                              if (self->response_started_) {
+                              session.disconnect_watch_started_ = false;
+                              if (session.response_started_) {
                                   return;
                               }
                               if (error == asio::error::eof || (!error && size == 0)) {
-                                  self->close_connection();
+                                  session.close_connection();
                               }
-                          });
+                          }));
 }
 
 void HttpSession::cancel_disconnect_watch() noexcept {
@@ -856,11 +981,11 @@ void HttpSession::start_response_write_timeout() {
     timeout_.expires_after(request_timeout);
     auto self = shared_from_this();
     const auto generation = request_generation_;
-    timeout_.async_wait([self, generation](beast::error_code error) {
-        if (!error && generation == self->request_generation_ && self->response_started_) {
-            self->close_connection();
+    timeout_.async_wait(guarded_callback(self, [generation](HttpSession &session, beast::error_code error) {
+        if (!error && generation == session.request_generation_ && session.response_started_) {
+            session.close_connection();
         }
-    });
+    }));
 }
 
 void HttpSession::send_error(http::status status, std::string body, bool close) {
@@ -887,13 +1012,15 @@ void HttpSession::send_error(http::status status, std::string body, bool close) 
     }
     response->keep_alive(!close);
     auto self = shared_from_this();
-    http::async_write(socket_, *response, [self, response](beast::error_code error, std::size_t) {
-        if (error || self->close_after_response_) {
-            self->close_connection();
+    http::async_write(socket_, *response, guarded_callback(self, [response](HttpSession &session,
+                                                                            beast::error_code error,
+                                                                            std::size_t) {
+        if (error || session.close_after_response_) {
+            session.close_connection();
             return;
         }
-        self->read_request();
-    });
+        session.read_request();
+    }));
 }
 
 void HttpSession::write_response(ScalarValue<Bundle<HttpResponse>> retained_response) {
@@ -1002,14 +1129,16 @@ void HttpSession::write_response(ScalarValue<Bundle<HttpResponse>> retained_resp
     const auto response_buffers = std::array<asio::const_buffer, 2>{
         asio::const_buffer{active->header.data(), active->header.size()},
         asio::const_buffer{body.data(), transmitted_size}};
-    asio::async_write(socket_, response_buffers, [self, active](beast::error_code error, std::size_t) {
-        self->finish_request();
-        if (error || self->close_after_response_) {
-            self->close_connection();
+    asio::async_write(socket_, response_buffers, guarded_callback(self, [active](HttpSession &session,
+                                                                                 beast::error_code error,
+                                                                                 std::size_t) {
+        session.finish_request();
+        if (error || session.close_after_response_) {
+            session.close_connection();
             return;
         }
-        self->read_request();
-    });
+        session.read_request();
+    }));
 }
 
 void HttpSession::finish_request() {
@@ -1045,19 +1174,24 @@ WebSocketSession::WebSocketSession(tcp::socket socket, ServerImplementation &ser
     stream_.set_option(websocket::stream_base::timeout::suggested(beast::role_type::server));
 }
 
+void WebSocketSession::runtime_failure(std::exception_ptr failure) noexcept {
+    server_->record_failure(failure);
+    close_socket();
+}
+
 void WebSocketSession::await_response() {
     timeout_.expires_after(request_timeout);
     auto self = shared_from_this();
-    timeout_.async_wait([self](beast::error_code error) {
-        if (error || self->state_ == State::closed || self->state_ == State::rejecting) {
+    timeout_.async_wait(guarded_callback(self, [](WebSocketSession &session, beast::error_code error) {
+        if (error || session.state_ == State::closed || session.state_ == State::rejecting) {
             return;
         }
-        if (self->state_ == State::awaiting_response) {
-            self->reject_with_error(http::status::gateway_timeout, "Gateway Timeout");
+        if (session.state_ == State::awaiting_response) {
+            session.reject_with_error(http::status::gateway_timeout, "Gateway Timeout");
         } else {
-            self->close_socket();
+            session.close_socket();
         }
-    });
+    }));
     watch_disconnect();
 }
 
@@ -1068,24 +1202,25 @@ void WebSocketSession::watch_disconnect() {
     disconnect_watch_started_ = true;
     auto self = shared_from_this();
     stream_.next_layer().async_receive(asio::buffer(peek_buffer_), tcp::socket::message_peek,
-                                       [self](beast::error_code error, std::size_t size) {
-                                           self->disconnect_watch_started_ = false;
-                                           if (self->state_ != State::awaiting_response) {
+                                       guarded_callback(self, [](WebSocketSession &session, beast::error_code error,
+                                                                std::size_t size) {
+                                           session.disconnect_watch_started_ = false;
+                                           if (session.state_ != State::awaiting_response) {
                                                return;
                                            }
                                            if (error == asio::error::eof || (!error && size == 0)) {
-                                               self->close_socket();
+                                               session.close_socket();
                                                return;
                                            }
                                            if (!error && size != 0) {
-                                               self->reject_with_error(http::status::bad_request,
-                                                                       "Unexpected WebSocket Data");
+                                               session.reject_with_error(http::status::bad_request,
+                                                                         "Unexpected WebSocket Data");
                                                return;
                                            }
                                            if (error != asio::error::operation_aborted) {
-                                               self->close_socket();
+                                               session.close_socket();
                                            }
-                                       });
+                                       }));
 }
 
 void WebSocketSession::cancel_disconnect_watch() noexcept {
@@ -1100,11 +1235,11 @@ void WebSocketSession::cancel_disconnect_watch() noexcept {
 void WebSocketSession::start_response_write_timeout() {
     timeout_.expires_after(request_timeout);
     auto self = shared_from_this();
-    timeout_.async_wait([self](beast::error_code error) {
-        if (!error && self->state_ == State::rejecting) {
-            self->close_socket();
+    timeout_.async_wait(guarded_callback(self, [](WebSocketSession &session, beast::error_code error) {
+        if (!error && session.state_ == State::rejecting) {
+            session.close_socket();
         }
-    });
+    }));
 }
 
 void WebSocketSession::apply_update(WebSocketResponseUpdate update) {
@@ -1208,16 +1343,16 @@ void WebSocketSession::accept(ScalarValue<Bundle<HttpResponse>> response) {
                 handshake.insert(name, value);
             }
         }));
-    stream_.async_accept(request_, [self](beast::error_code error) {
+    stream_.async_accept(request_, guarded_callback(self, [](WebSocketSession &session, beast::error_code error) {
         if (error) {
-            self->close_socket();
+            session.close_socket();
             return;
         }
-        self->timeout_.cancel();
-        self->state_ = State::open;
-        self->read_message();
-        self->run_next_operation();
-    });
+        session.timeout_.cancel();
+        session.state_ = State::open;
+        session.read_message();
+        session.run_next_operation();
+    }));
 }
 
 void WebSocketSession::reject(ScalarValue<Bundle<HttpResponse>> response) {
@@ -1278,7 +1413,8 @@ void WebSocketSession::reject(ScalarValue<Bundle<HttpResponse>> response) {
     start_response_write_timeout();
     auto self = shared_from_this();
     http::async_write(stream_.next_layer(), *response_message,
-                      [self, response_message](beast::error_code, std::size_t) { self->close_socket(); });
+                      guarded_callback(self, [response_message](WebSocketSession &session, beast::error_code,
+                                                                std::size_t) { session.close_socket(); }));
 }
 
 void WebSocketSession::reject_with_error(http::status status, std::string body) {
@@ -1294,9 +1430,11 @@ void WebSocketSession::reject_with_error(http::status status, std::string body) 
     response->keep_alive(false);
     response->prepare_payload();
     auto self = shared_from_this();
-    http::async_write(stream_.next_layer(), *response, [self, response](beast::error_code, std::size_t) {
-        self->close_socket();
-    });
+    http::async_write(stream_.next_layer(), *response, guarded_callback(self, [response](WebSocketSession &session,
+                                                                                         beast::error_code,
+                                                                                         std::size_t) {
+        session.close_socket();
+    }));
 }
 
 void WebSocketSession::read_message() {
@@ -1304,40 +1442,41 @@ void WebSocketSession::read_message() {
         return;
     }
     auto self = shared_from_this();
-    stream_.async_read(read_buffer_, [self](beast::error_code error, std::size_t) {
+    stream_.async_read(read_buffer_, guarded_callback(self, [](WebSocketSession &session, beast::error_code error,
+                                                               std::size_t) {
         if (error == websocket::error::closed) {
-            self->finish();
+            session.finish();
             return;
         }
         if (error == websocket::error::message_too_big) {
-            self->close_socket();
+            session.close_socket();
             return;
         }
         if (error) {
-            if (error == asio::error::operation_aborted && self->state_ == State::closing) {
-                self->run_next_operation();
+            if (error == asio::error::operation_aborted && session.state_ == State::closing) {
+                session.run_next_operation();
                 return;
             }
-            self->close_socket();
+            session.close_socket();
             return;
         }
-        if (self->state_ != State::open || self->closing_requested_) {
-            self->run_next_operation();
+        if (session.state_ != State::open || session.closing_requested_) {
+            session.run_next_operation();
             return;
         }
-        if (!self->stream_.got_binary()) {
-            self->closing_requested_ = true;
-            self->operations_.emplace_back(CloseOperation{websocket::close_code::unknown_data});
-            self->run_next_operation();
+        if (!session.stream_.got_binary()) {
+            session.closing_requested_ = true;
+            session.operations_.emplace_back(CloseOperation{websocket::close_code::unknown_data});
+            session.run_next_operation();
             return;
         }
 
-        const auto data = self->read_buffer_.data();
+        const auto data = session.read_buffer_.data();
         const auto message = std::span<const std::byte>{static_cast<const std::byte *>(data.data()), data.size()};
-        self->server_->enqueue_websocket_message(self->id_, message);
-        self->read_buffer_.consume(self->read_buffer_.size());
-        self->read_message();
-    });
+        session.server_->enqueue_websocket_message(session.id_, message);
+        session.read_buffer_.consume(session.read_buffer_.size());
+        session.read_message();
+    }));
 }
 
 void WebSocketSession::enqueue_message(ScalarValue<bytes> message) {
@@ -1392,21 +1531,26 @@ void WebSocketSession::run_next_operation() {
     if (auto *message = std::get_if<MessageOperation>(&operations_.front())) {
         const auto payload = message->value.view().value();
         stream_.binary(true);
-        stream_.async_write(asio::buffer(payload.data(), payload.size()), [self](beast::error_code error, std::size_t) {
+        stream_.async_write(asio::buffer(payload.data(), payload.size()), guarded_callback(self,
+                                                                                           [](WebSocketSession &session,
+                                                                                              beast::error_code error,
+                                                                                              std::size_t) {
             if (error) {
-                self->close_socket();
+                session.close_socket();
                 return;
             }
-            self->operations_.pop_front();
-            self->operation_started_ = false;
-            self->run_next_operation();
-        });
+            session.operations_.pop_front();
+            session.operation_started_ = false;
+            session.run_next_operation();
+        }));
         return;
     }
 
     auto reason = std::get<CloseOperation>(operations_.front()).reason;
     state_ = State::closing;
-    stream_.async_close(reason, [self](beast::error_code) { self->close_socket(); });
+    stream_.async_close(reason, guarded_callback(self, [](WebSocketSession &session, beast::error_code) {
+        session.close_socket();
+    }));
 }
 
 void WebSocketSession::close_for_route_removal() {

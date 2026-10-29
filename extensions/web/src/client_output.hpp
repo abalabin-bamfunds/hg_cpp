@@ -13,7 +13,6 @@ namespace bg::web::details {
 
 template <template <typename, auto...> typename Field> struct ClientOutput {
     Field<TSD<i64, TS<Bundle<HttpResponse>>>> replies;
-    Field<TS<string>> errors;
     Field<TS<Opaque<ClientRuntime *>>> runtime;
 };
 
