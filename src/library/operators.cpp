@@ -94,6 +94,8 @@ decltype(len_) len_{"len_", {"value"}};
 decltype(contains_) contains_{"contains_", {"collection", "key"}};
 decltype(is_empty) is_empty{"is_empty", {"value"}};
 decltype(keys_) keys_{"keys_", {"dictionary"}};
+decltype(values_) values_{"values_", {"dictionary"}};
+decltype(index_of) index_of{"index_of", {"values", "item"}};
 decltype(keys_where_true) keys_where_true{"keys_where_true", {"mask"}};
 decltype(bit_or) bit_or{"bit_or", {"lhs", "rhs"}};
 decltype(bit_and) bit_and{"bit_and", {"lhs", "rhs"}};
