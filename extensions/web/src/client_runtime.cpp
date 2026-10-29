@@ -48,17 +48,16 @@ std::string lowercase(std::string_view value);
 
 struct Transfer {
     Transfer(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request_value,
-             std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials_value)
+             std::optional<ScalarValue<Bundle<Auth>>> auth_value)
         : client_id{client_id}, client_sequence{client_sequence}, request_value{std::move(request_value)},
-          credentials_value{std::move(credentials_value)} {}
+          auth_value{std::move(auth_value)} {}
 
     CURL *easy{};
     curl_slist *request_headers{};
     i64 client_id{};
     i64 client_sequence{};
     ScalarValue<Bundle<HttpClientRequest>> request_value;
-    std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials_value;
-    std::optional<details::ClientCredentialsSnapshot> credentials;
+    std::optional<ScalarValue<Bundle<Auth>>> auth_value;
     std::string method;
     std::string url;
     HeaderValues request_headers_values;
@@ -88,14 +87,17 @@ struct Transfer {
         request_has_authorization = std::ranges::any_of(request_headers_values, [](const auto &header) {
             return lowercase(header.first) == "authorization";
         });
-        if (credentials_value) {
-            credentials.emplace(details::snapshot_client_credentials(credentials_value->view()));
-            if (lowercase(credentials->scheme) == "headers") {
-                request_headers_values.insert(request_headers_values.end(), credentials->headers.begin(),
-                                              credentials->headers.end());
+        if (auth_value && details::client_auth_kind(auth_value->view()) == details::ClientAuthKind::headers) {
+            const auto auth = scalar_cast<Bundle<HeaderAuth>>(auth_value->view());
+            const auto headers = scalar_cast<List<HeaderPair>>(auth[0]);
+            request_headers_values.reserve(request_headers_values.size() + headers.size());
+            for (auto index = std::size_t{}; index < headers.size(); ++index) {
+                const auto header = headers[index];
+                request_headers_values.emplace_back(
+                    std::string{scalar_cast<string>(header.template get<0>()).value()},
+                    std::string{scalar_cast<string>(header.template get<1>()).value()});
             }
         }
-        credentials_value.reset();
     }
 
     std::string curl_error(CURLcode code) const {
@@ -167,7 +169,7 @@ struct Command {
     i64 client_id;
     i64 client_sequence;
     std::optional<ScalarValue<Bundle<HttpClientRequest>>> request;
-    std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials;
+    std::optional<ScalarValue<Bundle<Auth>>> credentials;
 };
 
 struct CurlGlobal {
@@ -245,32 +247,33 @@ std::optional<std::string> Transfer::validate() const {
             return std::string{"HTTP header controls request routing or framing"};
         }
     }
-    if (!credentials) return std::nullopt;
+    if (!auth_value) return std::nullopt;
 
-    const auto scheme = lowercase(credentials->scheme);
-    if (credentials->scheme.find('\0') != std::string::npos || credentials->username.find('\0') != std::string::npos ||
-        credentials->password.find('\0') != std::string::npos || credentials->token.find('\0') != std::string::npos) {
-        return std::string{"HTTP credentials contain a NUL byte"};
+    const auto auth = scalar_cast<Bundle<Auth>>(auth_value->view());
+    const auto kind = details::client_auth_kind(auth);
+    if (kind == details::ClientAuthKind::unsupported) {
+        return std::string{"HTTP authentication schema is not supported"};
     }
-    if (scheme == "none") {
-        if (!credentials->username.empty() || !credentials->password.empty() || !credentials->token.empty() ||
-            !credentials->headers.empty()) {
-            return std::string{"HTTP credentials with scheme none must be empty"};
+    if (kind == details::ClientAuthKind::anonymous) return std::nullopt;
+
+    if (kind == details::ClientAuthKind::basic || kind == details::ClientAuthKind::digest ||
+        kind == details::ClientAuthKind::negotiate || kind == details::ClientAuthKind::ntlm) {
+        const auto username = scalar_cast<string>(auth[0]).value();
+        const auto password = scalar_cast<string>(auth[1]).value();
+        if (details::contains_nul(username) || details::contains_nul(password)) {
+            return std::string{"HTTP credentials contain a NUL byte"};
         }
-        return std::nullopt;
-    }
-    if (scheme == "basic" || scheme == "digest" || scheme == "negotiate" || scheme == "ntlm") {
-        if (!credentials->token.empty() || !credentials->headers.empty()) {
-            return std::string{"HTTP native authentication cannot include a token or headers"};
+        if (kind == details::ClientAuthKind::basic && username.find(':') != std::string_view::npos) {
+            return std::string{"HTTP Basic username cannot contain a colon"};
         }
         if (request_has_authorization) {
             return std::string{"HTTP request Authorization header conflicts with credentials"};
         }
         return std::nullopt;
     }
-    if (scheme == "bearer") {
-        if (!details::valid_bearer_token(credentials->token) || !credentials->username.empty() ||
-            !credentials->password.empty() || !credentials->headers.empty()) {
+    if (kind == details::ClientAuthKind::bearer) {
+        const auto token = scalar_cast<string>(scalar_cast<Bundle<BearerAuth>>(auth)[0]).value();
+        if (details::contains_nul(token) || !details::valid_bearer_token(token)) {
             return std::string{"HTTP bearer credentials are invalid"};
         }
         if (request_has_authorization) {
@@ -278,13 +281,12 @@ std::optional<std::string> Transfer::validate() const {
         }
         return std::nullopt;
     }
-    if (scheme != "headers") return std::string{"HTTP authentication scheme is not supported"};
-    if (!credentials->username.empty() || !credentials->password.empty() || !credentials->token.empty()) {
-        return std::string{"HTTP header credentials cannot include username, password, or token"};
+    const auto headers = scalar_cast<List<HeaderPair>>(scalar_cast<Bundle<HeaderAuth>>(auth)[0]);
+    auto authorization_count = std::size_t{};
+    for (auto index = std::size_t{}; index < headers.size(); ++index) {
+        const auto header = headers[index];
+        authorization_count += lowercase(scalar_cast<string>(header.template get<0>()).value()) == "authorization";
     }
-    const auto authorization_count = std::ranges::count_if(credentials->headers, [](const auto &header) {
-        return lowercase(header.first) == "authorization";
-    });
     if (authorization_count > 1 || (authorization_count != 0 && request_has_authorization)) {
         return std::string{"HTTP credentials contain conflicting Authorization headers"};
     }
@@ -354,19 +356,24 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
     set_easy_option(easy, CURLOPT_HEADERFUNCTION, &Transfer::receive_headers);
     set_easy_option(easy, CURLOPT_HEADERDATA, this);
     set_easy_option(easy, CURLOPT_ERRORBUFFER, error_buffer.data());
-    if (credentials) {
-        const auto scheme = lowercase(credentials->scheme);
-        if (scheme == "basic" || scheme == "digest" || scheme == "negotiate" || scheme == "ntlm") {
-            const auto auth = scheme == "basic"       ? CURLAUTH_BASIC
-                              : scheme == "digest"    ? CURLAUTH_DIGEST
-                              : scheme == "negotiate" ? CURLAUTH_NEGOTIATE
-                                                       : CURLAUTH_NTLM;
-            set_easy_option(easy, CURLOPT_HTTPAUTH, auth);
-            set_easy_option(easy, CURLOPT_USERNAME, credentials->username.c_str());
-            set_easy_option(easy, CURLOPT_PASSWORD, credentials->password.c_str());
-        } else if (scheme == "bearer") {
+    if (auth_value) {
+        const auto auth = scalar_cast<Bundle<Auth>>(auth_value->view());
+        const auto kind = details::client_auth_kind(auth);
+        if (kind == details::ClientAuthKind::basic || kind == details::ClientAuthKind::digest ||
+            kind == details::ClientAuthKind::negotiate || kind == details::ClientAuthKind::ntlm) {
+            const auto curl_auth = kind == details::ClientAuthKind::basic       ? CURLAUTH_BASIC
+                                   : kind == details::ClientAuthKind::digest    ? CURLAUTH_DIGEST
+                                   : kind == details::ClientAuthKind::negotiate ? CURLAUTH_NEGOTIATE
+                                                                                : CURLAUTH_NTLM;
+            const auto username = std::string{scalar_cast<string>(auth[0]).value()};
+            const auto password = std::string{scalar_cast<string>(auth[1]).value()};
+            set_easy_option(easy, CURLOPT_HTTPAUTH, curl_auth);
+            set_easy_option(easy, CURLOPT_USERNAME, username.c_str());
+            set_easy_option(easy, CURLOPT_PASSWORD, password.c_str());
+        } else if (kind == details::ClientAuthKind::bearer) {
+            const auto token = std::string{scalar_cast<string>(auth[0]).value()};
             set_easy_option(easy, CURLOPT_HTTPAUTH, CURLAUTH_BEARER);
-            set_easy_option(easy, CURLOPT_XOAUTH2_BEARER, credentials->token.c_str());
+            set_easy_option(easy, CURLOPT_XOAUTH2_BEARER, token.c_str());
         }
     }
     const auto body = scalar_cast<bytes>(request_value.view()[3]).value();
@@ -400,7 +407,7 @@ class ClientImplementation final {
     }
 
     void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
-                 std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
+                 std::optional<ScalarValue<Bundle<Auth>>> credentials) {
         enqueue(Command{.kind = Command::Kind::request,
                         .client_id = client_id,
                         .client_sequence = client_sequence,
@@ -734,7 +741,7 @@ ClientRuntime::ClientRuntime(HttpClientOptions options, Queue output)
 ClientRuntime::~ClientRuntime() = default;
 
 void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value,
-                            std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
+                            std::optional<ScalarValue<Bundle<Auth>>> credentials) {
     implementation_->request(client_id, client_sequence, std::move(value), std::move(credentials));
 }
 

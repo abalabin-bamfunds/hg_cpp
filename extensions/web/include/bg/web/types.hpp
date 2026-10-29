@@ -5,6 +5,7 @@
 #include <bg/scalar/list/type.hpp>
 #include <bg/scalar/string.hpp>
 #include <bg/scalar/tuple/type.hpp>
+#include <bg/schema/reflection.hpp>
 #include <bg/time_series/time_series_type.hpp>
 
 namespace bg::web {
@@ -42,11 +43,35 @@ template <template <typename, auto...> typename Field> struct HttpResponse {
     Field<bytes> body;
 };
 
-template <template <typename, auto...> typename Field> struct ClientCredentials {
-    Field<string> scheme;
+template <template <typename, auto...> typename Field> struct Auth {};
+
+template <template <typename, auto...> typename Field> struct AnonymousAuth : schema_extends<Auth, Field> {};
+
+template <template <typename, auto...> typename Field> struct BasicAuth : schema_extends<Auth, Field> {
     Field<string> username;
     Field<string> password;
+};
+
+template <template <typename, auto...> typename Field> struct DigestAuth : schema_extends<Auth, Field> {
+    Field<string> username;
+    Field<string> password;
+};
+
+template <template <typename, auto...> typename Field> struct NegotiateAuth : schema_extends<Auth, Field> {
+    Field<string> username;
+    Field<string> password;
+};
+
+template <template <typename, auto...> typename Field> struct NtlmAuth : schema_extends<Auth, Field> {
+    Field<string> username;
+    Field<string> password;
+};
+
+template <template <typename, auto...> typename Field> struct BearerAuth : schema_extends<Auth, Field> {
     Field<string> token;
+};
+
+template <template <typename, auto...> typename Field> struct HeaderAuth : schema_extends<Auth, Field> {
     Field<List<Tuple<string, string>>> headers;
 };
 

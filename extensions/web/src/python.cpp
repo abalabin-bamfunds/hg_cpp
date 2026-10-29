@@ -77,11 +77,21 @@ python::PythonWiringPoint make_http_client_impl(const python::PythonWiringPoint 
 
 NB_MODULE(_bg_web, module) {
     module.def("_register_schemas", [](nb::handle peer, nb::handle server_request, nb::handle client_request,
-                                       nb::handle response) {
+                                       nb::handle response, nb::handle auth, nb::handle anonymous_auth,
+                                       nb::handle basic_auth, nb::handle digest_auth, nb::handle negotiate_auth,
+                                       nb::handle ntlm_auth, nb::handle bearer_auth, nb::handle header_auth) {
         bg::web::export_native_schema<bg::web::HttpPeer>(peer);
         bg::web::export_native_schema<bg::web::HttpServerRequest>(server_request);
         bg::web::export_native_schema<bg::web::HttpClientRequest>(client_request);
         bg::web::export_native_schema<bg::web::HttpResponse>(response);
+        bg::web::export_native_schema<bg::web::Auth>(auth);
+        bg::web::export_native_schema<bg::web::AnonymousAuth>(anonymous_auth);
+        bg::web::export_native_schema<bg::web::BasicAuth>(basic_auth);
+        bg::web::export_native_schema<bg::web::DigestAuth>(digest_auth);
+        bg::web::export_native_schema<bg::web::NegotiateAuth>(negotiate_auth);
+        bg::web::export_native_schema<bg::web::NtlmAuth>(ntlm_auth);
+        bg::web::export_native_schema<bg::web::BearerAuth>(bearer_auth);
+        bg::web::export_native_schema<bg::web::HeaderAuth>(header_auth);
     });
     module.def("_http_server_impl", &bg::web::make_http_server_implementation, nb::arg("routes"),
                nb::arg("responses"), nb::arg("host") = "127.0.0.1", nb::arg("port") = 0);

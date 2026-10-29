@@ -277,6 +277,20 @@ configure the timeout and response body limit. One implementation owns one
 transport thread shared by its service clients, with separate runtime state
 for each graph run.
 
+## Client authentication values
+
+Client authentication values use the `Auth` schema hierarchy. `AnonymousAuth`
+is empty. `BasicAuth`, `DigestAuth`, `NegotiateAuth`, and `NtlmAuth` contain
+`username` and `password`; `BearerAuth` contains `token`; `HeaderAuth` contains
+ordered `headers`. Python exports constructors with these field names, and a
+`TS[Auth]` input preserves the concrete derived class.
+
+The native transport boundary accepts these values. HTTP handles all seven
+derived schemas. WebSocket handles `AnonymousAuth`, `BasicAuth`, `BearerAuth`,
+and `HeaderAuth`; other schemas return status 599 before the handshake. The
+public client service implementations do not yet expose authentication input;
+public client authentication registration is a later slice.
+
 ## WebSocket client
 
 `websocket_client` connects to a binary `ws://` endpoint. Its request is

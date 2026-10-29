@@ -759,6 +759,8 @@ For each reusable node and graph, test:
 - client service registration, concurrent clients, repeated requests, and completion delivery
 - client transport failures as status 599, URL validation, response limits, and request deadlines
 - client cancellation, stale replies after reactivation, pending-work cleanup, and repeated graph runs
+- hierarchical client authentication values, derived-type preservation through queues, and Python schema conversion
+- native HTTP authentication, WebSocket handshake credentials, conflicting headers, and unsupported auth types
 - scalar and dictionary handlers, ambient inputs and extra outputs, exact-path routing, and bound-port publication
 - route isolation, empty servers, duplicate routes, and route removal followed by re-registration
 - binary bodies, ordered duplicate headers and query parameters, and peer metadata

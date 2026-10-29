@@ -52,14 +52,6 @@ using namespace bg::literals;
 using Header = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
 
-std::string lowercase(std::string_view value) {
-    auto result = std::string{value};
-    std::ranges::transform(result, result.begin(), [](unsigned char character) {
-        return static_cast<char>(std::tolower(character));
-    });
-    return result;
-}
-
 template <typename Target, typename Function>
 auto guarded_callback(std::shared_ptr<Target> target, Function function) {
     return [target = std::move(target), function = std::move(function)](auto &&...arguments) mutable {
@@ -202,7 +194,7 @@ class WebSocketClientImplementation final {
                 std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                 std::optional<ScalarValue<bytes>> message,
                 std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
+                std::optional<ScalarValue<Bundle<Auth>>> credentials) {
         if (stopped_.load(std::memory_order_acquire)) return;
         started_ = true;
         try {
@@ -265,7 +257,7 @@ class WebSocketClientImplementation final {
         i64 sequence() const noexcept { return sequence_; }
 
         void start(ScalarValue<Bundle<WebSocketConnectRequest>> connect,
-                   std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials_value) {
+                   std::optional<ScalarValue<Bundle<Auth>>> auth_value) {
             try {
                 const auto value = connect.view();
                 const auto url = std::string{scalar_cast<string>(value[0]).value()};
@@ -300,9 +292,8 @@ class WebSocketClientImplementation final {
                     request_headers_.emplace_back(std::move(name), *value);
                 }
 
-                if (credentials_value) {
-                    const auto credentials = details::snapshot_client_credentials(credentials_value->view());
-                    if (const auto error = configure_credentials(credentials)) {
+                if (auth_value) {
+                    if (const auto error = configure_auth(auth_value->view())) {
                         fail_before_handshake(*error);
                         return;
                     }
@@ -414,54 +405,54 @@ class WebSocketClientImplementation final {
             return true;
         }
 
-        std::optional<std::string> configure_credentials(const details::ClientCredentialsSnapshot &credentials) {
-            const auto scheme = lowercase(credentials.scheme);
-            if (credentials.scheme.find('\0') != std::string::npos ||
-                credentials.username.find('\0') != std::string::npos ||
-                credentials.password.find('\0') != std::string::npos ||
-                credentials.token.find('\0') != std::string::npos) {
-                return std::string{"WebSocket credentials contain a NUL byte"};
+        std::optional<std::string> configure_auth(Scalar<Bundle<Auth>> auth) {
+            const auto kind = details::client_auth_kind(auth);
+            if (kind == details::ClientAuthKind::unsupported) {
+                return std::string{"WebSocket authentication schema is not supported"};
             }
+            if (kind == details::ClientAuthKind::anonymous) return std::nullopt;
+
             const auto request_authorization = std::ranges::any_of(request_headers_, [](const auto &header) {
                 return beast::iequals(header.first, "authorization");
             });
-            if (scheme == "none") {
-                if (!credentials.username.empty() || !credentials.password.empty() || !credentials.token.empty() ||
-                    !credentials.headers.empty()) {
-                    return std::string{"WebSocket credentials with scheme none must be empty"};
-                }
-                return std::nullopt;
-            }
-            if (scheme == "basic") {
-                if (!credentials.token.empty() || !credentials.headers.empty() ||
-                    credentials.username.find(':') != std::string::npos) {
+
+            if (kind == details::ClientAuthKind::basic) {
+                const auto basic = scalar_cast<Bundle<BasicAuth>>(auth);
+                const auto username = scalar_cast<string>(basic[0]).value();
+                const auto password = scalar_cast<string>(basic[1]).value();
+                if (details::contains_nul(username) || details::contains_nul(password) ||
+                    username.find(':') != std::string_view::npos) {
                     return std::string{"WebSocket Basic credentials are invalid"};
                 }
                 if (request_authorization) {
                     return std::string{"WebSocket request Authorization header conflicts with credentials"};
                 }
-                const auto value = credentials.username + ':' + credentials.password;
+                const auto value = std::string{username} + ':' + std::string{password};
                 request_headers_.emplace_back("Authorization", "Basic " + base64(value));
                 return std::nullopt;
             }
-            if (scheme == "bearer") {
-                if (!details::valid_bearer_token(credentials.token) ||
-                    !credentials.username.empty() || !credentials.password.empty() || !credentials.headers.empty()) {
+            if (kind == details::ClientAuthKind::bearer) {
+                const auto token = scalar_cast<string>(scalar_cast<Bundle<BearerAuth>>(auth)[0]).value();
+                if (details::contains_nul(token) || !details::valid_bearer_token(token)) {
                     return std::string{"WebSocket bearer credentials are invalid"};
                 }
                 if (request_authorization) {
                     return std::string{"WebSocket request Authorization header conflicts with credentials"};
                 }
-                request_headers_.emplace_back("Authorization", "Bearer " + credentials.token);
+                request_headers_.emplace_back("Authorization", "Bearer " + std::string{token});
                 return std::nullopt;
             }
-            if (scheme != "headers") return std::string{"WebSocket authentication scheme is not supported"};
-            if (!credentials.username.empty() || !credentials.password.empty() || !credentials.token.empty()) {
-                return std::string{"WebSocket header credentials cannot include username, password, or token"};
+            if (kind != details::ClientAuthKind::headers) {
+                return std::string{"WebSocket authentication schema is not supported"};
             }
 
             auto authorization_count = std::size_t{};
-            for (const auto &[name, raw_value] : credentials.headers) {
+            const auto headers = scalar_cast<List<Header>>(
+                scalar_cast<Bundle<HeaderAuth>>(auth)[0]);
+            for (auto index = std::size_t{}; index < headers.size(); ++index) {
+                const auto header = headers[index];
+                const auto name = std::string{scalar_cast<string>(header.template get<0>()).value()};
+                const auto raw_value = std::string{scalar_cast<string>(header.template get<1>()).value()};
                 if (!details::valid_http_header_name(name) || websocket_managed_header(name) ||
                     beast::iequals(name, "sec-websocket-protocol")) {
                     return std::string{"WebSocket credential header is invalid or controls handshake framing"};
@@ -725,7 +716,7 @@ class WebSocketClientImplementation final {
                       std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                       std::optional<ScalarValue<bytes>> message,
                       std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                      std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
+                      std::optional<ScalarValue<Bundle<Auth>>> credentials) {
         if (connect) {
             const auto found = active_.find(client_id);
             if (found != active_.end()) {
@@ -890,7 +881,7 @@ void WebSocketClientRuntime::update(i64 client_id, i64 sequence,
                                     std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                                     std::optional<ScalarValue<bytes>> message,
                                     std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                                    std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials) {
+                                    std::optional<ScalarValue<Bundle<Auth>>> credentials) {
     implementation_->update(client_id, sequence, std::move(connect), std::move(message), std::move(close),
                             std::move(credentials));
 }

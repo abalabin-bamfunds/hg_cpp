@@ -20,7 +20,7 @@ class ClientRuntime {
     ~ClientRuntime();
 
     void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
-                 std::optional<ScalarValue<Bundle<ClientCredentials>>> credentials = std::nullopt);
+                 std::optional<ScalarValue<Bundle<Auth>>> credentials = std::nullopt);
     void cancel(i64 client_id, i64 client_sequence) noexcept;
 
   private:

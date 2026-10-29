@@ -12,9 +12,13 @@
 #include <bg/web/http_server.hpp>
 #include <bg/web/websocket_client.hpp>
 
+#include "../src/websocket_client_output.hpp"
+#include "../src/websocket_client_runtime.hpp"
+
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -32,6 +36,27 @@ namespace {
 
 using Header = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
+
+struct WebSocketRuntimeSource {
+    Scalar<Opaque<WebSocketClientOptions>> options;
+    State<WebSocketClientRuntime *> runtime_state;
+    Out<TSB<bg::web::details::WebSocketClientOutput>> output;
+
+    static constexpr bool uses_queue = true;
+    static constexpr bool deduplicate_wiring = false;
+
+    void start(EvaluationContext *context) const {
+        auto output_queue = context->runtime_graph().make_queue(context->node_index());
+        auto runtime = std::make_unique<WebSocketClientRuntime>(options.value(), std::move(output_queue));
+        output->runtime.set(runtime.get());
+        *runtime_state = runtime.release();
+    }
+
+    void stop() const noexcept { delete std::exchange(*runtime_state, nullptr); }
+    void finalize() const noexcept { delete std::exchange(*runtime_state, nullptr); }
+};
+
+const auto websocket_runtime_source = node<WebSocketRuntimeSource>();
 
 ScalarValue<Bundle<WebSocketConnectRequest>> make_connect_request(std::string url) {
     const auto headers = ScalarValue<List<Header>>{HeaderValues{{"Sec-WebSocket-Protocol", "chat"}}};
@@ -59,6 +84,133 @@ std::vector<std::byte> copy_bytes(Scalar<bytes> value) {
 }
 
 } // namespace
+
+TEST_CASE("WebSocket client runtime rejects a base-only authentication value",
+          "[feature:websocket][feature:auth]") {
+    auto memory = allocator{};
+    const auto auth = bundle<Auth>(memory);
+    auto stop = std::stop_source{};
+    auto status = i64{};
+    auto body = std::string{};
+    auto active_sequence = i64{};
+    auto submitted = false;
+    constexpr auto client_id = service_client_id_t{42};
+
+    const auto submit = node([&](In<TS<Opaque<WebSocketClientRuntime *>>> runtime) {
+        if (submitted) return;
+        const auto request = make_connect_request("ws://127.0.0.1:9/socket");
+        active_sequence = runtime.value()->next_connection_sequence();
+        runtime.value()->update(
+            client_id, active_sequence,
+            std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>>{
+                ScalarValue<Bundle<WebSocketConnectRequest>>{request.view()}},
+            std::nullopt, std::nullopt,
+            std::optional<ScalarValue<Bundle<Auth>>>{ScalarValue<Bundle<Auth>>{auth.view()}});
+        submitted = true;
+    });
+    const auto collect = node([&](In<TSD<i64, TSD<i64, TS<Bundle<HttpResponse>>>>> responses) {
+        if (!responses.valid() || !responses.modified() || !responses.contains(client_id)) return;
+        const auto client_responses = responses[client_id];
+        if (!client_responses.valid() || !client_responses.contains(active_sequence)) return;
+        const auto response = client_responses[active_sequence];
+        if (!response.valid() || !response.modified()) return;
+        status = scalar_cast<i64>(response.value()[0]).value();
+        const auto bytes = scalar_cast<bg::bytes>(response.value()[2]).value();
+        body.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            const auto source = websocket_runtime_source(WebSocketClientOptions{});
+            submit(operators::getattr(source, util::symbol{"runtime"}));
+            collect(operators::getattr(source, util::symbol{"connect_responses"}));
+        },
+        GraphRunOptions{.engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{3},
+                        .stop_token = stop.get_token()});
+
+    CHECK(submitted);
+    CHECK(status == 599);
+    CHECK(body == "WebSocket authentication schema is not supported");
+}
+
+TEST_CASE("WebSocket client runtime sends typed Basic authentication", "[feature:websocket][feature:auth]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+
+    auto memory = allocator{};
+    const auto basic = bundle<BasicAuth>(memory, "username"_n = std::string{"alice"},
+                                         "password"_n = std::string{"secret"});
+    const auto auth = ScalarValue<Bundle<Auth>>{basic.view()};
+    auto observed_authorization = std::string{};
+    auto response_status = i64{};
+    auto active_sequence = i64{};
+    auto submitted = false;
+    constexpr auto client_id = service_client_id_t{42};
+
+    const auto inspect_handshake = node([&](In<TS<Bundle<HttpServerRequest>>> server_request) {
+        const auto headers = scalar_cast<List<Header>>(server_request.value()[4]);
+        for (auto index = std::size_t{}; index < headers.size(); ++index) {
+            const auto header = headers[index];
+            if (scalar_cast<string>(header.template get<0>()).value() == "Authorization") {
+                observed_authorization = scalar_cast<string>(header.template get<1>()).value();
+            }
+        }
+    });
+    const auto handler = graph([&](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
+        const auto connect = operators::getattr(request, util::symbol{"connect_request"});
+        inspect_handshake(connect);
+
+        const auto handshake = make_http_response(101, { {"Sec-WebSocket-Protocol", "chat"} }, {});
+        const auto no_message = operators::nothing[type<TS<bytes>>]();
+        const auto no_close = operators::nothing[type<TS<Bundle<WebSocketClose>>>]();
+        return bundle<WebSocketResponse<bytes>::schema>(
+            "connect_response"_n = operators::const_(handshake.view()),
+            "message"_n = no_message,
+            "close"_n = no_close);
+    });
+    const auto route = websocket_handler("/socket", handler);
+    const auto submit = node([&](In<TS<i64>> port, In<TS<Opaque<WebSocketClientRuntime *>>, passive> runtime) {
+        if (submitted) return;
+        const auto request = make_connect_request("ws://127.0.0.1:" + std::to_string(*port) + "/socket");
+        active_sequence = runtime.value()->next_connection_sequence();
+        runtime.value()->update(
+            client_id, active_sequence,
+            std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>>{
+                ScalarValue<Bundle<WebSocketConnectRequest>>{request.view()}},
+            std::nullopt, std::nullopt,
+            std::optional<ScalarValue<Bundle<Auth>>>{ScalarValue<Bundle<Auth>>{auth.view()}});
+        submitted = true;
+    });
+    const auto collect = node([&](In<TSD<i64, TSD<i64, TS<Bundle<HttpResponse>>>>> responses) {
+        if (!responses.valid() || !responses.modified() || !responses.contains(client_id)) return;
+        const auto client_responses = responses[client_id];
+        if (!client_responses.valid() || !client_responses.contains(active_sequence)) return;
+        const auto response = client_responses[active_sequence];
+        if (!response.valid() || !response.modified()) return;
+        response_status = scalar_cast<i64>(response.value()[0]).value();
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            const auto source = websocket_runtime_source(WebSocketClientOptions{});
+            submit(port, operators::getattr(source, util::symbol{"runtime"}));
+            collect(operators::getattr(source, util::symbol{"connect_responses"}));
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{4},
+                        .stop_token = stop.get_token()});
+
+    CHECK(submitted);
+    CHECK(response_status == 101);
+    CHECK(observed_authorization == "Basic YWxpY2U6c2VjcmV0");
+}
 
 TEST_CASE("WebSocket client exchanges binary messages before close and returns handshake metadata",
           "[feature:websocket][feature:service][feature:realtime]") {

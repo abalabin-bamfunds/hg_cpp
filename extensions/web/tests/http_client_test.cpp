@@ -12,11 +12,15 @@
 #include <bg/web/http_server.hpp>
 #include <bg/web/auth.hpp>
 
+#include "../src/client_output.hpp"
+#include "../src/client_runtime.hpp"
+
 #include "../src/http_header.hpp"
 
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <memory>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -73,6 +77,27 @@ struct ObservedResponse {
     std::vector<std::byte> body;
 };
 
+struct ClientRuntimeSource {
+    Scalar<Opaque<HttpClientOptions>> options;
+    State<ClientRuntime *> runtime_state;
+    Out<TSB<bg::web::details::ClientOutput>> output;
+
+    static constexpr bool uses_queue = true;
+    static constexpr bool deduplicate_wiring = false;
+
+    void start(EvaluationContext *context) const {
+        auto output_queue = context->runtime_graph().make_queue(context->node_index());
+        auto runtime = std::make_unique<ClientRuntime>(options.value(), std::move(output_queue));
+        output->runtime.set(runtime.get());
+        *runtime_state = runtime.release();
+    }
+
+    void stop() const noexcept { delete std::exchange(*runtime_state, nullptr); }
+    void finalize() const noexcept { delete std::exchange(*runtime_state, nullptr); }
+};
+
+const auto client_runtime_source = node<ClientRuntimeSource>();
+
 ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
     auto result = ObservedResponse{};
     result.status = scalar_cast<i64>(response[0]).value();
@@ -88,6 +113,108 @@ ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
 }
 
 } // namespace
+
+TEST_CASE("HTTP client runtime sends typed Basic authentication", "[feature:http][feature:auth]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+
+    auto memory = allocator{};
+    const auto basic = bundle<BasicAuth>(memory, "username"_n = std::string{"alice"},
+                                         "password"_n = std::string{"secret"});
+    const auto auth = ScalarValue<Bundle<Auth>>{basic.view()};
+    auto observed_authorization = std::string{};
+    auto response = std::optional<ObservedResponse>{};
+    auto submitted = false;
+    constexpr auto client_id = i64{42};
+    const auto handler = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                  Out<TS<Bundle<HttpResponse>>> output) {
+        const auto headers = scalar_cast<List<Header>>(request.value()[4]);
+        for (auto index = std::size_t{}; index < headers.size(); ++index) {
+            const auto header = headers[index];
+            if (scalar_cast<string>(header.template get<0>()).value() == "Authorization") {
+                observed_authorization = scalar_cast<string>(header.template get<1>()).value();
+            }
+        }
+        const auto value = make_response(204, {});
+        output.set_value(value.view());
+    });
+    const auto route = http_handler("/client-auth", handler);
+    const auto submit = node([&](In<TS<i64>> port, In<TS<Opaque<ClientRuntime *>>, passive> runtime) {
+        if (submitted) return;
+        const auto request = make_request(
+            "GET", "http://127.0.0.1:" + std::to_string(*port) + "/client-auth");
+        runtime.value()->request(client_id, 1, ScalarValue<Bundle<HttpClientRequest>>{request.view()},
+                                 std::optional<ScalarValue<Bundle<Auth>>>{
+                                     ScalarValue<Bundle<Auth>>{auth.view()}});
+        submitted = true;
+    });
+    const auto collect = node([&](In<TSD<i64, TS<Bundle<HttpResponse>>>> replies) {
+        if (!replies.valid() || !replies.modified() || !replies.contains(client_id)) return;
+        const auto value = replies[client_id];
+        if (!value.valid() || !value.modified()) return;
+        response.emplace(observe(value.value()));
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            const auto source = client_runtime_source(HttpClientOptions{});
+            submit(port, operators::getattr(source, util::symbol{"runtime"}));
+            collect(operators::getattr(source, util::symbol{"replies"}));
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{4},
+                        .stop_token = stop.get_token()});
+
+    REQUIRE(submitted);
+    REQUIRE(response.has_value());
+    CHECK(response->status == 204);
+    CHECK(observed_authorization == "Basic YWxpY2U6c2VjcmV0");
+}
+
+TEST_CASE("HTTP client runtime rejects a base-only authentication value", "[feature:http][feature:auth]") {
+    auto memory = allocator{};
+    const auto auth = bundle<Auth>(memory);
+    auto stop = std::stop_source{};
+    auto response = std::optional<ObservedResponse>{};
+    auto submitted = false;
+    constexpr auto client_id = i64{42};
+    const auto submit = node([&](In<TS<Opaque<ClientRuntime *>>> runtime) {
+        if (submitted) return;
+        const auto request = make_request("GET", "http://127.0.0.1/");
+        runtime.value()->request(client_id, 1, ScalarValue<Bundle<HttpClientRequest>>{request.view()},
+                                 std::optional<ScalarValue<Bundle<Auth>>>{
+                                     ScalarValue<Bundle<Auth>>{auth.view()}});
+        submitted = true;
+    });
+    const auto collect = node([&](In<TSD<i64, TS<Bundle<HttpResponse>>>> replies) {
+        if (!replies.valid() || !replies.modified() || !replies.contains(client_id)) return;
+        const auto value = replies[client_id];
+        if (!value.valid() || !value.modified()) return;
+        response.emplace(observe(value.value()));
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            const auto source = client_runtime_source(HttpClientOptions{});
+            submit(operators::getattr(source, util::symbol{"runtime"}));
+            collect(operators::getattr(source, util::symbol{"replies"}));
+        },
+        GraphRunOptions{.engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{3},
+                        .stop_token = stop.get_token()});
+
+    REQUIRE(submitted);
+    REQUIRE(response.has_value());
+    CHECK(response->status == 599);
+    CHECK(std::string{reinterpret_cast<const char *>(response->body.data()), response->body.size()} ==
+          "HTTP authentication schema is not supported");
+}
 
 TEST_CASE("Latin-1 HTTP header values convert to UTF-8", "[feature:http]") {
     auto latin1 = std::string{};

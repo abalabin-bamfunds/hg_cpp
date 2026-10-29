@@ -56,7 +56,56 @@ class HttpResponse:
         self.body = body
 
 
-_register_schemas(HttpPeer, HttpServerRequest, HttpClientRequest, HttpResponse)
+class Auth:
+    """Base schema for client authentication values."""
+
+
+class AnonymousAuth(Auth):
+    """Explicit anonymous client authentication."""
+
+
+class BasicAuth(Auth):
+    username: str
+    password: str
+
+
+class DigestAuth(Auth):
+    username: str
+    password: str
+
+
+class NegotiateAuth(Auth):
+    username: str
+    password: str
+
+
+class NtlmAuth(Auth):
+    username: str
+    password: str
+
+
+class BearerAuth(Auth):
+    token: str
+
+
+class HeaderAuth(Auth):
+    headers: list[tuple[str, str]]
+
+
+_register_schemas(
+    HttpPeer,
+    HttpServerRequest,
+    HttpClientRequest,
+    HttpResponse,
+    Auth,
+    AnonymousAuth,
+    BasicAuth,
+    DigestAuth,
+    NegotiateAuth,
+    NtlmAuth,
+    BearerAuth,
+    HeaderAuth,
+)
 
 from .auth import AuthDecision, _policy_graphs
 
@@ -195,6 +244,14 @@ __all__ = [
     "HttpServerRequest",
     "HttpClientRequest",
     "HttpResponse",
+    "Auth",
+    "AnonymousAuth",
+    "BasicAuth",
+    "DigestAuth",
+    "NegotiateAuth",
+    "NtlmAuth",
+    "BearerAuth",
+    "HeaderAuth",
     "AuthDecision",
     "http_handler",
     "register_http_server",

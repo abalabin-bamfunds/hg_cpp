@@ -44,7 +44,7 @@ struct ClientRequestSink {
     In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_sequence;
     In<TS<Bundle<HttpClientRequest>>> request;
     In<TS<Opaque<ClientRuntime *>>, passive> runtime_input;
-    In<TS<Bundle<ClientCredentials>>, optional, passive> credentials;
+    In<TS<Bundle<Auth>>, optional, passive> credentials;
     State<bool> submitted;
 
     void start() const { *submitted = false; }
@@ -52,7 +52,7 @@ struct ClientRequestSink {
     void evaluate() const {
         if (!request.modified() || !request.valid()) return;
         try {
-            auto credentials_value = std::optional<ScalarValue<Bundle<ClientCredentials>>>{};
+            auto credentials_value = std::optional<ScalarValue<Bundle<Auth>>>{};
             if (credentials.valid()) credentials_value.emplace(credentials.value());
             runtime_input.value()->request(client_id.value(), client_sequence.value(),
                                            ScalarValue<Bundle<HttpClientRequest>>{request.value()},
@@ -87,7 +87,7 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
                    wp<TS<Opaque<ClientRuntime *>>, "runtime"_n> runtime) {
                     const auto client_sequence = service_client_id();
                     client_request_sink(client_id, client_sequence, request, runtime,
-                                        operators::nothing[type<TS<Bundle<ClientCredentials>>>]());
+                                        operators::nothing[type<TS<Bundle<Auth>>>]());
                 });
 
             map(client, requests, source->runtime);

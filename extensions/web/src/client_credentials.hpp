@@ -1,5 +1,6 @@
 #pragma once
 
+#include <bg/scalar/bundle/scalar_type.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/tuple/scalar.hpp>
@@ -8,22 +9,23 @@
 
 #include <cstddef>
 #include <ranges>
-#include <string>
 #include <string_view>
-#include <utility>
-#include <vector>
 
 namespace bg::web::details {
 
-using ClientCredentialHeader = Tuple<string, string>;
+enum class ClientAuthKind { unsupported, anonymous, basic, digest, negotiate, ntlm, bearer, headers };
 
-struct ClientCredentialsSnapshot {
-    std::string scheme;
-    std::string username;
-    std::string password;
-    std::string token;
-    std::vector<std::pair<std::string, std::string>> headers;
-};
+inline ClientAuthKind client_auth_kind(Scalar<Bundle<Auth>> value) {
+    const auto &type = value.type();
+    if (&type == &cpp_scalar_type<Bundle<AnonymousAuth>>()) return ClientAuthKind::anonymous;
+    if (&type == &cpp_scalar_type<Bundle<BasicAuth>>()) return ClientAuthKind::basic;
+    if (&type == &cpp_scalar_type<Bundle<DigestAuth>>()) return ClientAuthKind::digest;
+    if (&type == &cpp_scalar_type<Bundle<NegotiateAuth>>()) return ClientAuthKind::negotiate;
+    if (&type == &cpp_scalar_type<Bundle<NtlmAuth>>()) return ClientAuthKind::ntlm;
+    if (&type == &cpp_scalar_type<Bundle<BearerAuth>>()) return ClientAuthKind::bearer;
+    if (&type == &cpp_scalar_type<Bundle<HeaderAuth>>()) return ClientAuthKind::headers;
+    return ClientAuthKind::unsupported;
+}
 
 inline bool valid_bearer_token(std::string_view value) noexcept {
     const auto padding = value.find('=');
@@ -39,20 +41,6 @@ inline bool valid_bearer_token(std::string_view value) noexcept {
     return std::ranges::all_of(value.substr(padding), [](char character) { return character == '='; });
 }
 
-inline ClientCredentialsSnapshot snapshot_client_credentials(Scalar<Bundle<ClientCredentials>> value) {
-    auto result = ClientCredentialsSnapshot{};
-    result.scheme = std::string{scalar_cast<string>(value[0]).value()};
-    result.username = std::string{scalar_cast<string>(value[1]).value()};
-    result.password = std::string{scalar_cast<string>(value[2]).value()};
-    result.token = std::string{scalar_cast<string>(value[3]).value()};
-    const auto headers = scalar_cast<List<ClientCredentialHeader>>(value[4]);
-    result.headers.reserve(headers.size());
-    for (auto index = std::size_t{}; index < headers.size(); ++index) {
-        const auto header = headers[index];
-        result.headers.emplace_back(std::string{scalar_cast<string>(header.template get<0>()).value()},
-                                    std::string{scalar_cast<string>(header.template get<1>()).value()});
-    }
-    return result;
-}
+inline bool contains_nul(std::string_view value) noexcept { return value.find('\0') != std::string_view::npos; }
 
 } // namespace bg::web::details
