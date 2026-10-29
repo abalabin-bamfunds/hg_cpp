@@ -13,6 +13,7 @@ imports and headers.
 | `and_` | [Reference](library-numeric.md#arithmetic) |
 | `any_` | [Reference](library-collections.md#boolean-reductions) |
 | `args` (C++) | [Reference](graph-code.md#variadic-parameters) |
+| `batch` | [Reference](library-time.md#batch) |
 | `bit_and` | [Reference](library-collections.md#time-series-set-operations) |
 | `bit_or` | [Reference](library-collections.md#time-series-set-operations) |
 | `bit_xor` | [Reference](library-collections.md#time-series-set-operations) |
@@ -40,6 +41,7 @@ imports and headers.
 | `flip_keys` | [Reference](library-collections.md#dictionary-transforms) |
 | `floordiv` | [Reference](library-numeric.md#arithmetic) |
 | `format_` | [Reference](library-text.md#formatting-and-printing) |
+| `gate` | [Reference](library-selection.md#gate) |
 | `ge` | [Reference](library-numeric.md#arithmetic) |
 | `getattr` | [Reference](library-collections.md#getitem-and-getattr) |
 | `getitem` | [Reference](library-collections.md#getitem-and-getattr) |

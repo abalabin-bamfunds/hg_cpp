@@ -261,6 +261,26 @@ The output retains the input's root guarantee up to `final`. Contained time
 series are limited to that same guarantee because reopening can copy unchanged
 items. A const input becomes final because its first forwarding can be delayed.
 
+`gate(condition, value, buffer_length=max_i64)` retains each input tick while
+the condition is invalid or false. Opening replays the oldest retained tick
+immediately, then replays at most one tick per microsecond. New ticks join the
+end of the queue. Closing pauses replay without clearing the queue. Value
+invalidation is retained as an event; condition invalidation closes the gate
+and preserves its output and queue. An open gate with no queue forwards directly.
+The positive `buffer_length` limits retained events; overflow raises an error.
+Retained collection deltas require the matching output baseline. Input
+references are dereferenced by normal input binding. The output guarantee is
+limited to `final`.
+
+`batch(condition, value, delay, buffer_length=max_i64)` collects valid scalar
+input ticks into an owning `TS<List<V>>`. A condition opening publishes all
+queued values immediately. While open, the first new value starts the delay;
+the timer publishes all queued values together. Repeated true condition ticks do
+not flush early. Closing cancels the timer but retains queued values; reopening
+publishes them immediately. An invalidated value is not appended. Delay and
+buffer length must be positive. Buffer overflow raises an error. The output
+guarantee is ordinary.
+
 `if_then_else(condition, true_value, false_value)` selects an input by reference.
 Changing the condition exposes the selected input's current value. Updates to
 that input remain observable without copying. An invalid condition or selected

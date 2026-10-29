@@ -136,6 +136,59 @@ def test_filter_preserves_output_while_closed_and_skips_unchanged_value_on_reope
     assert bg.run_graph(constant_value, [True, False, True, True]) == [10, None, None, None]
 
 
+def test_gate_retains_and_replays_each_closed_input_tick():
+    @bg.graph
+    def gate(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.gate(condition, value)
+
+    assert bg.run_graph(gate, [False, True], [1, 2]) == [None, 1, 2]
+
+
+def test_batch_flushes_closed_values_when_condition_opens():
+    @bg.graph
+    def batch(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[tuple[int, ...]]:
+        return bg.operators.batch(condition, value, timedelta(microseconds=2))
+
+    assert bg.run_graph(batch, [False, False, True], [1, 2, 3]) == [None, None, (1, 2, 3)]
+
+
+def test_gate_pauses_and_resumes_after_condition_invalidation():
+    @bg.graph
+    def gate(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.gate(condition, value)
+
+    assert bg.run_graph(gate, [False, True, bg.INVALID, True], [1, 2, 3, 4]) == [None, 1, None, 2, 3, 4]
+
+
+def test_batch_waits_for_its_timer_and_retains_values_across_close():
+    @bg.graph
+    def batch(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[tuple[int, ...]]:
+        return bg.operators.batch(condition, value, timedelta(microseconds=2))
+
+    assert bg.run_graph(batch, [True, True, True, True, False, None, True], [1, 2, 3, 4, 5, 6, 7]) == [
+        (1,),
+        None,
+        None,
+        (2, 3, 4),
+        None,
+        None,
+        (5, 6, 7),
+    ]
+
+
+def test_batch_owns_strings_and_nested_scalar_values():
+    @bg.graph
+    def strings(condition: bg.TS[bool], value: bg.TS[str]) -> bg.TS[tuple[str, ...]]:
+        return bg.operators.batch(condition, value, timedelta(microseconds=2))
+
+    @bg.graph
+    def nested(condition: bg.TS[bool], value: bg.TS[tuple[int, ...]]) -> bg.TS[tuple[tuple[int, ...], ...]]:
+        return bg.operators.batch(condition, value, timedelta(microseconds=2))
+
+    assert bg.run_graph(strings, [False, True], ["first", "second"]) == [None, ("first", "second")]
+    assert bg.run_graph(nested, [False, True], [(1, 2), (3, 4)]) == [None, ((1, 2), (3, 4))]
+
+
 def test_if_then_else_switches_references_and_follows_only_the_selected_value():
     @bg.graph
     def select(condition: bg.TS[bool], true_value: bg.TS[int], false_value: bg.TS[int]) -> bg.TS[int]:

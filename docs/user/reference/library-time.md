@@ -37,6 +37,16 @@ copy of the input value.
 Timed work uses evaluation time and stops with the owning graph, including inner
 graphs. Scheduling outside the supported [evaluation-time range](execution.md) fails.
 
+## batch
+
+`batch(condition, value, delay, buffer_length=...)` collects valid scalar values into
+an owning `TS<List<V>>`. Opening publishes all queued values immediately. While open,
+the first new value starts the timer; the timer publishes all queued values together.
+Repeated true condition ticks do not flush early. Closing cancels the timer and retains
+queued values; reopening publishes them immediately. Invalidated values are not
+appended. `delay` and `buffer_length` must be positive; overflow raises an error. The
+output guarantee is ordinary. For event-by-event retention, see [`gate`](library-selection.md#gate).
+
 ## Retained events
 
 Delay retains owning tick data for supported scalar, set, dictionary, bundle, and
@@ -45,6 +55,11 @@ before capture. Delay rejects sparse TSL values. Initially unbound references ar
 supported. A retained scalar refers to its owned value at the input event, not
 the source's later current value. Throttle retains timing state and reads the
 current source at publication, reconciling collection state then.
+
+Gate retains input events using the same ownership and reference rules as delay.
+Retained collection deltas require a matching output baseline. Batch copies each
+valid scalar value into its output list; later source updates cannot change queued
+values.
 
 ## resample
 

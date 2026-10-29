@@ -6,6 +6,7 @@
 #include <bg/mesh.hpp>
 #include <bg/operators.hpp>
 #include <bg/scalar/builtins.hpp>
+#include <bg/scalar/list/type.hpp>
 #include <bg/switch.hpp>
 #include <bg/time_series/time_series_type.hpp>
 #include <bg/time_series/time_series_variable.hpp>
@@ -90,6 +91,8 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> const Type *> type_;
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T, i64) -> TS_T> gate;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS<SCALAR>, timedelta_t, i64) -> TS<List<SCALAR>>> batch;
 extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> TS_T> merge;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> take;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> drop;

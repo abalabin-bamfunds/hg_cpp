@@ -41,6 +41,16 @@ to `final`. Contained time series are limited to that same guarantee because reo
 can copy unchanged items. A const input becomes final because its first forwarding can
 be delayed.
 
+## gate
+
+`gate(condition, value, buffer_length=...)` retains input events while the condition
+is false or invalid. Opening replays the oldest event immediately, then at most one
+event per microsecond. Closing pauses the queue; value invalidation is retained as an
+event, while condition invalidation preserves the output and queue. An open gate with
+no backlog forwards directly. `buffer_length` must be positive; overflow raises an
+error. The output guarantee is limited to `final`. See [retained events](library-time.md#retained-events)
+for collection and reference behavior.
+
 ## if_then_else
 
 `if_then_else(condition, true_value, false_value)` selects an input by reference.

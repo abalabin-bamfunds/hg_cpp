@@ -3,6 +3,8 @@
 #include <bg/graph.hpp>
 #include <bg/library/operators.hpp>
 
+#include <limits>
+
 namespace bg::operators {
 using namespace bg::literals;
 
@@ -57,6 +59,9 @@ decltype(count) count{"count", {"value"}};
 decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
+decltype(gate) gate{"gate", {"condition", "value", "buffer_length"_n = std::numeric_limits<i64>::max()}};
+decltype(batch)
+    batch{"batch", {"condition", "value", "delay", "buffer_length"_n = std::numeric_limits<i64>::max()}};
 decltype(merge) merge{"merge", {"values"}};
 decltype(take) take{"take", {"value", "n"}};
 decltype(drop) drop{"drop", {"value", "n"}};
@@ -112,6 +117,7 @@ const auto registered = [] {
     details::register_log_operators();
     details::register_logical_operators();
     details::register_stream_operators();
+    details::register_buffering_operators();
     details::register_merge_operators();
     details::register_analytical_operators();
     details::register_running_operators();

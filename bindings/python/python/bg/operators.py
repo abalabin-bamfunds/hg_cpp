@@ -45,6 +45,8 @@ count = _native.count
 sample = _native.sample
 dedup = _native.dedup
 filter_ = _native.filter_
+gate = _native.gate
+batch = _native.batch
 merge = _native.merge
 take = _native.take
 drop = _native.drop
@@ -125,6 +127,8 @@ __all__ = [
     "ewma",
     "floordiv",
     "filter_",
+    "gate",
+    "batch",
     "emit",
     "format_",
     "ge",

@@ -13,6 +13,7 @@ void register_string_format_operators();
 void register_log_operators();
 void register_logical_operators();
 void register_stream_operators();
+void register_buffering_operators();
 void register_merge_operators();
 void register_analytical_operators();
 void register_running_operators();

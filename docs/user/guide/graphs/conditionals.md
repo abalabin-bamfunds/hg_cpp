@@ -8,6 +8,8 @@ runs. The choice determines branch evaluation and retained state.
 | Fixed configuration | Native `if` | Chooses connections during construction |
 | One of two changing values | `if_then_else` | Follows the selected input; both calculations remain connected |
 | Forward while enabled | `filter_` | Forwards while open; retains output while closed |
+| Retain updates while closed | `gate` | Queues input events and replays them when open |
+| Collect scalar values | `batch` | Publishes queued values when opened or when its timer expires |
 | A value while an input is unavailable | `default_` | Uses a fallback until the source has a current value |
 | Updates from alternative publishers | `merge` | Selects the leftmost valid input that changed |
 | One active calculation | `switch_` | Starts the selected graph instance and stops the previous instance |
