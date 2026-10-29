@@ -68,7 +68,7 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
         [options = std::move(options)](
             wp<TSD<service_client_id_t, TS<Bundle<HttpClientRequest>>>, "request"_n> requests)
             -> wp<TSD<service_client_id_t, TS<Bundle<HttpResponse>>>> {
-            const auto source = client_source(ScalarValue<Opaque<HttpClientOptions>>{options});
+            const auto source = client_source(options);
 
             const auto client = graph(
                 "name"_n = "http_client_request",

@@ -103,7 +103,7 @@ std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptio
         [options = std::move(options)](
             wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientRequest>>, "request"_n> requests)
             -> wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientReply>>> {
-            const auto source = websocket_client_source(ScalarValue<Opaque<WebSocketClientOptions>>{options});
+            const auto source = websocket_client_source(options);
             const auto messages = websocket_client_messages_source(source->runtime);
 
             const auto request_sink = graph(

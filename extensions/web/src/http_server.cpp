@@ -268,7 +268,7 @@ void validate_route(std::string_view path) {
 
 WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes, WiringPoint responses,
                                       WiringPoint websocket_routes, WiringPoint websocket_responses) {
-    const auto source = server_source(ScalarValue<Opaque<ServerOptions>>{std::move(options)});
+    const auto source = server_source(std::move(options));
     const auto message_output = server_messages_source(source->runtime);
     const auto port = server_routes(routes, websocket_routes, source->runtime);
     response_sink(source->runtime, responses);
