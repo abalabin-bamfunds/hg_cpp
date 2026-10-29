@@ -64,14 +64,21 @@ The representation records the dictionary item as modified while processing
 the source dictionary change at lines 71–76. Its `item()` method then returns
 the resolved scalar target's own last-updated state at lines 114–127.
 
-`sample_switch` asks `SampledReferenceChange::create` for a transition sample.
-That factory creates samples for `TSS` and `TSD` targets and returns an empty
-sample for a scalar `TS` target
-([`ref_input_sample.cpp`](../../../src/time_series/ref/ref_input_sample.cpp#L25)).
-Therefore, a reference switch between scalar targets does not synthesize a
-current-tick item state. The dictionary-level modified flag can be true while
-the resolved scalar item's `modified()` is false and its timestamp remains old,
-as the observer confirmed.
+Scalar sampling uses the reference's binding timestamp. For an ordinary node
+input, `Node::binding_data` selects the later of the reference and target states
+when the target is valid
+([`node.hpp`](../../../include/bg/graph/node.hpp#L329)).
+`SampledReferenceChange::create` returning no collection sample for scalar `TS`
+is expected; a scalar does not require collection transition data.
+
+The missing operation is in the dictionary representation's `item()` method:
+it returns the target state without comparing the source `REF` item's state.
+The reference's binding timestamp therefore does not reach the value item.
+`In<TSD>::make_item` derives `modified()` from that returned timestamp
+([`tsd_input.hpp`](../../../include/bg/time_series/tsd/tsd_input.hpp#L357)).
+The dictionary can report key 2 as modified while its scalar view reports the
+old target time and `modified() == false`. This is a missing reference-time
+selection in dictionary item access, not a missing scalar sample object.
 
 The copy path exposes the mismatch. `Out<TSD>::copy_tick` iterates dictionary
 items it sees as modified and calls the item output's `copy_tick`
