@@ -34,6 +34,15 @@ current value, so changes that cancel within the period need not produce an outp
 The output retains input guarantees up to final. Throttle retains timing state, not a
 copy of the input value.
 
+## debounce
+
+`debounce(value, period)` publishes the complete latest value after the input has
+been unchanged for `period`. Every input event restarts the period, including
+equal ordinary ticks, invalidation, collection changes, and reference changes.
+An event at the expiry time restarts the period without publishing. Debounce
+does not schedule an initial publication. Period must be positive. The output
+guarantee is limited to final, including contained time series.
+
 Timed work uses evaluation time and stops with the owning graph, including inner
 graphs. Scheduling outside the supported [evaluation-time range](execution.md) fails.
 

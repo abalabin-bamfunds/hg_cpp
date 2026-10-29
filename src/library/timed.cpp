@@ -289,6 +289,45 @@ struct timed_overloads {
 
     overload<throttle> throttle_impl{graph<throttle_graph>()};
 
+    // Debounce publishes the latest input after a period without events.
+    struct debounce_impl {
+        static constexpr bool uses_timed_scheduling = true;
+
+        In<TS_T, optional> value;
+        Scalar<timedelta_t> period;
+        State<ScheduleHandle> timer;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            return &value_type.dereferenced_type().with_guarantee_limit(TimeSeriesGuarantee::final);
+        }
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto period = scalar_cast<timedelta_t>(*arguments.scalar("period")).value();
+            return period <= timedelta_t{} ? reject("debounce period must be positive") : accept;
+        }
+
+        void evaluate(EvaluationContext *context) const {
+            if (value.modified()) {
+                if (*timer) {
+                    context->cancel(*timer);
+                }
+                *timer = context->schedule_at(context->evaluation_time() + period.value());
+                return;
+            }
+
+            if (!*timer || !context->timer_fired(*timer)) {
+                return;
+            }
+
+            *timer = {};
+            output.copy(value);
+        }
+    };
+
+    overload<debounce, debounce_impl> debounce_impl;
+
     struct resample_graph {
         wp<TS_T> value;
         timedelta_t period;

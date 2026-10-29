@@ -74,6 +74,7 @@ decltype(ewma) ewma{"ewma", {"value", "alpha", "min_periods"_n = i64{0}}};
 decltype(delay) delay{"delay", {"value", "duration"}};
 decltype(schedule) schedule{"schedule", {"period", "initial_delay", "max_ticks"}};
 decltype(throttle) throttle{"throttle", {"value", "period", "delay_first_tick"}};
+decltype(debounce) debounce{"debounce", {"value", "period"}};
 decltype(resample) resample{"resample", {"value", "period"}};
 decltype(sums) sums{"sums", {"value"}};
 decltype(mins) mins{"mins", {"value"}};

@@ -112,6 +112,7 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<double>, double, i64) -> OUT> ewma;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> delay;
 extern BG_LIBRARY_EXPORT operator_<auto(timedelta_t, bool, i64) -> TS<bool>> schedule;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t, bool) -> OUT> throttle;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> debounce;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, timedelta_t) -> OUT> resample;
 
 // Running numeric aggregates. A valid reset-input tick clears the current aggregate.

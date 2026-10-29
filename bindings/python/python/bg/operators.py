@@ -59,6 +59,7 @@ ewma = _native.ewma
 delay = _native.delay
 schedule = _native.schedule
 throttle = _native.throttle
+debounce = _native.debounce
 resample = _native.resample
 sums = _native.sums
 mins = _native.mins
@@ -117,6 +118,7 @@ __all__ = [
     "collect",
     "count",
     "default_",
+    "debounce",
     "delay",
     "dedup",
     "dispatch",

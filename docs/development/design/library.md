@@ -424,6 +424,13 @@ reconciles the complete current value, so changes that cancel within the
 period need not produce an output tick. The output retains input guarantees up
 to final. Throttle retains timing state, not a copy of the input value.
 
+`debounce(value, period)` publishes the complete latest value after a period
+without input events. Every event restarts the timer, including invalidation
+and collection or reference changes. An event at expiry restarts the timer
+without publishing. Debounce does not schedule on start. Period must be
+positive; the output guarantee is limited to final, including contained time
+series.
+
 `resample(value, period)` composes `schedule(period)` and `sample`. Its first
 sampling time is one period after graph start. Each scheduled tick samples the
 complete current valid value; input changes alone do not publish. Invalid input

@@ -704,8 +704,9 @@ For each reusable node and graph, test:
   independent source and mapping changes, reference rebinding and item-ID remapping,
   target-only updates without routing-node evaluation, and C++ and Python wiring
 - delayed ticks and invalidation, collection delta replay, periodic tick limits,
-  throttle publication times and latest-state reconciliation, simultaneous
-  timers and input changes, duration bounds, and nested-graph stop cleanup
+  throttle publication times and latest-state reconciliation, debounce silence
+  periods and event/expiry coincidence, simultaneous timers and input changes,
+  duration bounds, and nested-graph stop cleanup
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,

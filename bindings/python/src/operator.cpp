@@ -221,6 +221,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "delay", operators::delay);
     export_operator(operators_module, "schedule", operators::schedule);
     export_operator(operators_module, "throttle", operators::throttle);
+    export_operator(operators_module, "debounce", operators::debounce);
     export_operator(operators_module, "resample", operators::resample);
     export_operator(operators_module, "sums", operators::sums);
     export_operator(operators_module, "mins", operators::mins);

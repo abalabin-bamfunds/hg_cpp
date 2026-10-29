@@ -26,6 +26,7 @@ imports and headers.
 | `contains_` | [Reference](library-collections.md#collection-queries) |
 | `convert` | [Reference](library-numeric.md#convert) |
 | `count` | [Reference](library-stateful.md#count) |
+| `debounce` | [Reference](library-time.md#debounce) |
 | `dedup` | [Reference](library-selection.md#dedup) |
 | `default_` | [Reference](library-selection.md#default_) |
 | `delay` | [Reference](library-time.md#delay) |

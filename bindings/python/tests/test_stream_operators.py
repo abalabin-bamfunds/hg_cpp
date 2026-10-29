@@ -43,6 +43,57 @@ def test_resample_is_available_to_python_graphs():
     ) == [None, None, 30, None, None, None, 50, None, 70]
 
 
+def test_debounce_waits_for_silence_and_is_available_to_python_graphs():
+    @bg.graph
+    def debounce(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.debounce(value, timedelta(microseconds=2))
+
+    assert bg.run_graph(debounce, [1, None, None, 2, 3]) == [None, None, 1, None, None, None, 3]
+
+
+def test_debounce_restarts_on_invalidation_and_revalidation():
+    @bg.graph
+    def valid_debounce(value: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.debounce(value, timedelta(microseconds=2)))
+
+    assert bg.run_graph(valid_debounce, [1, None, None, bg.INVALID, None, None, 2]) == [
+        False,
+        None,
+        True,
+        None,
+        None,
+        False,
+        None,
+        None,
+        True,
+    ]
+    assert bg.run_graph(valid_debounce, [1, bg.INVALID, 2]) == [False, None, None, None, True]
+
+
+def test_debounce_reconciles_dictionary_removals_from_a_published_baseline():
+    @bg.graph
+    def debounce_sum(value: bg.TSD[int, bg.TS[int]]) -> bg.TS[int]:
+        return bg.operators.sum_(bg.operators.debounce(value, timedelta(microseconds=2)))
+
+    assert bg.run_graph(debounce_sum, [{1: 10}, None, None, {1: bg.REMOVE}]) == [None, None, 10, None, None, 0]
+
+
+def test_debounce_timer_is_stopped_and_restarted_with_a_switch_branch():
+    @bg.graph
+    def debounce(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.debounce(value, timedelta(microseconds=2))
+
+    @bg.graph
+    def passthrough(value: bg.TS[int]) -> bg.TS[int]:
+        return value
+
+    @bg.graph
+    def selected(selector: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.switch_(selector, {1: debounce, 0: passthrough}, value)
+
+    assert bg.run_graph(selected, [1, 0, 1], [10, 20, 30]) == [None, 20, None, None, 30]
+
+
 def test_valid_and_all_valid_publish_only_validity_changes():
     @bg.graph
     def valid(value: bg.TS[int]) -> bg.TS[bool]:
