@@ -72,7 +72,7 @@ approved defect or implementation task.
 | Nested TSB/TSL REF pass-through attempts to create a reference targeting a reference. | 2 | Wiring failures against the documented reference-preserving nested boundary. |
 | Mesh/switch/reduce compositions fail type resolution, including with typed callbacks. | 2 | Wiring failures; runtime behavior remains unverified. |
 | Free TSB/TSL switch activations capture empty structural deltas while scalar consumers read held values. | 2 | Collection observation gap. Sampling and capture require separate investigation. |
-| Reselecting a rebuilt free list emits extra ticks for an unchanged item source. | 1 | Confirmed on `8f0eaab6`: `{10, 10, 10, 20}` instead of `{10, SKIP, SKIP, 20}`. Both branches reference the same item time series. |
+| Reselecting a rebuilt free list emits extra ticks for an unchanged item source. | 1 | Confirmed on `8f0eaab6`: `{10, 10, 10, 20}` instead of `{10, SKIP, SKIP, 20}`. Item selection creates different reference handles for the same source; the binding reports their changes as updates. See the [trace](hgraph-free-bundle-pattern-findings-2026-10-28.md#rebuilt-list-item-reference-trace). |
 
 Passing additions exercise key removal/readdition, independent reference-backed
 contexts, leaf updates and validity, nested free structures, pass-through

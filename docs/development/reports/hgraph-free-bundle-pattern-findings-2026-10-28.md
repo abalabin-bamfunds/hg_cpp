@@ -62,10 +62,50 @@ identify whether sampling or capture owns the omission.
 The rebuilt-list case was rechecked with a rebuilt Release runtime and a fresh
 list test translation unit after rebasing onto `8f0eaab6`. The exact command and
 result log are in the [review summary](hgraph-pattern-review-2026-10-28.md#verification-boundaries).
-Static inspection points to fixed-list reference adaptation and sampling:
-`FixedCollectionRepresentation::rebind` marks an item modified even when its
-reference is unchanged, and scalar collection samples use the sampling time.
-The exact notification path has not been traced. No production fix was made.
+The instrumented trace below identifies the item selection and binding path.
+
+### Rebuilt-list item reference trace
+
+Both branches resolve item 0 to the same scalar storage and runtime type.
+The original source updates only in cycles 1 and 4. The trace names its storage
+`S` and the selected item references `A`, `B`, and `C`:
+
+| Cycle | Branch | Selected item reference | Source update time | Consumer input update time | Output |
+| --- | --- | --- | --- | --- | --- |
+| 1 | Pass-through | `A` | 1 | 1 | `10` |
+| 2 | Rebuild | `B` | 1 | 2 | `10`, expected `SKIP` |
+| 3 | Pass-through | `A` | 1 | 3 | `10`, expected `SKIP` |
+| 4 | Rebuild | `C` | 4 | 4 | `20` |
+
+Every selected reference resolves to `S`. Restarting the rebuilt branch creates
+a new item selection in cycle 4.
+
+The divergence starts in
+[`ItemSelectionSubscriptions::require_selection`](../../../src/time_series/ref/item_selection.hpp).
+For a value item it creates `ItemReference(collection.reference, id)`. Selecting
+item 0 from the rebuilt list therefore creates `B` instead of forwarding `A`,
+although both resolve to `S`. The free list exposes its input's scalar storage
+and observed update time through `FreeFixedTimeSeriesListRuntimeType::item`.
+
+`tsl_getitem_scalar_reference::evaluate` binds this selection and copies its
+reference to the output. `DynamicReferenceInputStorage::refresh` compares the
+reference handles. The changes `A` to `B` and `B` to `A` publish new reference
+timestamps. `Node::binding_data` uses `ReferenceInputStorage::observed_state`,
+which selects the later reference or target timestamp. The scalar consumer
+therefore sees `modified() == true` in every cycle and returns `10` again in
+cycles 2 and 3.
+
+On cycle 2, activation also gives the rebuilt list's item input update time 2,
+while the original source remains at time 1. On cycle 3, the selected target
+again reports time 1, but the reference output's time 3 reaches the consumer.
+
+The diagnostics were removed. Rebuilding the runtime and rerunning the original
+test still produces `{10, 10, 10, 20}`. No production fix was made. The trace,
+temporary diagnostic patch, and clean rerun are in the review lane:
+
+- `build/verification/2026-10-29-free-list-consumer-trace.log`
+- `build/verification/2026-10-29-free-list-instrumentation.patch`
+- `build/verification/2026-10-29-free-list-clean-rerun.log`
 
 The [nested reference contract](../design/time-series-references.md#nested-graph-boundaries)
 permits an inner graph to return an input reference by copying it. The explicit
