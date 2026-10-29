@@ -539,7 +539,7 @@ TEST_CASE("a nested item view retains its containing path",
 }
 
 TEST_CASE("a switch routes a free fixed list between its items and a constant list",
-          "[.][repro][feature:switch][feature:reference][series:fixed-tsl][representation:free]"
+          "[feature:switch][feature:reference][series:fixed-tsl][representation:free]"
           "[shape:nested][binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_list",
                                     [](wp<TSL<TS<i64>, 2>> input) { return input; });
@@ -613,7 +613,7 @@ TEST_CASE("a nested graph sees partial validity in a free fixed list",
 }
 
 TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
-          "[.][repro][feature:switch][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[feature:switch][feature:reference][feature:sampling][series:fixed-tsl]"
           "[representation:free][shape:nested][binding:reference-to-reference][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_list",
                                     [](wp<TSL<TS<i64>, 2>> input) { return input; });

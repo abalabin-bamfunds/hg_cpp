@@ -785,7 +785,7 @@ TEST_CASE("a free bundle rejects duplicate field names",
 }
 
 TEST_CASE("a switch routes a free bundle between its fields and a constant bundle",
-          "[.][repro][feature:switch][feature:reference][series:tsb][representation:free][schema:named]"
+          "[feature:switch][feature:reference][series:tsb][representation:free][schema:named]"
           "[shape:nested][binding:value-to-reference][binding:reference-to-value][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_bundle",
                                     [](wp<TSB<DerivedBundle>> input) { return input; });
