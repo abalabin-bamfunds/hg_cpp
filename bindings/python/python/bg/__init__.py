@@ -41,6 +41,7 @@ from ._bg import (
     _node_input_type,
     _optional_type,
     _register_key_value_schema,
+    _register_if_result_schema,
     _reference_type,
     _register_delta_types,
     _register_symbol_type,
@@ -148,6 +149,14 @@ _register_key_value_schema(KeyValue)
 
 # Release the module-owned wrapper before nanobind checks for leaked instances.
 atexit.register(delattr, KeyValue, "_native_time_series_schema")
+
+
+class IfResult:
+    """Native branch-selection schema used by ``operators.if_``."""
+
+
+_register_if_result_schema(IfResult)
+atexit.register(delattr, IfResult, "_native_time_series_schema")
 
 
 class _Invalid:
@@ -1585,6 +1594,7 @@ __all__ = [
     "StopSource",
     "StopToken",
     "Bundle",
+    "IfResult",
     "KeyValue",
     "Scheduler",
     "ScheduleHandle",

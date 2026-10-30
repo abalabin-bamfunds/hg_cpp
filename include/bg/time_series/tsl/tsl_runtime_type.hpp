@@ -105,6 +105,7 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     }
 
     const ReferenceRepresentationFactory *reference_representation_factory() const noexcept override;
+    ReferenceSampleFactory reference_sample_factory() const noexcept override;
 
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
                                 void *context, ModifiedItemFunction function) const override {

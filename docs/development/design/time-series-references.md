@@ -66,6 +66,14 @@ representations. A resolved TSD representation uses the representation object as
 its storage; its runtime type resolves the current base TSD when it reads items
 or change information.
 
+Collection representation runtime types use canonical metadata for their
+semantic type and adaptation plan. TSD descriptors derive key and direct item
+metadata from their declared types. A routed REF item uses the runtime type for
+`ItemReference` storage. TSL and TSB descriptors retain each field's adaptation
+mode and use canonical requested field runtimes. Reads return the actual runtime
+type that describes the returned storage, so descriptor identity does not
+depend on source layouts.
+
 TSD supports compatible representations recursively. Examples include:
 
 | Provided type | Requested representation |
@@ -218,13 +226,19 @@ removed.
 A TSS target switch compares current membership with the previous target's
 membership before the current cycle. A TSD target switch compares keys.
 A TSL or TSB target switch samples corresponding items by position or field.
-Collection samples apply sampling recursively to contained collections. Each
-sampled item reports the sampling time and the validity transition between its
-pre-cycle and current views without changing either source's state.
+Collection samples apply sampling recursively to contained collections. BG
+asks the runtime requested by the receiving input to create a sample. The sample
+exposes the requested semantic type, while its previous and current source
+descriptors retain their actual runtime types for interpreting source storage.
+Each sampled item reports the sampling time and the validity transition
+between its pre-cycle and current views without changing either source's state.
+Set and dictionary key access returns the runtime type that describes the
+returned key data, which can differ from the sample's declared key runtime type.
 One reference notification shares a sample among subscribers with the same old
 and new references, resolved previous target state, and requested representation.
-The sample materializes change data on its first query. Inputs retain it until
-the next outer cycle; stopping or finalizing their graph releases it sooner.
+Built-in set and dictionary samples materialize change data on their first query.
+Inputs retain that data until the next outer cycle; stopping or finalizing their
+graph releases it sooner.
 
 Switching a TSD item target from TSD `A` to TSD `B` reports the transition that
 the node observes:

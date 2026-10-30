@@ -23,6 +23,34 @@ def test_take_drop_and_step_are_available_to_python_graphs():
     assert bg.run_graph(step, [10, 10, 20, bg.INVALID, 30, 40, 50]) == [10, None, 20, None, None, 40, None]
 
 
+def test_take_drop_duration_and_slice_are_available_to_python_graphs():
+    @bg.graph
+    def take(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.take(value, n=timedelta(microseconds=3))
+
+    @bg.graph
+    def drop(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.drop(value, n=timedelta(microseconds=3))
+
+    @bg.graph
+    def slice(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.slice_(value, 1, 5, 2)
+
+    events = [1, bg.INVALID, 2, bg.INVALID, 3, 4]
+    assert bg.run_graph(take, events) == [1, None, 2, None, None, None]
+    assert bg.run_graph(drop, events) == [None, None, None, None, 3, 4]
+    assert bg.run_graph(slice, [10, bg.INVALID, 20, 30, 40, 50, bg.INVALID, 60]) == [
+        None,
+        None,
+        20,
+        None,
+        40,
+        None,
+        None,
+        None,
+    ]
+
+
 def test_resample_is_available_to_python_graphs():
     @bg.graph
     def resample(value: bg.TS[int]) -> bg.TS[int]:
@@ -181,6 +209,177 @@ def test_merge_accepts_optional_inputs():
         return bg.operators.merge(bg.opt(left), bg.opt(right))
 
     assert bg.run_graph(merge, [10, None, 30], [100, 200, 300]) == [10, 200, 30]
+
+
+def test_if_routes_its_value_to_one_reference_field():
+    @bg.graph
+    def true_value(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:
+        result = bg.operators.if_(condition, value)
+        return bg.operators.getattr(result, bg.symbol("true_value"))
+
+    @bg.graph
+    def false_value(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[int]:
+        result = bg.operators.if_(condition, value)
+        return bg.operators.getattr(result, bg.symbol("false_value"))
+
+    assert bg.run_graph(true_value, [True, False, True], [10, 20, 30]) == [10, None, 30]
+    assert bg.run_graph(false_value, [True, False, True], [10, 20, 30]) == [None, 20, None]
+    assert bg.run_graph(true_value, [True, bg.INVALID], [10, 20]) == [10, None]
+
+    @bg.graph
+    def true_valid(condition: bg.TS[bool], value: bg.TS[int]) -> bg.TS[bool]:
+        result = bg.operators.if_(condition, value)
+        return bg.operators.valid(bg.operators.getattr(result, bg.symbol("true_value")))
+
+    assert bg.run_graph(true_valid, [True, False, True], [10, 20, 30]) == [True, False, True]
+
+
+def test_if_true_emits_distinct_true_ticks_and_supports_one_shot_mode():
+    @bg.graph
+    def emit_true(condition: bg.TS[bool]) -> bg.TS[bool]:
+        return bg.operators.if_true(condition)
+
+    @bg.graph
+    def emit_true_once(condition: bg.TS[bool]) -> bg.TS[bool]:
+        return bg.operators.if_true(condition, tick_once_only=True)
+
+    assert bg.run_graph(emit_true, [False, True, True, False, True]) == [None, True, True, None, True]
+    assert bg.run_graph(emit_true_once, [False, True, True, False, True]) == [None, True, None, None, None]
+    assert bg.run_graph(emit_true_once, [True, bg.INVALID, False]) == [True, None, None]
+
+
+def test_if_true_emits_alternating_true_ticks_from_a_deduplicated_input():
+    @bg.graph
+    def emit_true(condition: bg.TS[bool]) -> bg.TS[bool]:
+        return bg.operators.if_true(bg.operators.dedup(condition))
+
+    assert bg.run_graph(emit_true, [True, True, False, False, True, True]) == [
+        True,
+        None,
+        None,
+        None,
+        True,
+        None,
+    ]
+
+
+def test_race_fails_over_by_continuous_validity_age():
+    @bg.graph
+    def select(first: bg.TS[int], second: bg.TS[int], third: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.race(first, second, third)
+
+    assert bg.run_graph(
+        select,
+        [None, None, 10, None],
+        [20, None, None, bg.INVALID],
+        [None, 30, None, None],
+    ) == [20, None, None, 30]
+
+
+def test_race_uses_leftmost_candidate_for_equal_validity_start_times():
+    @bg.graph
+    def select(first: bg.TS[int], second: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.race(first, second)
+
+    assert bg.run_graph(select, [10, bg.INVALID, None], [20, None, 30]) == [10, 20, 30]
+
+
+def test_race_recovers_after_all_candidates_are_invalid():
+    @bg.graph
+    def select(first: bg.TS[int], second: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.race(first, second)
+
+    assert bg.run_graph(select, [bg.INVALID, 10, bg.INVALID, 30], [bg.INVALID, 20, 25, 40]) == [
+        None,
+        10,
+        25,
+        40,
+    ]
+
+
+def test_race_preserves_candidate_age_when_its_valid_reference_retargets():
+    @bg.graph
+    def select(step: bg.TS[int], route: bg.TS[bool]) -> bg.TS[int]:
+        delayed = bg.operators.filter_(step == 1, bg.operators.const_(10))
+        retargeted = bg.operators.if_then_else(route, bg.operators.const_(20), bg.operators.const_(30))
+        return bg.operators.race(delayed, retargeted)
+
+    assert bg.run_graph(select, [0, 1, 2], [False, False, True]) == [30, None, 20]
+
+
+def test_race_accepts_a_prebuilt_fixed_list_and_preserves_single_input_identity():
+    @bg.graph
+    def select_prebuilt(first: bg.TS[int], second: bg.TS[int]) -> bg.TS[int]:
+        values = bg.operators.combine[bg.TSL[bg.TS[int], 2]](first, second)
+        return bg.operators.race(values=values)
+
+    @bg.graph
+    def select_one(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.race(value)
+
+    assert bg.run_graph(select_prebuilt, [10, bg.INVALID], [20, 30]) == [10, 30]
+    assert bg.run_graph(select_one, [10, bg.INVALID, 20]) == [10, None, 20]
+
+
+def test_race_rejects_no_inputs():
+    @bg.graph
+    def select() -> bg.TS[int]:
+        return bg.operators.race()
+
+    with pytest.raises(ValueError, match="Cannot resolve operator race"):
+        bg.run_graph(select)
+
+
+def test_race_selects_a_whole_fixed_list():
+    @bg.graph
+    def select(first: bg.TSL[bg.TS[int], 2], second: bg.TSL[bg.TS[int], 2]) -> bg.TS[int]:
+        values = bg.operators.race(first, second)
+        return bg.operators.add(bg.operators.getitem(values, 0), bg.operators.getitem(values, 1))
+
+    assert bg.run_graph(select, [{0: 1, 1: 2}, bg.INVALID], [{0: 10, 1: 20}, {0: 30, 1: 40}]) == [3, 70]
+
+
+def test_route_by_index_selects_a_fixed_output_slot():
+    @bg.graph
+    def route(index: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        output = bg.operators.route_by_index[bg.TSL[bg.TS[int], 3]](index, value)
+        return bg.operators.getitem(output, 1)
+
+    assert bg.run_graph(route, [1, 8, 1, bg.INVALID, 2], [10, 20, 30, 40, 50]) == [
+        10,
+        None,
+        30,
+        None,
+        None,
+    ]
+
+    @bg.graph
+    def slot_valid(index: bg.TS[int], value: bg.TS[int]) -> bg.TS[bool]:
+        output = bg.operators.route_by_index[bg.TSL[bg.TS[int], 3]](index, value)
+        return bg.operators.valid(bg.operators.getitem(output, 1))
+
+    assert bg.run_graph(slot_valid, [1, -1, 1, bg.INVALID, 2], [10, 20, 30, 40, 50]) == [
+        True,
+        False,
+        True,
+        False,
+        None,
+    ]
+
+
+def test_route_by_index_requires_an_explicit_fixed_list_result():
+    @bg.graph
+    def missing_result(index: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.route_by_index(index, value)
+
+    @bg.graph
+    def wrong_result(index: bg.TS[int], value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.route_by_index[bg.TS[int]](index, value)
+
+    with pytest.raises(ValueError, match="Cannot resolve operator route_by_index"):
+        bg.run_graph(missing_result, [0], [10])
+    with pytest.raises(ValueError, match="Cannot resolve operator route_by_index"):
+        bg.run_graph(wrong_result, [0], [10])
 
 
 def test_merge_with_one_input_preserves_invalidation():

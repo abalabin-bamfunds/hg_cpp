@@ -13,13 +13,17 @@
 #include <bg/scalar/data.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/literal_operations.hpp>
+#include <bg/scalar/list/runtime_type.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
 #include <bg/time_series/literal_operations.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tick_operations.hpp>
+#include <bg/time_series/queue_operations.hpp>
 #include <bg/time_series/time_series_type_traits.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
@@ -63,6 +67,9 @@ inline int written_tick_count{};
 inline int replayed_tick_count{};
 inline int discarded_tick_count{};
 inline int run_graph_comparison_count{};
+inline int reference_sample_factory_calls{};
+inline int reference_samples_created{};
+inline int reference_samples_destroyed{};
 
 struct ScalarTickState {
     int writes{};
@@ -80,6 +87,30 @@ inline bool throw_after_scalar_read_callback{};
 inline bool throw_after_bundle_key_read_callback{};
 inline int bundle_key_read_count{};
 inline int bundle_key_discard_count{};
+struct QueueOperationState {
+    int project_calls{};
+    int write_calls{};
+    int conflict_calls{};
+    int apply_calls{};
+    int discard_calls{};
+    bool last_incoming_valid{};
+    bool fail_apply{};
+    bg::i64 last_applied_value{};
+    bg::i64 last_discarded_value{};
+};
+inline QueueOperationState queue_operation_state;
+struct QueueOwnedOperationState {
+    int project_calls{};
+    int write_calls{};
+    int conflict_calls{};
+    int apply_calls{};
+    int discard_calls{};
+    bool fail_write{};
+    bool fail_apply{};
+    bg::i64 last_applied_value{};
+    bg::i64 last_discarded_value{};
+};
+inline QueueOwnedOperationState queue_owned_operation_state;
 
 template <template <typename, auto...> typename Field> struct QueueConflictBundle {
     Field<bg::TS<bg::i64>> first;
@@ -87,6 +118,12 @@ template <template <typename, auto...> typename Field> struct QueueConflictBundl
 };
 
 using QueueConflictSeries = bg::TSB<QueueConflictBundle>;
+
+template <template <typename, auto...> typename Field> struct ProviderValueBundle {
+    Field<bg::TS<test_scalar_provider::value>> value;
+};
+
+using ProviderValueTimeSeriesBundle = bg::TSB<ProviderValueBundle>;
 inline int scalar_literal_semantic_calls{};
 inline int scalar_literal_runtime_calls{};
 inline const literal::ScalarLiteral *expected_scalar_literal{};
@@ -95,6 +132,8 @@ inline int time_series_literal_semantic_calls{};
 inline int time_series_literal_runtime_calls{};
 inline int time_series_literal_skip_calls{};
 inline int time_series_literal_invalid_calls{};
+inline int series_runtime_type_calls{};
+inline int series_runtime_type_construction_calls{};
 
 template <typename Input>
 void write_tick(const Input &input, bg::ScalarBufferWriteContext &writer, bg::allocator &) {
@@ -157,6 +196,19 @@ bool NumberType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
 template <typename Item, auto... Properties>
 struct Series : bg::TimeSeriesDeclaration<Series<Item, Properties...>, Properties...> {};
 
+template <template <typename, auto...> typename Field> struct SampleBundle {
+    Field<Series<bg::i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct QueueProviderBundle {
+    Field<Series<bg::i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct QueueOwnedProviderPairBundle {
+    Field<Series<Number<bool>>> first;
+    Field<Series<Number<bool>>> second;
+};
+
 using OwnedPayloadSeries = Series<Number<bool>>;
 using TsdFailureSeries = Series<Number<bg::byte>>;
 using FailBeforePayloadSeries = Series<Number<double>>;
@@ -191,22 +243,28 @@ class SeriesType final : public bg::TimeSeriesType {
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type);
 
-const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
-    using Key = std::pair<const bg::ScalarType *, bg::TimeSeriesGuarantee>;
-    static auto types = bg::util::static_storage<std::map<Key, const SeriesType *>>{};
-    auto &canonical_types = types.get();
-    const auto key = Key{&item, guarantee};
-    const auto [entry, inserted] = canonical_types.try_emplace(key, nullptr);
-    if (inserted) {
-        try {
-            entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<SeriesType>(item, guarantee));
-        } catch (...) {
-            canonical_types.erase(entry);
-            throw;
-        }
-        bg::register_time_series_runtime_type(series_runtime_type(*entry->second));
+struct SeriesTypeKey {
+    const bg::ScalarType *item;
+    bg::TimeSeriesGuarantee guarantee;
+
+    bool operator==(const SeriesTypeKey &) const = default;
+};
+
+struct SeriesTypeKeyHash {
+    std::size_t operator()(const SeriesTypeKey &key) const noexcept {
+        const auto item = std::hash<const bg::ScalarType *>{}(key.item);
+        const auto guarantee = std::hash<int>{}(static_cast<int>(key.guarantee));
+        return item ^ (guarantee << 1);
     }
-    return *entry->second;
+};
+
+const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
+    return bg::TypeRegistry::instance().get_or_create<SeriesType, SeriesTypeKeyHash>(
+        SeriesTypeKey{&item, guarantee}, [&] {
+            auto type = std::make_unique<SeriesType>(item, guarantee);
+            type->set_default_runtime_type_factory(&series_runtime_type);
+            return type;
+        });
 }
 
 const bg::TimeSeriesType &SeriesType::with_guarantee(bg::TimeSeriesGuarantee guarantee) const {
@@ -240,7 +298,9 @@ bool SeriesType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
 class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
   public:
     explicit SeriesRuntimeType(const bg::TimeSeriesType &type)
-        : TimeSeriesRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {}
+        : TimeSeriesRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {
+        ++series_runtime_type_construction_calls;
+    }
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<bg::i64 *>(destination));
@@ -260,9 +320,12 @@ class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
         *static_cast<bg::i64 *>(output.mutable_data()) = *static_cast<const bg::i64 *>(input.data());
         output.publish();
     }
+
+    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
 };
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type) {
+    ++series_runtime_type_calls;
     static auto types = bg::util::static_storage<
         std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesRuntimeType>>>{};
     auto &runtime_types = types.get();
@@ -271,6 +334,109 @@ const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &t
         entry->second = std::make_unique<SeriesRuntimeType>(type);
     }
     return *entry->second;
+}
+
+void register_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
+    auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesQueueOperations>::instance();
+    if (dispatch.find_exact(runtime_type) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_runtime(
+            [](const literal::TimeSeriesLiteral &, bg::ScalarBufferProjectionContext &projection) {
+                ++queue_operation_state.project_calls;
+                projection.write_bytes(sizeof(bg::i64));
+            },
+            [](const literal::TimeSeriesLiteral &literal, bg::ScalarBufferWriteContext &writer,
+               bg::allocator &memory) {
+                ++queue_operation_state.write_calls;
+                auto value_owner = bg::ScalarValue<bg::i64>::from_literal(literal, memory);
+                const auto value = value_owner.view().value();
+                writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
+            },
+            [](const bg::TimeSeriesRuntimeType::ConstItem &item, bg::EvaluationTime now, bool incoming_valid,
+               bg::util::buffer_reader &reader) {
+                ++queue_operation_state.conflict_calls;
+                queue_operation_state.last_incoming_valid = incoming_valid;
+                if (incoming_valid) {
+                    (void)reader.read_raw<bg::i64>();
+                    return item.last_updated.time() == now;
+                }
+                return item.last_updated.valid() && item.last_updated.time() == now;
+            },
+            [](bg::util::buffer_reader &reader, bg::OutputState &output) {
+                ++queue_operation_state.apply_calls;
+                const auto value = reader.read_raw<bg::i64>();
+                queue_operation_state.last_applied_value = value;
+                if (queue_operation_state.fail_apply) {
+                    throw std::runtime_error{"provider queue apply failed after consuming its payload"};
+                }
+                *static_cast<bg::i64 *>(output.mutable_data()) = value;
+                output.publish();
+            });
+        if (!dispatch.add(runtime_type, std::move(operations))) {
+            throw std::logic_error{"provider queue runtime operations were already registered"};
+        }
+    }
+
+    if (dispatch.find_exact(runtime_type.type()) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_type([](bg::util::buffer_reader &reader) {
+            queue_operation_state.last_discarded_value = reader.read_raw<bg::i64>();
+            ++queue_operation_state.discard_calls;
+        });
+        if (!dispatch.add(runtime_type.type(), std::move(operations))) {
+            throw std::logic_error{"provider queue semantic operations were already registered"};
+        }
+    }
+}
+
+class SampledSeries final : public bg::details::ReferenceSample {
+  public:
+    SampledSeries(const bg::TimeSeriesType &type, bg::details::ResolvedTimeSeries previous,
+                  bg::details::ResolvedTimeSeries current, bg::EvaluationTime evaluation_time,
+                  bg::allocator &memory)
+        : runtime_type{&series_runtime_type(type)}, previous_source{previous}, current_source{current},
+          sampled_last_updated{bg::TimeSeriesState::from_validity_transition(
+              evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid())},
+          memory{memory} {
+        ++reference_samples_created;
+    }
+
+    ~SampledSeries() override { ++reference_samples_destroyed; }
+
+    void retain() noexcept override { ++reference_count; }
+    void release() noexcept override {
+        if (--reference_count == 0) {
+            memory.delete_object(this);
+        }
+    }
+
+    bg::TimeSeriesRuntimeType::ConstItem input() const noexcept override {
+        return {*runtime_type, sampled_last_updated, current_source.storage};
+    }
+
+    bg::details::ResolvedTimeSeries previous() const noexcept override { return previous_source; }
+
+  private:
+    const bg::TimeSeriesRuntimeType *runtime_type;
+    bg::details::ResolvedTimeSeries previous_source;
+    bg::details::ResolvedTimeSeries current_source;
+    bg::TimeSeriesState sampled_last_updated;
+    bg::allocator memory;
+    std::size_t reference_count{1};
+};
+
+bg::details::ReferenceSample *create_sampled_series(const bg::TimeSeriesType &type,
+                                                     bg::details::ResolvedTimeSeries previous,
+                                                     bg::details::ResolvedTimeSeries current,
+                                                     bg::EvaluationTime evaluation_time, bg::allocator &memory) {
+    ++reference_sample_factory_calls;
+    if ((previous.runtime_type == nullptr && current.runtime_type == nullptr) ||
+        (!previous.valid() && !current.valid())) {
+        return nullptr;
+    }
+    return memory.new_object<SampledSeries>(type, previous, current, evaluation_time, memory);
+}
+
+bg::details::ReferenceSampleFactory SeriesRuntimeType::reference_sample_factory() const noexcept {
+    return &create_sampled_series;
 }
 
 struct SeriesViewStorage {
@@ -668,6 +834,152 @@ TEST_CASE("a provider runtime without a copy implementation rejects copying",
     CHECK_THROWS_AS(runtime.copy(input, output), std::logic_error);
 }
 
+TEST_CASE("provider runtime types create reference samples with requested semantic identity",
+          "[feature:time-series-provider][feature:reference][sampling][series:generic]") {
+    using Series = provider::Series<i64>;
+
+    const auto &requested_runtime = provider::series_runtime_type(Series::type());
+    const auto &source_runtime = provider::series_view_runtime_type(Series::type());
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto current_time = previous_time + std::chrono::microseconds{1};
+    const auto evaluation_time = current_time + std::chrono::microseconds{1};
+    auto previous_value = provider::SeriesViewStorage{.value = 17};
+    auto current_value = provider::SeriesViewStorage{.value = 42};
+    const auto previous = details::ResolvedTimeSeries{TimeSeriesState{previous_time}, &previous_value,
+                                                       &source_runtime};
+    const auto current = details::ResolvedTimeSeries{TimeSeriesState{current_time}, &current_value,
+                                                      &source_runtime};
+    auto memory_resource = counting_memory_resource{};
+    auto memory = allocator{memory_resource};
+    provider::reference_sample_factory_calls = 0;
+    provider::reference_samples_created = 0;
+    provider::reference_samples_destroyed = 0;
+
+    auto sample = details::SampledReferenceChange::create(requested_runtime, previous, current,
+                                                           evaluation_time, memory);
+    REQUIRE(sample);
+    CHECK(provider::reference_sample_factory_calls == 1);
+    CHECK(provider::reference_samples_created == 1);
+    CHECK(memory_resource.allocations() == 1);
+
+    const auto input = sample.input();
+    CHECK(&input.runtime_type == &requested_runtime);
+    CHECK(&input.runtime_type.type() == &requested_runtime.type());
+    CHECK(&input.runtime_type != &source_runtime);
+    CHECK(input.value == &current_value);
+    CHECK(*static_cast<const i64 *>(input.value) == 42);
+    CHECK(input.last_updated.time() == evaluation_time);
+    CHECK(sample.previous().runtime_type == &source_runtime);
+    CHECK(sample.previous().storage == &previous_value);
+
+    sample.retain();
+    sample.release();
+    CHECK(memory_resource.allocations() == 1);
+    sample.release();
+    CHECK(memory_resource.allocations() == 0);
+    CHECK(provider::reference_samples_destroyed == 1);
+}
+
+TEST_CASE("fixed collection samples dispatch to provider child runtimes and release nested samples",
+          "[feature:time-series-provider][feature:reference][sampling][tsb][series:generic]") {
+    using Bundle = TSB<provider::SampleBundle>;
+
+    const auto &runtime_type = cpp_time_series_runtime_type<Bundle>();
+    auto source_memory = allocator{};
+    auto *previous_storage = source_memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(previous_storage, source_memory);
+    const auto release_previous = util::scope_exit{[&]() noexcept {
+        runtime_type.destroy_value(previous_storage, source_memory);
+        source_memory.deallocate_bytes(previous_storage, runtime_type.value_size(), runtime_type.value_alignment());
+    }};
+    auto *current_storage = source_memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(current_storage, source_memory);
+    const auto release_current = util::scope_exit{[&]() noexcept {
+        runtime_type.destroy_value(current_storage, source_memory);
+        source_memory.deallocate_bytes(current_storage, runtime_type.value_size(), runtime_type.value_alignment());
+    }};
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto current_time = previous_time + std::chrono::microseconds{1};
+    const auto evaluation_time = current_time + std::chrono::microseconds{1};
+    const auto previous_item = runtime_type.item(previous_storage, 0);
+    const auto current_item = runtime_type.item(current_storage, 0);
+    *static_cast<i64 *>(previous_item.value) = 17;
+    *static_cast<i64 *>(current_item.value) = 29;
+    previous_item.last_updated.publish(previous_time);
+    current_item.last_updated.publish(current_time);
+
+    auto sample_memory_resource = counting_memory_resource{};
+    auto sample_memory = allocator{sample_memory_resource};
+    provider::reference_sample_factory_calls = 0;
+    provider::reference_samples_created = 0;
+    provider::reference_samples_destroyed = 0;
+
+    auto sample = details::SampledReferenceChange::create(
+        runtime_type,
+        {TimeSeriesState{previous_time}, previous_storage, &runtime_type},
+        {TimeSeriesState{current_time}, current_storage, &runtime_type}, evaluation_time, sample_memory);
+    REQUIRE(sample);
+    const auto input = sample.input();
+    CHECK(&input.runtime_type.type() == &runtime_type.type());
+    CHECK(provider::reference_sample_factory_calls == 0);
+
+    const auto item = input.runtime_type.item(input.value, 0);
+    const auto &item_runtime = provider::series_runtime_type(provider::Series<i64>::type());
+    CHECK(provider::reference_sample_factory_calls == 1);
+    CHECK(provider::reference_samples_created == 1);
+    CHECK(&item.runtime_type == &item_runtime);
+    CHECK(&item.runtime_type.type() == &item_runtime.type());
+    CHECK(item.value == current_item.value);
+    CHECK(*static_cast<const i64 *>(item.value) == 29);
+    CHECK(item.last_updated.time() == evaluation_time);
+
+    sample.release();
+    CHECK(sample_memory_resource.allocations() == 0);
+    CHECK(provider::reference_samples_destroyed == 1);
+}
+
+TEST_CASE("a provider reference samples retargeted valid sources at the reference time",
+          "[feature:time-series-provider][feature:reference][sampling][series:generic][feature:test-graph]") {
+    using Series = provider::Series<i64>;
+
+    struct Observation {
+        i64 value;
+        EvaluationTime sample_time;
+        EvaluationTime selection_time;
+    };
+
+    auto observations = std::vector<Observation>{};
+    provider::reference_sample_factory_calls = 0;
+    provider::reference_samples_created = 0;
+    provider::reference_samples_destroyed = 0;
+
+    const auto provide = node([](In<TS<i64>> input, Out<Series, provider::view> output) {
+        output.set(*input);
+    });
+    const auto select = node(
+        [](In<TS<bool>> choose_second, In<REF<Series>, passive> first, In<REF<Series>, passive> second,
+           Out<REF<Series>> output) { output.copy(*choose_second ? second : first); });
+    const auto consume = node([&](In<Series> input, In<TS<bool>> choose_second, Out<TS<i64>> output) {
+        observations.push_back({input.value(), input.last_updated(), choose_second.last_updated()});
+        output.set(input.value());
+    });
+    const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> choose_second) {
+        return consume(select(choose_second, provide(first), provide(second)), choose_second);
+    };
+
+    const auto actual = bg::run_graph(graph, {101, literal::SKIP, literal::SKIP},
+                                      {202, literal::SKIP, literal::SKIP}, {false, true, false});
+
+    CHECK(actual.equals<i64>({101, 202, 101}));
+    REQUIRE(observations.size() == 3);
+    for (const auto &observation : observations)
+        CHECK(observation.sample_time == observation.selection_time);
+    CHECK(provider::reference_sample_factory_calls == 3);
+    CHECK(provider::reference_samples_created == 3);
+    CHECK(provider::reference_samples_destroyed == 3);
+}
+
 struct RuntimeProviderViewDefinition {
     using output_time_series_type = provider::Series<bg::i64>;
     using output_declaration_type = bg::Out<output_time_series_type, provider::view>;
@@ -932,6 +1244,78 @@ bool register_provider_scalar_buffer_handlers() {
     return registered;
 }
 
+void register_owned_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
+    auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesQueueOperations>::instance();
+    if (dispatch.find_exact(runtime_type) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_runtime(
+            [](const literal::TimeSeriesLiteral &, bg::ScalarBufferProjectionContext &projection) {
+                ++queue_owned_operation_state.project_calls;
+                projection.write_bytes(sizeof(bg::i64) + sizeof(std::uint32_t));
+                projection.emplace<bg::ScalarValue<>>();
+            },
+            [](const literal::TimeSeriesLiteral &literal, bg::ScalarBufferWriteContext &writer,
+               bg::allocator &memory) {
+                ++queue_owned_operation_state.write_calls;
+                auto value_owner = bg::ScalarValue<bg::i64>::from_literal(literal, memory);
+                const auto value = value_owner.view().value();
+                const auto count = std::uint32_t{1};
+                writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
+                writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
+                const auto stored = bg::ScalarValue<bg::string>{"provider queue payload that owns allocated storage",
+                                                                memory};
+                auto payload = bg::ScalarValue<>{stored, memory};
+                writer.write(std::move(payload));
+                if (queue_owned_operation_state.fail_write) {
+                    throw std::runtime_error{"provider queue write failed after an owned payload"};
+                }
+            },
+            [](const bg::TimeSeriesRuntimeType::ConstItem &item, bg::EvaluationTime now, bool incoming_valid,
+               bg::util::buffer_reader &reader) {
+                ++queue_owned_operation_state.conflict_calls;
+                if (incoming_valid) {
+                    (void)reader.read_raw<bg::i64>();
+                    const auto count = reader.read_raw<std::uint32_t>();
+                    for (auto index = std::uint32_t{}; index < count; ++index) {
+                        reader.consume<bg::ScalarValue<>>();
+                    }
+                    return item.last_updated.time() == now;
+                }
+                return item.last_updated.valid() && item.last_updated.time() == now;
+            },
+            [](bg::util::buffer_reader &reader, bg::OutputState &output) {
+                ++queue_owned_operation_state.apply_calls;
+                const auto value = reader.read_raw<bg::i64>();
+                const auto count = reader.read_raw<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index < count; ++index) {
+                    auto payload = reader.read<bg::ScalarValue<>>();
+                }
+                queue_owned_operation_state.last_applied_value = value;
+                if (queue_owned_operation_state.fail_apply) {
+                    throw std::runtime_error{"provider queue apply failed after an owned payload"};
+                }
+                *static_cast<bg::i64 *>(output.mutable_data()) = value;
+                output.publish();
+            });
+        if (!dispatch.add(runtime_type, std::move(operations))) {
+            throw std::logic_error{"owned provider queue runtime operations were already registered"};
+        }
+    }
+
+    if (dispatch.find_exact(runtime_type.type()) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_type([](bg::util::buffer_reader &reader) {
+            (void)reader.read_raw<bg::i64>();
+            const auto count = reader.read_raw<std::uint32_t>();
+            for (auto index = std::uint32_t{}; index < count; ++index) {
+                reader.skip<bg::ScalarValue<>>();
+                ++queue_owned_operation_state.discard_calls;
+            }
+        });
+        if (!dispatch.add(runtime_type.type(), std::move(operations))) {
+            throw std::logic_error{"owned provider queue semantic operations were already registered"};
+        }
+    }
+}
+
 void register_default_tick_handlers() {
     static const auto registered = [] {
         using Series = provider::Series<bg::i64>;
@@ -1058,6 +1442,150 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
     const auto &wrong_dictionary_component = details::time_series_dictionary_runtime_type(
         TSD<i64, TS<string>>::type(), cpp_scalar_runtime_type<string>(), cpp_time_series_runtime_type<TS<string>>());
     CHECK_THROWS_AS(register_time_series_runtime_type(wrong_dictionary_component), std::invalid_argument);
+}
+
+TEST_CASE("registered time-series runtimes take precedence over semantic defaults",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Series = provider::Series<test_scalar_provider::layout_value, TimeSeriesGuarantee::final>;
+    const auto &semantic_type = Series::type();
+    static const auto supplied = provider::SeriesRuntimeType{semantic_type};
+
+    register_time_series_runtime_type(supplied);
+    provider::series_runtime_type_calls = 0;
+    provider::series_runtime_type_construction_calls = 0;
+
+    const auto &runtime_type = resolve_time_series_runtime_type(semantic_type);
+
+    CHECK(&runtime_type == &supplied);
+    CHECK(provider::series_runtime_type_calls == 0);
+    CHECK(provider::series_runtime_type_construction_calls == 0);
+
+    const auto &default_runtime_type = resolve_default_time_series_runtime_type(semantic_type);
+
+    CHECK(&default_runtime_type != &supplied);
+    CHECK(provider::series_runtime_type_calls > 0);
+    CHECK(provider::series_runtime_type_construction_calls > 0);
+}
+
+TEST_CASE("time-series runtime resolution applies nested scalar overrides",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    const auto &first_scalar = test_scalar_provider::canonicalizing_runtime_type();
+    const auto &second_scalar = test_scalar_provider::immutable_snapshot_runtime_type();
+    const auto first_available = std::array<const ScalarRuntimeType *, 1>{&first_scalar};
+    const auto second_available = std::array<const ScalarRuntimeType *, 1>{&second_scalar};
+    const auto &default_scalar = resolve_default_scalar_runtime_type(cpp_scalar_type<test_scalar_provider::value>());
+
+    using ListSeries = TS<List<test_scalar_provider::value>>;
+    const auto &first_list_series_runtime = resolve_time_series_runtime_type(ListSeries::type(), {}, first_available);
+    const auto &first_list_runtime = static_cast<const ScalarListRuntimeType &>(
+        static_cast<const TimeSeriesValueRuntimeType &>(first_list_series_runtime).scalar_runtime_type());
+    const auto &second_list_series_runtime = resolve_time_series_runtime_type(ListSeries::type(), {}, second_available);
+    const auto &second_list_runtime = static_cast<const ScalarListRuntimeType &>(
+        static_cast<const TimeSeriesValueRuntimeType &>(second_list_series_runtime).scalar_runtime_type());
+
+    CHECK(&first_list_runtime.item_runtime_type() == &first_scalar);
+    CHECK(&second_list_runtime.item_runtime_type() == &second_scalar);
+    CHECK(first_list_runtime.item_runtime_type().size() != second_list_runtime.item_runtime_type().size());
+    CHECK(&resolve_time_series_runtime_type(ListSeries::type(), {}, first_available) == &first_list_series_runtime);
+    CHECK(&resolve_time_series_runtime_type(ListSeries::type(), {}, second_available) == &second_list_series_runtime);
+
+    const auto &default_list_series_runtime = resolve_default_time_series_runtime_type(ListSeries::type());
+    const auto &default_list_runtime = static_cast<const ScalarListRuntimeType &>(
+        static_cast<const TimeSeriesValueRuntimeType &>(default_list_series_runtime).scalar_runtime_type());
+    CHECK(&default_list_runtime.item_runtime_type() == &default_scalar);
+    CHECK(&resolve_default_time_series_runtime_type(ListSeries::type()) == &default_list_series_runtime);
+
+    using Bundle = provider::ProviderValueTimeSeriesBundle;
+    const auto &first_bundle_runtime = resolve_time_series_runtime_type(Bundle::type(), {}, first_available);
+    const auto &first_value_runtime = static_cast<const TimeSeriesValueRuntimeType &>(
+        first_bundle_runtime.item_layout(0).runtime_type);
+    const auto &second_bundle_runtime = resolve_time_series_runtime_type(Bundle::type(), {}, second_available);
+    const auto &second_value_runtime = static_cast<const TimeSeriesValueRuntimeType &>(
+        second_bundle_runtime.item_layout(0).runtime_type);
+
+    CHECK(&first_value_runtime.scalar_runtime_type() == &first_scalar);
+    CHECK(&second_value_runtime.scalar_runtime_type() == &second_scalar);
+    CHECK(first_value_runtime.value_size() != second_value_runtime.value_size());
+    CHECK(&resolve_time_series_runtime_type(Bundle::type(), {}, first_available) == &first_bundle_runtime);
+    CHECK(&resolve_time_series_runtime_type(Bundle::type(), {}, second_available) == &second_bundle_runtime);
+
+    const auto &default_bundle_runtime = resolve_default_time_series_runtime_type(Bundle::type());
+    const auto &default_value_runtime = static_cast<const TimeSeriesValueRuntimeType &>(
+        default_bundle_runtime.item_layout(0).runtime_type);
+    CHECK(&default_value_runtime.scalar_runtime_type() == &default_scalar);
+    CHECK(&resolve_default_time_series_runtime_type(Bundle::type()) == &default_bundle_runtime);
+}
+
+TEST_CASE("resolved built-in time-series types provide default runtime factories",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Series = TS<i64>;
+    using Reference = REF<Series>;
+    using List = TSL<Series, 2>;
+    using Set = TSS<i64>;
+    using Dictionary = TSD<i64, Series>;
+    using Bundle = provider::ProviderValueTimeSeriesBundle;
+
+    const auto check_default = [](const TimeSeriesType &type) {
+        CHECK(type.default_runtime_type_factory() != nullptr);
+        CHECK(&resolve_default_time_series_runtime_type(type).type() == &type);
+    };
+
+    check_default(Series::type());
+    check_default(Reference::type());
+    check_default(List::type());
+    check_default(Set::type());
+    check_default(Dictionary::type());
+    check_default(Bundle::type());
+}
+
+TEST_CASE("ordinary aggregate runtime resolution composes registered child runtimes",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Child = TS<test_scalar_provider::value, TimeSeriesGuarantee::final>;
+    using Outer = TSL<Child, 1>;
+
+    const auto &alternate = time_series_value_runtime_type(
+        Child::type(), test_scalar_provider::immutable_snapshot_runtime_type());
+    register_time_series_runtime_type(alternate);
+
+    const auto &outer = resolve_time_series_runtime_type(Outer::type());
+
+    CHECK(&outer.item_runtime_type(0) == &alternate);
+
+    const auto &default_child = resolve_default_time_series_runtime_type(Child::type());
+    const auto &default_outer = resolve_default_time_series_runtime_type(Outer::type());
+
+    CHECK(&default_outer.item_runtime_type(0) == &default_child);
+    CHECK(&default_outer.item_runtime_type(0) != &alternate);
+}
+
+TEST_CASE("typed extension inputs defer default runtime lookup until wiring",
+          "[testing][evaluation][feature:test-graph][series:generic]") {
+    using EmptySeries = provider::Series<test_scalar_provider::layout_value, TimeSeriesGuarantee::deduplicated>;
+    using SkippedSeries = provider::Series<test_scalar_provider::copy_only_value>;
+    const auto identity = [](wp<> input) { return input; };
+
+    provider::series_runtime_type_calls = 0;
+    provider::series_runtime_type_construction_calls = 0;
+    const auto empty_input = input<EmptySeries>({});
+    CHECK(provider::series_runtime_type_calls == 0);
+    CHECK(provider::series_runtime_type_construction_calls == 0);
+    const auto empty = run_graph(identity, empty_input);
+    CHECK(provider::series_runtime_type_calls > 0);
+    CHECK(provider::series_runtime_type_construction_calls > 0);
+    CHECK(empty.equals({literal::SKIP}));
+
+    provider::series_runtime_type_calls = 0;
+    provider::series_runtime_type_construction_calls = 0;
+    REQUIRE(TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().add(
+        SkippedSeries::type(),
+        TimeSeriesLiteralOperations{&provider::apply_provider_literal<Out<SkippedSeries>>}));
+    const auto skipped_input = input<SkippedSeries>({literal::SKIP});
+    CHECK(provider::series_runtime_type_calls == 0);
+    CHECK(provider::series_runtime_type_construction_calls == 0);
+    const auto skipped = run_graph(identity, skipped_input);
+    CHECK(provider::series_runtime_type_calls > 0);
+    CHECK(provider::series_runtime_type_construction_calls > 0);
+    CHECK(skipped.equals({literal::SKIP}));
 }
 
 TEST_CASE("scalar literal construction dispatches by runtime then semantic type",
@@ -1571,6 +2099,257 @@ TEST_CASE("queue collection inspection stops at its first conflict",
     CHECK_FALSE(details::QueueTickApply{reader, QueueMode::standard}.apply(output));
     CHECK(reader.readable().size() == pending_size);
     CHECK(provider::scalar_tick_state.reads == reads_before);
+}
+
+TEST_CASE("queue providers project, inspect, and apply their payloads",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::Series<i64>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(runtime_type);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    const auto buffer = util::buffer::concurrent_chain(128, 4);
+    auto writer = details::QueueMessageWriter{buffer, 43, runtime_type};
+    REQUIRE(writer.write(literal::TimeSeriesLiteral(i64{37})));
+    CHECK(provider::queue_operation_state.project_calls == 2);
+    CHECK(provider::queue_operation_state.write_calls == 1);
+
+    auto output_time = TimeSeriesState{evaluation_time};
+    auto output_value = i64{5};
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_time, &output_value, evaluation_time);
+    auto reader = details::QueueMessageReader{buffer};
+
+    CHECK_FALSE(reader.apply(output_state, QueueMode::standard));
+    CHECK(reader.next_target() == 43);
+    CHECK(provider::queue_operation_state.conflict_calls == 1);
+    CHECK(provider::queue_operation_state.last_incoming_valid);
+    CHECK(provider::queue_operation_state.apply_calls == 0);
+
+    output_time.publish(previous_time);
+    REQUIRE(reader.apply(output_state, QueueMode::standard));
+    CHECK(output_value == 37);
+    CHECK(output_time.time() == evaluation_time);
+    CHECK(provider::queue_operation_state.conflict_calls == 2);
+    CHECK(provider::queue_operation_state.apply_calls == 1);
+    CHECK_FALSE(reader.next_target());
+}
+
+TEST_CASE("queue providers apply invalidation and discard encoded payloads",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::Series<i64>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(runtime_type);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    auto output_time = TimeSeriesState{evaluation_time};
+    auto output_value = i64{5};
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_time, &output_value, evaluation_time);
+
+    const auto invalidation_buffer = util::buffer::concurrent_chain(128, 4);
+    auto invalidation_writer = details::QueueMessageWriter{invalidation_buffer, 44, runtime_type};
+    REQUIRE(invalidation_writer.write(literal::TimeSeriesLiteral(literal::INVALID)));
+    output_time.publish(previous_time);
+    auto invalidation_reader = details::QueueMessageReader{invalidation_buffer};
+    REQUIRE(invalidation_reader.apply(output_state, QueueMode::standard));
+    CHECK_FALSE(output_time.valid());
+    CHECK_FALSE(provider::queue_operation_state.last_incoming_valid);
+    CHECK(provider::queue_operation_state.conflict_calls == 1);
+
+    const auto discard_buffer = util::buffer::concurrent_chain(128, 4);
+    auto discard_writer = details::QueueMessageWriter{discard_buffer, 45, runtime_type};
+    REQUIRE(discard_writer.write(literal::TimeSeriesLiteral(i64{91})));
+    auto discard_reader = details::QueueMessageReader{discard_buffer};
+    REQUIRE(discard_reader.discard(Series::type()));
+    CHECK(provider::queue_operation_state.discard_calls == 1);
+    CHECK(provider::queue_operation_state.last_discarded_value == 91);
+    CHECK_FALSE(discard_reader.next_target());
+}
+
+TEST_CASE("queue providers use exact runtime registrations",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::Series<i64>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(runtime_type);
+
+    auto buffer = util::buffer::concurrent_chain(128, 4);
+    const auto &alternate_runtime_type = provider::series_view_runtime_type(Series::type());
+    CHECK(&alternate_runtime_type.type() == &runtime_type.type());
+    CHECK_THROWS_AS((details::QueueMessageWriter{buffer, 46, alternate_runtime_type}), std::invalid_argument);
+    auto reader = util::concurrent_buffer_reader{buffer};
+    CHECK(reader.readable().empty());
+
+    const auto &unsupported_runtime_type = provider::series_runtime_type(provider::Series<double>::type());
+    CHECK_THROWS_AS((details::QueueMessageWriter{buffer, 47, unsupported_runtime_type}), std::invalid_argument);
+    CHECK(reader.readable().empty());
+}
+
+TEST_CASE("queue provider replay consumes a failing payload and discards later siblings",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::OwnedPayloadSeries;
+    using Bundle = TSB<provider::QueueOwnedProviderPairBundle>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    const auto &bundle_runtime_type = cpp_time_series_runtime_type<Bundle>();
+    provider::queue_owned_operation_state = {};
+    provider::register_owned_queue_operations(runtime_type);
+
+    auto resource = provider::allocation_counter{};
+    {
+        auto memory = allocator{resource};
+        const auto buffer = util::buffer::concurrent_chain(128, 4);
+        auto writer = details::QueueMessageWriter{buffer, 48, bundle_runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral{{"first", i64{11}}, {"second", i64{22}}}));
+
+        auto failure = std::string{};
+        auto apply_calls = 0;
+        auto discard_calls = 0;
+        auto has_next_target = false;
+        auto replay_action = provider::ContextAction{[&](EvaluationContext &context) {
+            auto *allocation_owner = details::ScalarAllocationPool::create(memory);
+            auto release_allocation_owner = util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+            const auto allocation_context = details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
+            auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
+                                                         bundle_runtime_type.value_alignment());
+            bundle_runtime_type.construct_runtime_value(bundle_storage, memory);
+            auto destroy_bundle = util::scope_exit{[&]() noexcept {
+                bundle_runtime_type.destroy_value(bundle_storage, memory);
+                memory.deallocate_bytes(bundle_storage, bundle_runtime_type.value_size(),
+                                        bundle_runtime_type.value_alignment());
+            }};
+            auto bundle_time = TimeSeriesState{context.evaluation_time()};
+            auto bundle_state = OutputState{bundle_runtime_type};
+            bundle_state.bind(bundle_time, bundle_storage, context);
+            provider::queue_owned_operation_state.fail_apply = true;
+            auto reader = details::QueueMessageReader{buffer};
+
+            try {
+                reader.apply(bundle_state, QueueMode::standard);
+            } catch (const std::runtime_error &error) {
+                failure = error.what();
+            }
+            apply_calls = provider::queue_owned_operation_state.apply_calls;
+            discard_calls = provider::queue_owned_operation_state.discard_calls;
+            has_next_target = reader.next_target().has_value();
+        }};
+        auto replay_action_value = ScalarValue<Opaque<provider::ContextAction *>>{&replay_action};
+        const auto replay_node = node<provider::ContextActionNode>();
+        const auto graph = [&](wp<TS<i64>> trigger) { return replay_node(replay_action_value, trigger); };
+        const auto graph_result = run_graph(graph, {79});
+
+        CHECK(graph_result.equals<i64>({79}));
+        CHECK(failure == "provider queue apply failed after an owned payload");
+        CHECK(apply_calls == 1);
+        CHECK(discard_calls == 1);
+        CHECK_FALSE(has_next_target);
+    }
+
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+}
+
+TEST_CASE("provider queue conflicts retain owned payloads for retry and apply or discard releases them",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::OwnedPayloadSeries;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_owned_operation_state = {};
+    provider::register_owned_queue_operations(runtime_type);
+
+    auto resource = provider::allocation_counter{};
+    {
+        auto memory = allocator{resource};
+        const auto buffer = util::buffer::concurrent_chain(128, 4);
+        auto writer = details::QueueMessageWriter{buffer, 50, runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral(i64{17})));
+        REQUIRE(writer.write(literal::TimeSeriesLiteral(i64{23})));
+        const auto deallocations_after_write = resource.deallocations;
+
+        const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+        const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+        auto output_time = TimeSeriesState{evaluation_time};
+        auto output_value = i64{};
+        auto output_state = OutputState{runtime_type};
+        output_state.bind(output_time, &output_value, evaluation_time);
+        auto reader = details::QueueMessageReader{buffer};
+
+        CHECK_FALSE(reader.apply(output_state, QueueMode::standard));
+        CHECK(resource.deallocations == deallocations_after_write);
+        output_time.publish(previous_time);
+        REQUIRE(reader.apply(output_state, QueueMode::standard));
+        CHECK(output_value == 17);
+        CHECK(resource.deallocations > deallocations_after_write);
+        CHECK(reader.discard(Series::type()));
+        CHECK_FALSE(reader.next_target());
+    }
+
+    CHECK(provider::queue_owned_operation_state.conflict_calls == 2);
+    CHECK(provider::queue_owned_operation_state.apply_calls == 1);
+    CHECK(provider::queue_owned_operation_state.discard_calls == 1);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+}
+
+TEST_CASE("failed provider queue writes discard their completed owned payload prefix",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::OwnedPayloadSeries;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_owned_operation_state = {};
+    provider::register_owned_queue_operations(runtime_type);
+
+    auto resource = provider::allocation_counter{};
+    {
+        auto memory = allocator{resource};
+        const auto buffer = util::buffer::concurrent_chain(128, 4);
+        auto writer = details::QueueMessageWriter{buffer, 51, runtime_type, memory};
+        provider::queue_owned_operation_state.fail_write = true;
+        CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral(i64{91})), std::runtime_error);
+    }
+
+    CHECK(provider::queue_owned_operation_state.write_calls == 1);
+    CHECK(provider::queue_owned_operation_state.discard_calls == 1);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+}
+
+TEST_CASE("queue provider invalidation conflicts through nested bundles",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Bundle = TSB<provider::QueueProviderBundle>;
+    const auto &provider_runtime_type = provider::series_runtime_type(provider::Series<i64>::type());
+    const auto &bundle_runtime_type = cpp_time_series_runtime_type<Bundle>();
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(provider_runtime_type);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    const auto buffer = util::buffer::concurrent_chain(128, 4);
+    auto writer = details::QueueMessageWriter{buffer, 49, bundle_runtime_type};
+    REQUIRE(writer.write(literal::TimeSeriesLiteral(literal::INVALID)));
+
+    auto memory = allocator{};
+    auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
+                                                 bundle_runtime_type.value_alignment());
+    bundle_runtime_type.construct_runtime_value(bundle_storage, memory);
+    auto destroy_bundle = util::scope_exit{[&]() noexcept {
+        bundle_runtime_type.destroy_value(bundle_storage, memory);
+        memory.deallocate_bytes(bundle_storage, bundle_runtime_type.value_size(),
+                                bundle_runtime_type.value_alignment());
+    }};
+    auto bundle_time = TimeSeriesState{previous_time};
+    auto child = bundle_runtime_type.item(bundle_storage, 0);
+    child.last_updated.publish(evaluation_time);
+    auto bundle_state = OutputState{bundle_runtime_type};
+    bundle_state.bind(bundle_time, bundle_storage, evaluation_time);
+    auto reader = details::QueueMessageReader{buffer};
+
+    CHECK_FALSE(reader.apply(bundle_state, QueueMode::standard));
+    CHECK(reader.next_target() == 49);
+    CHECK_FALSE(provider::queue_operation_state.last_incoming_valid);
+    CHECK(provider::queue_operation_state.conflict_calls == 1);
 }
 
 TEST_CASE("queue message projection selects the runtime provider projection and follows its value",
@@ -2430,6 +3209,55 @@ TEST_CASE("runtime replay registration does not hide semantic write registration
 
     CHECK(reader.replay(output));
     CHECK(output_value == 17);
+}
+
+TEST_CASE("provider replay accepts an erased output with its runtime representation",
+          "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
+    using Series = provider::Series<provider::Number<i64>>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    auto dispatch = TimeSeriesDispatch<TimeSeriesTickOperations>{};
+    auto callback_count = 0;
+    auto callback_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+    auto callback_data = static_cast<const void *>(nullptr);
+    auto operations = TimeSeriesTickOperations::for_replay<Out<TS_T>>(
+        [&](auto &reader, const auto &output) {
+            static_assert(std::same_as<std::remove_cvref_t<decltype(output)>, Out<TS_T>>);
+            ++callback_count;
+            callback_runtime_type = &output.runtime_type();
+            callback_data = output.data();
+            auto &state = output.output_state();
+            *static_cast<i64 *>(state.mutable_data()) = reader.template read_raw<i64>();
+            state.publish();
+        });
+    REQUIRE(dispatch.add(runtime_type, std::move(operations)));
+
+    const auto buffer = util::buffer::contiguous(32);
+    const auto expected_value = i64{42};
+    {
+        auto writer = util::buffer_writer{buffer};
+        auto context = ScalarBufferWriteContext{writer};
+        details::TickHeader{details::TickOperation::tick, true}.write(context);
+        context.write_bytes(std::as_bytes(std::span{&expected_value, std::size_t{1}}));
+        writer.commit();
+    }
+
+    const auto evaluation_time = MIN_DT + std::chrono::microseconds{1};
+    auto output_time = TimeSeriesState{};
+    auto output_value = i64{};
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_time, &output_value, evaluation_time);
+    const auto output = Out<TS_T>{TimeSeriesOutputBinding{output_state}};
+    auto reader = util::buffer_reader{buffer};
+    auto replay = details::TimeSeriesTickReplay{reader, dispatch};
+
+    replay.apply_erased(Series::type(), output);
+
+    CHECK(callback_count == 1);
+    CHECK(callback_runtime_type == &runtime_type);
+    CHECK(callback_data == &output_value);
+    CHECK(output_value == expected_value);
+    CHECK(output.valid());
+    CHECK(output.last_updated() == evaluation_time);
 }
 
 TEST_CASE("tick replay dispatch reaches provider-declared outputs",

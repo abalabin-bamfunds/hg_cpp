@@ -4,7 +4,6 @@
 #include <bg/time_series/tss/tss_output.hpp>
 
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <vector>
 
@@ -128,10 +127,8 @@ const TimeSeriesRuntimeType &time_series_set_runtime_type(const TimeSeriesSetTyp
         std::unique_ptr<TimeSeriesSetRuntimeType> runtime_type;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
     const auto found =
         std::ranges::find_if(cache, [&](const auto &entry) { return entry.type == &type && entry.key == &key; });

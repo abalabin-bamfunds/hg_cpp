@@ -27,8 +27,6 @@ namespace {
 using namespace literals;
 
 using TypedInputResult = decltype(input<TS<i64>>(std::declval<GraphRunLiteralInput &&>()));
-using RuntimeInputResult = decltype(input(std::declval<const TimeSeriesRuntimeType &>(),
-                                          std::declval<GraphRunLiteralInput &&>()));
 using SemanticInputResult = decltype(input(std::declval<const TimeSeriesType &>(),
                                            std::declval<GraphRunLiteralInput &&>()));
 
@@ -37,7 +35,6 @@ static_assert(std::is_copy_assignable_v<GraphRunLiteralInput>);
 static_assert(std::is_move_constructible_v<GraphRunLiteralInput>);
 static_assert(std::is_move_assignable_v<GraphRunLiteralInput>);
 static_assert(std::is_same_v<TypedInputResult, const GraphRunLiteralInput &>);
-static_assert(std::is_same_v<RuntimeInputResult, const GraphRunLiteralInput &>);
 static_assert(std::is_same_v<SemanticInputResult, const GraphRunLiteralInput &>);
 static_assert(std::is_same_v<decltype(ticks(std::declval<GraphRunLiteralInput &&>())),
                              const GraphRunLiteralInput &>);
@@ -361,21 +358,17 @@ TEST_CASE("run_graph accepts literals for deeply nested collection inputs",
 TEST_CASE("run_graph input helpers annotate temporary literal descriptors",
           "[testing][evaluation][feature:test-graph][series:value][scalar:integer]") {
     const auto identity = [](wp<TS<i64>> input) { return input; };
-    const auto &runtime_type = resolve_time_series_runtime_type(TS<i64>::type());
 
     CHECK(run_graph(identity, input<TS<i64>>({1, 2})).equals<i64>({1, 2}));
-    CHECK(run_graph(identity, input(runtime_type, {3, 4})).equals<i64>({3, 4}));
-    CHECK(run_graph(identity, input(TS<i64>::type(), {5, 6})).equals<i64>({5, 6}));
+    CHECK(run_graph(identity, input(TS<i64>::type(), {3, 4})).equals<i64>({3, 4}));
     CHECK(run_graph(identity, ticks({7, 8})).equals<i64>({7, 8}));
 
     const auto saved_typed = input<TS<i64>>({9, 10});
-    const auto saved_runtime = input(runtime_type, {11, 12});
-    const auto saved_semantic = input(TS<i64>::type(), {13, 14});
+    const auto saved_semantic = input(TS<i64>::type(), {11, 12});
     const auto saved_ticks = ticks({15, 16});
 
     CHECK(run_graph(identity, saved_typed).equals<i64>({9, 10}));
-    CHECK(run_graph(identity, saved_runtime).equals<i64>({11, 12}));
-    CHECK(run_graph(identity, saved_semantic).equals<i64>({13, 14}));
+    CHECK(run_graph(identity, saved_semantic).equals<i64>({11, 12}));
     CHECK(run_graph(identity, saved_ticks).equals<i64>({15, 16}));
 }
 
@@ -475,7 +468,7 @@ TEST_CASE("assigned run_graph inputs own their source descriptors",
         auto source = std::string{"before assignment"};
         const auto tick = literal::TimeSeriesLiteral(source);
         auto original = GraphRunLiteralInput(std::span{&tick, std::size_t{1}});
-        original.runtime_type = &cpp_time_series_runtime_type<TS<string>>();
+        original.time_series_type = &TS<string>::type();
         assigned = original;
         source = "after assignment";
     }

@@ -1,6 +1,7 @@
 # Bundles with schema variables
 
-Status: accepted
+Status: accepted; registration transactions superseded by
+[single-threaded type registration](0096-single-threaded-type-registration.md).
 
 ## Decision
 

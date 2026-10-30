@@ -9,22 +9,24 @@
 
 namespace bg::details {
 
-struct SampledFixedCollection {
-    SampledFixedCollection(const TimeSeriesRuntimeType &shape, ResolvedTimeSeries previous,
+struct SampledFixedCollection final : ReferenceSample {
+    SampledFixedCollection(const TimeSeriesType &type, ResolvedTimeSeries previous,
                            ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
-    ~SampledFixedCollection();
+    ~SampledFixedCollection() override;
 
-    static SampledFixedCollection *create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                          EvaluationTime evaluation_time, allocator &memory);
-    void retain() noexcept { ++reference_count; }
-    void release() noexcept;
-    TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    static SampledFixedCollection *create(const TimeSeriesType &type, ResolvedTimeSeries previous,
+                                          ResolvedTimeSeries current, EvaluationTime evaluation_time,
+                                          allocator &memory);
+    void retain() noexcept override { ++reference_count; }
+    void release() noexcept override;
+    TimeSeriesRuntimeType::ConstItem input() const noexcept override;
+    ResolvedTimeSeries previous() const noexcept override { return previous_source; }
     TimeSeriesRuntimeType::ConstItem item(item_id_t id) const;
 
     const TimeSeriesRuntimeType *runtime_type;
     std::size_t reference_count{1};
-    ResolvedTimeSeries previous;
-    ResolvedTimeSeries current;
+    ResolvedTimeSeries previous_source;
+    ResolvedTimeSeries current_source;
     TimeSeriesState sampled_last_updated;
     allocator memory;
     mutable util::occupancy_index child_samples_positions;

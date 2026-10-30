@@ -11,6 +11,7 @@
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/testing/test_wiring.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -24,6 +25,8 @@
 #include <vector>
 
 using namespace bg;
+using namespace bg::literals;
+using namespace bg::util::literals;
 
 TEST_CASE("valid publishes the input validity",
           "[feature:operator][feature:validity][validity:optional][series:value]") {
@@ -542,6 +545,220 @@ TEST_CASE("if_then_else follows retargeting of the selected reference",
     };
 
     CHECK(bg::run_graph(select, {true, false, true}).equals<i64>({10, 20, 10}));
+}
+
+TEST_CASE("if_ routes its value into one reference field",
+          "[feature:operator][series:reference][series:tsb][transition:invalidation]") {
+    const auto true_field = [](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        return operators::getattr(operators::if_(condition, value), "true_value"_sym).as<TS<i64>>();
+    };
+    const auto false_field = [](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        return operators::getattr(operators::if_(condition, value), "false_value"_sym).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(true_field, {true, false, true}, {10, 20, 30}).equals<i64>({10, std::nullopt, 30}));
+    CHECK(bg::run_graph(false_field, {true, false, true}, {10, 20, 30}).equals<i64>({std::nullopt, 20, std::nullopt}));
+    CHECK(bg::run_graph(true_field, {true, literal::INVALID}, {10, 20}).equals<i64>({10, std::nullopt}));
+}
+
+TEST_CASE("if_ uses the native IfResult schema identity",
+          "[feature:operator][series:tsb][schema:named][series:reference]") {
+    const auto graph = [](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        const auto result = operators::if_(condition, value);
+        const auto *actual = type_cast<TimeSeriesBundleType>(&result.type());
+        REQUIRE(actual != nullptr);
+
+        const auto &native = type_cast<TimeSeriesBundleType>(TSB<operators::if_result>::type());
+        CHECK(actual->schema().identity() == native.schema().identity());
+        CHECK(actual->item_name(0).text() == "true_value");
+        CHECK(actual->item_name(1).text() == "false_value");
+
+        return operators::getattr(result, "true_value"_sym).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(graph, {true, false}, {10, 20}).equals<i64>({10, std::nullopt}));
+}
+
+TEST_CASE("if_ invalidates a deselected reference and both fields for an invalid condition",
+          "[feature:operator][series:reference][feature:validity][transition:invalidation]") {
+    const auto observe_true = [](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        const auto result = operators::if_(condition, value);
+        return operators::valid(operators::getattr(result, "true_value"_sym));
+    };
+    const auto observe_false = [](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        const auto result = operators::if_(condition, value);
+        return operators::valid(operators::getattr(result, "false_value"_sym));
+    };
+
+    CHECK(bg::run_graph(observe_true, {true, false, true}, {10, 20, 30}).equals<bool>({true, false, true}));
+    CHECK(bg::run_graph(observe_false, {true, false, true}, {10, 20, 30}).equals<bool>({false, true, false}));
+    CHECK(bg::run_graph(observe_true, {true, literal::INVALID}, {10, 20}).equals<bool>({true, false}));
+}
+
+TEST_CASE("if_ follows a retargeted input reference and selects a whole list",
+          "[feature:operator][series:reference][series:fixed-tsl][binding:reference-to-reference]") {
+    const auto select_reference = node([](In<TS<bool>> condition, In<REF<TS<i64>>> first,
+                                          In<REF<TS<i64>>> second, Out<REF<TS<i64>>> output) {
+        output.copy(*condition ? first : second);
+    });
+    const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.copy(input); });
+    const auto retargeted = [&](wp<TS<bool>> route) {
+        const auto selected = select_reference(route, operators::const_(i64{10}), operators::const_(i64{20}));
+        const auto result = operators::if_(operators::const_(true), selected);
+        return copy(operators::getattr(result, "true_value"_sym));
+    };
+    CHECK(bg::run_graph(retargeted, {false, true, false}).equals<i64>({20, 10, 20}));
+
+    const auto sum = node([](In<TSL<TS<i64>, 2>> values) { return *values[0] + *values[1]; });
+    const auto collection = [&](wp<TS<bool>> condition, wp<TS<i64>> value) {
+        const auto result = operators::if_(condition, tsl(value, operators::const_(i64{1})));
+        return sum(operators::getattr(result, "true_value"_sym).as<TSL<TS<i64>, 2>>());
+    };
+    CHECK(bg::run_graph(collection, {true, false, true}, {10, 20, 30}).equals<i64>({11, std::nullopt, 31}));
+}
+
+TEST_CASE("if_true emits ordinary true ticks and supports one-shot activity",
+          "[feature:operator][series:value][guarantee:ordinary]") {
+    const auto graph = [](wp<TS<bool>> condition) { return operators::if_true(condition); };
+    const auto once = [](wp<TS<bool>> condition) { return operators::if_true(condition, true); };
+
+    CHECK(bg::run_graph(graph, {false, true, true, false, true}).equals<bool>(
+        {std::nullopt, true, true, std::nullopt, true}));
+    CHECK(bg::run_graph(once, {false, true, true, false, true}).equals<bool>(
+        {std::nullopt, true, std::nullopt, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(once, {true, literal::INVALID, false}).equals<bool>({true, std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("if_true emits each alternating true tick from a deduplicated input",
+          "[feature:operator][series:value][guarantee:deduplicated][transition:update]") {
+    const auto graph = [](wp<TS<bool>> condition) {
+        return operators::if_true(operators::dedup(condition));
+    };
+
+    CHECK(bg::run_graph(graph, {true, true, false, false, true, true})
+              .equals<bool>({true, std::nullopt, std::nullopt, std::nullopt, true, std::nullopt}));
+}
+
+TEST_CASE("race keeps the earliest continuously valid candidate and fails over",
+          "[feature:operator][series:reference][validity:optional][transition:invalidation][transition:update]") {
+    const auto graph = [](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<i64>> third) {
+        return operators::race(first, second, third).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(graph, {literal::SKIP, literal::SKIP, 10, literal::SKIP},
+                        {20, literal::SKIP, literal::SKIP, literal::INVALID},
+                        {literal::SKIP, 30, literal::SKIP, literal::SKIP})
+              .equals<i64>({20, std::nullopt, std::nullopt, 30}));
+}
+
+TEST_CASE("race uses leftmost input for equal validity start times",
+          "[feature:operator][series:reference][transition:invalidation]") {
+    const auto graph = [](wp<TS<i64>> first, wp<TS<i64>> second) {
+        return operators::race(first, second).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(graph, {10, literal::INVALID, literal::SKIP}, {20, literal::SKIP, 30})
+              .equals<i64>({10, 20, 30}));
+}
+
+TEST_CASE("race recovers after all candidates are invalid",
+          "[feature:operator][series:reference][validity:optional][transition:invalidation][transition:revalidation]") {
+    const auto graph = [](wp<TS<i64>> first, wp<TS<i64>> second) {
+        return operators::race(first, second).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(graph, {literal::INVALID, 10, literal::INVALID, 30},
+                              {literal::INVALID, 20, 25, 40})
+              .equals<i64>({std::nullopt, 10, 25, 40}));
+}
+
+TEST_CASE("race preserves candidate age when its valid reference retargets",
+          "[feature:operator][series:reference][binding:reference-to-reference][transition:update]") {
+    const auto changing_value = node([](In<TS<i64>> step, Out<TS<i64>> output) {
+        if (*step == 1) {
+            output.set(10);
+        }
+    });
+    const auto select_reference = node([](In<TS<bool>> condition, In<REF<TS<i64>>> first,
+                                          In<REF<TS<i64>>> second, Out<REF<TS<i64>>> output) {
+        output.copy(*condition ? first : second);
+    });
+    const auto copy = node([](In<TS<i64>> input, Out<TS<i64>> output) { output.copy(input); });
+    const auto graph = [&](wp<TS<i64>> step, wp<TS<bool>> route) {
+        const auto changing = changing_value(step);
+        const auto retargeted = select_reference(route, operators::const_(i64{20}), operators::const_(i64{30}));
+        return copy(operators::race(changing, retargeted));
+    };
+
+    CHECK(bg::run_graph(graph, {0, 1, 2}, {false, false, true}).equals<i64>({30, std::nullopt, 20}));
+}
+
+TEST_CASE("race selects a whole fixed list",
+          "[feature:operator][series:reference][series:fixed-tsl][transition:invalidation]") {
+    const auto sum = node([](In<TSL<TS<i64>, 2>> values) { return *values[0] + *values[1]; });
+    const auto graph = [&](wp<TSL<TS<i64>, 2>> first, wp<TSL<TS<i64>, 2>> second) {
+        return sum(operators::race(first, second).as<TSL<TS<i64>, 2>>());
+    };
+
+    CHECK(bg::run_graph(graph, bg::input<TSL<TS<i64>, 2>>({{{0, 1}, {1, 2}}, literal::INVALID}),
+                              bg::input<TSL<TS<i64>, 2>>({{{0, 10}, {1, 20}}, {{0, 30}, {1, 40}}}))
+              .equals<i64>({3, 70}));
+}
+
+TEST_CASE("race accepts a prebuilt TSL and preserves single-input identity",
+          "[feature:operator][series:reference][shape:single-node]") {
+    const auto prebuilt = [](wp<TS<i64>> first, wp<TS<i64>> second) {
+        return operators::race("values"_n = tsl(first, second)).as<TS<i64>>();
+    };
+    const auto single = [](wp<TS<i64>> value) { return operators::race(value).as<TS<i64>>(); };
+
+    CHECK(bg::run_graph(prebuilt, {10, literal::INVALID}, {20, 30}).equals<i64>({10, 30}));
+    CHECK(bg::run_graph(single, {10, literal::INVALID, 20}).equals<i64>({10, std::nullopt, 20}));
+    CHECK_THROWS_AS(testing::test_wiring([] { (void)operators::race(); }), WiringError);
+}
+
+TEST_CASE("route_by_index updates one slot and leaves all slots invalid for an invalid index",
+          "[feature:operator][series:fixed-tsl][series:reference][transition:invalidation]") {
+    const auto graph = [](wp<TS<i64>> index, wp<TS<i64>> value) {
+        const auto routed = operators::route_by_index[type<TSL<TS<i64>, 3>>](index, value);
+        return operators::getitem(routed, i64{1});
+    };
+
+    CHECK(bg::run_graph(graph, {1, 8, 1, literal::INVALID, 2}, {10, 20, 30, 40, 50})
+              .equals<i64>({10, std::nullopt, 30, std::nullopt, std::nullopt}));
+
+    const auto observe_validity = [](wp<TS<i64>> index, wp<TS<i64>> value) {
+        const auto routed = operators::route_by_index[type<TSL<TS<i64>, 3>>](index, value);
+        return operators::valid(operators::getitem(routed, i64{1}));
+    };
+    CHECK(bg::run_graph(observe_validity, {1, -1, 1, literal::INVALID, 2}, {10, 20, 30, 40, 50})
+              .equals<bool>({true, false, true, false, std::nullopt}));
+}
+
+TEST_CASE("route_by_index requires an explicit fixed list result",
+          "[feature:operator][series:fixed-tsl][error:operator-resolution]") {
+    const auto index = node([](Out<TS<i64>>) {});
+    const auto value = node([](Out<TS<i64>>) {});
+
+    CHECK_THROWS_AS(testing::test_wiring([&] { (void)operators::route_by_index(index(), value()); }), WiringError);
+    CHECK_THROWS_AS(testing::test_wiring([&] {
+        (void)operators::route_by_index[type<TS<i64>>](index(), value());
+    }), WiringError);
+}
+
+TEST_CASE("route_by_index follows a retargeted input reference",
+          "[feature:operator][series:reference][binding:reference-to-reference]") {
+    const auto select_reference = node([](In<TS<bool>> condition, In<REF<TS<i64>>> first,
+                                          In<REF<TS<i64>>> second, Out<REF<TS<i64>>> output) {
+        output.copy(*condition ? first : second);
+    });
+    const auto graph = [&](wp<TS<bool>> route) {
+        const auto selected = select_reference(route, operators::const_(i64{10}), operators::const_(i64{20}));
+        const auto routed = operators::route_by_index[type<TSL<TS<i64>, 1>>](operators::const_(i64{0}), selected);
+        return operators::getitem(routed, i64{0}).as<TS<i64>>();
+    };
+
+    CHECK(bg::run_graph(graph, {false, true, false}).equals<i64>({20, 10, 20}));
 }
 
 TEST_CASE("if_then_else invalidates for an invalid condition and an invalid selected branch",

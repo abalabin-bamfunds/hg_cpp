@@ -4,11 +4,16 @@
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/scope_exit.hpp>
 
+#include <algorithm>
 #include <cassert>
+#include <concepts>
 #include <cstdint>
+#include <cstring>
 #include <functional>
 #include <memory>
 #include <memory_resource>
+#include <ranges>
+#include <type_traits>
 #include <utility>
 
 namespace bg::util {
@@ -61,7 +66,55 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         blocks_.removed(position, memory);
     }
 
-    void release(const occupancy_index &positions, std::pmr::memory_resource &memory) noexcept {
+    // Moves constructed cells between ranges in one allocated block without allocation. Source cells must be
+    // constructed and destination-only cells must be unconstructed. Overlapping ranges are supported. The
+    // block's constructed count is unchanged.
+    void relocate(size_type source, size_type destination, size_type count) noexcept
+        requires std::is_trivially_copyable_v<T>
+    {
+        if (count == 0 || source == destination) {
+            return;
+        }
+
+        const auto source_end = std::uint64_t{source} + count;
+        const auto destination_end = std::uint64_t{destination} + count;
+#ifndef NDEBUG
+        const auto source_block = blocks_.block_containing(source);
+        assert(source >= source_block.first);
+        assert(source_end <= source_block.end);
+        assert(destination >= source_block.first);
+        assert(destination_end <= source_block.end);
+        assert(source_block.data != nullptr);
+#endif
+
+        auto *source_cells = blocks_.get(source);
+        auto *destination_cells = blocks_.get(destination);
+        assert(source_cells != nullptr);
+        assert(destination_cells != nullptr);
+        std::memmove(destination_cells, source_cells, sizeof(T) * count);
+
+        auto clear_start = std::uint64_t{};
+        auto clear_end = std::uint64_t{};
+        if (destination < source) {
+            clear_start = std::max(std::uint64_t{source}, destination_end);
+            clear_end = source_end;
+        } else {
+            clear_start = source;
+            clear_end = std::min(source_end, std::uint64_t{destination});
+        }
+
+        if (clear_start != clear_end) {
+            std::destroy_n(blocks_.get(static_cast<size_type>(clear_start)),
+                           static_cast<size_type>(clear_end - clear_start));
+        }
+    }
+
+    // The range must enumerate each constructed position exactly once, in any order.
+    // Iteration and destruction must not throw.
+    template <typename Positions>
+        requires std::ranges::input_range<const Positions> &&
+                 std::convertible_to<std::ranges::range_reference_t<const Positions>, size_type>
+    void release(const Positions &positions, std::pmr::memory_resource &memory) noexcept {
         release_with(positions, memory, [](T *value) noexcept { std::destroy_at(value); });
     }
 
@@ -75,10 +128,12 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
         blocks_.release(memory);
     }
 
-    template <typename Destructor>
-        requires std::invocable<Destructor &, T *>
-    void release_with(const occupancy_index &positions, std::pmr::memory_resource &memory,
-                      Destructor &&destroy) noexcept {
+    // Uses the same position range contract with a caller-provided destructor.
+    template <typename Positions, typename Destructor>
+        requires std::ranges::input_range<const Positions> &&
+                 std::convertible_to<std::ranges::range_reference_t<const Positions>, size_type> &&
+                 std::invocable<Destructor &, T *>
+    void release_with(const Positions &positions, std::pmr::memory_resource &memory, Destructor &&destroy) noexcept {
         for (const auto position : positions) {
             std::invoke(destroy, blocks_.get(position));
             blocks_.removed(position, memory);

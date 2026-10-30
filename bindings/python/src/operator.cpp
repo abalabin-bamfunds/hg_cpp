@@ -192,6 +192,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "pos", operators::pos);
     export_operator(operators_module, "neg", operators::neg);
     export_operator(operators_module, "abs", operators::abs);
+    export_operator(operators_module, "invert", operators::invert);
     export_operator(operators_module, "eq", operators::eq);
     export_operator(operators_module, "ne", operators::ne);
     export_operator(operators_module, "lt", operators::lt);
@@ -206,13 +207,18 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "count", operators::count);
     export_operator(operators_module, "sample", operators::sample);
     export_operator(operators_module, "dedup", operators::dedup);
+    export_operator(operators_module, "if_", operators::if_);
     export_operator(operators_module, "filter_", operators::filter_);
     export_operator(operators_module, "gate", operators::gate);
     export_operator(operators_module, "batch", operators::batch);
     export_operator(operators_module, "merge", operators::merge);
+    export_operator(operators_module, "race", operators::race);
+    export_operator(operators_module, "route_by_index", operators::route_by_index);
+    export_operator(operators_module, "if_true", operators::if_true);
     export_operator(operators_module, "take", operators::take);
     export_operator(operators_module, "drop", operators::drop);
     export_operator(operators_module, "step", operators::step);
+    export_operator(operators_module, "slice_", operators::slice_);
     export_operator(operators_module, "if_then_else", operators::if_then_else);
     export_operator(operators_module, "lag", operators::lag);
     export_operator(operators_module, "last_modified_time", operators::last_modified_time);
@@ -240,6 +246,8 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "contains_", operators::contains_);
     export_operator(operators_module, "is_empty", operators::is_empty);
     export_operator(operators_module, "keys_", operators::keys_);
+    export_operator(operators_module, "values_", operators::values_);
+    export_operator(operators_module, "index_of", operators::index_of);
     export_operator(operators_module, "keys_where_true", operators::keys_where_true);
     export_operator(operators_module, "bit_or", operators::bit_or);
     export_operator(operators_module, "bit_and", operators::bit_and);

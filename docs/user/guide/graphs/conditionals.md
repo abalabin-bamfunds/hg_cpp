@@ -82,14 +82,14 @@ auto reported_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(reported_temperature, {18, 20, 19});
-    std::cout << std::boolalpha << result.equals({20, 22, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 22, 21]
 ```
 :::
 
@@ -170,14 +170,14 @@ auto capped_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(capped_temperature, {18, 20, 19});
-    std::cout << std::boolalpha << result.equals({20, 21, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 21, 21]
 ```
 :::
 
@@ -257,14 +257,14 @@ auto temperature_in_range(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(temperature_in_range, {17, 18, 19, 20});
-    std::cout << std::boolalpha << result.equals({false, true, true, false}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[false, true, true, false]
 ```
 :::
 
@@ -346,14 +346,14 @@ auto temperature_band(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(temperature_band, {17, 18, 20, 17});
-    std::cout << std::boolalpha << result.equals({-1, 0, 1, -1}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[-1, 0, 1, -1]
 ```
 :::
 
@@ -441,14 +441,14 @@ int main() {
         reported_temperature,
         {18, SKIP, 19, 20, SKIP, SKIP, SKIP, 20},
         {false, true, false, SKIP, true, false, true, SKIP});
-    std::cout << std::boolalpha << result.equals({SKIP, 20, SKIP, SKIP, 22, SKIP, SKIP, 22}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 20, None, None, 22, None, None, 22]
 ```
 :::
 
@@ -523,14 +523,14 @@ auto configured(wp<TS<i64>> offset) {
 
 int main() {
     const auto result = run_graph(configured, {SKIP, 0, 3});
-    std::cout << std::boolalpha << result.equals({20, 18, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 18, 21]
 ```
 :::
 
@@ -605,14 +605,14 @@ auto readings(wp<TS<i64>> primary, wp<TS<i64>> secondary) {
 
 int main() {
     const auto result = run_graph(readings, {10, SKIP, 12, 13}, {20, 21, SKIP, 23});
-    std::cout << std::boolalpha << result.equals({10, 21, 12, 13}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[10, 21, 12, 13]
 ```
 :::
 
@@ -701,14 +701,14 @@ auto temperature(wp<TS<i64>> mode, wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(temperature, {1, SKIP, 2, 1}, {18, 19, 20, 21});
-    std::cout << std::boolalpha << result.equals({18, 37, 20, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, 37, 20, 21]
 ```
 :::
 

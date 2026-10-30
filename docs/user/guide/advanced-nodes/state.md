@@ -85,14 +85,14 @@ auto peak(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(peak), {18, 17, 21, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({18, 18, 21, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, 18, 21, None, 21]
 ```
 :::
 
@@ -213,14 +213,14 @@ auto temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(temperature, {18, 19});
-    std::cout << std::boolalpha << result.equals({20, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 21]
 ```
 :::
 

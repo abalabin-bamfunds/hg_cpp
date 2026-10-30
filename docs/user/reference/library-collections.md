@@ -108,9 +108,11 @@ case; TSS uses one Boolean membership lookup.
 
 ## Collection queries
 
-`keys_(dictionary)` returns a TSS with the dictionary's current keys. It projects
-the existing key-set series, so value updates do not update the result. It follows
-dictionary reference changes and preserves the dictionary guarantee.
+`keys_(dictionary)` returns a TSS with the dictionary's current keys. For a TSD,
+it projects the existing key-set series, so value updates do not update the result.
+It follows dictionary reference changes and preserves the dictionary guarantee.
+For `TS<Dict<K, V>>`, it reconciles the current scalar dictionary's keys with the
+output set. An unchanged key set does not publish another membership tick.
 
 `keys_(valid_items(dictionary))` returns only keys whose immediate items are valid.
 It updates when an item becomes valid or invalid. An invalid dictionary root produces
@@ -120,6 +122,30 @@ ordinary outputs.
 
 `keys_where_true(mask)` returns the keys whose TSD Boolean items are valid and true.
 It updates when an item becomes false or invalid, or when a key is added or removed.
+
+`values_(dictionary)` returns `TS<List<V>>` for a scalar dictionary or
+`TSD<K, TS<V>>`. Python represents the scalar list as `tuple[V, ...]`.
+The scalar list retains duplicates; its order is unspecified.
+For a TSD, the list includes only valid immediate item values. A valid dictionary
+with no valid items produces an empty list.
+
+For a TSD, request `values_[TSS[V]](dictionary)` in Python or
+`values_[type<TSS<V>>](dictionary)` in C++ to obtain distinct valid immediate item
+values. These values must support equality comparison and hashing. Removing or invalidating one item
+removes its value only when no other valid item holds that value. Changes that
+preserve the distinct set, including simultaneous value swaps, do not publish a
+membership tick.
+
+The TSS implementation retains a previous value per valid key and an occurrence
+count per distinct value. Initialization reads all items; subsequent evaluations
+process changed items without rescanning the dictionary. Root invalidation clears
+this state and invalidates the result; revalidation rebuilds it.
+
+`index_of(values, item)` searches a scalar list or fixed TSL and returns the first
+matching index as `i64`, or `-1` if no item matches. The item can be a scalar or a
+time series. TSL searches skip invalid immediate items without changing their
+indices. The collection root and a time series search item must be valid.
+Each search takes O(N) work and retains no state.
 
 `len_(value)` returns an `i64` length. It counts current TSS membership, physical TSD
 keys, or the items in `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. Use
@@ -348,14 +374,14 @@ auto pair_total(wp<TS<i64>> left, wp<TS<i64>> right) {
 
 int main() {
     const auto result = run_graph(pair_total, {1, 2}, {2, 3});
-    std::cout << std::boolalpha << result.equals({3, 5}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[3, 5]
 ```
 :::
 
@@ -445,14 +471,14 @@ auto collected(wp<TS<List<i64>>> values) {
 
 int main() {
     const auto result = run_graph(collected, {{2, 4, 6}});
-    std::cout << std::boolalpha << result.equals({{2}, {2, 4}, {2, 4, 6}}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[[2], [2, 4], [2, 4, 6]]
 ```
 :::
 

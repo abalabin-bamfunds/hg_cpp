@@ -67,6 +67,66 @@ TEST_CASE("nothing composes with default and conditional selection",
     CHECK(bg::run_graph(selected, {true, false, true}, {10, 20, 30}).equals<bool>({true, false, true}));
 }
 
+TEST_CASE("i64 bitwise operators support scalar, mixed, and time-series operands",
+          "[feature:operator][series:value][scalar:i64][feature:wiring][feature:validity]"
+          "[transition:invalidation][transition:revalidation][guarantee:deduplicated]"
+          "[guarantee:final][guarantee:const]") {
+    constexpr auto minimum = std::numeric_limits<i64>::min();
+    constexpr auto maximum = std::numeric_limits<i64>::max();
+
+    const auto scalar_and = [] { return operators::bit_and(i64{-1}, i64{0b0101}); };
+    const auto scalar_invert = [] { return operators::invert(std::numeric_limits<i64>::min()); };
+    const auto bit_and = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::bit_and(lhs, rhs); };
+    const auto bit_or = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return lhs | rhs; };
+    const auto bit_xor = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return lhs ^ rhs; };
+    const auto invert = [](wp<TS<i64>> value) { return ~value; };
+    const auto scalar_left = [](wp<TS<i64>> value) { return i64{-1} & value; };
+    const auto scalar_right = [](wp<TS<i64>> value) { return value & i64{-1}; };
+    const auto deduplicated_invert = [](wp<TS<i64>> value) { return ~operators::dedup(value); };
+    const auto ordinary_zero_and = [](wp<TS<i64>> value) { return operators::bit_and(value, i64{0}); };
+    const auto deduplicated_zero_and = [](wp<TS<i64>> value) {
+        return operators::bit_and(operators::dedup(value), i64{0});
+    };
+
+    constexpr auto lhs = std::array<i64, 4>{-1, minimum, maximum, 0b1010};
+    constexpr auto rhs = std::array<i64, 4>{0b0101, -1, 1, 0b1100};
+
+    CHECK(bg::run_graph(scalar_and).equals<i64>({0b0101}));
+    CHECK(bg::run_graph(scalar_invert).equals<i64>({maximum}));
+    CHECK(bg::run_graph(bit_and, lhs, rhs).equals<i64>({0b0101, minimum, 1, 0b1000}));
+    CHECK(bg::run_graph(bit_or, lhs, rhs).equals<i64>({-1, -1, maximum, 0b1110}));
+    CHECK(bg::run_graph(bit_xor, lhs, rhs).equals<i64>({-6, maximum, maximum - 1, 0b0110}));
+    CHECK(bg::run_graph(invert, {-1, minimum, maximum, 0b1010})
+              .equals<i64>({0, maximum, minimum, -11}));
+    CHECK(bg::run_graph(scalar_left, {0b0101, minimum}).equals<i64>({0b0101, minimum}));
+    CHECK(bg::run_graph(scalar_right, {0b0101, minimum}).equals<i64>({0b0101, minimum}));
+    CHECK(bg::run_graph(deduplicated_invert, {5, 5, 6}).equals<i64>({-6, std::nullopt, -7}));
+    CHECK(bg::run_graph(ordinary_zero_and, {1, 2, 3}).equals<i64>({0, 0, 0}));
+    CHECK(bg::run_graph(deduplicated_zero_and, {1, 1, 2}).equals<i64>({0, std::nullopt, std::nullopt}));
+    CHECK(bg::run_graph(bit_and, {7, literal::INVALID, 8}, {3, literal::SKIP, literal::SKIP})
+              .equals<i64>({3, std::nullopt, 0}));
+
+    const auto ordinary_source = node([](Out<TS<i64>>) {});
+    const auto deduplicated_source = node([](Out<TS<i64, TimeSeriesGuarantee::deduplicated>>) {});
+    const auto final_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>>) {});
+
+    testing::test_wiring([&] {
+        const auto ordinary = ordinary_source();
+        const auto deduplicated = deduplicated_source();
+        const auto final = final_source();
+        const auto constant = operators::const_(i64{1});
+
+        CHECK(&operators::bit_and(ordinary, ordinary).type() == &TS<i64>::type());
+        CHECK(&operators::bit_or(deduplicated, constant).type() ==
+              &TS<i64, TimeSeriesGuarantee::deduplicated>::type());
+        CHECK(&operators::bit_xor(final, final).type() == &TS<i64, TimeSeriesGuarantee::final>::type());
+        CHECK(&operators::invert(constant).type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
+    });
+
+    const auto set_union = [](wp<TSS<i64>> left, wp<TSS<i64>> right) { return left | right; };
+    CHECK(bg::run_graph(set_union, {{1, 2}}, {{2, 3}}).equals({{1, 2, 3}}));
+}
+
 TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto integer_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };

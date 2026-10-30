@@ -67,6 +67,18 @@ class occupancy_index {
         return true;
     }
 
+    // Moves [source, source + count) to destination without allocation and clears source-only bits. Extent and
+    // count are unchanged. Both ranges must fit in extent(), and destination bits outside the source range must be
+    // clear.
+    void relocate(size_type source, size_type destination, size_type count) noexcept {
+        if (count == 0 || source == destination) {
+            return;
+        }
+
+        positions_.relocate(source, destination, count);
+        next_free_ = positions_.first_unset(std::min(next_free_, std::min(source, destination)));
+    }
+
     void trim(std::pmr::memory_resource &memory) noexcept {
         positions_.trim(memory);
         next_free_ = std::min(next_free_, positions_.size());

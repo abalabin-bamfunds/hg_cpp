@@ -41,6 +41,7 @@ Output:
 #include <bg/library.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <cassert>
 #include <iostream>
 
 using namespace bg;
@@ -51,14 +52,15 @@ auto temperature(wp<TS<i64>> reading) { return reading + 2; }
 
 int main() {
     const auto result = run_graph(temperature, {18, SKIP, 18, 19});
-    std::cout << std::boolalpha << result.equals({20, SKIP, 20, 21}) << '\n';
+    assert(result.equals({20, SKIP, 20, 21}));
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, 20, 21]
 ```
 :::
 

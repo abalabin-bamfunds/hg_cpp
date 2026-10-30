@@ -69,14 +69,14 @@ auto has_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(has_temperature, {SKIP, 18, SKIP, INVALID, 19});
-    std::cout << std::boolalpha << result.equals({false, true, SKIP, false, true}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[false, true, None, false, true]
 ```
 :::
 
@@ -173,14 +173,14 @@ auto first(wp<TS<List<i64>>> prices) {
 
 int main() {
     const auto result = run_graph(first, {{10, 20}, {12, 20}, {12, 25}});
-    std::cout << std::boolalpha << result.equals({10, 12, 12}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[10, 12, 12]
 ```
 :::
 

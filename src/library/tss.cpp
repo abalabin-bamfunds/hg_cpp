@@ -5,6 +5,7 @@
 #include <bg/library/operators.hpp>
 #include <bg/node.hpp>
 #include <bg/overload.hpp>
+#include <bg/scalar/dict/scalar.hpp>
 #include <bg/time_series/item_id.hpp>
 #include <bg/time_series/ref/ref_input.hpp>
 #include <bg/type/time_series_dict_type.hpp>
@@ -164,6 +165,20 @@ struct tss_overloads {
         }
     };
     overload<keys_, keys_tsd_valid_items_impl> keys_tsd_valid_items;
+
+    overload<keys_> keys_scalar_dict{[](In<TS<Dict<K, SCALAR>, G>> dictionary, Out<TSS<K, G>> output) {
+        if (!output.valid()) {
+            output.clear();
+        }
+
+        const auto values = dictionary.value_view();
+        output.for_each([&](const auto &key) {
+            if (!values.contains(key)) {
+                output.erase(key);
+            }
+        });
+        values.for_each([&](const auto &key, const auto &) { output.insert(key); });
+    }};
 
     overload<len_> len_tsd_valid_items{graph([](wp<TSD<K, TS_T, G>, valid_items> dictionary) -> wp<TS<i64>> {
         return operators::len_(operators::keys_(dictionary)).template as<TS<i64>>();

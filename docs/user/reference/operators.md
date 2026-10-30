@@ -151,14 +151,14 @@ int main() {
         return classify(publish(use_future, cash.view(), contract.view())).as<TS<i64>>();
     };
     const auto result = run_graph(category, {false, true, false});
-    std::cout << std::boolalpha << result.equals({1, 2, 1}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[1, 2, 1]
 ```
 :::
 

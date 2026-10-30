@@ -61,14 +61,14 @@ auto display_temperature() {
 
 int main() {
     const auto result = run_graph(display_temperature);
-    std::cout << std::boolalpha << result.equals({200}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[200]
 ```
 :::
 
@@ -159,14 +159,14 @@ auto display_temperature() {
 
 int main() {
     const auto result = run_graph(display_temperature);
-    std::cout << std::boolalpha << result.equals({200}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[200]
 ```
 :::
 
@@ -256,14 +256,14 @@ auto reported_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(reported_temperature, {18, 20, 19});
-    std::cout << std::boolalpha << result.equals({20, 22, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 22, 21]
 ```
 :::
 

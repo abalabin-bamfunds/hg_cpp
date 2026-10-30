@@ -6,8 +6,6 @@
 #include <bg/util/static_storage.hpp>
 #include <bg/util/symbol.hpp>
 
-#include "../../type/type_registration.hpp"
-
 #include <algorithm>
 #include <memory>
 #include <vector>
@@ -83,7 +81,6 @@ const TupleScalarType &tuple_scalar_type(std::span<const ScalarType *const> item
     static auto types = util::static_storage<std::vector<const ResolvedTupleScalarType *>>{};
     auto &cache = types.get();
 
-    const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
     const auto found = std::ranges::find_if(cache, [&](const auto *type) {
         return std::ranges::equal(type->item_types(), item_types);
     });
@@ -95,20 +92,8 @@ const TupleScalarType &tuple_scalar_type(std::span<const ScalarType *const> item
         std::vector<const ScalarType *>{item_types.begin(), item_types.end()});
     const auto &registered = static_cast<const ResolvedTupleScalarType &>(
         TypeRegistry::instance().register_owned(std::move(new_type)));
-    try {
-        cache.push_back(&registered);
-        if (auto *registration = details::SemanticTypeRegistration::current()) {
-            registration->on_rollback([type = &registered] {
-                std::erase(types.get(), type);
-                TypeRegistry::instance().rollback(*type);
-            });
-        }
-        return registered;
-    } catch (...) {
-        std::erase(cache, &registered);
-        TypeRegistry::instance().rollback(registered);
-        throw;
-    }
+    cache.push_back(&registered);
+    return registered;
 }
 
 } // namespace bg

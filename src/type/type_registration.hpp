@@ -1,36 +1,45 @@
 #pragma once
 
-#include <functional>
-#include <mutex>
 #include <vector>
 
-namespace bg::details {
+namespace bg {
 
-std::recursive_mutex &semantic_type_registration_mutex();
+class ScalarType;
+class ResolvedHierarchicalScalarType;
 
+namespace details {
+
+enum class HashRequirement {
+    set_item,
+    dictionary_key,
+    time_series_set_item,
+    time_series_dictionary_key,
+};
+
+struct PendingHashRequirement {
+    const ScalarType *type;
+    HashRequirement requirement;
+};
+
+// Tracks incomplete semantic descriptors during single-threaded type registration.
 class SemanticTypeRegistration {
   public:
-    SemanticTypeRegistration() noexcept;
+    SemanticTypeRegistration();
     ~SemanticTypeRegistration();
 
     SemanticTypeRegistration(const SemanticTypeRegistration &) = delete;
     SemanticTypeRegistration &operator=(const SemanticTypeRegistration &) = delete;
 
     static SemanticTypeRegistration *current() noexcept;
-    bool is_committed() const noexcept { return committed_; }
 
-    void on_rollback(std::function<void()> rollback);
-    void on_finalize(std::function<bool()> finalize);
-    void on_validate(std::function<void()> validate);
-    void on_commit(std::function<void()> commit);
-    void commit();
+    void add_hierarchical_type(ResolvedHierarchicalScalarType &type);
+    void require_hash(const ScalarType &type, HashRequirement requirement);
+    void complete();
 
   private:
-    std::vector<std::function<void()>> rollbacks_;
-    std::vector<std::function<bool()>> finalizers_;
-    std::vector<std::function<void()>> validators_;
-    std::vector<std::function<void()>> commits_;
-    bool committed_{false};
+    std::vector<ResolvedHierarchicalScalarType *> hierarchical_types_;
+    std::vector<PendingHashRequirement> hash_requirements_;
 };
 
-} // namespace bg::details
+} // namespace details
+} // namespace bg

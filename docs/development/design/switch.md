@@ -33,10 +33,15 @@ arguments normally.
 A graph function receives all supplied arguments in order. This supports
 generic lambdas without an additional graph declaration.
 
+`switch_` retains the case graph templates and graph functions used to wire its
+branches through compilation. This is required to keep node templates captured
+by value alive for the [node-template lifetime contract](graph-wiring.md#wiring-template-call).
+
 Type-erased callers pass a key as a `WiringPoint` or `WiringArgument`, a span
 of `SwitchCaseArgument`, and a span of `WiringArgument`. A qualified key keeps
 its `opt` qualifier during overload resolution. A `SwitchCaseArgument` accepts
-one key, a span of keys, or `DEFAULT`.
+one key, a span of keys, or `DEFAULT`. It borrows its graph template; the caller
+keeps that template and its referenced node templates alive through compilation.
 
 ## Selection and output
 
@@ -48,6 +53,14 @@ Keyed cases must either be sink graphs or produce compatible output types. An
 output switch publishes a reference to the active inner graph output. Its
 `DEFAULT` case may be outputless; selecting that case invalidates the switch
 output. A source case accepts no arguments. A sink switch produces no output.
+
+Output inference removes references recursively from each branch target, then
+computes their [common type](type-system.md#time-series-guarantees) `C`. The
+switch publishes `REF<C>`. For example, branches returning `TSD<K, REF<T>>` and
+`TSD<K, T>` produce `REF<TSD<K, T>>`. Consumers use the normal
+[reference representations](time-series-references.md#dynamic-representations)
+to request value or reference items. Free and bound collection storage does not
+change output compatibility.
 
 `switch_` is an operator. Its call preparation converts heterogeneous C++ case
 definitions before normal overload resolution.

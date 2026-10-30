@@ -8,6 +8,8 @@
 #include <array>
 #include <cstdint>
 #include <limits>
+#include <memory>
+#include <span>
 #include <string>
 #include <type_traits>
 
@@ -129,6 +131,44 @@ TEST_CASE("a sparse bunch destroys each occupied value once", "[sparse_bunch][co
     CHECK(memory.allocations() == 0);
 }
 
+TEST_CASE("a sparse bunch releases positions from an index", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto positions = util::index<>{};
+    auto values = util::sparse_bunch<counted_value>{};
+
+    for (const auto position : std::array{std::uint32_t{0}, std::uint32_t{8}, std::uint32_t{40}}) {
+        values.emplace_at(position, memory, position);
+        CHECK(positions.set(position, memory));
+    }
+    REQUIRE(counted_value::live == 3);
+
+    values.release(positions, memory);
+    positions.release(memory);
+    CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch releases a span with a custom destructor", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto values = util::sparse_bunch<counted_value>{};
+    constexpr auto selected = std::array{std::uint32_t{8}, std::uint32_t{0}, std::uint32_t{40}, std::uint32_t{7}};
+    auto released_sum = std::uint32_t{};
+
+    for (const auto position : selected) {
+        values.emplace_at(position, memory, position);
+    }
+    REQUIRE(counted_value::live == 4);
+
+    values.release_with(std::span{selected}, memory, [&](counted_value *value) noexcept {
+        released_sum += value->value;
+        std::destroy_at(value);
+    });
+
+    CHECK(released_sum == 55);
+    CHECK(counted_value::live == 0);
+    CHECK(memory.allocations() == 0);
+}
+
 TEST_CASE("a sparse bunch releases a constructed prefix", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto values = util::sparse_bunch<counted_value, 1>{};
@@ -185,5 +225,53 @@ TEST_CASE("a sparse bunch exposes raw storage block bounds", "[sparse_bunch][cov
     CHECK(values.block_containing(8).data == nullptr);
 
     values.release(positions, memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("a sparse bunch relocates overlapping constructed cells", "[sparse_bunch][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto positions = util::occupancy_index{};
+    auto values = util::sparse_bunch<std::uint32_t, 64>{};
+
+    for (auto position = std::uint32_t{10}; position != 30; ++position) {
+        values.emplace_at(position, memory, position + 100);
+        REQUIRE(positions.set(position, memory));
+    }
+    values.emplace_at(40, memory, 140);
+    REQUIRE(positions.set(40, memory));
+    REQUIRE(values.allocated_block_count() == 1);
+
+    values.relocate(10, 20, 0);
+    values.relocate(10, 10, 10);
+    positions.relocate(10, 20, 0);
+    positions.relocate(10, 10, 10);
+    CHECK(*values.get(10, positions) == 110);
+    CHECK(*values.get(29, positions) == 129);
+    CHECK(*values.get(40, positions) == 140);
+
+    values.relocate(10, 14, 20);
+    positions.relocate(10, 14, 20);
+    values.relocate(14, 3, 20);
+    positions.relocate(14, 3, 20);
+
+    for (auto position = std::uint32_t{}; position != 64; ++position) {
+        if (position >= 3 && position < 23) {
+            REQUIRE(values.get(position, positions) != nullptr);
+            CHECK(*values.get(position, positions) == position + 107);
+            continue;
+        }
+
+        if (position == 40) {
+            CHECK(*values.get(position, positions) == 140);
+            continue;
+        }
+
+        CHECK(values.get(position, positions) == nullptr);
+    }
+    CHECK(values.allocated_block_count() == 1);
+
+    values.release(positions, memory);
+    CHECK(values.allocated_block_count() == 0);
+    positions.release(memory);
     CHECK(memory.allocations() == 0);
 }

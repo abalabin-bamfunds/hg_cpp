@@ -64,14 +64,14 @@ auto first_sensor(wp<TSL<TS<i64>, 2>> readings) {
 
 int main() {
     const auto result = run_graph(first_sensor, {{{0, 18}, {1, 30}}, {{1, 31}}, {{0, 19}}});
-    std::cout << std::boolalpha << result.equals({20, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, 21]
 ```
 :::
 
@@ -160,14 +160,14 @@ auto temperature(wp<TSB<Sensor>> sensor) {
 int main() {
     const auto result = run_graph(temperature,
         {{{"reading", 18}, {"enabled", true}}, {{"enabled", false}}, {{"reading", 19}}});
-    std::cout << std::boolalpha << result.equals({20, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, 21]
 ```
 :::
 
@@ -243,14 +243,14 @@ auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
 
 int main() {
     const auto result = run_graph(sensor_one, {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}});
-    std::cout << std::boolalpha << result.equals({20, SKIP, INVALID, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, None, 21]
 ```
 :::
 
@@ -327,14 +327,14 @@ auto sensor_one_active(wp<TSS<i64>> sensors) {
 
 int main() {
     const auto result = run_graph(sensor_one_active, {{1, 2}, {3}, {REMOVED(1)}, {1}});
-    std::cout << std::boolalpha << result.equals({true, SKIP, false, true}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[true, None, false, true]
 ```
 :::
 
@@ -409,14 +409,14 @@ auto total(wp<TSD<i64, TS<i64>>> values) {
 
 int main() {
     const auto result = run_graph(total, {{{1, 10}, {2, 20}}, {{2, INVALID}}, {{2, 5}}});
-    std::cout << std::boolalpha << result.equals({30, 10, 15}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[30, 10, 15]
 ```
 :::
 

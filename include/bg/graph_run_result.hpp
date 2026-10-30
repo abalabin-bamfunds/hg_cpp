@@ -1,10 +1,13 @@
 #pragma once
 
 #include <bg/details/graph_run.hpp>
+#include <bg/scalar/format.hpp>
+#include <bg/time_series/tick_format.hpp>
 
 #include <cstddef>
 #include <functional>
 #include <initializer_list>
+#include <ostream>
 #include <optional>
 #include <ranges>
 #include <span>
@@ -156,6 +159,36 @@ template <typename T = void> class GraphRunResult {
 
     details::CapturedValues captured_;
 };
+
+// Print small results as dense values and large results as a sparse summary. Root skips and invalid ticks print as
+// None.
+template <typename T> std::ostream &operator<<(std::ostream &stream, const GraphRunResult<T> &result) {
+    if (result.size() > 32) {
+        const auto start_time = ScalarValue<EvaluationTime>{result.start_time()};
+        return stream << fmt::format("GraphRunResult(start_time={}, event_count={}, size={})", start_time.view(),
+                                     result.event_count(), result.size());
+    }
+
+    stream << '[';
+    for (auto index = std::size_t{}; index < result.size(); ++index) {
+        if (index != 0) {
+            stream << ", ";
+        }
+
+        const auto present = result.visit_tick(index, [&](const TimeSeriesType &type, bool valid,
+                                                          util::buffer_reader &reader) {
+            if (valid) {
+                stream << fmt::format("{}", tick(type, valid, reader));
+            } else {
+                stream << "None";
+            }
+        });
+        if (!present) {
+            stream << "None";
+        }
+    }
+    return stream << ']';
+}
 
 template <typename T>
 bool GraphRunResult<T>::equals(std::initializer_list<literal::TimeSeriesLiteral> expected) const

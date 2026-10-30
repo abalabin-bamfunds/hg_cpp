@@ -429,7 +429,8 @@ class In<TSD<K, Item, TimeSeriesProperties...>, Properties...>
     }
 
     Scalar<K> make_key(item_id_t id) const {
-        return Scalar<K>::from(key_runtime_type(), dictionary_runtime_type().key(data_.data(), id));
+        const auto key = dictionary_runtime_type().key_data(data_.data(), id);
+        return Scalar<K>::from(key.runtime_type(), key.data());
     }
 
     bool item_updated(const details::ScalarData &key) const {

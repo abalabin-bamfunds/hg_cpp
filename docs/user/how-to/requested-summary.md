@@ -65,14 +65,14 @@ int main() {
         requested_average,
         {18, 20, 22, SKIP, 24, SKIP},
         {SKIP, true, SKIP, true, true, false});
-    std::cout << std::boolalpha << result.equals({SKIP, 21.0, SKIP, 22.0, 23.0, 23.0}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 21, None, 22, 23, 23]
 ```
 :::
 

@@ -57,14 +57,14 @@ auto selected(wp<TSD<i64, TS<i64>>> readings, wp<TS<i64>> sensor) {
 int main() {
     const auto result = run_graph(selected,
         {{{1, 18}, {2, 30}}, {{1, 19}}, {{2, 31}}, {{2, REMOVE}}}, {1, 2, SKIP, SKIP});
-    std::cout << std::boolalpha << result.equals({20, 32, 33, INVALID}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 32, 33, None]
 ```
 :::
 

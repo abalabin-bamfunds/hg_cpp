@@ -207,6 +207,11 @@ struct arithmetic_overloads {
     overload<pow> pow_i64{[](i64 lhs, i64 rhs) { return integer_power(lhs, rhs); }};
     overload<pow> pow_double{[](double lhs, double rhs) { return floating_power(lhs, rhs); }};
 
+    // Integer bitwise operators.
+    overload<bit_and> bit_and_i64{[](i64 lhs, i64 rhs) { return lhs & rhs; }};
+    overload<bit_or> bit_or_i64{[](i64 lhs, i64 rhs) { return lhs | rhs; }};
+    overload<bit_xor> bit_xor_i64{[](i64 lhs, i64 rhs) { return lhs ^ rhs; }};
+
 };
 
 struct transform_overloads {
@@ -297,6 +302,9 @@ struct transform_overloads {
     overload<pos> pos_i64{[](i64 value) { return value; }};
     overload<pos> pos_double{[](double value) { return value; }};
     overload<pos> pos_timedelta{[](timedelta_t value) { return value; }};
+
+    // Inversion.
+    overload<invert> invert_impl{[](i64 value) { return ~value; }};
 
     // Negative.
     overload<neg> neg_i64{[](i64 value) { return wrapping_negate(value); }};

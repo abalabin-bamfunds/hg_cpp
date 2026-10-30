@@ -51,6 +51,16 @@ runtime describes storage, construction, destruction, invalidation, and any
 contained time series. Family-specific access and mutation operations belong
 to the provider's runtime interface.
 
+A runtime may override `reference_sample_factory()` when dereferencing its
+time series requires a sampled view. BG calls the factory on the runtime
+requested by the receiving input and passes the requested semantic type, the
+previous and current source descriptors, the sampling time, and an allocator.
+The returned sample owns one reference and supplies an input view whose runtime
+has the requested semantic type. The sample may use the actual runtime types in
+the source descriptors to interpret their storage. It may borrow that storage
+through the receiving cycle. Return `nullptr` when the transition has no sample.
+See [reference sampling](time-series-references.md#input-sampling).
+
 Generic output copying calls the output runtime type's `copy_tick()` or
 `copy()` with the input and output bindings. A provider implements these
 operations to support [tick and value copying](node-api.md#output-parameters).
@@ -64,21 +74,27 @@ canonical C++ runtime through `cpp_time_series_runtime_type<Declaration>(resolve
 It must use the supplied resolved type, including inherited guarantees. The
 no-argument runtime accessor uses a neutral declaration; direct output bindings
 request `TimeSeriesTypeRole::output` to apply output defaults.
-The provider registers defaults with `register_time_series_runtime_type()`
-when it creates resolved family types, including resolution of generic
-declarations. This makes the default available before graph compilation
-requests it.
+The canonical semantic factory records a callback with
+`TimeSeriesType::set_default_runtime_type_factory()`, including when it resolves
+a generic declaration. The callback takes the resolved semantic type and
+returns its trait-defined runtime. Recording the callback does not construct
+the runtime. This supports consumers that retain only semantic types, including
+empty and skip-only literal inputs.
 
-Registration associates one default runtime with an exact resolved semantic
-type. Repeating registration of the same runtime is allowed. Registering a
-different default for that type is an error. Registered runtime objects must
-remain alive while the registry can use them.
+`register_time_series_runtime_type()` associates one runtime with an exact resolved semantic
+type for ordinary runtime resolution. Repeating registration of the same runtime
+is allowed. Registering a different runtime for that type is an error. Registered
+runtime objects must remain alive while the registry can use them.
 
 The general runtime resolver gives explicitly supplied representations
-precedence over registered defaults. Output selection follows the
+precedence over registered representations. Output selection follows the
 [output declaration](#output-declarations). A node template selects the
 output runtime type during wiring. The selected runtime must have the wired
 output's resolved semantic type.
+
+Literal sources use default runtime resolution, which calls the semantic
+descriptor's factory and recursively obtains component defaults. Supplied
+representations do not select literal storage.
 
 Initial storage follows the existing
 [byte-copy initialization requirement](type-system.md#runtime-types).
@@ -188,6 +204,48 @@ scalar payloads directly to scalar construction.
 Node authors use `Out::apply()`; registration and `OutputState` are
 extension-facing APIs. Scalar literal construction has its own
 [operation record](scalar-api.md#literals).
+
+## Queue messages
+
+Providers register `TimeSeriesQueueOperations` from
+`<bg/time_series/queue_operations.hpp>` with
+`TimeSeriesDispatch<TimeSeriesQueueOperations>::instance()`.
+This is an extension-facing API. Graph authors use `Queue::write()`.
+
+Register `project`, `write`, `conflicts`, and `apply` for each supported
+exact output runtime. Register `discard` for its semantic time series type.
+Semantic registration does not enable queue writes to other runtime layouts.
+BG validates these registrations when it selects the queue output runtime.
+Batch queues reject provider-defined time series leaves.
+
+BG owns message framing, scheduling, invalidation, and traversal through
+built-in collections. Provider callbacks encode and process only their valid
+leaf payload:
+
+- `project(literal, projection)` validates the literal and advances the aligned
+  payload extent before reservation. It also runs during writing.
+- `write(literal, writer, allocator)` constructs an owning payload with the
+  projected layout. Each completed prefix must be discardable if writing fails.
+- `conflicts(item, now, incoming_valid, reader)` inspects borrowed output storage
+  and encoded values without mutation or destruction. Missing collection items
+  have null storage. An invalidation has no payload. Returning `false` for a
+  valid payload must advance past that complete payload. Returning `true` may
+  stop early; BG leaves the complete message pending.
+- `apply(reader, output)` consumes an accepted payload and publishes through
+  the output binding. It must consume and destroy or transfer the complete
+  payload even when it throws. BG discards later siblings after a failure.
+- `discard(reader)` advances past one payload and destroys its owning objects.
+  During failed-write cleanup, destroy completed objects before an incomplete
+  trailing field reports `std::out_of_range`.
+
+Standard mode calls `conflicts` before applying a message. Eliding mode applies
+messages in order without conflict inspection. Provider registrations must
+finish before concurrent producers start. The provider library must remain
+loaded while callbacks or encoded payloads remain in use.
+
+Queue payloads and retained tick records have separate registrations and may
+use different grammars. See [queue messages](time-series-types.md#queue-messages)
+for framing, admission, and failure behavior.
 
 ## Generic visitation
 

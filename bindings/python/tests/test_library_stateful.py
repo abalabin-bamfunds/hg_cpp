@@ -2,6 +2,7 @@ import gc
 import weakref
 
 import bg
+import pytest
 
 
 def test_count_counts_valid_updates_and_resets_after_invalidation():
@@ -47,6 +48,43 @@ def test_lag_delays_values_invalidations_and_revalidations():
     assert bg.run_graph(valid_lag, [10, 20, bg.INVALID, 30, 40]) == [False, True, None, False, True]
 
 
+def test_lag_accepts_event_count_and_zero_is_identity():
+    @bg.graph
+    def lag_two(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.lag(value, 2)
+
+    @bg.graph
+    def lag_zero(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.lag(value, 0)
+
+    @bg.graph
+    def lag_negative(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.lag(value, -1)
+
+    @bg.graph
+    def valid_lag_two(value: bg.TS[int]) -> bg.TS[bool]:
+        return bg.operators.valid(bg.operators.lag(value, 2))
+
+    assert bg.run_graph(lag_two, [None, 10, 20, bg.INVALID, None, 30]) == [
+        None,
+        None,
+        None,
+        10,
+        None,
+        20,
+    ]
+    assert bg.run_graph(lag_zero, [None, 10, bg.INVALID, 20]) == [None, 10, None, 20]
+    assert bg.run_graph(valid_lag_two, [10, 20, bg.INVALID, 30, 40]) == [
+        False,
+        None,
+        True,
+        None,
+        False,
+    ]
+    with pytest.raises(ValueError):
+        bg.run_graph(lag_negative, [1])
+
+
 def test_lag_owns_collection_scalar_snapshots():
     @bg.graph
     def lag(value: bg.TS[dict[int, str]]) -> bg.TS[dict[int, str]]:
@@ -82,6 +120,34 @@ def test_lag_releases_final_python_object_snapshot_after_graph_teardown():
     gc.collect()
 
     assert first_reference() is result[1]
+    assert final_reference() is None
+
+
+def test_multi_event_lag_releases_unread_owned_values_after_graph_teardown():
+    class Value:
+        pass
+
+    @bg.graph
+    def lag(value: bg.TS[Value]) -> bg.TS[Value]:
+        return bg.operators.lag(value, 2)
+
+    def run():
+        first = Value()
+        middle = Value()
+        final = Value()
+        first_reference = weakref.ref(first)
+        middle_reference = weakref.ref(middle)
+        final_reference = weakref.ref(final)
+        result = bg.run_graph(lag, [first, middle, final])
+
+        assert result == [None, None, first]
+        return first_reference, middle_reference, final_reference, result
+
+    first_reference, middle_reference, final_reference, result = run()
+    gc.collect()
+
+    assert first_reference() is result[2]
+    assert middle_reference() is None
     assert final_reference() is None
 
 

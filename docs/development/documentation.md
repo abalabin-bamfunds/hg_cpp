@@ -38,6 +38,10 @@ are needed. Python imports names directly. C++ uses `using namespace bg;` and th
 required `bg::operators`, `literal`, or `bg::literals` imports. Use literal input
 sequences for `run_graph`.
 
+Print captured results with Python `print(result)` and C++ `std::cout << result`.
+Use assertions when an example demonstrates testing. Expected output must use each
+language's actual value formatting; see [result printing](../user/reference/testing.md#printing-results).
+
 Language tabs use `:sync-group: language` with `:sync: python` and `:sync: cpp`.
 Each C++ tab contains nested **Code** and **Build and run** tabs. The first shows
 source and expected output; the second links to the example project and gives build

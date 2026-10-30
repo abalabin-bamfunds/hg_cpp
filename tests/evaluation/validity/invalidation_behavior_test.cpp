@@ -139,6 +139,60 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
     CHECK(downstream_evaluations == 1);
 }
 
+namespace {
+
+struct invocation_end_invalidation_state {
+    extension::InvocationEndRegistration registration;
+    int callback_count{};
+};
+
+invocation_end_invalidation_state invalidation_callback_state;
+
+void count_invalidation_callback(void *receiver, EvaluationContext &) {
+    ++static_cast<invocation_end_invalidation_state *>(receiver)->callback_count;
+}
+
+struct invocation_end_invalidation_definition {
+    In<TS<float>> input;
+    Out<TS<float>> output;
+
+    void evaluate() const { output.set(input.value()); }
+
+    void on_invalidation(EvaluationContext *context) const {
+        output.invalidate();
+        context->add_invocation_end_callback(invalidation_callback_state.registration, &invalidation_callback_state,
+                                             count_invalidation_callback);
+    }
+};
+
+struct invocation_end_invalidation_observer_definition {
+    In<TS<float>> input;
+
+    void evaluate() const {}
+    void on_invalidation() const { CHECK(invalidation_callback_state.callback_count == 1); }
+};
+
+} // namespace
+
+TEST_CASE("invalidation callbacks run before invalidation publication",
+          "[evaluation][invalidation][invocation_end_callback][feature:evaluation-context]") {
+    invalidation_callback_state.callback_count = 0;
+
+    const auto invalidator = node<invocation_end_invalidation_definition>();
+    const auto observer = node<invocation_end_invalidation_observer_definition>();
+    const auto tested = [&](wp<TS<float>> input) {
+        const auto output = invalidator(input);
+        (void)observer(output);
+        return output;
+    };
+
+    const auto actual = bg::run_graph(tested, {4.0F, literal::INVALID});
+
+    CHECK(actual.equals({4.0F, std::nullopt}));
+    CHECK(invalidation_callback_state.callback_count == 1);
+    invalidation_callback_state.registration.cancel();
+}
+
 TEST_CASE("a node can produce an output when a required input becomes invalid",
           "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
           "[scalar:floating-point]") {

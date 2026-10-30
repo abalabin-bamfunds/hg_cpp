@@ -29,7 +29,9 @@ const bg::ScalarType &recursive_instrument_type() {
 const bg::ScalarType &conflicting_instrument_type() {
     (void)instrument_type();
     return bg::details::canonical_hierarchical_scalar_type(
-        typeid(bg::Bundle<Instrument>), "Instrument",
+        typeid(Instrument<bg::details::schema_identity_field>),
+        typeid(ConflictingInstrument<bg::details::schema_identity_field>),
+        "Instrument",
         &bg::details::initialize_hierarchical_scalar_type<ConflictingInstrument>);
 }
 

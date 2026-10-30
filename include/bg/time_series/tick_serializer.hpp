@@ -8,6 +8,7 @@
 #include <bg/literal/time_series_literal.hpp>
 #include <bg/queue_mode.hpp>
 #include <bg/time_series/dispatch.hpp>
+#include <bg/time_series/queue_operations.hpp>
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_input.hpp>
 #include <bg/time_series/time_series_output.hpp>
@@ -336,7 +337,8 @@ class TimeSeriesTickDiscard {
   public:
     TimeSeriesTickDiscard(util::buffer_reader &reader,
                           const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch,
-                          QueueMode mode = QueueMode::standard);
+                          QueueMode mode = QueueMode::standard,
+                          const TimeSeriesDispatch<TimeSeriesQueueOperations> *queue_dispatch = nullptr);
     void apply(const TimeSeriesType &type);
     void discard_child(const TimeSeriesType &type, TickHeader header);
     void discard_scalar(const ScalarType &type);
@@ -347,14 +349,20 @@ class TimeSeriesTickDiscard {
     util::buffer_reader *reader_;
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
     QueueMode mode_;
+    const TimeSeriesDispatch<TimeSeriesQueueOperations> *queue_dispatch_;
 };
 
 class TimeSeriesTickReplay {
   public:
     TimeSeriesTickReplay(util::buffer_reader &reader,
                          const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch, bool consume = false,
-                         QueueMode mode = QueueMode::standard)
-        : reader_{&reader}, dispatch_{&dispatch}, consume_{consume}, mode_{mode} {}
+                         QueueMode mode = QueueMode::standard,
+                         const TimeSeriesDispatch<TimeSeriesQueueOperations> *queue_dispatch = nullptr)
+        : reader_{&reader}, dispatch_{&dispatch}, consume_{consume}, mode_{mode},
+          queue_dispatch_{consume ? (queue_dispatch != nullptr
+                                         ? queue_dispatch
+                                         : &TimeSeriesDispatch<TimeSeriesQueueOperations>::instance())
+                                  : nullptr} {}
 
     template <typename Variable>
     void apply_erased(const TimeSeriesType &type, const Out<Variable> &output) {
@@ -383,7 +391,7 @@ class TimeSeriesTickReplay {
             return;
         }
         if (failure_) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}.discard_child(type, header);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_, queue_dispatch_}.discard_child(type, header);
             return;
         }
         apply_payload(type, output, header);
@@ -579,7 +587,7 @@ class TimeSeriesTickReplay {
                             throw;
                         }
                         record_failure();
-                        TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}
+                        TimeSeriesTickDiscard{*reader_, *dispatch_, mode_, queue_dispatch_}
                             .discard_child(dictionary_type.value_type(), entry_header);
                         return std::nullopt;
                     }
@@ -589,7 +597,7 @@ class TimeSeriesTickReplay {
                 }
             });
             if (!key_read && entry_header.operation != TickOperation::remove) {
-                TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}
+                TimeSeriesTickDiscard{*reader_, *dispatch_, mode_, queue_dispatch_}
                     .discard_child(dictionary_type.value_type(), entry_header);
             }
         }
@@ -601,10 +609,18 @@ class TimeSeriesTickReplay {
 
     void apply_concrete(const TimeSeriesType &, const Out<TS_T> &output, TickHeader header) {
         if (!header.valid) {
-            output.invalidate();
+            mutate([&] { output.invalidate(); });
             return;
         }
         const auto &runtime_type = output.runtime_type();
+        if (consume_) {
+            const auto *operations = queue_dispatch_->find_exact(runtime_type);
+            if (operations == nullptr || !operations->has_apply()) {
+                throw std::invalid_argument{"no queue apply operation is registered for this time series runtime"};
+            }
+            mutate([&] { operations->apply(*reader_, output.output_state()); });
+            return;
+        }
         if (const auto *runtime_operations = dispatch_->find_exact(runtime_type);
             runtime_operations != nullptr && runtime_operations->has_replay()) {
             runtime_operations->replay(*reader_, output.output_state());
@@ -620,7 +636,7 @@ class TimeSeriesTickReplay {
 
     template <typename Function> bool visit_scalar(const ScalarType &type, Function &&function) {
         if (failure_) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_}.discard_scalar(type);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_, queue_dispatch_}.discard_scalar(type);
             return false;
         }
         try {
@@ -658,7 +674,7 @@ class TimeSeriesTickReplay {
     template <typename Output> void apply_child_at(const TimeSeriesType &type, const Output &output, item_id_t item_id,
                                                    TickHeader header) {
         if (failure_) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}.discard_child(type, header);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_, queue_dispatch_}.discard_child(type, header);
             return;
         }
         auto child = [&]() -> std::optional<decltype(output[item_id])> {
@@ -673,7 +689,7 @@ class TimeSeriesTickReplay {
             }
         }();
         if (!child) {
-            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_}.discard_child(type, header);
+            TimeSeriesTickDiscard{*reader_, *dispatch_, mode_, queue_dispatch_}.discard_child(type, header);
             return;
         }
         apply_child(type, *child, header);
@@ -683,6 +699,7 @@ class TimeSeriesTickReplay {
     const TimeSeriesDispatch<TimeSeriesTickOperations> *dispatch_;
     bool consume_{};
     QueueMode mode_;
+    const TimeSeriesDispatch<TimeSeriesQueueOperations> *queue_dispatch_;
     std::exception_ptr failure_;
 };
 

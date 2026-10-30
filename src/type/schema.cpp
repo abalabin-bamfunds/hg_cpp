@@ -3,7 +3,6 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
 #include <bg/util/static_storage.hpp>
-#include <bg/util/scope_exit.hpp>
 
 #include "type_registration.hpp"
 
@@ -11,7 +10,6 @@
 #include <atomic>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <string_view>
 #include <type_traits>
@@ -22,20 +20,16 @@ namespace bg {
 namespace {
 
 void cache_reserved_schema(const Schema &schema);
-void uncache_reserved_schema(const Schema &schema) noexcept;
 
 } // namespace
 
 struct SchemaRegistration::Impl {
-    std::unique_lock<std::recursive_mutex> lock{details::semantic_type_registration_mutex()};
     details::SemanticTypeRegistration registration;
+    std::vector<const Schema *> reserved_schemas;
     bool committed{};
 };
 
 SchemaRegistration::SchemaRegistration() {
-    if (details::SemanticTypeRegistration::current() != nullptr) {
-        throw std::logic_error{"schema registrations cannot be nested"};
-    }
     impl_ = std::make_unique<Impl>();
 }
 SchemaRegistration::~SchemaRegistration() = default;
@@ -48,13 +42,7 @@ Schema &SchemaRegistration::reserve_schema(util::symbol name, SchemaIdentity ide
     auto descriptor = std::make_unique<Schema>(name, std::move(identity), base, std::move(metadata));
     auto *result = descriptor.get();
     TypeRegistry::instance().register_owned(std::move(descriptor));
-    auto rollback = util::scope_exit{[result]() noexcept { TypeRegistry::instance().rollback(*result); }};
-    impl_->registration.on_rollback([result] {
-        uncache_reserved_schema(*result);
-        TypeRegistry::instance().rollback(*result);
-    });
-    impl_->registration.on_commit([result] { cache_reserved_schema(*result); });
-    rollback.release();
+    impl_->reserved_schemas.push_back(result);
     return *result;
 }
 
@@ -62,18 +50,17 @@ const Type &SchemaRegistration::register_owned(std::unique_ptr<Type> type) {
     if (impl_->committed) {
         throw std::logic_error{"a committed schema registration cannot own more descriptors"};
     }
-    const auto &descriptor = TypeRegistry::instance().register_owned(std::move(type));
-    auto rollback = util::scope_exit{[&descriptor]() noexcept { TypeRegistry::instance().rollback(descriptor); }};
-    impl_->registration.on_rollback([&descriptor] { TypeRegistry::instance().rollback(descriptor); });
-    rollback.release();
-    return descriptor;
+    return TypeRegistry::instance().register_owned(std::move(type));
 }
 
 void SchemaRegistration::commit() {
     if (impl_->committed) {
         throw std::logic_error{"a schema registration can be committed only once"};
     }
-    impl_->registration.commit();
+    impl_->registration.complete();
+    for (const auto *schema : impl_->reserved_schemas) {
+        cache_reserved_schema(*schema);
+    }
     impl_->committed = true;
 }
 
@@ -140,11 +127,6 @@ void cache_reserved_schema(const Schema &schema) {
     }
 }
 
-void uncache_reserved_schema(const Schema &schema) noexcept {
-    auto &cache = schema_cache();
-    std::erase_if(cache, [&schema](const auto &entry) { return entry.second == &schema; });
-}
-
 } // namespace
 
 Schema::Schema(util::symbol name, SchemaIdentity identity, const Schema *base, std::vector<SchemaField> fields,
@@ -160,9 +142,7 @@ void Schema::finalize(std::span<const SchemaField> fields) {
     if (finalized_) {
         throw std::logic_error{"a schema descriptor can be finalized only once"};
     }
-    const auto *registration = details::SemanticTypeRegistration::current();
-    if (TypeRegistry::instance().contains(*this) &&
-        (registration == nullptr || registration->is_committed())) {
+    if (TypeRegistry::instance().contains(*this) && details::SemanticTypeRegistration::current() == nullptr) {
         throw std::logic_error{"finalizing a reserved schema requires its active schema registration"};
     }
 
@@ -204,7 +184,7 @@ void Schema::finalize(std::span<const SchemaField> fields) {
         }
     }
 
-    auto inherited_metadata = base_ == nullptr ? direct_metadata_ : base_->metadata().with_overrides(direct_metadata_);
+    auto inherited_metadata = base_ == nullptr ? direct_metadata_ : base_->metadata().copy_with(direct_metadata_);
     direct_fields_ = std::move(direct_fields);
     fields_ = std::move(resolved_fields);
     metadata_ = std::move(inherited_metadata);
@@ -265,7 +245,6 @@ RuntimeSchemaId new_runtime_schema_id() {
 const Schema &schema(util::symbol name, SchemaIdentity identity, const Schema *base,
                      std::span<const SchemaField> fields, SchemaMetadata metadata) {
     auto key = SchemaKey{name, std::move(identity), base, {fields.begin(), fields.end()}, std::move(metadata)};
-    const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
     auto &cache = schema_cache();
     if (const auto found = cache.find(key); found != cache.end()) {
         return *found->second;
@@ -273,24 +252,7 @@ const Schema &schema(util::symbol name, SchemaIdentity identity, const Schema *b
 
     const auto &descriptor = TypeRegistry::instance().register_owned(
         std::make_unique<Schema>(key.name, key.identity, key.base, key.direct_fields, key.metadata));
-    auto remove_cache_entry = false;
-    auto rollback_descriptor = util::scope_exit{[&]() noexcept {
-        if (remove_cache_entry) {
-            cache.erase(key);
-        }
-        TypeRegistry::instance().rollback(descriptor);
-    }};
-
     cache.emplace(key, &descriptor);
-    remove_cache_entry = true;
-
-    if (auto *registration = details::SemanticTypeRegistration::current()) {
-        registration->on_rollback([&cache, key, descriptor = &descriptor] {
-            cache.erase(key);
-            TypeRegistry::instance().rollback(*descriptor);
-        });
-    }
-    rollback_descriptor.release();
     return descriptor;
 }
 

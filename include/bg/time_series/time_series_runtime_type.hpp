@@ -20,7 +20,12 @@ namespace details {
 class ReferenceProvider;
 class ReferenceRepresentation;
 class ReferenceRepresentationFactory;
+class ReferenceSample;
 struct ItemReference;
+// A factory returns a sample with one owned reference. The sample borrows its source storage, which remains valid
+// through the receiving cycle. BG releases retained samples at next-cycle cleanup or when the graph stops.
+using ReferenceSampleFactory = ReferenceSample *(*)(const TimeSeriesType &, ResolvedTimeSeries, ResolvedTimeSeries,
+                                                     EvaluationTime, allocator &);
 } // namespace details
 
 class TimeSeriesRuntimeType : public RuntimeType {
@@ -104,6 +109,7 @@ class TimeSeriesRuntimeType : public RuntimeType {
     virtual const details::ReferenceRepresentationFactory *reference_representation_factory() const noexcept {
         return nullptr;
     }
+    virtual details::ReferenceSampleFactory reference_sample_factory() const noexcept { return nullptr; }
     virtual void construct_initial_value(void *destination) const noexcept = 0;
     virtual void construct_runtime_value(void *destination, allocator &) const {
         construct_initial_value(destination);
@@ -163,6 +169,9 @@ const TimeSeriesRuntimeType &time_series_value_runtime_type(const TimeSeriesType
 resolve_time_series_runtime_type(const TimeSeriesType &type,
                                  std::span<const TimeSeriesRuntimeType *const> available_time_series = {},
                                  std::span<const ScalarRuntimeType *const> available_scalars = {});
+
+// Resolves the default representation owned by the semantic type and its providers.
+[[nodiscard]] const TimeSeriesRuntimeType &resolve_default_time_series_runtime_type(const TimeSeriesType &type);
 
 // Registers the default physical representation for its semantic type. Explicitly supplied representations take
 // precedence during resolution.

@@ -43,7 +43,7 @@ template <bool Recursive> class DereferencedTimeSeriesDictionaryRepresentation f
                                                    const TimeSeriesDictionaryType &type,
                                                    const TimeSeriesDictionaryRuntimeType &base_runtime_type,
                                                    const TimeSeriesRuntimeType &item_runtime_type)
-        : TimeSeriesDictionaryRepresentation{base_reference, type, base_runtime_type, item_runtime_type},
+        : TimeSeriesDictionaryRepresentation{base_reference, type},
           provider_{&provider}, item_runtime_type_{&item_runtime_type},
           bindings_{provider.allocation()} {
         auto rollback = util::scope_exit{[this]() noexcept { rollback_initialization(); }};
@@ -70,7 +70,6 @@ template <bool Recursive> class DereferencedTimeSeriesDictionaryRepresentation f
     ResolvedTimeSeries base_time_series() const override { return ResolvedTimeSeries::resolve(base_reference()); }
 
     void notify(OutputChangeContext &context, OutputChange change) override {
-        refresh_runtime_type();
         reset_changes(context.evaluation_time());
 
         if constexpr (Recursive) {
@@ -756,7 +755,8 @@ template <bool Recursive> class DereferencedTimeSeriesDictionaryRepresentation f
                 previous = ResolvedTimeSeries::resolve(reference);
             }
         }
-        const auto sample = SampledReferenceChange::create(previous, current, evaluation_time, provider_->allocation());
+        const auto sample = SampledReferenceChange::create(*item_runtime_type_, previous, current,
+                                                           evaluation_time, provider_->allocation());
         if (!sample) {
             return;
         }

@@ -80,7 +80,7 @@ int main() {
     auto profiler = EvaluationProfiler{{.node_period = std::chrono::microseconds{1}}};
     const auto result = run_graph(
         temperature, GraphRunOptions{.recorder = profiler.recorder()}, {18, 18, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({20, 20, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
     std::cout << profiler.report(0);
 
     const auto graph_id = *profiler.root_graph_id();
@@ -96,7 +96,7 @@ int main() {
 Output (ellipsis):
 
 ```text
-true
+[20, 20, None, 21]
 Outer graph: 3 cycles, average ... ns, min ... ns, max ... ns
 node 1: 1 evaluation(s)
 node 2: 1 evaluation(s)

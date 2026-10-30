@@ -77,14 +77,14 @@ int main() {
     const auto result = run_graph(graph(sensor_one_total), {
         {{1, 3}, {2, 10}}, {{1, 4}, {2, 5}}, {{2, 2}},
         {{1, REMOVE}}, {{1, 6}}, {{1, 1}}});
-    std::cout << std::boolalpha << result.equals({3, 7, SKIP, INVALID, 6, 7}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[3, 7, None, None, 6, 7]
 ```
 :::
 

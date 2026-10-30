@@ -88,7 +88,7 @@ int main() {
             std::cout << line << '\n';
         }
     }
-    std::cout << std::boolalpha << run_graph(scaled, {18}).equals({9.0}) << '\n';
+    std::cout << run_graph(scaled, {18}) << '\n';
 }
 ```
 
@@ -97,7 +97,7 @@ Output (ellipsis):
 ```text
 Cannot resolve operator mul at ...
 Arguments: (lhs: TS<i64>, rhs: double)
-true
+[9]
 ```
 :::
 
@@ -219,7 +219,7 @@ int main() {
         std::cout << error.what() << '\n';
     }
     const auto result = run_graph(graph(safe_normalized), {18, SKIP, SKIP}, {2, 0, 3});
-    std::cout << std::boolalpha << result.equals({9, SKIP, 6}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
@@ -227,7 +227,7 @@ Output:
 
 ```text
 divisor must be nonzero
-true
+[9, None, 6]
 ```
 :::
 

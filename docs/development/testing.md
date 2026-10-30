@@ -180,7 +180,8 @@ Literal inputs require a non-variadic parameter list. Concrete time series param
 parameters supply input types. A plain node parameter supplies its time series alternative; its value
 type must be resolved. Input types come from the signature, so empty and skip-only sequences work too. Use
 `input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
-`input(runtime_type, {...})` to supply a time series runtime type explicitly.
+`input(time_series_type, {...})` to supply a semantic time series type selected
+at runtime. Literal sources use the type's default runtime representation.
 Raw brace calls support one through four inputs when every argument is a
 brace sequence. Use `ticks({...})` or a typed range to mix a history with
 ordinary scalar arguments. Pass `GraphRunLiteralInput` descriptors or a
@@ -309,10 +310,11 @@ graph compilation or evaluation.
 - process-owned dynamic declarations and type-pointer validity after graph or wiring-template destruction
 - type registry lookup, schema metadata construction, and scalar string reads
   from process shutdown callbacks
-- canonical factory cache identity, nested construction, failed factory retries, and concurrent cold misses
+- canonical factory cache identity, nested construction, registration failure propagation,
+  and concurrent reads of completed descriptors
 - formal type-name formatting through `Type`, including nested extension types
 - registration of primitive, generic, extension, and graph types; allocation-free primitive registration;
-  independent variable identities and failed-registration rollback
+  independent variable identities and process-lifetime ownership
 - type variables, constraints, repeated variables, and lower bounds
 - type-map overlays and functional variable resolution
 - signature matching, resolution, and parameter category inference
@@ -323,7 +325,7 @@ graph compilation or evaluation.
   publication, and scalar-only scheduling
 - hierarchical scalar inheritance and directional compatibility through scalar containers
 - shared schema identity across translation units and libraries, C++ and runtime declarations,
-  ordered fields, inheritance, optional presence, field-variable resolution, and recursive registration rollback
+  ordered fields, inheritance, optional presence, field-variable resolution, and recursive descriptor completion
 - schema variables shared across reflection adapters, repeated-variable matching, and owning type field validation
 - hierarchical scalar schema capture through scalar arguments, time series values, and scalar collections;
   canonical type identity shared by C++ declarations and programmatic schema construction
@@ -332,7 +334,7 @@ graph compilation or evaluation.
 - guarantee compatibility, propagation, and enforcement; C++ variable minima,
   preservation of stronger guarantees, repeated-variable resolution, and overload ordering
 - recursive common types, independent root and item guarantees, reference targets,
-  schema identity and inheritance, and rejection of incompatible structures
+  schema identity and inheritance, named/unnamed bundle combinations, and rejection of incompatible structures
 - callable scalar-return guarantee inference across scalars, time series,
   references, passive inputs, optional values, explicit outputs, startup
   scheduling, equality support, and nested graph boundaries
@@ -476,6 +478,8 @@ graph compilation or evaluation.
   invalid children, and reader preservation
 - queue message serialization for scalar and collection literals, frame targets and sizes, root skip, malformed
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
+- provider queue operations, exact-runtime eligibility, nested collection traversal, invalidation admission,
+  retry without consuming ownership, failed-write prefix cleanup, and complete payload cleanup after apply failure
 - queue handle copying and moving, independent concurrent writers, closed-write rejection before serialization,
   retained handles after controller destruction, and shutdown waiting for accepted writes, including failures
 - single-consumer engine wakeups, concurrent notification coalescing, publication visibility after wake,
@@ -531,6 +535,10 @@ graph compilation or evaluation.
   post-run enumeration and reporting, graph-ID reuse, and final-period closure
 - outer and inner graph failure behavior
 - cycle callbacks and deferred storage reclamation
+- extension invocation-end callbacks on lifecycle, evaluation, invalidation,
+  and each accepted queued message; deduplication, cancellation, re-registration
+  during dispatch, pending and exception cleanup, publication order, and scratch
+  lifetime
 - nested instance replacement in the final cycle, stopped-instance finalization,
   and instance deletion through the owning parent's allocator
 - global state shared by outer and inner graphs
@@ -542,7 +550,9 @@ graph compilation or evaluation.
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
 - reduction through compact and nested reducers, odd item counts, defaults, sparse updates, physical item-ID changes,
   and membership changes
-- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
+- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh;
+  common output inference across contained references and free/native collections, both branch orders,
+  downstream value/reference representations, and incompatible type rejection
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
 - service request sinks dispatching work to a background thread and returning queued replies during realtime execution
 
@@ -605,6 +615,12 @@ For each reusable node and graph, test:
 
 ### Standard library
 
+- dictionary key and value queries, duplicate values, simultaneous replacements,
+  reference retargeting, invalidation and revalidation, valid empty collections,
+  owning scalar values, and incremental distinct-value membership
+- first-index queries for scalar lists and fixed TSLs, absent and duplicate values,
+  invalid immediate items, scalar and time series search items, free collections,
+  references, and output guarantees
 - UTF-8 string and symbol length, indexing, slicing, repetition, and Unicode
   case conversion, including multibyte code points, combining marks, embedded
   NUL bytes, malformed input, negative and extreme indices, output limits,
@@ -664,8 +680,9 @@ For each reusable node and graph, test:
   inputs with distinct key and value types and nominal schema compatibility
 - optional addition and multiplication, initial invalidity, invalidation,
   revalidation, startup scheduling, and distinctions from explicit defaults
-- stateful count and one-event lag, including repeated ticks, validity changes,
-  owned scalar snapshots, guarantees, references, and nested graph instances
+- stateful count and event-counted lag, including zero-lag identity, repeated
+  ticks, delayed invalidation, owned scalar snapshots, unread-history cleanup,
+  guarantees, references, and nested graph instances
 - scalar `merge` selection, optional and empty inputs, compatible shapes,
   collection merging, fixed TSL constraints, and guarantee propagation
 - analytical `diff`, `clip`, and `ewma`, including integer wraparound,
@@ -675,6 +692,9 @@ For each reusable node and graph, test:
   ticks, skipped cycles, invalidation without advancing or resetting the count,
   take completion, collection reconciliation after skipped changes, reference
   retargeting, guarantees, and independent nested-graph state
+- duration-based take and drop, including delayed first validity, exact boundaries,
+  quiet boundaries without publication, invalidation, and zero duration;
+  count-based slices, including bounds, strides, and complete collection sampling
 - periodic resampling through schedule and sample, including the first period,
   simultaneous input changes, invalid input, collection reconciliation, and
   nested-graph stop cleanup

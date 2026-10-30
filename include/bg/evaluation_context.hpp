@@ -2,6 +2,7 @@
 
 #include <bg/details/evaluation_context.hpp>
 #include <bg/evaluation_time.hpp>
+#include <bg/extension/invocation_end_callback.hpp>
 #include <bg/graph/runtime_graph_input.hpp>
 #include <bg/schedule_handle.hpp>
 #include <bg/scratch_pad.hpp>
@@ -17,6 +18,7 @@ class GlobalState;
 class EvaluationProfile;
 namespace details {
 class EvaluationScratch;
+class InvocationEndCallbackScope;
 class NodeScheduler;
 } // namespace details
 
@@ -60,7 +62,7 @@ class EvaluationContext {
 
     std::size_t node_index() const noexcept { return node_index_; }
 
-    ScratchPad &scratch() noexcept { return scratch_; }
+    ScratchPad &scratch() noexcept { return shared_scratch_ == nullptr ? scratch_ : *shared_scratch_; }
 
     void schedule_now() const noexcept;
     ScheduleHandle schedule_at(EvaluationTime time) const;
@@ -71,6 +73,8 @@ class EvaluationContext {
     bool timer_fired(ScheduleHandle handle) const noexcept;
     void add_cycle_callback(void *receiver, void (*function)(void *, EvaluationContext &) noexcept,
                            bool call_on_stop = false) const;
+    void add_invocation_end_callback(extension::InvocationEndRegistration &registration, void *receiver,
+                                     void (*function)(void *, EvaluationContext &)) const;
 
     EvaluationContext child(details::EvaluationContextSection &section) noexcept;
     EvaluationContext child(RuntimeGraph &runtime_graph, const RuntimeGraphInput *inputs) noexcept;
@@ -83,6 +87,7 @@ class EvaluationContext {
   private:
     friend RuntimeGraph;
     friend RuntimeGraphEvaluator;
+    friend details::InvocationEndCallbackScope;
     friend details::NodeScheduler;
     EvaluationContext(EvaluationContext &parent, RuntimeGraph &runtime_graph, std::size_t node_index) noexcept
         : global_context_{parent.global_context_}, evaluation_time_{parent.evaluation_time_},
@@ -97,7 +102,8 @@ class EvaluationContext {
     EvaluationContext(EvaluationContext &parent, const details::EvaluationContextSection &section) noexcept
         : global_context_{parent.global_context_}, evaluation_time_{parent.evaluation_time_},
           runtime_graph_{parent.runtime_graph_}, node_index_{parent.node_index_},
-          scratch_{&parent.global_context_->evaluation_scratch}, sections_(&section),
+          scratch_{&parent.global_context_->evaluation_scratch}, shared_scratch_{&parent.scratch()},
+          invocation_end_callbacks_{parent.invocation_end_callbacks_}, sections_(&section),
           runtime_graph_inputs_{parent.runtime_graph_inputs_} {}
 
     void reset_scratch() noexcept { scratch_.reset(); }
@@ -107,6 +113,8 @@ class EvaluationContext {
     RuntimeGraph *runtime_graph_;
     std::size_t node_index_;
     ScratchPad scratch_;
+    ScratchPad *shared_scratch_{};
+    details::InvocationEndCallbackScope *invocation_end_callbacks_{};
     const details::EvaluationContextSection *sections_{};
     const RuntimeGraphInput *runtime_graph_inputs_{};
 };

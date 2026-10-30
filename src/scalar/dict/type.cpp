@@ -82,43 +82,24 @@ const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarT
                                                                   const ResolvedDictScalarType *>>>{};
     auto &cache = types.get();
 
-    const auto lock = std::lock_guard{details::semantic_type_registration_mutex()};
+    if (!key_type.supports_hash()) {
+        throw std::invalid_argument{"dictionary key type does not support hashing"};
+    }
+    if (auto *registration = details::SemanticTypeRegistration::current()) {
+        registration->require_hash(key_type, details::HashRequirement::dictionary_key);
+    }
+
     const auto found = std::ranges::find_if(cache, [&](const auto &type) {
         return type.first.first == &key_type && type.first.second == &mapped_type;
     });
     if (found != cache.end()) {
         return *found->second;
     }
-    if (!key_type.supports_hash()) {
-        throw std::invalid_argument{"dictionary key type does not support hashing"};
-    }
 
-    cache.emplace_back(std::pair{&key_type, &mapped_type}, nullptr);
-    const ResolvedDictScalarType *registered_type = nullptr;
-    try {
-        const auto &result = TypeRegistry::instance().register_owned(
-            std::make_unique<ResolvedDictScalarType>(key_type, mapped_type));
-        registered_type = &result;
-        cache.back().second = registered_type;
-        if (auto *registration = details::SemanticTypeRegistration::current()) {
-            registration->on_validate([&key_type] {
-                if (!key_type.supports_hash()) {
-                    throw std::invalid_argument{"dictionary key type does not support hashing"};
-                }
-            });
-            registration->on_rollback([result = registered_type] {
-                std::erase_if(types.get(), [result](const auto &entry) { return entry.second == result; });
-                TypeRegistry::instance().rollback(*result);
-            });
-        }
-        return result;
-    } catch (...) {
-        cache.pop_back();
-        if (registered_type != nullptr) {
-            TypeRegistry::instance().rollback(*registered_type);
-        }
-        throw;
-    }
+    const auto &result = static_cast<const ResolvedDictScalarType &>(TypeRegistry::instance().register_owned(
+        std::make_unique<ResolvedDictScalarType>(key_type, mapped_type)));
+    cache.emplace_back(std::pair{&key_type, &mapped_type}, &result);
+    return result;
 }
 
 } // namespace bg

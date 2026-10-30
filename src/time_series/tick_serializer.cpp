@@ -5,6 +5,7 @@
 #include <bg/scalar/list/runtime_type.hpp>
 #include <bg/scalar/list/scalar_type.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
+#include <bg/time_series/queue_operations.hpp>
 #include <bg/time_series/tsd/tsd_runtime_type.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
@@ -24,6 +25,12 @@ namespace bg {
 template <> TimeSeriesDispatch<TimeSeriesTickOperations> &
 TimeSeriesDispatch<TimeSeriesTickOperations>::instance() noexcept {
     static auto dispatch = util::static_storage<TimeSeriesDispatch<TimeSeriesTickOperations>>{};
+    return dispatch.get();
+}
+
+template <> TimeSeriesDispatch<TimeSeriesQueueOperations> &
+TimeSeriesDispatch<TimeSeriesQueueOperations>::instance() noexcept {
+    static auto dispatch = util::static_storage<TimeSeriesDispatch<TimeSeriesQueueOperations>>{};
     return dispatch.get();
 }
 
@@ -81,6 +88,7 @@ class QueueMessageCodec {
     QueueMessageCodec(const TimeSeriesRuntimeType &runtime_type, ScalarBufferWriteContext *writer,
                       allocator &memory, QueueMode mode) noexcept
         : runtime_type_{&runtime_type}, writer_{writer}, memory_{&memory}, mode_{mode},
+          queue_dispatch_{&TimeSeriesDispatch<TimeSeriesQueueOperations>::instance()},
           projection_{sizeof(QueueMessageHeader)} {}
 
     bool write_root(const literal::TimeSeriesLiteral &literal) {
@@ -89,7 +97,7 @@ class QueueMessageCodec {
             return false;
         }
         if (value_marker == LiteralMarker::invalid) {
-            if (!supports_literal_invalidation(runtime_type_->type())) {
+            if (!supports_literal_invalidation(*runtime_type_)) {
                 throw std::invalid_argument{"this time-series type does not support literal invalidation"};
             }
             write_header({TickOperation::tick, false});
@@ -118,10 +126,21 @@ class QueueMessageCodec {
     }
 
   private:
-    static bool supports_literal_invalidation(const TimeSeriesType &type) {
-        return type_cast<TimeSeriesValueType>(&type) != nullptr || type_cast<TimeSeriesListType>(&type) != nullptr ||
-               type_cast<TimeSeriesBundleType>(&type) != nullptr || type_cast<TimeSeriesSetType>(&type) != nullptr ||
-               type_cast<TimeSeriesDictionaryType>(&type) != nullptr;
+    bool supports_literal_invalidation(const TimeSeriesRuntimeType &runtime_type) const {
+        const auto &type = runtime_type.type();
+        if (type_cast<TimeSeriesValueType>(&type) != nullptr || type_cast<TimeSeriesListType>(&type) != nullptr ||
+            type_cast<TimeSeriesBundleType>(&type) != nullptr || type_cast<TimeSeriesSetType>(&type) != nullptr ||
+            type_cast<TimeSeriesDictionaryType>(&type) != nullptr) {
+            return true;
+        }
+        if (type_cast<TimeSeriesReferenceType>(&type) != nullptr) {
+            return false;
+        }
+        const auto *operations = queue_dispatch_->find_exact(runtime_type);
+        const auto *type_operations = queue_dispatch_->find_exact(runtime_type.type());
+        return operations != nullptr && operations->has_project() && operations->has_write() &&
+               operations->has_conflicts() && operations->has_apply() && type_operations != nullptr &&
+               type_operations->has_discard();
     }
 
     void write_zeroes(std::size_t size) {
@@ -263,7 +282,7 @@ class QueueMessageCodec {
             return;
         }
         if (value_marker == LiteralMarker::invalid) {
-            if (!supports_literal_invalidation(runtime_type.type())) {
+            if (!supports_literal_invalidation(runtime_type)) {
                 throw std::invalid_argument{"this time-series item does not support literal invalidation"};
             }
             write_header({TickOperation::tick, false});
@@ -401,7 +420,7 @@ class QueueMessageCodec {
                         continue;
                     }
                     if (value_marker == LiteralMarker::invalid &&
-                        !supports_literal_invalidation(dictionary_runtime.item_runtime_type().type())) {
+                        !supports_literal_invalidation(dictionary_runtime.item_runtime_type())) {
                         throw std::invalid_argument{"this time-series item does not support literal invalidation"};
                     }
                     write_header({TickOperation::tick, value_marker != LiteralMarker::invalid});
@@ -415,20 +434,36 @@ class QueueMessageCodec {
             [&](const TimeSeriesReferenceType *) {
                 throw std::invalid_argument{"retained reference time series ticks are not supported"};
             },
-            [&] { throw std::invalid_argument{"queue messages do not support provider-defined time-series types"}; });
+            [&] {
+                const auto *operations = queue_dispatch_->find_exact(runtime_type);
+                if (operations == nullptr || !operations->has_project() || !operations->has_write() ||
+                    !operations->has_conflicts() || !operations->has_apply()) {
+                    throw std::invalid_argument{
+                        "queue messages require exact runtime project, write, conflict, and apply operations"};
+                }
+                const auto *type_operations = queue_dispatch_->find_exact(runtime_type.type());
+                if (type_operations == nullptr || !type_operations->has_discard()) {
+                    throw std::invalid_argument{"queue messages require a semantic discard operation"};
+                }
+                operations->project(literal, projection_);
+                if (writer_ != nullptr) {
+                    operations->write(literal, *writer_, *memory_);
+                }
+            });
     }
 
     const TimeSeriesRuntimeType *runtime_type_;
     ScalarBufferWriteContext *writer_;
     allocator *memory_;
     QueueMode mode_;
+    const TimeSeriesDispatch<TimeSeriesQueueOperations> *queue_dispatch_;
     ScalarBufferProjectionContext projection_;
 };
 
 } // namespace
 
 void validate_queue_output_type(const TimeSeriesType &type, QueueMode mode) {
-    auto validate = [&](auto &&self, const TimeSeriesType &current) -> void {
+    auto validate_type = [&](auto &&self, const TimeSeriesType &current) -> void {
         if (current.guarantee().value() != TimeSeriesGuarantee::ordinary) {
             throw std::invalid_argument{"queue outputs require the ordinary guarantee"};
         }
@@ -469,12 +504,61 @@ void validate_queue_output_type(const TimeSeriesType &type, QueueMode mode) {
             });
     };
 
-    validate(validate, type);
+    validate_type(validate_type, type);
+}
+
+void validate_queue_output_type(const TimeSeriesRuntimeType &runtime_type, QueueMode mode) {
+    validate_queue_output_type(runtime_type.type(), mode);
+    const auto &queue_dispatch = TimeSeriesDispatch<TimeSeriesQueueOperations>::instance();
+
+    auto validate_runtime = [&](auto &&self, const TimeSeriesRuntimeType &current) -> void {
+        current.type().visit(
+            [&](const TimeSeriesValueType *) {},
+            [&](const TimeSeriesListType *list) {
+                if (list->item_count() == std::dynamic_extent) {
+                    self(self, current.item_runtime_type(0));
+                    return;
+                }
+                for (auto id = item_id_t{}; id < list->item_count(); ++id) {
+                    self(self, current.item_runtime_type(id));
+                }
+            },
+            [&](const TimeSeriesBundleType *bundle) {
+                for (auto id = item_id_t{}; id < bundle->item_count(); ++id) {
+                    self(self, current.item_runtime_type(id));
+                }
+            },
+            [&](const TimeSeriesDictionaryType *) {
+                self(self, static_cast<const TimeSeriesDictionaryRuntimeType &>(current).item_runtime_type());
+            },
+            [&](const TimeSeriesSetType *) {},
+            [&](const TimeSeriesReferenceType *) {},
+            [&] {
+                if (mode == QueueMode::batch) {
+                    throw std::invalid_argument{"batch queues do not support provider-defined output types"};
+                }
+                const auto *runtime_operations = queue_dispatch.find_exact(current);
+                if (runtime_operations == nullptr || !runtime_operations->has_project() ||
+                    !runtime_operations->has_write() || !runtime_operations->has_conflicts() ||
+                    !runtime_operations->has_apply()) {
+                    throw std::invalid_argument{
+                        "queue output runtime requires exact project, write, conflict, and apply operations"};
+                }
+
+                const auto *semantic_operations = queue_dispatch.find_exact(current.type());
+                if (semantic_operations == nullptr || !semantic_operations->has_discard()) {
+                    throw std::invalid_argument{"queue output type requires a semantic discard operation"};
+                }
+            });
+    };
+
+    validate_runtime(validate_runtime, runtime_type);
 }
 
 TimeSeriesTickDiscard::TimeSeriesTickDiscard(
-    util::buffer_reader &reader, const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch, QueueMode mode)
-    : reader_{&reader}, dispatch_{&dispatch}, mode_{mode} {}
+    util::buffer_reader &reader, const TimeSeriesDispatch<TimeSeriesTickOperations> &dispatch, QueueMode mode,
+    const TimeSeriesDispatch<TimeSeriesQueueOperations> *queue_dispatch)
+    : reader_{&reader}, dispatch_{&dispatch}, mode_{mode}, queue_dispatch_{queue_dispatch} {}
 
 void TimeSeriesTickDiscard::apply(const TimeSeriesType &type) {
     const auto header = TickHeader::read(*reader_);
@@ -558,6 +642,15 @@ void TimeSeriesTickDiscard::apply_payload(const TimeSeriesType &type) {
             throw std::invalid_argument{"retained reference time series ticks are not supported"};
         },
         [&] {
+            if (queue_dispatch_ != nullptr) {
+                const auto *operations = queue_dispatch_->find_exact(type);
+                if (operations == nullptr || !operations->has_discard()) {
+                    throw std::invalid_argument{"no queue discard operation is registered for this time series type"};
+                }
+                operations->discard(*reader_);
+                return;
+            }
+
             const auto *operations = dispatch_->find_exact(type);
             if (operations == nullptr || !operations->has_discard()) {
                 throw std::invalid_argument{"no tick discard operation is registered for this time series type"};
@@ -603,7 +696,10 @@ namespace {
 
 class QueueTickInspect {
   public:
-    explicit QueueTickInspect(util::buffer_reader &reader, QueueMode mode) noexcept : reader_{reader}, mode_{mode} {}
+    explicit QueueTickInspect(
+        util::buffer_reader &reader, QueueMode mode,
+        const TimeSeriesDispatch<TimeSeriesQueueOperations> &queue_dispatch) noexcept
+        : reader_{reader}, mode_{mode}, queue_dispatch_{queue_dispatch} {}
 
     bool conflicts(const OutputState &output) {
         evaluation_time_ = output.evaluation_time();
@@ -634,7 +730,13 @@ class QueueTickInspect {
         if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
             return inspect_dictionary(*dictionary, runtime_type, last_updated, value, header);
         }
-        throw std::invalid_argument{"standard queue inspection does not support this time series type"};
+        const auto *operations = queue_dispatch_.find_exact(runtime_type);
+        if (operations == nullptr || !operations->has_conflicts()) {
+            throw std::invalid_argument{"no queue conflict operation is registered for this time series runtime"};
+        }
+
+        const auto item = TimeSeriesRuntimeType::ConstItem{runtime_type, last_updated, value};
+        return operations->conflicts(item, evaluation_time_, header.valid, reader_);
     }
 
     bool inspect_value(const TimeSeriesRuntimeType &runtime_type, const TimeSeriesState &last_updated,
@@ -737,7 +839,16 @@ class QueueTickInspect {
             type_cast<TimeSeriesDictionaryType>(&type) != nullptr) {
             return last_updated.valid() && last_updated.time() == evaluation_time_;
         }
-        return inspect_invalidation(runtime_type, value);
+        if (type_cast<TimeSeriesListType>(&type) != nullptr || type_cast<TimeSeriesBundleType>(&type) != nullptr) {
+            return inspect_invalidation(runtime_type, value);
+        }
+
+        const auto *operations = queue_dispatch_.find_exact(runtime_type);
+        if (operations == nullptr || !operations->has_conflicts()) {
+            throw std::invalid_argument{"no queue conflict operation is registered for this time series runtime"};
+        }
+        const auto item = TimeSeriesRuntimeType::ConstItem{runtime_type, last_updated, value};
+        return operations->conflicts(item, evaluation_time_, false, reader_);
     }
 
     bool inspect_set(const TimeSeriesSetType &, const TimeSeriesRuntimeType &runtime_type,
@@ -829,6 +940,7 @@ class QueueTickInspect {
 
     util::buffer_reader &reader_;
     QueueMode mode_;
+    const TimeSeriesDispatch<TimeSeriesQueueOperations> &queue_dispatch_;
     EvaluationTime evaluation_time_{MIN_DT};
 };
 
@@ -842,21 +954,22 @@ bool QueueTickApply::apply(OutputState &output) {
         return false;
     }
 
+    const auto &queue_dispatch = TimeSeriesDispatch<TimeSeriesQueueOperations>::instance();
     if (mode_ == QueueMode::batch) {
-        validate_queue_output_type(output.runtime_type().type(), mode_);
+        validate_queue_output_type(output.runtime_type(), mode_);
     }
 
     const auto &type = output.runtime_type().type();
     if (mode_ == QueueMode::standard || mode_ == QueueMode::batch) {
         auto inspection_reader = reader_->fork();
-        auto inspection = QueueTickInspect{inspection_reader, mode_};
+        auto inspection = QueueTickInspect{inspection_reader, mode_, queue_dispatch};
         if (inspection.conflicts(output)) {
             return false;
         }
     }
 
     auto replay = TimeSeriesTickReplay{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), true,
-                                       mode_};
+                                       mode_, &queue_dispatch};
     auto replay_started = false;
     try {
         auto erased_output = output_factory::make<Out<TS_T>>(output);
@@ -866,7 +979,8 @@ bool QueueTickApply::apply(OutputState &output) {
         const auto failure = std::current_exception();
         if (!replay_started) {
             try {
-                TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), mode_}
+                TimeSeriesTickDiscard{*reader_, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), mode_,
+                                      &queue_dispatch}
                     .apply(type);
             } catch (...) {
                 std::terminate();
@@ -927,7 +1041,9 @@ bool QueueMessageReader::discard(const TimeSeriesType &type, QueueMode mode) {
     }
 
     auto body_reader = util::buffer_reader{frame->body};
-    TimeSeriesTickDiscard{body_reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), mode}.apply(type);
+    TimeSeriesTickDiscard{body_reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), mode,
+                          &TimeSeriesDispatch<TimeSeriesQueueOperations>::instance()}
+        .apply(type);
     reader_.consume(frame->extent);
     return true;
 }
@@ -972,7 +1088,7 @@ QueueMessageWriter::QueueMessageWriter(util::buffer buffer, std::size_t target,
     if (target == std::numeric_limits<std::uint32_t>::max()) {
         throw std::invalid_argument{"queue message target uses the reserved sentinel"};
     }
-    validate_queue_output_type(runtime_type.type(), mode_);
+    validate_queue_output_type(runtime_type, mode_);
     target_ = static_cast<std::uint32_t>(target);
 }
 
@@ -1000,7 +1116,8 @@ bool QueueMessageWriter::write(const literal::TimeSeriesLiteral &literal) {
             reservation.read_written([&](util::buffer_reader &reader) {
                 try {
                     reader.consume<QueueMessageHeader>();
-                    TimeSeriesTickDiscard{reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), mode_}
+                    TimeSeriesTickDiscard{reader, TimeSeriesDispatch<TimeSeriesTickOperations>::instance(), mode_,
+                                          &TimeSeriesDispatch<TimeSeriesQueueOperations>::instance()}
                         .apply(runtime_type_->type());
                 } catch (const std::out_of_range &) {
                     // The reader destroys each completed typed value before reaching an incomplete field.

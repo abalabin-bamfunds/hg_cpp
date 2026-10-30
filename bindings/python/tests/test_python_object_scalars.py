@@ -31,6 +31,32 @@ def test_python_objects_keep_identity_through_base_typed_time_series():
     assert bg.run_graph(base_to_base, [value])[0] is value
 
 
+def test_python_object_defaults_resolve_inside_list_and_bundle_scalars():
+    class Value:
+        pass
+
+    @bg.schema
+    class Record:
+        value: Value
+
+    first = Value()
+    second = Value()
+    record = Record(first)
+
+    @bg.graph
+    def list_identity(value: bg.TS[tuple[Value, ...]]) -> bg.TS[tuple[Value, ...]]:
+        return value
+
+    @bg.graph
+    def bundle_identity(value: bg.TS[bg.Bundle[Record]]) -> bg.TS[bg.Bundle[Record]]:
+        return value
+
+    assert bg.run_graph(list_identity, [(first, second)]) == [(first, second)]
+    result = bg.run_graph(bundle_identity, [record])
+    assert type(result[0]) is Record
+    assert result[0].value is first
+
+
 def test_python_object_scalar_types_report_value_covariance():
     class Base:
         pass

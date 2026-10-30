@@ -14,9 +14,9 @@ imports and headers.
 | `any_` | [Reference](library-collections.md#boolean-reductions) |
 | `args` (C++) | [Reference](graph-code.md#variadic-parameters) |
 | `batch` | [Reference](library-time.md#batch) |
-| `bit_and` | [Reference](library-collections.md#time-series-set-operations) |
-| `bit_or` | [Reference](library-collections.md#time-series-set-operations) |
-| `bit_xor` | [Reference](library-collections.md#time-series-set-operations) |
+| `bit_and` | [Reference](library-numeric.md#integer-bitwise-operators) |
+| `bit_or` | [Reference](library-numeric.md#integer-bitwise-operators) |
+| `bit_xor` | [Reference](library-numeric.md#integer-bitwise-operators) |
 | `casefold` | [Reference](library-text.md#construction-and-queries) |
 | `clip` | [Reference](library-numeric.md#clip) |
 | `collapse_keys` | [Reference](library-collections.md#dictionary-transforms) |
@@ -48,7 +48,10 @@ imports and headers.
 | `getattr` | [Reference](library-collections.md#getitem-and-getattr) |
 | `getitem` | [Reference](library-collections.md#getitem-and-getattr) |
 | `gt` | [Reference](library-numeric.md#arithmetic) |
+| `if_` | [Reference](library-selection.md#if_) |
 | `if_then_else` | [Reference](library-selection.md#if_then_else) |
+| `if_true` | [Reference](library-selection.md#if_true) |
+| `invert` | [Reference](library-numeric.md#integer-bitwise-operators) |
 | `is_empty` | [Reference](library-collections.md#time-series-set-operations) |
 | `join` | [Reference](library-text.md#split-and-join) |
 | `keys_` | [Reference](library-collections.md#collection-queries) |
@@ -84,14 +87,17 @@ imports and headers.
 | `pass_through` | [Reference](higher-order.md#map) |
 | `pos` | [Reference](library-numeric.md#arithmetic) |
 | `pow` | [Reference](library-numeric.md#arithmetic) |
+| `race` | [Reference](library-selection.md#race) |
 | `print_` | [Reference](library-text.md#formatting-and-printing) |
 | `reduce` (C++) | [Reference](higher-order.md#reduce) |
 | `rekey` | [Reference](library-collections.md#dictionary-transforms) |
 | `replace` | [Reference](library-text.md#regular-expressions) |
 | `resample` | [Reference](library-time.md#resample) |
 | `round` | [Reference](library-numeric.md#arithmetic) |
+| `route_by_index` | [Reference](library-selection.md#route_by_index) |
 | `sample` | [Reference](library-selection.md#sample) |
 | `schedule` | [Reference](library-time.md#schedule) |
+| `slice_` | [Reference](library-selection.md#slice_) |
 | `split` | [Reference](library-text.md#split-and-join) |
 | `step` | [Reference](library-selection.md#take-drop-step) |
 | `str_` | [Reference](library-text.md#construction-and-queries) |

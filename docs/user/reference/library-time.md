@@ -125,13 +125,13 @@ def snapshots(value: int) -> int:
     return resample(value, timedelta(microseconds=2))
 
 result = run_graph(snapshots, [10, None, None, 20], run_time=timedelta(microseconds=5))
-print([value for time, value in result.events])
+print(result)
 ```
 
 Output:
 
 ```text
-[10, 20]
+[None, None, 10, None, 20]
 ```
 :::::
 
@@ -158,14 +158,14 @@ auto snapshots(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(snapshots, GraphRunOptions{.run_time = EvaluationTime::duration{5}}, {10, SKIP, SKIP, 20});
-    std::cout << std::boolalpha << result.equals({SKIP, SKIP, 10, SKIP, 20}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, None, 10, None, 20]
 ```
 :::
 

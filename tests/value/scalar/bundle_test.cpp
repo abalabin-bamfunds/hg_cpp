@@ -5,7 +5,9 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/scalar/bundle/value.hpp>
+#include <bg/scalar/list/scalar_type.hpp>
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/runtime_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -813,4 +815,42 @@ TEST_CASE("a recursive hierarchical scalar stores descendants in a scalar list",
     REQUIRE(stored_children.size() == 1);
     CHECK(scalar_cast<i64>(stored_children[0][0]).value() == 1);
     CHECK_FALSE(stored_children[0].present(1));
+}
+
+TEST_CASE("a recursive native list runtime initializes from a published shell",
+          "[value][feature:scalar-storage][scalar:list][scalar:hierarchical]") {
+    using Value = List<Bundle<RecursiveCollectionValue>>;
+    const auto &runtime = static_cast<const ScalarListRuntimeType &>(cpp_scalar_runtime_type<Value>());
+
+    CHECK(&runtime.type() == &cpp_scalar_type<Value>());
+    CHECK(&runtime.item_runtime_type().type() == &cpp_scalar_type<Bundle<RecursiveCollectionValue>>());
+}
+
+TEST_CASE("a recursive native bundle runtime initializes before its child list",
+          "[value][feature:scalar-storage][scalar:list][scalar:hierarchical]") {
+    using Value = Bundle<RecursiveCollectionValue>;
+    const auto &runtime = static_cast<const HierarchicalScalarRuntimeType &>(cpp_scalar_runtime_type<Value>());
+
+    CHECK(&runtime.type() == &cpp_scalar_type<Value>());
+    REQUIRE(runtime.type().field_count() == 2);
+    CHECK(runtime.type().field(1).type == &cpp_scalar_type<List<Value>>());
+}
+
+TEST_CASE("an erased recursive list runtime initializes from a published shell",
+          "[value][feature:scalar-storage][scalar:list][scalar:hierarchical]") {
+    auto registration = SchemaRegistration{};
+    auto &schema = registration.reserve_schema(util::symbol{"RecursiveRuntimeList"}, new_runtime_schema_id(), nullptr);
+    const auto &bundle_type = details::canonical_hierarchical_scalar_type(schema);
+    const auto &type = list_scalar_type(bundle_type);
+    const auto fields = std::array{
+        SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>()},
+        SchemaField{util::symbol{"children"}, &type, true},
+    };
+    schema.finalize(fields);
+    registration.commit();
+
+    const auto &runtime = static_cast<const ScalarListRuntimeType &>(resolve_default_scalar_runtime_type(type));
+
+    CHECK(&runtime.type() == &type);
+    CHECK(&runtime.item_runtime_type().type() == &bundle_type);
 }

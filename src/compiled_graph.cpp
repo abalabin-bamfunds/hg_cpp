@@ -589,12 +589,10 @@ void plan_time_series_inputs(CompilationPlan &plan, const GraphWiring &wiring) {
             }
             const auto constant_binding =
                 !default_value && input.is_output() && plan.constant_for_output(input.index()) != nullptr;
-            const auto *list_type = type_cast<TimeSeriesListType>(parameter.type);
-            const auto sampled_reference = input.dereferences_reference() &&
-                                          (type_cast<TimeSeriesSetType>(parameter.type) != nullptr ||
-                                           type_cast<TimeSeriesDictionaryType>(parameter.type) != nullptr ||
-                                           type_cast<TimeSeriesBundleType>(parameter.type) != nullptr ||
-                                           (list_type != nullptr && list_type->item_count() != std::dynamic_extent));
+            const auto sampled_reference =
+                input.dereferences_reference() &&
+                resolve_time_series_runtime_type(static_cast<const TimeSeriesType &>(*parameter.type))
+                        .reference_sample_factory() != nullptr;
             plan.node_plans[node_index].time_series_inputs.push_back({
                 .parameter = static_cast<std::uint32_t>(parameter_index),
                 .wired_input = input,

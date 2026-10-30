@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/opaque.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/storage_traits.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
@@ -19,6 +20,7 @@ template <typename T> class OpaqueScalarType final : public ScalarType {
 
 template <typename T> const ScalarType &opaque_scalar_type() noexcept {
     static const auto type = util::static_storage<OpaqueScalarType<T>>{};
+    type.get().set_default_runtime_type_factory(&cpp_scalar_runtime_type_for_type<Opaque<T>>);
     [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
     return type.get();
 }
@@ -39,3 +41,5 @@ template <typename T> struct scalar_declaration_traits<Opaque<T>> {
 };
 
 } // namespace bg
+
+#include <bg/scalar/cpp_runtime_type.hpp>

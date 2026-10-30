@@ -241,8 +241,7 @@ class CollectionMembershipSubscriptions final : public ReferenceProviderComponen
                 auto &membership = item.value;
                 const auto was_valid = membership.last_updated.valid();
                 const auto &owner_type = *collection.identity.retained_runtime_type;
-                const auto key = ScalarData{owner_type.key_runtime_type(),
-                                            owner_type.set_key(collection.identity.retained_value, membership.id)};
+                const auto key = owner_type.set_key_data(collection.identity.retained_value, membership.id);
                 membership.value = contains(collection, *resolved.runtime_type, resolved.storage, view, key);
                 membership.last_updated.publish(context.evaluation_time());
                 membership.subscribers.notify(context, was_valid ? output_change : OutputChange::revalidation);
@@ -266,8 +265,7 @@ class CollectionMembershipSubscriptions final : public ReferenceProviderComponen
                     return;
                 }
             } else {
-                const auto *key = view.runtime_type.set_key(view.storage, id);
-                const auto key_data = ScalarData{view.runtime_type.key_runtime_type(), key};
+                const auto key_data = view.runtime_type.set_key_data(view.storage, id);
                 const auto retained_id = collection.identity.retained_runtime_type->find_set_key(
                     collection.identity.retained_value, key_data);
                 if (retained_id == util::occupancy_index::npos) {
@@ -293,9 +291,7 @@ class CollectionMembershipSubscriptions final : public ReferenceProviderComponen
         const auto first = collection.memberships.begin();
         const auto &membership = (*first).value;
         const auto &owner_type = *collection.identity.retained_runtime_type;
-        const auto key = ScalarData{owner_type.key_runtime_type(), owner_type.set_key(
-                                                                       collection.identity.retained_value,
-                                                                       membership.id)};
+        const auto key = owner_type.set_key_data(collection.identity.retained_value, membership.id);
         const auto retained = view.runtime_type.retain_key(const_cast<void *>(view.storage), key, memory_);
         if (retained.runtime_type == nullptr) {
             return false;
@@ -366,8 +362,7 @@ class CollectionMembershipSubscriptions final : public ReferenceProviderComponen
                  const ResolvedTimeSeries &resolved, CollectionView view, Membership &membership, bool revalidation,
                  item_id_t known_id = util::occupancy_index::npos) {
         const auto &owner_type = *membership.collection->identity.retained_runtime_type;
-        const auto key = ScalarData{owner_type.key_runtime_type(),
-                                    owner_type.set_key(membership.collection->identity.retained_value, membership.id)};
+        const auto key = owner_type.set_key_data(membership.collection->identity.retained_value, membership.id);
         const auto value = contains(*membership.collection, runtime_type, resolved.storage, view, key, known_id);
         if (!membership.last_updated.valid()) {
             membership.value = value;

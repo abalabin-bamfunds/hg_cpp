@@ -1,6 +1,8 @@
 #include "fixed_reference_sample.hpp"
 
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/time_series/tsb/tsb_runtime_type.hpp>
+#include <bg/time_series/tsl/tsl_runtime_type.hpp>
 #include <bg/type/time_series_bundle_type.hpp>
 #include <bg/type/time_series_list_type.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -17,31 +19,48 @@
 namespace bg::details {
 namespace {
 
+ReferenceSample *create_sampled_fixed_collection(const TimeSeriesType &type, ResolvedTimeSeries previous,
+                                                 ResolvedTimeSeries current, EvaluationTime evaluation_time,
+                                                 allocator &memory) {
+    if (previous.runtime_type == nullptr && current.runtime_type == nullptr) {
+        return nullptr;
+    }
+
+    return SampledFixedCollection::create(type, previous, current, evaluation_time, memory);
+}
+
 class SampledFixedCollectionRuntimeType final : public TimeSeriesRuntimeType {
   public:
-    explicit SampledFixedCollectionRuntimeType(const TimeSeriesRuntimeType &shape)
-        : TimeSeriesRuntimeType{shape.type()}, shape_{&shape} {}
+    explicit SampledFixedCollectionRuntimeType(const TimeSeriesType &type) : TimeSeriesRuntimeType{type} {
+        declared_runtime_type_ = &resolve_time_series_runtime_type(type);
+    }
 
-    static const SampledFixedCollectionRuntimeType &for_shape(const TimeSeriesRuntimeType &shape) {
+    static const SampledFixedCollectionRuntimeType &for_type(const TimeSeriesType &type) {
         struct Entry {
-            const TimeSeriesRuntimeType *shape;
+            const TimeSeriesType *type;
             std::unique_ptr<SampledFixedCollectionRuntimeType> runtime_type;
         };
 
         static auto mutex = util::static_storage<std::mutex>{};
         static auto entries = util::static_storage<std::vector<Entry>>{};
 
-        const auto lock = std::lock_guard{mutex.get()};
         auto &cache = entries.get();
-        const auto found = std::ranges::find(cache, &shape, &Entry::shape);
+        {
+            const auto lock = std::lock_guard{mutex.get()};
+            const auto found = std::ranges::find(cache, &type, &Entry::type);
+            if (found != cache.end()) {
+                return *found->runtime_type;
+            }
+        }
+
+        auto runtime_type = std::make_unique<SampledFixedCollectionRuntimeType>(type);
+        const auto lock = std::lock_guard{mutex.get()};
+        const auto found = std::ranges::find(cache, &type, &Entry::type);
         if (found != cache.end()) {
             return *found->runtime_type;
         }
-
-        auto runtime_type = std::make_unique<SampledFixedCollectionRuntimeType>(shape);
-        const auto &result = *runtime_type;
-        cache.push_back({&shape, std::move(runtime_type)});
-        return result;
+        cache.push_back({&type, std::move(runtime_type)});
+        return *cache.back().runtime_type;
     }
 
     ItemLayout item_layout(item_id_t) const override {
@@ -49,7 +68,7 @@ class SampledFixedCollectionRuntimeType final : public TimeSeriesRuntimeType {
     }
 
     const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const override {
-        return shape_->item_runtime_type(id);
+        return declared_runtime_type_->item_runtime_type(id);
     }
 
     std::size_t item_count(const void *) const override {
@@ -84,9 +103,9 @@ class SampledFixedCollectionRuntimeType final : public TimeSeriesRuntimeType {
         }
 
         const auto &sample = *static_cast<const SampledFixedCollection *>(value);
-        return sample.current.runtime_type != nullptr && sample.current.storage != nullptr &&
-               sample.current.runtime_type->all_valid(sample.current.last_updated, sample.current.storage,
-                                                      declared_type);
+        return sample.current_source.runtime_type != nullptr && sample.current_source.storage != nullptr &&
+               sample.current_source.runtime_type->all_valid(sample.current_source.last_updated,
+                                                             sample.current_source.storage, declared_type);
     }
 
     bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t) const override {
@@ -108,7 +127,7 @@ class SampledFixedCollectionRuntimeType final : public TimeSeriesRuntimeType {
     }
 
     bool collection_valid(const void *value) const noexcept override {
-        return static_cast<const SampledFixedCollection *>(value)->current.valid();
+        return static_cast<const SampledFixedCollection *>(value)->current_source.valid();
     }
 
     void for_each_modified_item(const TimeSeriesState &last_updated, const void *value, EvaluationTime evaluation_time,
@@ -127,15 +146,15 @@ class SampledFixedCollectionRuntimeType final : public TimeSeriesRuntimeType {
     void destroy_value(void *, allocator &) const noexcept override { std::terminate(); }
 
   private:
-    const TimeSeriesRuntimeType *shape_;
+    const TimeSeriesRuntimeType *declared_runtime_type_;
 };
 
 } // namespace
 
-SampledFixedCollection::SampledFixedCollection(const TimeSeriesRuntimeType &shape, ResolvedTimeSeries previous,
+SampledFixedCollection::SampledFixedCollection(const TimeSeriesType &type, ResolvedTimeSeries previous,
                                                ResolvedTimeSeries current, EvaluationTime evaluation_time,
                                                allocator &memory)
-    : runtime_type{&SampledFixedCollectionRuntimeType::for_shape(shape)}, previous{previous}, current{current},
+    : runtime_type{&SampledFixedCollectionRuntimeType::for_type(type)}, previous_source{previous}, current_source{current},
       sampled_last_updated{TimeSeriesState::from_validity_transition(
           evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid())},
       memory{memory} {}
@@ -146,11 +165,18 @@ SampledFixedCollection::~SampledFixedCollection() {
     child_samples_positions.release(memory.memory_resource());
 }
 
-SampledFixedCollection *SampledFixedCollection::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                                       EvaluationTime evaluation_time, allocator &memory) {
-    const auto *shape = current.runtime_type != nullptr ? current.runtime_type : previous.runtime_type;
-    assert(shape != nullptr);
-    return memory.new_object<SampledFixedCollection>(*shape, previous, current, evaluation_time, memory);
+SampledFixedCollection *SampledFixedCollection::create(const TimeSeriesType &type, ResolvedTimeSeries previous,
+                                                       ResolvedTimeSeries current, EvaluationTime evaluation_time,
+                                                       allocator &memory) {
+    return memory.new_object<SampledFixedCollection>(type, previous, current, evaluation_time, memory);
+}
+
+ReferenceSampleFactory FixedTimeSeriesListRuntimeType::reference_sample_factory() const noexcept {
+    return &create_sampled_fixed_collection;
+}
+
+ReferenceSampleFactory TimeSeriesBundleRuntimeTypeBase::reference_sample_factory() const noexcept {
+    return &create_sampled_fixed_collection;
 }
 
 void SampledFixedCollection::release() noexcept {
@@ -170,20 +196,22 @@ TimeSeriesRuntimeType::ConstItem SampledFixedCollection::item(item_id_t id) cons
     }
 
     const auto &expected_type = shape.item_runtime_type(id);
-    const auto previous_item = previous.runtime_type != nullptr && previous.storage != nullptr
-                                   ? previous.runtime_type->item(previous.storage, id)
-                                   : TimeSeriesRuntimeType::ConstItem{expected_type, previous.last_updated, nullptr};
-    const auto current_item = current.runtime_type != nullptr && current.storage != nullptr
-                                  ? current.runtime_type->item(current.storage, id)
-                                  : TimeSeriesRuntimeType::ConstItem{expected_type, current.last_updated, nullptr};
+    const auto previous_item = previous_source.runtime_type != nullptr && previous_source.storage != nullptr
+                                   ? previous_source.runtime_type->item(previous_source.storage, id)
+                                   : TimeSeriesRuntimeType::ConstItem{expected_type, previous_source.last_updated,
+                                                                      nullptr};
+    const auto current_item = current_source.runtime_type != nullptr && current_source.storage != nullptr
+                                  ? current_source.runtime_type->item(current_source.storage, id)
+                                  : TimeSeriesRuntimeType::ConstItem{expected_type, current_source.last_updated,
+                                                                     nullptr};
     const auto previous_child = ResolvedTimeSeries{previous_item.last_updated, previous_item.value,
                                                    &previous_item.runtime_type};
     const auto current_child = ResolvedTimeSeries{current_item.last_updated, current_item.value,
                                                   &current_item.runtime_type};
 
     auto sample_memory = memory;
-    auto nested_sample = SampledReferenceChange::create(previous_child, current_child, sampled_last_updated.time(),
-                                                        sample_memory);
+    auto nested_sample = SampledReferenceChange::create(expected_type, previous_child, current_child,
+                                                        sampled_last_updated.time(), sample_memory);
     if (nested_sample) {
         auto release_nested_sample = util::scope_exit{[&]() noexcept { nested_sample.release(); }};
         const auto inserted_position = child_samples_positions.set(id, memory.memory_resource());

@@ -7,7 +7,6 @@
 #include <bg/time_series/tsl/tsl_output.hpp>
 
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <vector>
 
@@ -172,11 +171,9 @@ void FreeFixedTimeSeriesListRuntimeType::destroy_value(void *value, allocator &m
 }
 
 const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type) {
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto runtime_types =
         util::static_storage<std::vector<std::unique_ptr<FreeFixedTimeSeriesListRuntimeType>>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = runtime_types.get();
     const auto existing = std::ranges::find_if(
         cache, [&](const auto &candidate) { return &candidate->type() == &type; });
@@ -196,10 +193,8 @@ fixed_time_series_list_runtime_type(const TimeSeriesListType &type, const TimeSe
         std::unique_ptr<FixedTimeSeriesListRuntimeType> runtime_type;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
     const auto found =
         std::ranges::find_if(cache, [&](const auto &entry) { return entry.type == &type && entry.item == &item; });

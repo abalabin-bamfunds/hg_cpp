@@ -18,7 +18,11 @@ class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<D
 
   public:
     CppScalarRuntimeType()
-        : Base{cpp_scalar_type<Dict<K, V>>(), cpp_scalar_runtime_type<K>(), cpp_scalar_runtime_type<V>()} {}
+        : Base{cpp_scalar_type<Dict<K, V>>()} {}
+
+    void initialize_runtime_type() {
+        this->initialize_runtime_types(cpp_scalar_runtime_type<K>(), cpp_scalar_runtime_type<V>());
+    }
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<details::scalar_dict_storage<K, V> *>(destination));

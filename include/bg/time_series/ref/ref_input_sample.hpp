@@ -5,7 +5,6 @@
 #include <bg/time_series/ref/ref_input_storage.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/util/adaptive_set.hpp>
-#include <bg/util/tagged_ptr.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -14,22 +13,35 @@
 
 namespace bg::details {
 
-struct SampledSet;
-struct SampledDictionary;
-struct SampledFixedCollection;
+class ReferenceSample {
+  public:
+    // A runtime-type factory returns one owned reference. The sample can borrow source storage through the receiving
+    // cycle; BG releases retained samples during next-cycle cleanup or graph shutdown.
+    virtual void retain() noexcept = 0;
+    virtual void release() noexcept = 0;
+    virtual TimeSeriesRuntimeType::ConstItem input() const noexcept = 0;
+    virtual ResolvedTimeSeries previous() const noexcept = 0;
 
-struct SampledReferenceChange
-    : util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary, SampledFixedCollection> {
-    using Base = util::variant_ptr_with_alignment<alignof(void *), SampledSet, SampledDictionary,
-                                                  SampledFixedCollection>;
-    using Base::Base;
+  protected:
+    virtual ~ReferenceSample() = default;
+};
 
-    static SampledReferenceChange create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+class SampledReferenceChange {
+  public:
+    SampledReferenceChange() = default;
+    explicit SampledReferenceChange(ReferenceSample *sample) noexcept : sample_{sample} {}
+
+    explicit operator bool() const noexcept { return sample_ != nullptr; }
+    static SampledReferenceChange create(const TimeSeriesRuntimeType &requested_runtime_type,
+                                         ResolvedTimeSeries previous, ResolvedTimeSeries current,
                                          EvaluationTime evaluation_time, allocator &memory);
     void retain() const noexcept;
     void release() const noexcept;
     TimeSeriesRuntimeType::ConstItem input() const noexcept;
     ResolvedTimeSeries previous() const noexcept;
+
+  private:
+    ReferenceSample *sample_{};
 };
 
 static_assert(sizeof(SampledReferenceChange) == sizeof(void *));

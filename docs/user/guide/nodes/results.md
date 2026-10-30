@@ -75,14 +75,14 @@ int main() {
         display_temperature,
         {18, SKIP, 19, SKIP},
         {SKIP, 2, SKIP, 3});
-    std::cout << std::boolalpha << result.equals({SKIP, 200, 210, 220}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 200, 210, 220]
 ```
 :::
 
@@ -173,14 +173,14 @@ auto temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(temperature), {18, -3, 0, -1, 19});
-    std::cout << std::boolalpha << result.equals({20, SKIP, 2, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, None, 2, None, 21]
 ```
 :::
 

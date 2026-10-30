@@ -66,14 +66,14 @@ auto temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 
 int main() {
     const auto result = run_graph(temperature, {18, 19}, {2, 3});
-    std::cout << std::boolalpha << result.equals({20, 22}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 22]
 ```
 :::
 
@@ -164,23 +164,23 @@ struct Retain {
 
 const auto retain = node<Retain>();
 
-bool retained_result() {
+auto retained_result() {
     auto state = GlobalState{};
     run_graph([] { retain(const_(18) + 2); }, GraphRunOptions{.global_state = &state});
     auto result = i64{0};
     state.read([&](const auto& values) { result = *scalar_cast<i64>(values.at("temperature")); });
-    return result == 20;
+    return result;
 }
 
 int main() {
-    std::cout << std::boolalpha << (retained_result()) << '\n';
+    std::cout << retained_result() << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+20
 ```
 :::
 
@@ -269,21 +269,21 @@ const auto offset_implementation = graph([] { return const_(i64{2}).as<TS<i64>>(
 
 auto temperature(wp<TS<i64>> reading) { return reading + offset(); }
 
-bool check_service() {
+auto run_service() {
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(offset, offset_implementation);
-    return run_graph(temperature, GraphRunOptions{.services = &catalogue}, {18, 19}).equals({20, 21});
+    return run_graph(temperature, GraphRunOptions{.services = &catalogue}, {18, 19});
 }
 
 int main() {
-    std::cout << std::boolalpha << (check_service()) << '\n';
+    std::cout << run_service() << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 21]
 ```
 :::
 

@@ -63,14 +63,14 @@ auto changes(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 
 int main() {
     const auto result = run_graph(changes, {18, SKIP, 18, 19}, {2, 3, SKIP, 4});
-    std::cout << std::boolalpha << result.equals({true, false, true, true}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[true, false, true, true]
 ```
 :::
 
@@ -161,14 +161,14 @@ auto temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 
 int main() {
     const auto result = run_graph(graph(temperature), {18, SKIP, 19, 20}, {SKIP, 0, SKIP, 3});
-    std::cout << std::boolalpha << result.equals({20, 18, 19, 23}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 18, 19, 23]
 ```
 :::
 
@@ -249,15 +249,14 @@ auto offset_available(wp<TS<i64>> reading, wp<TS<i64>> offset) {
 }
 
 int main() {
-    std::cout << std::boolalpha << (run_graph(offset_available, {18, SKIP, SKIP, SKIP}, {SKIP, 0, INVALID, 3})
-        .equals({false, true, false, true})) << '\n';
+    std::cout << run_graph(offset_available, {18, SKIP, SKIP, SKIP}, {SKIP, 0, INVALID, 3}) << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[false, true, false, true]
 ```
 :::
 
@@ -342,14 +341,14 @@ auto requested(wp<TS<bool>> request, wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(requested, {true, SKIP, true}, {18, 19, SKIP});
-    std::cout << std::boolalpha << result.equals({18, std::nullopt, 19}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, None, 19]
 ```
 :::
 

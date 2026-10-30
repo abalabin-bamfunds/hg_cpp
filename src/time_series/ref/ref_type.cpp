@@ -1,4 +1,5 @@
 #include <bg/type/time_series_reference_type.hpp>
+#include <bg/time_series/ref/ref_runtime_type.hpp>
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
@@ -14,7 +15,11 @@ namespace {
 class ResolvedTimeSeriesReferenceType final : public TimeSeriesReferenceType {
   public:
     ResolvedTimeSeriesReferenceType(const TimeSeriesType &target_type, TimeSeriesGuarantee guarantee)
-        : TimeSeriesReferenceType(target_type, guarantee) {}
+        : TimeSeriesReferenceType(target_type, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            return time_series_reference_runtime_type(static_cast<const TimeSeriesReferenceType &>(type));
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }

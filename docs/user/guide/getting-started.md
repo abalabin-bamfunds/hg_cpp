@@ -57,14 +57,14 @@ auto example() {
 
 int main() {
     const auto result = run_graph(example);
-    std::cout << std::boolalpha << result.equals({18}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18]
 ```
 :::
 
@@ -84,8 +84,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 Python `@graph` declares the graph function and `-> int` declares its result type.
-C++ uses an ordinary function with an inferred return type. `equals` checks the
-captured C++ result against a literal sequence; `true` confirms the match.
+C++ uses an ordinary function with an inferred return type. Python `print` and
+C++ `std::cout` display the captured output as a list.
 
 ## Expressions
 
@@ -145,14 +145,14 @@ auto display_temperature() {
 
 int main() {
     const auto result = run_graph(display_temperature);
-    std::cout << std::boolalpha << result.equals({200}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[200]
 ```
 :::
 
@@ -238,14 +238,14 @@ auto display_temperature() {
 
 int main() {
     const auto result = run_graph(display_temperature);
-    std::cout << std::boolalpha << result.equals({200}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[200]
 ```
 :::
 
@@ -331,14 +331,14 @@ int main() {
 using namespace literal;
 
 const auto result = run_graph(display_temperature, {18, SKIP, 18, 19});
-std::cout << std::boolalpha << result.equals({200, SKIP, 200, 210}) << '\n';
+std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[200, None, 200, 210]
 ```
 :::
 
@@ -419,14 +419,14 @@ auto capped_temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(capped_temperature, {18, 20, 19});
-    std::cout << std::boolalpha << result.equals({20, 21, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 21, 21]
 ```
 :::
 
@@ -514,14 +514,14 @@ auto temperature(wp<TS<i64>> reading) {
 
 int main() {
     const auto result = run_graph(graph(temperature), {18, -3, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({20, 0, SKIP, 21}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 0, None, 21]
 ```
 :::
 

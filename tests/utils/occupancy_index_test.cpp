@@ -140,3 +140,38 @@ TEST_CASE("an occupancy index enumerates live position runs", "[occupancy_index]
     index.release(memory);
     CHECK(memory.allocations() == 0);
 }
+
+TEST_CASE("an occupancy index relocates a bit range and updates the next position",
+          "[occupancy_index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto positions = util::occupancy_index{};
+    for (auto position = std::uint32_t{}; position != 10; ++position) {
+        REQUIRE(positions.set(position, memory));
+    }
+    for (const auto position : std::array{std::uint32_t{10}, std::uint32_t{12}, std::uint32_t{14},
+                                          std::uint32_t{40}}) {
+        REQUIRE(positions.set(position, memory));
+    }
+
+    const auto extent = positions.extent();
+    const auto count = positions.size();
+    positions.relocate(10, 20, 10);
+
+    CHECK(positions.extent() == extent);
+    CHECK(positions.size() == count);
+    for (auto position = std::uint32_t{10}; position != 20; ++position) {
+        CHECK_FALSE(positions.contains(position));
+    }
+    CHECK(positions.contains(20));
+    CHECK_FALSE(positions.contains(21));
+    CHECK(positions.contains(22));
+    CHECK_FALSE(positions.contains(23));
+    CHECK(positions.contains(24));
+    CHECK_FALSE(positions.contains(25));
+    CHECK(positions.contains(40));
+    CHECK(positions.acquire(memory) == 10);
+    CHECK(positions.size() == count + 1);
+
+    positions.release(memory);
+    CHECK(memory.allocations() == 0);
+}

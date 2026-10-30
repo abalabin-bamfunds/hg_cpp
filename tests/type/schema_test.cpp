@@ -152,6 +152,44 @@ TEST_CASE("schema metadata owns scalar values and ignores entry order in canonic
     CHECK(&bg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, different) != &first);
 }
 
+TEST_CASE("schema metadata copy_with removes entries and applies overrides",
+          "[feature:type-system][schema:named][declaration:runtime]") {
+    const auto original = make_schema_metadata({
+        schema_metadata_entry("extension.keep", ScalarValue<i64>{1}),
+        schema_metadata_entry("extension.remove", ScalarValue<i64>{2}),
+        schema_metadata_entry("extension.version", ScalarValue<i64>{3}),
+    });
+    const auto overrides = make_schema_metadata({
+        schema_metadata_entry("extension.add", ScalarValue<i64>{4}),
+        schema_metadata_entry("extension.version", ScalarValue<i64>{5}),
+    });
+
+    const auto copied = original.copy_with(overrides, {"extension.remove", "extension.version"});
+
+    REQUIRE(copied.size() == 3);
+    CHECK(Scalar<>::from(*copied.find("extension.keep")).equals(ScalarValue<i64>{1}));
+    CHECK(Scalar<>::from(*copied.find("extension.add")).equals(ScalarValue<i64>{4}));
+    CHECK(Scalar<>::from(*copied.find("extension.version")).equals(ScalarValue<i64>{5}));
+    CHECK(copied.find("extension.remove") == nullptr);
+
+    REQUIRE(original.size() == 3);
+    CHECK(Scalar<>::from(*original.find("extension.remove")).equals(ScalarValue<i64>{2}));
+    CHECK(Scalar<>::from(*original.find("extension.version")).equals(ScalarValue<i64>{3}));
+    CHECK(original.find("extension.add") == nullptr);
+}
+
+TEST_CASE("schema metadata copy_with treats absent and repeated removals as no-ops",
+          "[feature:type-system][schema:named][declaration:runtime]") {
+    const auto original = make_schema_metadata({
+        schema_metadata_entry("extension.keep", ScalarValue<i64>{1}),
+    });
+
+    CHECK(original.copy_with() == original);
+    CHECK(original.copy_with({}, {"extension.missing", "extension.missing"}) == original);
+    CHECK(original.copy_with({}, {"extension.keep"}).empty());
+    CHECK(SchemaMetadata{}.copy_with({}, {"extension.missing"}).empty());
+}
+
 TEST_CASE("registered schema and List<string> descriptors survive process shutdown",
           "[feature:type-system][schema:named][declaration:runtime]") {
     const auto identity = new_runtime_schema_id();
@@ -241,27 +279,39 @@ TEST_CASE("schema resolution preserves identity and resolves inherited field typ
     CHECK(&resolved == &derived.resolve(type_map));
 }
 
-TEST_CASE("schema registration rolls back and retries the same runtime identity",
+TEST_CASE("schema registration publishes completed runtime schemas",
           "[feature:type-system][schema:named][declaration:runtime]") {
     const auto identity = new_runtime_schema_id();
-    const auto name = util::symbol{"RetrySchema"};
+    const auto name = util::symbol{"CompletedSchema"};
     const auto metadata = make_schema_metadata({schema_metadata_entry("extension.version", ScalarValue<i64>{1})});
-    const auto failed_fields = std::array{SchemaField{util::symbol{"value"}, &float_type()}};
     const auto fields = std::array{SchemaField{util::symbol{"value"}, &double_type()}};
 
-    CHECK_THROWS([&] {
-        auto registration = SchemaRegistration{};
-        auto &reserved = registration.reserve_schema(name, identity, nullptr, metadata);
-        reserved.finalize(failed_fields);
-        throw std::runtime_error{"failed schema registration"};
-    }());
-
     auto registration = SchemaRegistration{};
-    auto &retried = registration.reserve_schema(name, identity, nullptr, metadata);
-    retried.finalize(fields);
+    auto &reserved = registration.reserve_schema(name, identity, nullptr, metadata);
+    reserved.finalize(fields);
     registration.commit();
 
-    CHECK(&bg::schema(name, identity, nullptr, fields, metadata) == &retried);
+    CHECK(&bg::schema(name, identity, nullptr, fields, metadata) == &reserved);
+}
+
+TEST_CASE("schema registration rejects hierarchical schemas with time-series fields",
+          "[feature:type-system][schema:named][declaration:runtime]") {
+    auto registration = SchemaRegistration{};
+    auto &reserved = registration.reserve_schema(util::symbol{"TimeSeriesField"}, new_runtime_schema_id(), nullptr);
+    const auto &hierarchical = hierarchical_scalar_type(reserved);
+    const auto fields = std::array{SchemaField{util::symbol{"value"}, &TS<i64>::type()}};
+    reserved.finalize(fields);
+
+    CHECK(&hierarchical.schema() == &reserved);
+    CHECK_THROWS_WITH(registration.commit(), "a hierarchical scalar schema requires resolved scalar fields");
+}
+
+TEST_CASE("schema registration rejects unfinalized reserved schemas",
+          "[feature:type-system][schema:named][declaration:runtime]") {
+    auto registration = SchemaRegistration{};
+    static_cast<void>(registration.reserve_schema(util::symbol{"UnfinalizedSchema"}, new_runtime_schema_id(), nullptr));
+
+    CHECK_THROWS_WITH(registration.commit(), "a reserved schema must be finalized before commit");
 }
 
 TEST_CASE("time series bundle types reject common schemas with non-time-series fields",

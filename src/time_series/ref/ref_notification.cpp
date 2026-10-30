@@ -113,11 +113,10 @@ void ReferenceInputSubscriber::update_input(OutputChangeContext &context, Refere
         const auto previous_was_valid = previous.runtime_type != nullptr
                                             ? previous.last_updated.valid_before(context.evaluation_time())
                                             : previous_view_was_valid;
-        auto previous_state = TimeSeriesState{};
         if (previous_was_valid && previous.runtime_type != nullptr && previous.storage != nullptr &&
             !previous.valid()) {
-            previous_state.publish(context.evaluation_time());
-            previous.last_updated = previous_state;
+            previous.last_updated = TimeSeriesState::from_validity_transition(context.evaluation_time(),
+                                                                              previous_was_valid, true);
         }
         new_sample = samples.get(previous_reference, new_reference, previous, current,
                                  requested_runtime_type(), context.evaluation_time());

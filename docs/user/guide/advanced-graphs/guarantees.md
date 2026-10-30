@@ -71,14 +71,14 @@ auto example() {
 
 int main() {
     const auto result = run_graph(example);
-    std::cout << std::boolalpha << result.equals({20}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20]
 ```
 :::
 
@@ -170,14 +170,14 @@ auto integer_identity(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(graph(integer_identity), {18, SKIP, 19});
-    std::cout << std::boolalpha << result.equals({18, SKIP, 19}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[18, None, 19]
 ```
 :::
 
@@ -264,14 +264,14 @@ auto combined(wp<TS<i64>> left, wp<TS<i64>> right) { return total(left, right); 
 
 int main() {
     const auto result = run_graph(combined, {18, 19}, {2, 3});
-    std::cout << std::boolalpha << result.equals({20, 22}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[20, 22]
 ```
 :::
 

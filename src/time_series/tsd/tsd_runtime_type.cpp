@@ -4,7 +4,6 @@
 #include <bg/util/static_storage.hpp>
 
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <vector>
 
@@ -65,10 +64,8 @@ time_series_dictionary_runtime_type(const TimeSeriesDictionaryType &type, const 
         std::unique_ptr<TimeSeriesDictionaryRuntimeType> runtime_type;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
     const auto found = std::ranges::find_if(
         cache, [&](const auto &entry) { return entry.type == &type && entry.key == &key && entry.item == &item; });

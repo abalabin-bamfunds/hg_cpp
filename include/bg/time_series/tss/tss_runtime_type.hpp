@@ -33,12 +33,18 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
     virtual bool set_was_removed(const TimeSeriesState &last_updated, const void *value,
                                  const ScalarData &key) const;
     virtual const void *set_key(const void *value, item_id_t id) const noexcept;
+    // The returned runtime type describes the key bytes and may differ from key_runtime_type() for sampled sets.
+    virtual ScalarData set_key_data(const void *value, item_id_t id) const noexcept {
+        return {key_runtime_type(), set_key(value, id)};
+    }
     virtual item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
                                        item_id_t start) const;
     virtual bool has_item_id_remapping(const void *) const { return false; }
     virtual void for_each_item_id_remapping(const void *, void *, ItemIdRemappingFunction) const {}
 
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
+
+    ReferenceSampleFactory reference_sample_factory() const noexcept override;
 
     virtual RetainedSetKey retain_key(void *value, const ScalarData &key, allocator &memory) const;
     virtual void release_key(void *value, item_id_t id, allocator &memory) const noexcept;

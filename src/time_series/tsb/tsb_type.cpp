@@ -1,5 +1,7 @@
 #include <bg/type/time_series_bundle_type.hpp>
 
+#include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
 #include <bg/type/type_registry.hpp>
@@ -8,7 +10,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <stdexcept>
 #include <vector>
@@ -19,7 +20,17 @@ namespace {
 class ResolvedTimeSeriesBundleType final : public TimeSeriesBundleType {
   public:
     ResolvedTimeSeriesBundleType(const Schema &schema, TimeSeriesGuarantee guarantee)
-        : TimeSeriesBundleType(schema, guarantee) {}
+        : TimeSeriesBundleType(schema, guarantee) {
+        set_default_runtime_type_factory([](const TimeSeriesType &type) -> const TimeSeriesRuntimeType & {
+            const auto &bundle = static_cast<const TimeSeriesBundleType &>(type);
+            auto items = std::vector<const TimeSeriesRuntimeType *>{};
+            items.reserve(bundle.item_count());
+            for (auto index = std::size_t{}; index < bundle.item_count(); ++index) {
+                items.push_back(&resolve_default_time_series_runtime_type(bundle.item_type(index)));
+            }
+            return details::time_series_bundle_runtime_type(bundle, items);
+        });
+    }
 
     bool is_resolved() const noexcept override { return true; }
     [[nodiscard]] const Type &resolve(const TypeMap &) const override { return *this; }
@@ -186,6 +197,39 @@ const TimeSeriesType *TimeSeriesBundleType::common_type(const TimeSeriesType &ot
 }
 
 const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Schema &right) {
+    if (left.named() != right.named()) {
+        const auto &named = left.named() ? left : right;
+        const auto &anonymous = left.named() ? right : left;
+        if (!std::ranges::equal(named.fields(), anonymous.fields(), {}, &SchemaField::name, &SchemaField::name)) {
+            return nullptr;
+        }
+
+        const auto common_named_schema = [&](auto &&self, const Schema &declaration) -> const Schema * {
+            const auto *common_base = declaration.base() == nullptr ? nullptr : self(self, *declaration.base());
+            if (declaration.base() != nullptr && common_base == nullptr) {
+                return nullptr;
+            }
+
+            auto fields = std::vector<SchemaField>{};
+            fields.reserve(declaration.direct_fields().size());
+            for (const auto &field : declaration.direct_fields()) {
+                const auto &free_field = *anonymous.find(field.name);
+                const auto &declared_type = static_cast<const TimeSeriesType &>(*field.type);
+                const auto &free_type = static_cast<const TimeSeriesType &>(*free_field.type);
+                const auto *common_field_type = declared_type.common_type(free_type);
+                if (common_field_type == nullptr) {
+                    return nullptr;
+                }
+                fields.push_back({field.name, common_field_type, field.optional});
+            }
+
+            return &bg::schema(declaration.name(), declaration.identity(), common_base, fields,
+                               declaration.direct_metadata());
+        };
+
+        return common_named_schema(common_named_schema, named);
+    }
+
     if (left.name() != right.name() || left.identity() != right.identity() ||
         left.direct_metadata() != right.direct_metadata() ||
         left.direct_fields().size() != right.direct_fields().size() ||
@@ -313,11 +357,9 @@ const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSe
         bool operator==(const Key &) const = default;
     };
 
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto types = util::static_storage<std::vector<std::pair<Key, const ResolvedTimeSeriesBundleType *>>>{};
 
     const auto &effective_schema = schema_with_minimum_guarantee(schema, guarantee);
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = types.get();
     const auto key = Key{&effective_schema, guarantee};
     const auto existing = std::ranges::find(
@@ -326,16 +368,10 @@ const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSe
         return *existing->second;
     }
 
-    cache.emplace_back(key, nullptr);
-    try {
-        const auto &type = TypeRegistry::instance().register_owned(
-            std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
-        cache.back().second = &type;
-        return type;
-    } catch (...) {
-        cache.pop_back();
-        throw;
-    }
+    const auto &type = TypeRegistry::instance().register_owned(
+        std::make_unique<ResolvedTimeSeriesBundleType>(effective_schema, guarantee));
+    cache.emplace_back(key, &type);
+    return type;
 }
 
 } // namespace bg

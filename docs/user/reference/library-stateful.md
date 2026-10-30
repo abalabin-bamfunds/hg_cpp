@@ -14,19 +14,19 @@ policy](library-numeric.md#arithmetic).
 
 ## lag
 
-`lag(value)` accepts `TS<T>` and publishes the preceding input event whenever the input
-changes. It retains an owning copy of the scalar value. Invalidation is also an event
-and is delayed by one input event:
+`lag(value, n=1)` accepts `TS<T>` and publishes the input event from `n` events earlier
+whenever the input changes. It retains owning scalar values. `n` is a fixed nonnegative
+integer; zero returns the input unchanged. Invalidation is also an event. With `n=1`:
 
 ```text
 input:   10   20   invalid   30        40
 output:  —    10   20        invalid   30
 ```
 
-Neither operator schedules on start. Skipped cycles do not advance either operation.
-Ordinary equal-valued ticks remain separate events. `lag` produces an ordinary output;
-its first event produces no output, and its final retained event remains unpublished
-unless another input event arrives.
+Lag does not schedule on start. Skipped cycles do not advance its history. Ordinary
+equal-valued ticks remain separate events. Positive lag produces an ordinary output;
+the first `n` events produce no output, and the final `n` events remain unpublished
+unless more input events arrive.
 
 ## sums, mins, maxs, means
 
@@ -137,14 +137,14 @@ auto change(wp<TS<i64>> value) {
 
 int main() {
     const auto result = run_graph(change, {10, 13, SKIP, 12});
-    std::cout << std::boolalpha << result.equals({SKIP, 3, SKIP, -1}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[None, 3, None, -1]
 ```
 :::
 
@@ -223,14 +223,14 @@ auto smoothed(wp<TS<double>> value) {
 
 int main() {
     const auto result = run_graph(smoothed, {10.0, 14.0, 16.0});
-    std::cout << std::boolalpha << result.equals({10.0, 12.0, 14.0}) << '\n';
+    std::cout << result << '\n';
 }
 ```
 
 Output:
 
 ```text
-true
+[10, 12, 14]
 ```
 :::
 

@@ -30,6 +30,7 @@ emit = _native.emit
 pos = _native.pos
 neg = _native.neg
 abs = _native.abs
+invert = _native.invert
 eq = _native.eq
 ne = _native.ne
 lt = _native.lt
@@ -44,13 +45,18 @@ all_valid = _native.all_valid
 count = _native.count
 sample = _native.sample
 dedup = _native.dedup
+if_ = _native.if_
 filter_ = _native.filter_
 gate = _native.gate
 batch = _native.batch
 merge = _native.merge
+race = _native.race
+route_by_index = _native.route_by_index
+if_true = _native.if_true
 take = _native.take
 drop = _native.drop
 step = _native.step
+slice_ = _native.slice_
 if_then_else = _native.if_then_else
 lag = _native.lag
 last_modified_time = _native.last_modified_time
@@ -78,6 +84,8 @@ any_ = _native.any_
 contains_ = _native.contains_
 is_empty = _native.is_empty
 keys_ = _native.keys_
+values_ = _native.values_
+index_of = _native.index_of
 keys_where_true = _native.keys_where_true
 bit_or = _native.bit_or
 bit_and = _native.bit_and
@@ -105,6 +113,8 @@ __all__ = [
     "contains_",
     "is_empty",
     "keys_",
+    "values_",
+    "index_of",
     "keys_where_true",
     "bit_or",
     "bit_and",
@@ -133,6 +143,9 @@ __all__ = [
     "ewma",
     "floordiv",
     "filter_",
+    "if_",
+    "invert",
+    "if_true",
     "gate",
     "batch",
     "emit",
@@ -151,6 +164,7 @@ __all__ = [
     "lt",
     "map",
     "merge",
+    "race",
     "match_",
     "matches",
     "max_",
@@ -175,6 +189,7 @@ __all__ = [
     "pos",
     "round",
     "resample",
+    "route_by_index",
     "sample",
     "schedule",
     "casefold",
@@ -183,6 +198,7 @@ __all__ = [
     "str_",
     "sum_",
     "step",
+    "slice_",
     "take",
     "switch_",
     "split",

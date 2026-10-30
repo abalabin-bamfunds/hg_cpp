@@ -1,4 +1,5 @@
 #include <bg/scalar/details/storage_traits.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_registry.hpp>
@@ -18,8 +19,12 @@ template <typename T> class CppScalarType final : public CppScalarTypeBase<T> {
     using Base = CppScalarTypeBase<T>;
 
   public:
-    CppScalarType() requires std::same_as<Base, BuiltinScalarType> : Base{tp::unit<T>{}} {}
-    CppScalarType() requires std::same_as<Base, ScalarType> = default;
+    CppScalarType() requires std::same_as<Base, BuiltinScalarType> : Base{tp::unit<T>{}} {
+        this->set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<T>);
+    }
+    CppScalarType() requires std::same_as<Base, ScalarType> {
+        this->set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<T>);
+    }
 
     bool is_resolved() const noexcept override { return true; }
 

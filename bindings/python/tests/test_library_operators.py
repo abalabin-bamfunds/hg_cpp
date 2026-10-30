@@ -91,6 +91,92 @@ def test_i64_arithmetic_wraps_at_signed_boundaries():
     assert bg.run_graph(absolute, [minimum, -maximum]) == [minimum, maximum]
 
 
+def test_i64_bitwise_operators_accept_scalars_and_time_series():
+    minimum = -(1 << 63)
+    maximum = (1 << 63) - 1
+
+    @bg.graph
+    def scalar_and() -> bg.TS[int]:
+        return bg.operators.bit_and(-1, 0b0101)
+
+    @bg.graph
+    def scalar_invert() -> bg.TS[int]:
+        return bg.operators.invert(minimum)
+
+    @bg.graph
+    def bit_and(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs & rhs
+
+    @bg.graph
+    def bit_or(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs | rhs
+
+    @bg.graph
+    def bit_xor(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        return lhs ^ rhs
+
+    @bg.graph
+    def invert(value: bg.TS[int]) -> bg.TS[int]:
+        return ~value
+
+    @bg.graph
+    def scalar_left(value: bg.TS[int]) -> bg.TS[int]:
+        return -1 & value
+
+    @bg.graph
+    def scalar_right(value: bg.TS[int]) -> bg.TS[int]:
+        return value & -1
+
+    @bg.graph
+    def deduplicated_invert(value: bg.TS[int]) -> bg.TS[int]:
+        return ~bg.operators.dedup(value)
+
+    @bg.graph
+    def ordinary_zero_and(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.bit_and(value, 0)
+
+    @bg.graph
+    def deduplicated_zero_and(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.bit_and(bg.operators.dedup(value), 0)
+
+    lhs = [-1, minimum, maximum, 0b1010]
+    rhs = [0b0101, -1, 1, 0b1100]
+
+    assert bg.run_graph(scalar_and) == [0b0101]
+    assert bg.run_graph(scalar_invert) == [maximum]
+    assert bg.run_graph(bit_and, lhs, rhs) == [0b0101, minimum, 1, 0b1000]
+    assert bg.run_graph(bit_or, lhs, rhs) == [-1, -1, maximum, 0b1110]
+    assert bg.run_graph(bit_xor, lhs, rhs) == [-6, maximum, maximum - 1, 0b0110]
+    assert bg.run_graph(invert, [-1, minimum, maximum, 0b1010]) == [0, maximum, minimum, -11]
+    assert bg.run_graph(scalar_left, [0b0101, minimum]) == [0b0101, minimum]
+    assert bg.run_graph(scalar_right, [0b0101, minimum]) == [0b0101, minimum]
+    assert bg.run_graph(deduplicated_invert, [5, 5, 6]) == [-6, None, -7]
+    assert bg.run_graph(ordinary_zero_and, [1, 2, 3]) == [0, 0, 0]
+    assert bg.run_graph(deduplicated_zero_and, [1, 1, 2]) == [0, None, None]
+    assert bg.run_graph(bit_and, [7, bg.INVALID, 8], [3, None, None]) == [3, None, 0]
+
+
+def test_i64_bitwise_overloads_preserve_tss_set_syntax():
+    @bg.graph
+    def union(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TSS[int]:
+        return lhs | rhs
+
+    @bg.graph
+    def intersection(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TSS[int]:
+        return lhs & rhs
+
+    @bg.graph
+    def symmetric_difference(lhs: bg.TSS[int], rhs: bg.TSS[int]) -> bg.TSS[int]:
+        return lhs ^ rhs
+
+    lhs = [{1, 2}]
+    rhs = [{2, 3}]
+
+    assert bg.run_graph(union, lhs, rhs) == [bg.SetDelta(added={1, 2, 3})]
+    assert bg.run_graph(intersection, lhs, rhs) == [bg.SetDelta(added={2})]
+    assert bg.run_graph(symmetric_difference, lhs, rhs) == [bg.SetDelta(added={1, 3})]
+
+
 def test_running_numeric_operators_and_named_reset_input():
     @bg.graph
     def sums(value: bg.TS[int]) -> bg.TS[int]:
