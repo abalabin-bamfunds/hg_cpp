@@ -23,6 +23,7 @@
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tick_operations.hpp>
+#include <bg/time_series/queue_operations.hpp>
 #include <bg/time_series/time_series_type_traits.hpp>
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsb/tsb_runtime_type.hpp>
@@ -86,6 +87,30 @@ inline bool throw_after_scalar_read_callback{};
 inline bool throw_after_bundle_key_read_callback{};
 inline int bundle_key_read_count{};
 inline int bundle_key_discard_count{};
+struct QueueOperationState {
+    int project_calls{};
+    int write_calls{};
+    int conflict_calls{};
+    int apply_calls{};
+    int discard_calls{};
+    bool last_incoming_valid{};
+    bool fail_apply{};
+    bg::i64 last_applied_value{};
+    bg::i64 last_discarded_value{};
+};
+inline QueueOperationState queue_operation_state;
+struct QueueOwnedOperationState {
+    int project_calls{};
+    int write_calls{};
+    int conflict_calls{};
+    int apply_calls{};
+    int discard_calls{};
+    bool fail_write{};
+    bool fail_apply{};
+    bg::i64 last_applied_value{};
+    bg::i64 last_discarded_value{};
+};
+inline QueueOwnedOperationState queue_owned_operation_state;
 
 template <template <typename, auto...> typename Field> struct QueueConflictBundle {
     Field<bg::TS<bg::i64>> first;
@@ -173,6 +198,15 @@ struct Series : bg::TimeSeriesDeclaration<Series<Item, Properties...>, Propertie
 
 template <template <typename, auto...> typename Field> struct SampleBundle {
     Field<Series<bg::i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct QueueProviderBundle {
+    Field<Series<bg::i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct QueueOwnedProviderPairBundle {
+    Field<Series<Number<bool>>> first;
+    Field<Series<Number<bool>>> second;
 };
 
 using OwnedPayloadSeries = Series<Number<bool>>;
@@ -300,6 +334,57 @@ const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &t
         entry->second = std::make_unique<SeriesRuntimeType>(type);
     }
     return *entry->second;
+}
+
+void register_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
+    auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesQueueOperations>::instance();
+    if (dispatch.find_exact(runtime_type) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_runtime(
+            [](const literal::TimeSeriesLiteral &, bg::ScalarBufferProjectionContext &projection) {
+                ++queue_operation_state.project_calls;
+                projection.write_bytes(sizeof(bg::i64));
+            },
+            [](const literal::TimeSeriesLiteral &literal, bg::ScalarBufferWriteContext &writer,
+               bg::allocator &memory) {
+                ++queue_operation_state.write_calls;
+                auto value_owner = bg::ScalarValue<bg::i64>::from_literal(literal, memory);
+                const auto value = value_owner.view().value();
+                writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
+            },
+            [](const bg::TimeSeriesRuntimeType::ConstItem &item, bg::EvaluationTime now, bool incoming_valid,
+               bg::util::buffer_reader &reader) {
+                ++queue_operation_state.conflict_calls;
+                queue_operation_state.last_incoming_valid = incoming_valid;
+                if (incoming_valid) {
+                    (void)reader.read_raw<bg::i64>();
+                    return item.last_updated.time() == now;
+                }
+                return item.last_updated.valid() && item.last_updated.time() == now;
+            },
+            [](bg::util::buffer_reader &reader, bg::OutputState &output) {
+                ++queue_operation_state.apply_calls;
+                const auto value = reader.read_raw<bg::i64>();
+                queue_operation_state.last_applied_value = value;
+                if (queue_operation_state.fail_apply) {
+                    throw std::runtime_error{"provider queue apply failed after consuming its payload"};
+                }
+                *static_cast<bg::i64 *>(output.mutable_data()) = value;
+                output.publish();
+            });
+        if (!dispatch.add(runtime_type, std::move(operations))) {
+            throw std::logic_error{"provider queue runtime operations were already registered"};
+        }
+    }
+
+    if (dispatch.find_exact(runtime_type.type()) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_type([](bg::util::buffer_reader &reader) {
+            queue_operation_state.last_discarded_value = reader.read_raw<bg::i64>();
+            ++queue_operation_state.discard_calls;
+        });
+        if (!dispatch.add(runtime_type.type(), std::move(operations))) {
+            throw std::logic_error{"provider queue semantic operations were already registered"};
+        }
+    }
 }
 
 class SampledSeries final : public bg::details::ReferenceSample {
@@ -1159,6 +1244,78 @@ bool register_provider_scalar_buffer_handlers() {
     return registered;
 }
 
+void register_owned_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
+    auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesQueueOperations>::instance();
+    if (dispatch.find_exact(runtime_type) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_runtime(
+            [](const literal::TimeSeriesLiteral &, bg::ScalarBufferProjectionContext &projection) {
+                ++queue_owned_operation_state.project_calls;
+                projection.write_bytes(sizeof(bg::i64) + sizeof(std::uint32_t));
+                projection.emplace<bg::ScalarValue<>>();
+            },
+            [](const literal::TimeSeriesLiteral &literal, bg::ScalarBufferWriteContext &writer,
+               bg::allocator &memory) {
+                ++queue_owned_operation_state.write_calls;
+                auto value_owner = bg::ScalarValue<bg::i64>::from_literal(literal, memory);
+                const auto value = value_owner.view().value();
+                const auto count = std::uint32_t{1};
+                writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
+                writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
+                const auto stored = bg::ScalarValue<bg::string>{"provider queue payload that owns allocated storage",
+                                                                memory};
+                auto payload = bg::ScalarValue<>{stored, memory};
+                writer.write(std::move(payload));
+                if (queue_owned_operation_state.fail_write) {
+                    throw std::runtime_error{"provider queue write failed after an owned payload"};
+                }
+            },
+            [](const bg::TimeSeriesRuntimeType::ConstItem &item, bg::EvaluationTime now, bool incoming_valid,
+               bg::util::buffer_reader &reader) {
+                ++queue_owned_operation_state.conflict_calls;
+                if (incoming_valid) {
+                    (void)reader.read_raw<bg::i64>();
+                    const auto count = reader.read_raw<std::uint32_t>();
+                    for (auto index = std::uint32_t{}; index < count; ++index) {
+                        reader.consume<bg::ScalarValue<>>();
+                    }
+                    return item.last_updated.time() == now;
+                }
+                return item.last_updated.valid() && item.last_updated.time() == now;
+            },
+            [](bg::util::buffer_reader &reader, bg::OutputState &output) {
+                ++queue_owned_operation_state.apply_calls;
+                const auto value = reader.read_raw<bg::i64>();
+                const auto count = reader.read_raw<std::uint32_t>();
+                for (auto index = std::uint32_t{}; index < count; ++index) {
+                    auto payload = reader.read<bg::ScalarValue<>>();
+                }
+                queue_owned_operation_state.last_applied_value = value;
+                if (queue_owned_operation_state.fail_apply) {
+                    throw std::runtime_error{"provider queue apply failed after an owned payload"};
+                }
+                *static_cast<bg::i64 *>(output.mutable_data()) = value;
+                output.publish();
+            });
+        if (!dispatch.add(runtime_type, std::move(operations))) {
+            throw std::logic_error{"owned provider queue runtime operations were already registered"};
+        }
+    }
+
+    if (dispatch.find_exact(runtime_type.type()) == nullptr) {
+        auto operations = bg::TimeSeriesQueueOperations::for_type([](bg::util::buffer_reader &reader) {
+            (void)reader.read_raw<bg::i64>();
+            const auto count = reader.read_raw<std::uint32_t>();
+            for (auto index = std::uint32_t{}; index < count; ++index) {
+                reader.skip<bg::ScalarValue<>>();
+                ++queue_owned_operation_state.discard_calls;
+            }
+        });
+        if (!dispatch.add(runtime_type.type(), std::move(operations))) {
+            throw std::logic_error{"owned provider queue semantic operations were already registered"};
+        }
+    }
+}
+
 void register_default_tick_handlers() {
     static const auto registered = [] {
         using Series = provider::Series<bg::i64>;
@@ -1942,6 +2099,236 @@ TEST_CASE("queue collection inspection stops at its first conflict",
     CHECK_FALSE(details::QueueTickApply{reader, QueueMode::standard}.apply(output));
     CHECK(reader.readable().size() == pending_size);
     CHECK(provider::scalar_tick_state.reads == reads_before);
+}
+
+TEST_CASE("queue providers project, inspect, and apply their payloads",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::Series<i64>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(runtime_type);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    const auto buffer = util::buffer::concurrent_chain(128, 4);
+    auto writer = details::QueueMessageWriter{buffer, 43, runtime_type};
+    REQUIRE(writer.write(literal::TimeSeriesLiteral{i64{37}}));
+    CHECK(provider::queue_operation_state.project_calls == 2);
+    CHECK(provider::queue_operation_state.write_calls == 1);
+
+    auto output_time = TimeSeriesState{evaluation_time};
+    auto output_value = i64{5};
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_time, &output_value, evaluation_time);
+    auto reader = details::QueueMessageReader{buffer};
+
+    CHECK_FALSE(reader.apply(output_state, QueueMode::standard));
+    CHECK(reader.next_target() == 43);
+    CHECK(provider::queue_operation_state.conflict_calls == 1);
+    CHECK(provider::queue_operation_state.last_incoming_valid);
+    CHECK(provider::queue_operation_state.apply_calls == 0);
+
+    output_time.publish(previous_time);
+    REQUIRE(reader.apply(output_state, QueueMode::standard));
+    CHECK(output_value == 37);
+    CHECK(output_time.time() == evaluation_time);
+    CHECK(provider::queue_operation_state.conflict_calls == 2);
+    CHECK(provider::queue_operation_state.apply_calls == 1);
+    CHECK_FALSE(reader.next_target());
+}
+
+TEST_CASE("queue providers apply invalidation and discard encoded payloads",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::Series<i64>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(runtime_type);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    auto output_time = TimeSeriesState{evaluation_time};
+    auto output_value = i64{5};
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_time, &output_value, evaluation_time);
+
+    const auto invalidation_buffer = util::buffer::concurrent_chain(128, 4);
+    auto invalidation_writer = details::QueueMessageWriter{invalidation_buffer, 44, runtime_type};
+    REQUIRE(invalidation_writer.write(literal::TimeSeriesLiteral{literal::INVALID}));
+    output_time.publish(previous_time);
+    auto invalidation_reader = details::QueueMessageReader{invalidation_buffer};
+    REQUIRE(invalidation_reader.apply(output_state, QueueMode::standard));
+    CHECK_FALSE(output_time.valid());
+    CHECK_FALSE(provider::queue_operation_state.last_incoming_valid);
+    CHECK(provider::queue_operation_state.conflict_calls == 1);
+
+    const auto discard_buffer = util::buffer::concurrent_chain(128, 4);
+    auto discard_writer = details::QueueMessageWriter{discard_buffer, 45, runtime_type};
+    REQUIRE(discard_writer.write(literal::TimeSeriesLiteral{i64{91}}));
+    auto discard_reader = details::QueueMessageReader{discard_buffer};
+    REQUIRE(discard_reader.discard(Series::type()));
+    CHECK(provider::queue_operation_state.discard_calls == 1);
+    CHECK(provider::queue_operation_state.last_discarded_value == 91);
+    CHECK_FALSE(discard_reader.next_target());
+}
+
+TEST_CASE("queue providers use exact runtime registrations",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::Series<i64>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(runtime_type);
+
+    auto buffer = util::buffer::concurrent_chain(128, 4);
+    const auto &alternate_runtime_type = provider::series_view_runtime_type(Series::type());
+    CHECK(&alternate_runtime_type.type() == &runtime_type.type());
+    CHECK_THROWS_AS((details::QueueMessageWriter{buffer, 46, alternate_runtime_type}), std::invalid_argument);
+    auto reader = util::concurrent_buffer_reader{buffer};
+    CHECK(reader.readable().empty());
+
+    const auto &unsupported_runtime_type = provider::series_runtime_type(provider::Series<double>::type());
+    CHECK_THROWS_AS((details::QueueMessageWriter{buffer, 47, unsupported_runtime_type}), std::invalid_argument);
+    CHECK(reader.readable().empty());
+}
+
+TEST_CASE("queue provider replay consumes a failing payload and discards later siblings",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::OwnedPayloadSeries;
+    using Bundle = TSB<provider::QueueOwnedProviderPairBundle>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    const auto &bundle_runtime_type = cpp_time_series_runtime_type<Bundle>();
+    provider::queue_owned_operation_state = {};
+    provider::register_owned_queue_operations(runtime_type);
+
+    auto resource = provider::allocation_counter{};
+    {
+        auto memory = allocator{resource};
+        const auto buffer = util::buffer::concurrent_chain(128, 4);
+        auto writer = details::QueueMessageWriter{buffer, 48, bundle_runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral{{"first", i64{11}}, {"second", i64{22}}}));
+
+        const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+        const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+        auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
+                                                     bundle_runtime_type.value_alignment());
+        bundle_runtime_type.construct_runtime_value(bundle_storage, memory);
+        auto destroy_bundle = util::scope_exit{[&]() noexcept {
+            bundle_runtime_type.destroy_value(bundle_storage, memory);
+            memory.deallocate_bytes(bundle_storage, bundle_runtime_type.value_size(),
+                                    bundle_runtime_type.value_alignment());
+        }};
+        auto bundle_time = TimeSeriesState{previous_time};
+        auto bundle_state = OutputState{bundle_runtime_type};
+        bundle_state.bind(bundle_time, bundle_storage, evaluation_time);
+        provider::queue_owned_operation_state.fail_apply = true;
+        auto reader = details::QueueMessageReader{buffer};
+
+        CHECK_THROWS_AS(reader.apply(bundle_state, QueueMode::standard), std::runtime_error);
+        CHECK(provider::queue_owned_operation_state.apply_calls == 1);
+        CHECK(provider::queue_owned_operation_state.discard_calls == 1);
+        CHECK_FALSE(reader.next_target());
+    }
+
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+}
+
+TEST_CASE("provider queue conflicts retain owned payloads for retry and apply or discard releases them",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::OwnedPayloadSeries;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_owned_operation_state = {};
+    provider::register_owned_queue_operations(runtime_type);
+
+    auto resource = provider::allocation_counter{};
+    {
+        auto memory = allocator{resource};
+        const auto buffer = util::buffer::concurrent_chain(128, 4);
+        auto writer = details::QueueMessageWriter{buffer, 50, runtime_type, memory};
+        REQUIRE(writer.write(literal::TimeSeriesLiteral{i64{17}}));
+        REQUIRE(writer.write(literal::TimeSeriesLiteral{i64{23}}));
+        const auto deallocations_after_write = resource.deallocations;
+
+        const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+        const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+        auto output_time = TimeSeriesState{evaluation_time};
+        auto output_value = i64{};
+        auto output_state = OutputState{runtime_type};
+        output_state.bind(output_time, &output_value, evaluation_time);
+        auto reader = details::QueueMessageReader{buffer};
+
+        CHECK_FALSE(reader.apply(output_state, QueueMode::standard));
+        CHECK(resource.deallocations == deallocations_after_write);
+        output_time.publish(previous_time);
+        REQUIRE(reader.apply(output_state, QueueMode::standard));
+        CHECK(output_value == 17);
+        CHECK(resource.deallocations > deallocations_after_write);
+        CHECK(reader.discard(Series::type()));
+        CHECK_FALSE(reader.next_target());
+    }
+
+    CHECK(provider::queue_owned_operation_state.conflict_calls == 2);
+    CHECK(provider::queue_owned_operation_state.apply_calls == 1);
+    CHECK(provider::queue_owned_operation_state.discard_calls == 1);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+}
+
+TEST_CASE("failed provider queue writes discard their completed owned payload prefix",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Series = provider::OwnedPayloadSeries;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    provider::queue_owned_operation_state = {};
+    provider::register_owned_queue_operations(runtime_type);
+
+    auto resource = provider::allocation_counter{};
+    {
+        auto memory = allocator{resource};
+        const auto buffer = util::buffer::concurrent_chain(128, 4);
+        auto writer = details::QueueMessageWriter{buffer, 51, runtime_type, memory};
+        provider::queue_owned_operation_state.fail_write = true;
+        CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral{i64{91}}), std::runtime_error);
+    }
+
+    CHECK(provider::queue_owned_operation_state.write_calls == 1);
+    CHECK(provider::queue_owned_operation_state.discard_calls == 1);
+    CHECK(resource.allocations > 0);
+    CHECK(resource.allocations == resource.deallocations);
+}
+
+TEST_CASE("queue provider invalidation conflicts through nested bundles",
+          "[feature:time-series-storage][series:generic][declaration:concrete][queue]") {
+    using Bundle = TSB<provider::QueueProviderBundle>;
+    const auto &provider_runtime_type = provider::series_runtime_type(provider::Series<i64>::type());
+    const auto &bundle_runtime_type = cpp_time_series_runtime_type<Bundle>();
+    provider::queue_operation_state = {};
+    provider::register_queue_operations(provider_runtime_type);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto evaluation_time = previous_time + std::chrono::microseconds{1};
+    const auto buffer = util::buffer::concurrent_chain(128, 4);
+    auto writer = details::QueueMessageWriter{buffer, 49, bundle_runtime_type};
+    REQUIRE(writer.write(literal::TimeSeriesLiteral{literal::INVALID}));
+
+    auto memory = allocator{};
+    auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
+                                                 bundle_runtime_type.value_alignment());
+    bundle_runtime_type.construct_runtime_value(bundle_storage, memory);
+    auto destroy_bundle = util::scope_exit{[&]() noexcept {
+        bundle_runtime_type.destroy_value(bundle_storage, memory);
+        memory.deallocate_bytes(bundle_storage, bundle_runtime_type.value_size(),
+                                bundle_runtime_type.value_alignment());
+    }};
+    auto bundle_time = TimeSeriesState{previous_time};
+    auto child = bundle_runtime_type.item(bundle_storage, 0);
+    child.last_updated.publish(evaluation_time);
+    auto bundle_state = OutputState{bundle_runtime_type};
+    bundle_state.bind(bundle_time, bundle_storage, evaluation_time);
+    auto reader = details::QueueMessageReader{buffer};
+
+    CHECK_FALSE(reader.apply(bundle_state, QueueMode::standard));
+    CHECK(reader.next_target() == 49);
+    CHECK_FALSE(provider::queue_operation_state.last_incoming_valid);
+    CHECK(provider::queue_operation_state.conflict_calls == 1);
 }
 
 TEST_CASE("queue message projection selects the runtime provider projection and follows its value",

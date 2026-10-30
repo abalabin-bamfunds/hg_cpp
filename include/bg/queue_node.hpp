@@ -470,7 +470,7 @@ class QueueNodeDefinition : public QueueNodeOutputType<Output, RuntimeOutput> {
                 return output_declaration_traits<Out<Output>>::runtime(*arguments.resolved_output_type());
             }
         }();
-        validate_queue_output_type(runtime_type.type(), mode_);
+        validate_queue_output_type(runtime_type, mode_);
         return runtime_type;
     }
 
