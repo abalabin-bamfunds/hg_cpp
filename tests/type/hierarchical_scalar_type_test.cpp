@@ -221,7 +221,6 @@ TEST_CASE("a conflicting hierarchical scalar declaration in another translation 
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
     CHECK_THROWS_WITH(test_hierarchical_scalar_provider::conflicting_instrument_type(),
                       "conflicting hierarchical scalar declaration: Instrument");
-    CHECK(&test_hierarchical_scalar_provider::instrument_type() == &cpp_scalar_type<Bundle<Instrument>>());
 }
 
 namespace {
@@ -553,34 +552,22 @@ template <template <typename, auto...> typename Field> struct UnhashableRecursiv
 
 } // namespace
 
-TEST_CASE("failed recursive registration can be retried",
+TEST_CASE("an invalid recursive registration fails setup",
           "[feature:type-system][scalar:hierarchical][scalar:list]"
           "[schema:named][declaration:concrete]") {
-    const auto register_type = [] { return &cpp_scalar_type<Bundle<InvalidRecursive>>(); };
-
-    CHECK_THROWS_WITH(register_type(),
-                      "a redefined schema field must have a compatible narrower type");
-    CHECK_THROWS_WITH(register_type(),
+    CHECK_THROWS_WITH(cpp_scalar_type<Bundle<InvalidRecursive>>(),
                       "a redefined schema field must have a compatible narrower type");
 }
 
 TEST_CASE("a required direct self-cycle is rejected",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:concrete]") {
-    const auto register_type = [] { return &cpp_scalar_type<Bundle<RequiredSelfCycle>>(); };
-
-    CHECK_THROWS_WITH(register_type(),
-                      "required hierarchical scalar fields cannot form a recursive cycle");
-    CHECK_THROWS_WITH(register_type(),
+    CHECK_THROWS_WITH(cpp_scalar_type<Bundle<RequiredSelfCycle>>(),
                       "required hierarchical scalar fields cannot form a recursive cycle");
 }
 
 TEST_CASE("a required cycle through tuple items is rejected",
           "[feature:type-system][scalar:hierarchical][scalar:tuple][schema:named][declaration:concrete]") {
-    const auto register_type = [] { return &cpp_scalar_type<Bundle<RequiredTupleCycle>>(); };
-
-    CHECK_THROWS_WITH(register_type(),
-                      "required hierarchical scalar fields cannot form a recursive cycle");
-    CHECK_THROWS_WITH(register_type(),
+    CHECK_THROWS_WITH(cpp_scalar_type<Bundle<RequiredTupleCycle>>(),
                       "required hierarchical scalar fields cannot form a recursive cycle");
 }
 
@@ -609,23 +596,20 @@ TEST_CASE("a required direct mutual cycle is rejected",
 TEST_CASE("recursive dictionary keys are validated after capability finalization",
           "[feature:type-system][scalar:hierarchical][scalar:dict]"
           "[schema:named][declaration:concrete]") {
-    const auto register_type = [] { return &cpp_scalar_type<Bundle<UnhashableRecursiveKey>>(); };
-
-    CHECK_THROWS_WITH(register_type(), "dictionary key type does not support hashing");
-    CHECK_THROWS_WITH(register_type(), "dictionary key type does not support hashing");
+    CHECK_THROWS_WITH(cpp_scalar_type<Bundle<UnhashableRecursiveKey>>(),
+                      "dictionary key type does not support hashing");
 }
 
-TEST_CASE("concurrent first access publishes one complete recursive type",
+TEST_CASE("completed recursive types support concurrent reads",
           "[feature:type-system][scalar:hierarchical][scalar:list]"
           "[schema:named][declaration:concrete]") {
     constexpr auto thread_count = std::size_t{8};
-    auto start = std::barrier{thread_count};
     auto results = std::array<const ResolvedHierarchicalScalarType *, thread_count>{};
     auto threads = std::array<std::jthread, thread_count>{};
+    const auto &registered = resolved_hierarchical_scalar_type(cpp_scalar_type<Bundle<ConcurrentNode>>());
 
     for (auto index = std::size_t{}; index < thread_count; ++index) {
         threads[index] = std::jthread{[&, index] {
-            start.arrive_and_wait();
             results[index] = &resolved_hierarchical_scalar_type(cpp_scalar_type<Bundle<ConcurrentNode>>());
         }};
     }
@@ -633,7 +617,7 @@ TEST_CASE("concurrent first access publishes one complete recursive type",
         thread.join();
     }
 
-    const auto *type = results.front();
+    const auto *type = &registered;
     REQUIRE(type != nullptr);
     REQUIRE(type->field_count() == 1);
     const auto &list = type_cast<ListScalarType>(*type->field(0).type);

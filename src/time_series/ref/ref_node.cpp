@@ -15,7 +15,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 namespace bg::details {
@@ -118,10 +117,8 @@ const NodeTemplate &reference_node_template(const TimeSeriesType &argument, cons
         std::unique_ptr<ReferenceNodeTemplate> node_template;
     };
 
-    static auto mutex = std::mutex{};
     static auto templates = std::vector<Entry>{};
 
-    const auto lock = std::lock_guard{mutex};
     const auto existing = std::ranges::find_if(
         templates, [&](const auto &entry) { return entry.argument == &argument && entry.type == &type; });
     if (existing != templates.end()) {

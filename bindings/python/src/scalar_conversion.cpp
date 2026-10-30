@@ -287,7 +287,6 @@ class PythonObjectScalarRuntimeType final : public ScalarRuntimeType {
 class PythonObjectRuntimeTypes {
   public:
     const PythonObjectScalarRuntimeType &get(const PythonObjectScalarType &type) {
-        const auto lock = std::lock_guard{mutex_};
         if (const auto found = by_type_.find(&type); found != by_type_.end()) {
             return *found->second;
         }
@@ -295,22 +294,14 @@ class PythonObjectRuntimeTypes {
         auto runtime_type = std::make_unique<PythonObjectScalarRuntimeType>(type);
         auto *result = runtime_type.get();
         runtime_types_.push_back(std::move(runtime_type));
-        auto remove_runtime_type = util::scope_exit{[this]() noexcept { runtime_types_.pop_back(); }};
 
-        const auto [entry, inserted] = by_type_.emplace(&type, result);
-        if (!inserted) {
-            throw std::logic_error{"a Python object runtime type was registered twice"};
-        }
-        auto remove_type_entry = util::scope_exit{[this, entry]() noexcept { by_type_.erase(entry); }};
+        by_type_.emplace(&type, result);
 
         register_scalar_runtime_type(*result);
-        remove_type_entry.release();
-        remove_runtime_type.release();
         return *result;
     }
 
   private:
-    std::mutex mutex_;
     std::unordered_map<const PythonObjectScalarType *, const PythonObjectScalarRuntimeType *> by_type_;
     std::vector<std::unique_ptr<PythonObjectScalarRuntimeType>> runtime_types_;
 };
@@ -319,6 +310,10 @@ PythonObjectRuntimeTypes &python_object_runtime_types() {
     // Scalar runtime registration stores process-lifetime pointers to these runtime types.
     static auto *runtime_types = new PythonObjectRuntimeTypes{};
     return *runtime_types;
+}
+
+const ScalarRuntimeType &python_object_runtime_type_for_type(const ScalarType &type) {
+    return python_object_runtime_types().get(static_cast<const PythonObjectScalarType &>(type));
 }
 
 nanobind::object to_python_python_object(Scalar<> value, const PythonScalarConversions &) {
@@ -641,7 +636,7 @@ ScalarValue<> from_python_dict(const DictScalarType &type, nanobind::handle valu
         nanobind::raise_python_error();
     }
 
-    const auto &runtime_type = static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(type, {}));
+    const auto &runtime_type = static_cast<const ScalarDictRuntimeType &>(resolve_default_scalar_runtime_type(type));
     auto *storage = memory.allocate_bytes(runtime_type.size(), runtime_type.alignment());
     auto release_storage = util::scope_exit{[&]() noexcept {
         memory.deallocate_bytes(storage, runtime_type.size(), runtime_type.alignment());
@@ -667,7 +662,7 @@ ScalarValue<> from_python_list(const ListScalarType &type, nanobind::handle valu
         nanobind::raise_python_error();
     }
 
-    const auto &runtime_type = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, {}));
+    const auto &runtime_type = static_cast<const ScalarListRuntimeType &>(resolve_default_scalar_runtime_type(type));
     struct Construction {
         nanobind::handle value;
         const PythonScalarConversions *conversions;
@@ -701,7 +696,7 @@ ScalarValue<> from_python_tuple(const TupleScalarType &type, nanobind::handle va
         nanobind::raise_python_error();
     }
 
-    const auto &runtime_type = static_cast<const ScalarTupleRuntimeType &>(resolve_scalar_runtime_type(type, {}));
+    const auto &runtime_type = static_cast<const ScalarTupleRuntimeType &>(resolve_default_scalar_runtime_type(type));
     struct Construction {
         nanobind::handle value;
         const PythonScalarConversions *conversions;
@@ -1170,6 +1165,7 @@ const ScalarType &PythonScalarConversions::add_python_type(nanobind::handle pyth
 
     const auto hash = nanobind::getattr(python_type, "__hash__");
     auto scalar_type = std::make_unique<PythonObjectScalarType>(std::move(bases), !hash.is_none());
+    scalar_type->set_default_runtime_type_factory(&python_object_runtime_type_for_type);
     const auto &registered_type = TypeRegistry::instance().register_owned(std::move(scalar_type));
     const auto &runtime_type = python_object_runtime_types().get(static_cast<const PythonObjectScalarType &>(registered_type));
     impl_->python_object_types.emplace(&registered_type, &runtime_type);

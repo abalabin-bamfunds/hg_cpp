@@ -4,10 +4,8 @@
 #include <bg/type/type.hpp>
 #include <bg/type/variable.hpp>
 
-#include <atomic>
 #include <concepts>
 #include <memory>
-#include <mutex>
 #include <vector>
 
 namespace bg {
@@ -31,8 +29,6 @@ class BG_EXPORT VariableRegistry {
         return *result;
     }
 
-    void rollback(const Variable &variable) noexcept;
-
     bool contains(const Variable &variable) const;
 
   private:
@@ -40,8 +36,7 @@ class BG_EXPORT VariableRegistry {
     static void register_static_variable(const Variable &variable) noexcept;
     void register_owned_variable(std::unique_ptr<Variable> variable);
 
-    std::atomic<details::StaticRegistryEntry<Variable> *> static_entries_{};
-    mutable std::mutex mutex_;
+    details::StaticRegistryEntry<Variable> *static_entries_{};
     std::vector<std::unique_ptr<Variable>> owned_variables_;
 };
 

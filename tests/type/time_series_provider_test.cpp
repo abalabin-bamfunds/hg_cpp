@@ -13,6 +13,7 @@
 #include <bg/scalar/data.hpp>
 #include <bg/scalar/opaque.hpp>
 #include <bg/scalar/literal_operations.hpp>
+#include <bg/scalar/list/runtime_type.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/time_series/cpp_runtime_type.hpp>
 #include <bg/time_series/input_data.hpp>
@@ -92,6 +93,12 @@ template <template <typename, auto...> typename Field> struct QueueConflictBundl
 };
 
 using QueueConflictSeries = bg::TSB<QueueConflictBundle>;
+
+template <template <typename, auto...> typename Field> struct ProviderValueBundle {
+    Field<bg::TS<test_scalar_provider::value>> value;
+};
+
+using ProviderValueTimeSeriesBundle = bg::TSB<ProviderValueBundle>;
 inline int scalar_literal_semantic_calls{};
 inline int scalar_literal_runtime_calls{};
 inline const literal::ScalarLiteral *expected_scalar_literal{};
@@ -100,6 +107,8 @@ inline int time_series_literal_semantic_calls{};
 inline int time_series_literal_runtime_calls{};
 inline int time_series_literal_skip_calls{};
 inline int time_series_literal_invalid_calls{};
+inline int series_runtime_type_calls{};
+inline int series_runtime_type_construction_calls{};
 
 template <typename Input>
 void write_tick(const Input &input, bg::ScalarBufferWriteContext &writer, bg::allocator &) {
@@ -200,22 +209,28 @@ class SeriesType final : public bg::TimeSeriesType {
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type);
 
-const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
-    using Key = std::pair<const bg::ScalarType *, bg::TimeSeriesGuarantee>;
-    static auto types = bg::util::static_storage<std::map<Key, const SeriesType *>>{};
-    auto &canonical_types = types.get();
-    const auto key = Key{&item, guarantee};
-    const auto [entry, inserted] = canonical_types.try_emplace(key, nullptr);
-    if (inserted) {
-        try {
-            entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<SeriesType>(item, guarantee));
-        } catch (...) {
-            canonical_types.erase(entry);
-            throw;
-        }
-        bg::register_time_series_runtime_type(series_runtime_type(*entry->second));
+struct SeriesTypeKey {
+    const bg::ScalarType *item;
+    bg::TimeSeriesGuarantee guarantee;
+
+    bool operator==(const SeriesTypeKey &) const = default;
+};
+
+struct SeriesTypeKeyHash {
+    std::size_t operator()(const SeriesTypeKey &key) const noexcept {
+        const auto item = std::hash<const bg::ScalarType *>{}(key.item);
+        const auto guarantee = std::hash<int>{}(static_cast<int>(key.guarantee));
+        return item ^ (guarantee << 1);
     }
-    return *entry->second;
+};
+
+const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
+    return bg::TypeRegistry::instance().get_or_create<SeriesType, SeriesTypeKeyHash>(
+        SeriesTypeKey{&item, guarantee}, [&] {
+            auto type = std::make_unique<SeriesType>(item, guarantee);
+            type->set_default_runtime_type_factory(&series_runtime_type);
+            return type;
+        });
 }
 
 const bg::TimeSeriesType &SeriesType::with_guarantee(bg::TimeSeriesGuarantee guarantee) const {
@@ -249,7 +264,9 @@ bool SeriesType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
 class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
   public:
     explicit SeriesRuntimeType(const bg::TimeSeriesType &type)
-        : TimeSeriesRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {}
+        : TimeSeriesRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {
+        ++series_runtime_type_construction_calls;
+    }
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<bg::i64 *>(destination));
@@ -274,6 +291,7 @@ class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
 };
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type) {
+    ++series_runtime_type_calls;
     static auto types = bg::util::static_storage<
         std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesRuntimeType>>>{};
     auto &runtime_types = types.get();
@@ -1267,6 +1285,150 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
     const auto &wrong_dictionary_component = details::time_series_dictionary_runtime_type(
         TSD<i64, TS<string>>::type(), cpp_scalar_runtime_type<string>(), cpp_time_series_runtime_type<TS<string>>());
     CHECK_THROWS_AS(register_time_series_runtime_type(wrong_dictionary_component), std::invalid_argument);
+}
+
+TEST_CASE("registered time-series runtimes take precedence over semantic defaults",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Series = provider::Series<test_scalar_provider::layout_value, TimeSeriesGuarantee::final>;
+    const auto &semantic_type = Series::type();
+    static const auto supplied = provider::SeriesRuntimeType{semantic_type};
+
+    register_time_series_runtime_type(supplied);
+    provider::series_runtime_type_calls = 0;
+    provider::series_runtime_type_construction_calls = 0;
+
+    const auto &runtime_type = resolve_time_series_runtime_type(semantic_type);
+
+    CHECK(&runtime_type == &supplied);
+    CHECK(provider::series_runtime_type_calls == 0);
+    CHECK(provider::series_runtime_type_construction_calls == 0);
+
+    const auto &default_runtime_type = resolve_default_time_series_runtime_type(semantic_type);
+
+    CHECK(&default_runtime_type != &supplied);
+    CHECK(provider::series_runtime_type_calls > 0);
+    CHECK(provider::series_runtime_type_construction_calls > 0);
+}
+
+TEST_CASE("time-series runtime resolution applies nested scalar overrides",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    const auto &first_scalar = test_scalar_provider::canonicalizing_runtime_type();
+    const auto &second_scalar = test_scalar_provider::immutable_snapshot_runtime_type();
+    const auto first_available = std::array<const ScalarRuntimeType *, 1>{&first_scalar};
+    const auto second_available = std::array<const ScalarRuntimeType *, 1>{&second_scalar};
+    const auto &default_scalar = resolve_default_scalar_runtime_type(cpp_scalar_type<test_scalar_provider::value>());
+
+    using ListSeries = TS<List<test_scalar_provider::value>>;
+    const auto &first_list_series_runtime = resolve_time_series_runtime_type(ListSeries::type(), {}, first_available);
+    const auto &first_list_runtime = static_cast<const ScalarListRuntimeType &>(
+        static_cast<const TimeSeriesValueRuntimeType &>(first_list_series_runtime).scalar_runtime_type());
+    const auto &second_list_series_runtime = resolve_time_series_runtime_type(ListSeries::type(), {}, second_available);
+    const auto &second_list_runtime = static_cast<const ScalarListRuntimeType &>(
+        static_cast<const TimeSeriesValueRuntimeType &>(second_list_series_runtime).scalar_runtime_type());
+
+    CHECK(&first_list_runtime.item_runtime_type() == &first_scalar);
+    CHECK(&second_list_runtime.item_runtime_type() == &second_scalar);
+    CHECK(first_list_runtime.item_runtime_type().size() != second_list_runtime.item_runtime_type().size());
+    CHECK(&resolve_time_series_runtime_type(ListSeries::type(), {}, first_available) == &first_list_series_runtime);
+    CHECK(&resolve_time_series_runtime_type(ListSeries::type(), {}, second_available) == &second_list_series_runtime);
+
+    const auto &default_list_series_runtime = resolve_default_time_series_runtime_type(ListSeries::type());
+    const auto &default_list_runtime = static_cast<const ScalarListRuntimeType &>(
+        static_cast<const TimeSeriesValueRuntimeType &>(default_list_series_runtime).scalar_runtime_type());
+    CHECK(&default_list_runtime.item_runtime_type() == &default_scalar);
+    CHECK(&resolve_default_time_series_runtime_type(ListSeries::type()) == &default_list_series_runtime);
+
+    using Bundle = provider::ProviderValueTimeSeriesBundle;
+    const auto &first_bundle_runtime = resolve_time_series_runtime_type(Bundle::type(), {}, first_available);
+    const auto &first_value_runtime = static_cast<const TimeSeriesValueRuntimeType &>(
+        first_bundle_runtime.item_layout(0).runtime_type);
+    const auto &second_bundle_runtime = resolve_time_series_runtime_type(Bundle::type(), {}, second_available);
+    const auto &second_value_runtime = static_cast<const TimeSeriesValueRuntimeType &>(
+        second_bundle_runtime.item_layout(0).runtime_type);
+
+    CHECK(&first_value_runtime.scalar_runtime_type() == &first_scalar);
+    CHECK(&second_value_runtime.scalar_runtime_type() == &second_scalar);
+    CHECK(first_value_runtime.value_size() != second_value_runtime.value_size());
+    CHECK(&resolve_time_series_runtime_type(Bundle::type(), {}, first_available) == &first_bundle_runtime);
+    CHECK(&resolve_time_series_runtime_type(Bundle::type(), {}, second_available) == &second_bundle_runtime);
+
+    const auto &default_bundle_runtime = resolve_default_time_series_runtime_type(Bundle::type());
+    const auto &default_value_runtime = static_cast<const TimeSeriesValueRuntimeType &>(
+        default_bundle_runtime.item_layout(0).runtime_type);
+    CHECK(&default_value_runtime.scalar_runtime_type() == &default_scalar);
+    CHECK(&resolve_default_time_series_runtime_type(Bundle::type()) == &default_bundle_runtime);
+}
+
+TEST_CASE("resolved built-in time-series types provide default runtime factories",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Series = TS<i64>;
+    using Reference = REF<Series>;
+    using List = TSL<Series, 2>;
+    using Set = TSS<i64>;
+    using Dictionary = TSD<i64, Series>;
+    using Bundle = provider::ProviderValueTimeSeriesBundle;
+
+    const auto check_default = [](const TimeSeriesType &type) {
+        CHECK(type.default_runtime_type_factory() != nullptr);
+        CHECK(&resolve_default_time_series_runtime_type(type).type() == &type);
+    };
+
+    check_default(Series::type());
+    check_default(Reference::type());
+    check_default(List::type());
+    check_default(Set::type());
+    check_default(Dictionary::type());
+    check_default(Bundle::type());
+}
+
+TEST_CASE("ordinary aggregate runtime resolution composes registered child runtimes",
+          "[type][time_series][feature:type-system][declaration:runtime]") {
+    using Child = TS<test_scalar_provider::value, TimeSeriesGuarantee::final>;
+    using Outer = TSL<Child, 1>;
+
+    const auto &alternate = time_series_value_runtime_type(
+        Child::type(), test_scalar_provider::immutable_snapshot_runtime_type());
+    register_time_series_runtime_type(alternate);
+
+    const auto &outer = resolve_time_series_runtime_type(Outer::type());
+
+    CHECK(&outer.item_runtime_type(0) == &alternate);
+
+    const auto &default_child = resolve_default_time_series_runtime_type(Child::type());
+    const auto &default_outer = resolve_default_time_series_runtime_type(Outer::type());
+
+    CHECK(&default_outer.item_runtime_type(0) == &default_child);
+    CHECK(&default_outer.item_runtime_type(0) != &alternate);
+}
+
+TEST_CASE("typed extension inputs defer default runtime lookup until wiring",
+          "[testing][evaluation][feature:test-graph][series:generic]") {
+    using EmptySeries = provider::Series<test_scalar_provider::layout_value, TimeSeriesGuarantee::deduplicated>;
+    using SkippedSeries = provider::Series<test_scalar_provider::copy_only_value>;
+    const auto identity = [](wp<> input) { return input; };
+
+    provider::series_runtime_type_calls = 0;
+    provider::series_runtime_type_construction_calls = 0;
+    const auto empty_input = input<EmptySeries>({});
+    CHECK(provider::series_runtime_type_calls == 0);
+    CHECK(provider::series_runtime_type_construction_calls == 0);
+    const auto empty = run_graph(identity, empty_input);
+    CHECK(provider::series_runtime_type_calls > 0);
+    CHECK(provider::series_runtime_type_construction_calls > 0);
+    CHECK(empty.equals({literal::SKIP}));
+
+    provider::series_runtime_type_calls = 0;
+    provider::series_runtime_type_construction_calls = 0;
+    REQUIRE(TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance().add(
+        SkippedSeries::type(),
+        TimeSeriesLiteralOperations{&provider::apply_provider_literal<Out<SkippedSeries>>}));
+    const auto skipped_input = input<SkippedSeries>({literal::SKIP});
+    CHECK(provider::series_runtime_type_calls == 0);
+    CHECK(provider::series_runtime_type_construction_calls == 0);
+    const auto skipped = run_graph(identity, skipped_input);
+    CHECK(provider::series_runtime_type_calls > 0);
+    CHECK(provider::series_runtime_type_construction_calls > 0);
+    CHECK(skipped.equals({literal::SKIP}));
 }
 
 TEST_CASE("scalar literal construction dispatches by runtime then semantic type",

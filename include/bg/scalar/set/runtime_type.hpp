@@ -3,6 +3,7 @@
 #include <bg/scalar/construction.hpp>
 #include <bg/scalar/runtime_type.hpp>
 
+#include <cassert>
 #include <cstddef>
 
 namespace bg {
@@ -10,11 +11,17 @@ namespace bg {
 class ScalarSetRuntimeType : public ScalarRuntimeType {
   protected:
     ScalarSetRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
+                         bool requires_finalization, bool supports_byte_copy_initialization) noexcept
+        : ScalarRuntimeType{
+              type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization} {}
+
+    ScalarSetRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
                          bool requires_finalization, bool supports_byte_copy_initialization,
                          const ScalarRuntimeType &item) noexcept
-        : ScalarRuntimeType{
-              type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization},
-          item_{&item} {}
+        : ScalarSetRuntimeType{type, size, alignment, uses_variable_memory, requires_finalization,
+                               supports_byte_copy_initialization} {
+        initialize_item_runtime_type(item);
+    }
 
   public:
     struct Item {
@@ -24,7 +31,14 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
 
     using ItemFunction = void (*)(void *, Item);
 
-    const ScalarRuntimeType &item_runtime_type() const noexcept { return *item_; }
+    const ScalarRuntimeType &item_runtime_type() const noexcept {
+        assert(item_ != nullptr);
+        return *item_;
+    }
+    void initialize_item_runtime_type(const ScalarRuntimeType &item) noexcept {
+        assert(item_ == nullptr);
+        item_ = &item;
+    }
     virtual std::size_t item_count(const void *storage) const noexcept = 0;
     virtual bool contains(const void *storage, const details::ScalarData &value) const = 0;
     template <typename Value>
@@ -52,7 +66,7 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
     virtual void clear(void *storage, allocator &memory) const noexcept = 0;
 
   private:
-    const ScalarRuntimeType *item_;
+    const ScalarRuntimeType *item_{};
 };
 
 } // namespace bg

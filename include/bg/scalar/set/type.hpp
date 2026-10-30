@@ -2,7 +2,7 @@
 
 #include <bg/scalar/details/hash.hpp>
 #include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/type.hpp>
+#include <bg/scalar/declaration.hpp>
 #include <bg/util/hash_set.hpp>
 
 #include <cstddef>

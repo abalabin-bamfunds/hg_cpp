@@ -11,6 +11,10 @@ from concrete receiving parameters. `input<TS<T>>({...})` supplies an explicit t
 when the declaration is unresolved. Generic Python definitions can use concrete
 specialization such as `definition[TS[int]]`.
 
+`input(time_series_type, {...})` accepts a semantic time series type selected at
+runtime. Literal sources use that type's default runtime representation, including
+for empty and skip-only inputs.
+
 `None` in Python and `SKIP` in C++ supply no update. `INVALID` invalidates a value.
 Collection deltas update supplied items and retain omitted items. `REMOVE` removes a
 dictionary key. [Literal forms](literals.md) specify supported values.

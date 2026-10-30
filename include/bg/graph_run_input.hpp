@@ -82,15 +82,7 @@ class GraphRunLiteralInput {
     GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral> ticks BG_LIFETIMEBOUND) noexcept
         : ticks_{ticks} {}
 
-    GraphRunLiteralInput(const TimeSeriesRuntimeType &runtime_type BG_LIFETIMEBOUND,
-                         std::initializer_list<literal::TimeSeriesLiteral> ticks BG_LIFETIMEBOUND) noexcept
-        : runtime_type{&runtime_type}, ticks_{ticks.begin(), ticks.size()} {}
-
-    GraphRunLiteralInput(const TimeSeriesRuntimeType &runtime_type BG_LIFETIMEBOUND,
-                         std::span<const literal::TimeSeriesLiteral> ticks BG_LIFETIMEBOUND) noexcept
-        : runtime_type{&runtime_type}, ticks_{ticks} {}
-
-    GraphRunLiteralInput(const GraphRunLiteralInput &source) : runtime_type{source.runtime_type} {
+    GraphRunLiteralInput(const GraphRunLiteralInput &source) : time_series_type{source.time_series_type} {
         if (source.owner_) {
             ticks_ = source.ticks_;
             owner_ = source.owner_;
@@ -111,25 +103,25 @@ class GraphRunLiteralInput {
     }
 
     GraphRunLiteralInput(GraphRunLiteralInput &&source) noexcept
-        : runtime_type{source.runtime_type}, ticks_{source.ticks_}, owner_{std::move(source.owner_)} {
+        : time_series_type{source.time_series_type}, ticks_{source.ticks_}, owner_{std::move(source.owner_)} {
         source.ticks_ = {};
-        source.runtime_type = nullptr;
+        source.time_series_type = nullptr;
     }
 
     GraphRunLiteralInput &operator=(GraphRunLiteralInput &&source) noexcept {
         if (this != &source) {
             ticks_ = source.ticks_;
-            runtime_type = source.runtime_type;
+            time_series_type = source.time_series_type;
             owner_ = std::move(source.owner_);
             source.ticks_ = {};
-            source.runtime_type = nullptr;
+            source.time_series_type = nullptr;
         }
         return *this;
     }
 
     std::span<const literal::TimeSeriesLiteral> ticks() const noexcept { return ticks_; }
 
-    const TimeSeriesRuntimeType *runtime_type{};
+    const TimeSeriesType *time_series_type{};
 
   private:
     std::span<const literal::TimeSeriesLiteral> ticks_;
@@ -154,19 +146,14 @@ template <std::ranges::viewable_range Range>
 // Annotates the temporary descriptor in place and returns it by reference for the run_graph call.
 template <typename TimeSeries>
 [[nodiscard]] const GraphRunLiteralInput &input(GraphRunLiteralInput &&source BG_LIFETIMEBOUND) {
-    source.runtime_type = &cpp_time_series_runtime_type<TimeSeries>();
-    return source;
-}
-
-[[nodiscard]] inline const GraphRunLiteralInput &input(
-    const TimeSeriesRuntimeType &runtime_type BG_LIFETIMEBOUND, GraphRunLiteralInput &&source BG_LIFETIMEBOUND) {
-    source.runtime_type = &runtime_type;
+    const auto &type = TimeSeries::type();
+    source.time_series_type = &type;
     return source;
 }
 
 [[nodiscard]] inline const GraphRunLiteralInput &input(
     const TimeSeriesType &time_series_type, GraphRunLiteralInput &&source BG_LIFETIMEBOUND) {
-    source.runtime_type = &resolve_time_series_runtime_type(time_series_type);
+    source.time_series_type = &time_series_type;
     return source;
 }
 

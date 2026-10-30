@@ -127,8 +127,21 @@ static_assert(alignof(ScalarRuntimeType) >= 8);
 [[nodiscard]] const ScalarRuntimeType &resolve_scalar_runtime_type(const ScalarType &type,
                                                                    std::span<const ScalarRuntimeType *const> available);
 
+// Resolves the runtime representation owned by the semantic type's provider, without consulting alternate
+// representations registered for graph wiring.
+[[nodiscard]] const ScalarRuntimeType &resolve_default_scalar_runtime_type(const ScalarType &type);
+
 void register_scalar_runtime_type(const ScalarRuntimeType &runtime_type);
 
 template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type();
+extern template const ScalarRuntimeType &cpp_scalar_runtime_type<const Type *>();
+
+namespace details {
+
+template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type_for_type(const ScalarType &) {
+    return cpp_scalar_runtime_type<T>();
+}
+
+} // namespace details
 
 } // namespace bg

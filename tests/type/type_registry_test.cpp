@@ -15,7 +15,6 @@
 #include <algorithm>
 #include <array>
 #include <atomic>
-#include <barrier>
 #include <cstdint>
 #include <functional>
 #include <memory>
@@ -33,18 +32,8 @@ namespace {
 
 class RegistryTestType final : public ScalarType {
   public:
-    explicit RegistryTestType(std::atomic_size_t *destructions = nullptr) : destructions_{destructions} {}
-    ~RegistryTestType() override {
-        if (destructions_ != nullptr) {
-            ++*destructions_;
-        }
-    }
-
     bool is_resolved() const noexcept override { return true; }
     const bg::Type &resolve(const TypeMap &) const override { return *this; }
-
-  private:
-    std::atomic_size_t *destructions_;
 };
 
 const RegistryTestType &concurrent_registration_type() {
@@ -54,26 +43,23 @@ const RegistryTestType &concurrent_registration_type() {
 
 } // namespace
 
-TEST_CASE("static type registration publishes before returning", "[type_system][feature:type-system]") {
+TEST_CASE("completed static type registrations support concurrent reads", "[type_system][feature:type-system]") {
     constexpr auto thread_count = std::size_t{16};
-    auto start = std::atomic<bool>{};
     auto all_registered = std::atomic<bool>{true};
     auto threads = std::vector<std::thread>{};
     threads.reserve(thread_count);
 
     const auto &type = concurrent_registration_type();
+    const auto &registered = TypeRegistry::register_static(type);
+    CHECK(&registered == &type);
     for (auto index = std::size_t{}; index < thread_count; ++index) {
         threads.emplace_back([&] {
-            start.wait(false, std::memory_order_acquire);
-            const auto &registered = TypeRegistry::register_static(type);
-            if (&registered != &type || !TypeRegistry::instance().contains(type)) {
+            if (!TypeRegistry::instance().contains(type) || !type.is_resolved()) {
                 all_registered.store(false, std::memory_order_release);
             }
         });
     }
 
-    start.store(true, std::memory_order_release);
-    start.notify_all();
     for (auto &thread : threads) {
         thread.join();
     }
@@ -81,16 +67,13 @@ TEST_CASE("static type registration publishes before returning", "[type_system][
     CHECK(all_registered.load(std::memory_order_acquire));
 }
 
-TEST_CASE("registries own dynamic declarations and roll them back", "[type_system][feature:type-system]") {
-    auto destructions = std::atomic_size_t{};
-    auto type = std::make_unique<RegistryTestType>(&destructions);
+TEST_CASE("registries retain dynamic declarations for process lifetime", "[type_system][feature:type-system]") {
+    auto type = std::make_unique<RegistryTestType>();
     const auto *type_address = type.get();
     const auto &registered_type = TypeRegistry::instance().register_owned(std::move(type));
 
     CHECK(&registered_type == type_address);
     CHECK(TypeRegistry::instance().contains(registered_type));
-    TypeRegistry::instance().rollback(registered_type);
-    CHECK(destructions.load(std::memory_order_relaxed) == 1);
 
     auto variable = std::make_unique<GuaranteeVariable>(util::symbol{"registered"});
     const auto *variable_address = variable.get();
@@ -98,7 +81,6 @@ TEST_CASE("registries own dynamic declarations and roll them back", "[type_syste
 
     CHECK(&registered_variable == variable_address);
     CHECK(VariableRegistry::instance().contains(registered_variable));
-    VariableRegistry::instance().rollback(registered_variable);
 }
 
 TEST_CASE("type registry caches factory descriptors by family and key", "[type_system][feature:type-system]") {
@@ -120,26 +102,14 @@ TEST_CASE("type registry caches factory descriptors by family and key", "[type_s
     CHECK(registry.contains(other_key));
 }
 
-TEST_CASE("type registry retries a failed factory without retaining its key", "[type_system][feature:type-system]") {
-    auto factory_calls = std::size_t{};
+TEST_CASE("type registry propagates a factory failure", "[type_system][feature:type-system]") {
     auto &registry = TypeRegistry::instance();
-    const auto failing_factory = [&]() -> std::unique_ptr<RegistryTestType> {
-        ++factory_calls;
+    const auto failing_factory = []() -> std::unique_ptr<RegistryTestType> {
         throw std::runtime_error{"factory failed"};
     };
 
     CHECK_THROWS_AS((registry.get_or_create<RegistryTestType, std::hash<int>>(7103, failing_factory)),
                     std::runtime_error);
-
-    const auto &created = registry.get_or_create<RegistryTestType, std::hash<int>>(7103, [&] {
-        ++factory_calls;
-        return std::make_unique<RegistryTestType>();
-    });
-    const auto &reused = registry.get_or_create<RegistryTestType, std::hash<int>>(7103, failing_factory);
-
-    CHECK(&created == &reused);
-    CHECK(factory_calls == 2);
-    CHECK(registry.contains(created));
 }
 
 namespace {
@@ -179,29 +149,22 @@ TEST_CASE("type registry factories can request nested descriptors", "[type_syste
     CHECK(registry.contains(inner));
 }
 
-namespace {
-
-std::atomic_size_t cached_candidate_destructions{};
-
-} // namespace
-
-TEST_CASE("type registry concurrent misses publish one owned descriptor", "[type_system][feature:type-system]") {
+TEST_CASE("type registry returns a completed descriptor to concurrent readers", "[type_system][feature:type-system]") {
     constexpr auto thread_count = std::size_t{8};
-    auto factory_gate = std::barrier{static_cast<std::ptrdiff_t>(thread_count)};
-    auto factory_calls = std::atomic_size_t{};
     auto results = std::array<const RegistryTestType *, thread_count>{};
     auto threads = std::vector<std::thread>{};
     threads.reserve(thread_count);
-    cached_candidate_destructions.store(0, std::memory_order_relaxed);
     auto &registry = TypeRegistry::instance();
+    const auto &registered = registry.get_or_create<RegistryTestType, std::hash<int>>(7106, [] {
+        return std::make_unique<RegistryTestType>();
+    });
 
     for (auto index = std::size_t{}; index < thread_count; ++index) {
         threads.emplace_back([&, index] {
-            results[index] = &registry.get_or_create<RegistryTestType, std::hash<int>>(7106, [&] {
-                factory_calls.fetch_add(1, std::memory_order_relaxed);
-                factory_gate.arrive_and_wait();
-                return std::make_unique<RegistryTestType>(&cached_candidate_destructions);
+            results[index] = &registry.get_or_create<RegistryTestType, std::hash<int>>(7106, [] {
+                return std::make_unique<RegistryTestType>();
             });
+            (void)results[index]->is_resolved();
         });
     }
 
@@ -209,10 +172,8 @@ TEST_CASE("type registry concurrent misses publish one owned descriptor", "[type
         thread.join();
     }
 
-    CHECK(factory_calls.load(std::memory_order_relaxed) == thread_count);
     CHECK(std::ranges::all_of(results, [&](const auto *result) { return result == results.front(); }));
-    CHECK(cached_candidate_destructions.load(std::memory_order_relaxed) == thread_count - 1);
-    CHECK(registry.contains(*results.front()));
+    CHECK(results.front() == &registered);
 }
 
 TEST_CASE("type variable declarations participate in the type registry", "[type_system][feature:type-system]") {

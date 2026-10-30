@@ -35,7 +35,7 @@ WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator
     }
 
     if (value.is_none() && expects_scalar) {
-        return WiringArgument::absent_scalar(*scalar_type, resolve_scalar_runtime_type(*scalar_type, {}));
+        return WiringArgument::absent_scalar(*scalar_type, resolve_default_scalar_runtime_type(*scalar_type));
     }
     if (value.is_none()) {
         throw std::invalid_argument{"None cannot be wired to a time-series input"};

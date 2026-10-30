@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/scalar/declaration.hpp>
+#include <bg/scalar/runtime_type.hpp>
 #include <bg/scalar/struct/declaration.hpp>
 #include <bg/type/scalar_type.hpp>
 #include <bg/util/symbol.hpp>
@@ -75,9 +76,14 @@ template <native_struct T> struct scalar_type_traits<T> {
         static const auto fields = details::native_struct_fields<T>(
             std::make_index_sequence<util::aggregate_member_count<T>>{});
 
-        return details::canonical_struct_scalar_type(typeid(T), util::type_name<T>(), util::unqualified_type_name<T>(),
-                                                     sizeof(T), alignof(T), fields);
+        const auto &type = details::canonical_struct_scalar_type(typeid(T), util::type_name<T>(),
+                                                                 util::unqualified_type_name<T>(), sizeof(T),
+                                                                 alignof(T), fields);
+        type.set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<T>);
+        return type;
     }
 };
 
 } // namespace bg
+
+#include <bg/scalar/cpp_runtime_type.hpp>

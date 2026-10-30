@@ -80,7 +80,7 @@ class Schema final : public SchemaType {
     bool finalized_{false};
 };
 
-// Owns one atomic schema registration, including reservation, finalization, commit, and rollback.
+// Reserves recursive schemas and publishes them to the canonical schema cache after completion.
 class SchemaRegistration {
   public:
     SchemaRegistration();

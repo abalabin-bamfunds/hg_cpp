@@ -256,6 +256,10 @@ class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructS
         static_assert(sizeof(CppScalarRuntimeType) == sizeof(StructScalarRuntimeType));
     }
 
+    void initialize_runtime_type() {
+        initialize_field_runtime_types(std::make_index_sequence<util::aggregate_member_count<T>>{});
+    }
+
     bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
         auto memory = current_scalar_allocator();
         alignas(T) std::byte replacement_bytes[sizeof(T)];
@@ -279,6 +283,10 @@ class CppScalarRuntimeType<T> final : public CppScalarRuntimeTypeBase<T, StructS
     }
 
   private:
+    template <std::size_t... Index> static void initialize_field_runtime_types(std::index_sequence<Index...>) {
+        (static_cast<void>(cpp_scalar_runtime_type<Field<Index>>()), ...);
+    }
+
     template <std::size_t Index, typename Slots>
     void construct_staged_field(Slots &slots, std::array<bool, util::aggregate_member_count<T>> &constructed,
                                 allocator &memory, ScalarFieldConstruction construction) const {
@@ -333,8 +341,13 @@ template <typename T> struct CppTupleRuntimeType;
 
 template <typename... Items> struct CppTupleRuntimeType<Tuple<Items...>> {
     static const ScalarRuntimeType &get() {
-        (cpp_scalar_runtime_type<Items>(), ...);
-        return resolve_scalar_runtime_type(cpp_scalar_type<Tuple<Items...>>(), {});
+        static const ScalarRuntimeType *runtime_type{};
+        if (runtime_type != nullptr) {
+            return *runtime_type;
+        }
+
+        runtime_type = &resolve_default_scalar_runtime_type(cpp_scalar_type<Tuple<Items...>>());
+        return *runtime_type;
     }
 };
 
@@ -362,10 +375,23 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
 
         return runtime_type;
     } else if constexpr (is_tuple_scalar_v<T>) {
-        static const auto &runtime_type = details::CppTupleRuntimeType<T>::get();
-        return runtime_type;
+        return details::CppTupleRuntimeType<T>::get();
     } else if constexpr (details::hierarchical_scalar_declaration<T>) {
-        return resolve_scalar_runtime_type(cpp_scalar_type<T>(), {});
+        return resolve_default_scalar_runtime_type(cpp_scalar_type<T>());
+    } else if constexpr (requires(details::CppScalarRuntimeType<T> &runtime_type) {
+                             runtime_type.initialize_runtime_type();
+                         }) {
+        static auto storage = util::static_storage<details::CppScalarRuntimeType<T>>{};
+        static const ScalarRuntimeType *runtime_type{};
+        if (runtime_type != nullptr) {
+            return *runtime_type;
+        }
+
+        auto &shell = storage.get();
+        runtime_type = &shell;
+        register_scalar_runtime_type(shell);
+        shell.initialize_runtime_type();
+        return shell;
     } else {
         static const auto runtime_type = util::static_storage<details::CppScalarRuntimeType<T>>{};
         static const auto registered = (register_scalar_runtime_type(runtime_type.get()), true);

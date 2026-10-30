@@ -1,7 +1,7 @@
 #pragma once
 
 #include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/type.hpp>
+#include <bg/scalar/declaration.hpp>
 #include <bg/util/contiguous_bunch.hpp>
 
 #include <cstddef>

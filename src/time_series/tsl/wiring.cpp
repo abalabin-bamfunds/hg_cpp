@@ -19,7 +19,6 @@
 
 #include <algorithm>
 #include <memory>
-#include <mutex>
 #include <ranges>
 #include <stdexcept>
 #include <string>
@@ -102,10 +101,8 @@ class FreeFixedTimeSeriesListNodeTemplate final : public NodeTemplate {
 };
 
 const NodeTemplate &free_fixed_time_series_list_node_template(const TimeSeriesListType &type) {
-    static auto mutex = std::mutex{};
     static auto templates = std::vector<std::unique_ptr<FreeFixedTimeSeriesListNodeTemplate>>{};
 
-    const auto lock = std::lock_guard{mutex};
     const auto existing = std::ranges::find_if(
         templates, [&](const auto &node_template) { return node_template->signature().output() == &type; });
     if (existing != templates.end()) {

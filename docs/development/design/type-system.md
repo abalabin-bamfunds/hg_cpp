@@ -39,14 +39,19 @@ dispatch. Inputs without this capability are not selected.
 See [runtime dispatch](operators.md#runtime-dispatch) for input selection and
 output adaptation rules.
 
-Every `Type` must be registered. Committed objects have process lifetime; failed
-registration transactions discard their pending objects. Static declaration
-helpers cache references to registered objects. Dynamic composition can register
-unnamed types automatically. This is required to retain type pointers after a
-graph or wiring template is destroyed.
+Every `Type` must be registered. Registered objects have process lifetime.
+Static declaration helpers cache references to registered objects. Dynamic
+composition can register unnamed types automatically. This is required to retain
+type pointers after a graph or wiring template is destroyed.
 
-Registries, canonical lookup indexes, and committed descriptors remain alive
-through process shutdown. An extension that provides a committed descriptor
+Registration and canonical lookup run on one thread during wiring, compilation,
+or evaluation. Node code can discover a concrete scalar subtype when constructing
+a value during evaluation. Registration failures propagate and abort the current
+operation; continued registry use after a registration failure is unsupported.
+Completed descriptors support concurrent reads.
+
+Registries, canonical lookup indexes, and registered descriptors remain alive
+through process shutdown. An extension that provides a registered descriptor
 must remain loaded until process termination because the descriptor's virtual
 functions belong to that extension.
 
@@ -62,22 +67,20 @@ Type objects cannot be copied or moved.
 `TypeRegistry::instance().get_or_create<Descriptor, Hash>(key, factory)` provides
 a shared cache for ordinary canonical factories.
 The factory defines the identity key, validates semantic requirements, and constructs
-an unregistered descriptor. The registry owns the cache and descriptor, publishes
-one canonical object per key, and removes pending entries if publication fails.
+an unregistered descriptor. The registry owns the cache and descriptor and retains
+one canonical object per key.
 Descriptor, key, and hash types identify separate cache families.
 
-Factories run without registry locks and can request other types. Concurrent
-first requests can construct temporary duplicate candidates; every successful
-caller receives the same canonical object. Factories must tolerate duplicate
-construction and must not request their own key recursively. This operation
-commits one descriptor; recursive scalar schemas use their
-[group registration transaction](../decisions/0018-atomic-recursive-semantic-registration.md).
+Factories can request other types but must not request their own key recursively.
+Recursive descriptor construction registers a stable descriptor before resolving
+its children. It connects the children, finalizes derived properties, and validates
+the completed descriptors before returning to the caller.
 
 `VariableRegistry` retains non-type metadata such as guarantee and size variables.
 Type variables register through `TypeRegistry`; their variable interface shares
 that object's lifetime. Independent variables keep separate identities even when
 their names match. Category factories define canonical type identity and own
-any group registration transaction they require.
+the construction and completion of recursive descriptors.
 
 Resolved objects are immutable and canonical. Equivalent types have the same
 address, so exact equality is a pointer comparison. Modules can register types
@@ -125,6 +128,22 @@ that supports byte-copy initialization.
 The process owns registered and composed runtime types. Graph compilation
 reuses them across graphs.
 
+When a default runtime requires C++ type information, the canonical semantic
+factory records a lazy callback. Registration stores this callback without
+constructing the runtime type. C++ scalar defaults use `scalar_storage_traits<T>`;
+time series providers use their runtime traits. Every resolved built-in time
+series descriptor also records a default runtime callback. Composite callbacks
+obtain the defaults of their components recursively.
+
+Default runtime resolution ignores supplied runtime layouts and registered
+alternate representations. Ordinary runtime resolution can preserve supplied
+component layouts.
+
+Literal input descriptors retain semantic time series types. Wiring obtains
+their default runtime types before constructing the source nodes. A literal's
+payload does not select its storage representation, including when the input is
+empty or contains only skipped ticks.
+
 ## Schemas
 
 `Schema` is the shared field descriptor for hierarchical scalars, time series
@@ -143,8 +162,7 @@ ordered direct fields, and declaration-local metadata. Field equality compares
 name, canonical type pointer, and optionality. Metadata equality compares names
 and scalar values without depending on dictionary entry order. Metadata values
 must support reflexive equality; metadata hashing uses names only. The factory
-returns one registered descriptor per key. Schema entries created during
-recursive scalar registration commit or roll back with that group.
+returns one registered descriptor per key.
 
 `Schema::direct_metadata()` returns entries declared on that schema.
 `Schema::metadata()` returns the effective dictionary: base entries followed by
@@ -156,8 +174,9 @@ it removes the listed names, then adds or replaces entries from `overrides`.
 An override wins when its name also appears in `remove`. Missing removal names
 have no effect, and the original metadata remains unchanged.
 
-`SchemaRegistration` reserves runtime schemas, finalizes their descriptors before
-`commit()`, and rolls back the reservations and owned descriptors on failure.
+`SchemaRegistration` reserves runtime schemas and retains their descriptors.
+The caller finalizes their fields before `commit()` completes derived properties
+and validation.
 
 A C++ declaration such as `Quote` is identified by the concrete schema
 instantiation `Quote<details::schema_identity_field>`. This keeps aliases of one
@@ -306,8 +325,9 @@ permits an absent `Bundle` field. In a TSB, it configures the typed input field;
 the structural TSB field remains present.
 
 Hierarchical scalar schemas can refer to themselves or each other directly and
-through scalar collections. Semantic registration publishes the complete group
-of types and schemas atomically. Readers observe complete field metadata.
+through scalar collections. Registration reserves descriptor identities before
+resolving recursive fields. Completion calculates scalar capabilities across the
+connected descriptors before validating hash-key requirements.
 
 Required direct hierarchical fields must not form a recursive cycle. Every
 direct cycle must contain an optional field. The check traverses every tuple

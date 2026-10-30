@@ -8,7 +8,6 @@
 #include <bg/util/static_storage.hpp>
 
 #include <memory>
-#include <mutex>
 #include <unordered_map>
 
 namespace bg {
@@ -45,11 +44,9 @@ void TimeSeriesReferenceRuntimeType::invalidate_output(const OutputState &output
 }
 
 const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeriesReferenceType &type) {
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto runtime_types = util::static_storage<
         std::unordered_map<const TimeSeriesReferenceType *, std::unique_ptr<TimeSeriesReferenceRuntimeType>>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto [entry, inserted] = runtime_types.get().try_emplace(&type);
     if (inserted) {
         entry->second = std::make_unique<TimeSeriesReferenceRuntimeType>(type);
@@ -58,11 +55,9 @@ const TimeSeriesRuntimeType &time_series_reference_runtime_type(const TimeSeries
 }
 
 const TimeSeriesRuntimeType &details::routed_time_series_reference_runtime_type(const TimeSeriesReferenceType &type) {
-    static auto mutex = util::static_storage<std::mutex>{};
     static auto runtime_types = util::static_storage<
         std::unordered_map<const TimeSeriesReferenceType *, std::unique_ptr<TimeSeriesRuntimeType>>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = runtime_types.get();
     const auto entry = cache.find(&type);
     if (entry != cache.end()) {

@@ -124,7 +124,53 @@ struct RuntimeListItem {
     i64 second;
 };
 
+struct ErasedDefaultCallbackItem {};
+
 } // namespace
+
+TEST_CASE("a typed list default runtime replaces a previously resolved erased default",
+          "[value][scalar][list][scalar:list][runtime-type][feature:scalar-storage]") {
+    using Item = Opaque<ErasedDefaultCallbackItem>;
+    using Value = List<Item>;
+
+    const auto &type = list_scalar_type(cpp_scalar_type<Item>());
+    const auto &erased_runtime = resolve_default_scalar_runtime_type(type);
+
+    CHECK(&erased_runtime.type() == &type);
+
+    CHECK(&cpp_scalar_type<Value>() == &type);
+    CHECK(&resolve_default_scalar_runtime_type(type) == &cpp_scalar_runtime_type<Value>());
+    CHECK(&resolve_default_scalar_runtime_type(type) != &erased_runtime);
+}
+
+TEST_CASE("ordinary list composition preserves a supplied item runtime",
+          "[value][scalar][list][scalar:list][runtime-type][feature:scalar-storage]") {
+    using Item = test_scalar_provider::value;
+
+    const auto &canonical_item = cpp_scalar_runtime_type<Item>();
+    const auto &supplied_item = test_scalar_provider::preserving_runtime_type();
+    const auto &type = list_scalar_type(canonical_item.type());
+    const auto available = std::array<const ScalarRuntimeType *, 1>{&supplied_item};
+    const auto &runtime = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, available));
+
+    CHECK(&runtime.item_runtime_type() == &supplied_item);
+}
+
+TEST_CASE("ordinary list composition uses a registered child runtime",
+          "[value][scalar][list][scalar:list][runtime-type][feature:scalar-storage]") {
+    using Item = test_scalar_provider::value;
+
+    const auto &supplied_item = test_scalar_provider::preserving_runtime_type();
+    register_scalar_runtime_type(supplied_item);
+    const auto &type = list_scalar_type(supplied_item.type());
+    const auto &ordinary_runtime =
+        static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, {}));
+
+    CHECK(&ordinary_runtime.item_runtime_type() == &supplied_item);
+
+    const auto &default_runtime = static_cast<const ScalarListRuntimeType &>(resolve_default_scalar_runtime_type(type));
+    CHECK(&default_runtime.item_runtime_type() == &cpp_scalar_runtime_type<Item>());
+}
 
 TEST_CASE("a scalar list copies between composed and C++ storage",
           "[value][scalar][list][scalar:list][storage][feature:scalar-storage]") {

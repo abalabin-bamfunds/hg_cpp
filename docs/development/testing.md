@@ -180,7 +180,8 @@ Literal inputs require a non-variadic parameter list. Concrete time series param
 parameters supply input types. A plain node parameter supplies its time series alternative; its value
 type must be resolved. Input types come from the signature, so empty and skip-only sequences work too. Use
 `input<TSD<string, TS<i64>>>({...})` for an unresolved input declaration, or
-`input(runtime_type, {...})` to supply a time series runtime type explicitly.
+`input(time_series_type, {...})` to supply a semantic time series type selected
+at runtime. Literal sources use the type's default runtime representation.
 Raw brace calls support one through four inputs when every argument is a
 brace sequence. Use `ticks({...})` or a typed range to mix a history with
 ordinary scalar arguments. Pass `GraphRunLiteralInput` descriptors or a
@@ -309,10 +310,11 @@ graph compilation or evaluation.
 - process-owned dynamic declarations and type-pointer validity after graph or wiring-template destruction
 - type registry lookup, schema metadata construction, and scalar string reads
   from process shutdown callbacks
-- canonical factory cache identity, nested construction, failed factory retries, and concurrent cold misses
+- canonical factory cache identity, nested construction, registration failure propagation,
+  and concurrent reads of completed descriptors
 - formal type-name formatting through `Type`, including nested extension types
 - registration of primitive, generic, extension, and graph types; allocation-free primitive registration;
-  independent variable identities and failed-registration rollback
+  independent variable identities and process-lifetime ownership
 - type variables, constraints, repeated variables, and lower bounds
 - type-map overlays and functional variable resolution
 - signature matching, resolution, and parameter category inference
@@ -323,7 +325,7 @@ graph compilation or evaluation.
   publication, and scalar-only scheduling
 - hierarchical scalar inheritance and directional compatibility through scalar containers
 - shared schema identity across translation units and libraries, C++ and runtime declarations,
-  ordered fields, inheritance, optional presence, field-variable resolution, and recursive registration rollback
+  ordered fields, inheritance, optional presence, field-variable resolution, and recursive descriptor completion
 - schema variables shared across reflection adapters, repeated-variable matching, and owning type field validation
 - hierarchical scalar schema capture through scalar arguments, time series values, and scalar collections;
   canonical type identity shared by C++ declarations and programmatic schema construction

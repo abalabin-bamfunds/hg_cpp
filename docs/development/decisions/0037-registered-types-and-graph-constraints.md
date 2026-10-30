@@ -1,6 +1,7 @@
 # Registered types and graph constraints
 
-Status: accepted
+Status: accepted; registration failure handling superseded by
+[single-threaded type registration](0096-single-threaded-type-registration.md).
 
 ## Context
 

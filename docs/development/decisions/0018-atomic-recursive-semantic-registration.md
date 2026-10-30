@@ -1,6 +1,6 @@
 # Atomic recursive semantic registration
 
-Status: accepted
+Status: superseded by [single-threaded type registration](0096-single-threaded-type-registration.md).
 
 ## Decision
 
