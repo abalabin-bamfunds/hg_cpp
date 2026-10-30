@@ -33,10 +33,15 @@ arguments normally.
 A graph function receives all supplied arguments in order. This supports
 generic lambdas without an additional graph declaration.
 
+`switch_` retains the case graph templates and graph functions used to wire its
+branches through compilation. This is required to keep node templates captured
+by value alive for the [node-template lifetime contract](graph-wiring.md#wiring-template-call).
+
 Type-erased callers pass a key as a `WiringPoint` or `WiringArgument`, a span
 of `SwitchCaseArgument`, and a span of `WiringArgument`. A qualified key keeps
 its `opt` qualifier during overload resolution. A `SwitchCaseArgument` accepts
-one key, a span of keys, or `DEFAULT`.
+one key, a span of keys, or `DEFAULT`. It borrows its graph template; the caller
+keeps that template and its referenced node templates alive through compilation.
 
 ## Selection and output
 

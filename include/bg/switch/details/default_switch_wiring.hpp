@@ -4,6 +4,7 @@
 #include <bg/graph/wiring_argument.hpp>
 #include <bg/switch/details/switch_node.hpp>
 
+#include <memory>
 #include <optional>
 #include <vector>
 
@@ -14,6 +15,7 @@ struct PreparedSwitchCase {
     bool default_case;
     const WiringTemplate *function;
     bool preserve_argument_names;
+    std::shared_ptr<const WiringTemplate> function_owner;
 };
 
 struct DefaultSwitchWiring {

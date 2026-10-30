@@ -13,6 +13,7 @@ namespace bg {
 
 class GraphWiring;
 class NodeTemplate;
+class WiringTemplate;
 
 namespace details {
 
@@ -22,6 +23,7 @@ struct SwitchInputBoundary {
 };
 
 struct SwitchBranchWiring {
+    std::shared_ptr<const WiringTemplate> function_owner;
     std::shared_ptr<const GraphWiring> wiring;
     std::vector<SwitchInputBoundary> inputs;
     std::optional<std::size_t> inherited_parameter_start;

@@ -48,6 +48,35 @@ TEST_CASE("switch selects a case graph from its key",
     CHECK(actual.equals<i64>({13, 23, 24, 15}));
 }
 
+TEST_CASE("switch retains node templates captured by a generic case function",
+          "[feature:switch][feature:nested-graph][feature:operator][series:value]"
+          "[definition:function][lifetime:capture]") {
+    const auto increment = node([](i64 value) { return value + 1; });
+
+    const auto tested = [increment](wp<TS<i64>> key, wp<TS<i64>> value) {
+        return switch_(key, cases{case_(i64{1}, [increment](auto input) { return increment(input); })}, value);
+    };
+
+    CHECK(bg::run_graph(tested, {1, 1}, {3, 4}).equals<i64>({4, 5}));
+}
+
+TEST_CASE("switch retains node templates captured by a move-only graph case",
+          "[feature:switch][feature:nested-graph][feature:operator][series:value]"
+          "[definition:graph][lifetime:capture][lifetime:move-only]") {
+    const auto increment = node([](i64 value) { return value + 1; });
+
+    const auto tested = [increment](wp<TS<i64>> key, wp<TS<i64>> value) {
+        auto branch = graph("name"_n = "move_only_switch_case",
+                            [increment, amount = std::make_unique<int>(1)](wp<TS<i64>> input) {
+                                return add(increment(input), *amount);
+                            });
+
+        return switch_(key, cases{case_(i64{1}, std::move(branch))}, value);
+    };
+
+    CHECK(bg::run_graph(tested, {1, 1}, {3, 4}).equals<i64>({5, 6}));
+}
+
 TEST_CASE("switch holds fixed list items across free and native branches",
           "[feature:switch][feature:reference][series:fixed-tsl][representation:free]"
           "[representation:native][transition:update]") {
