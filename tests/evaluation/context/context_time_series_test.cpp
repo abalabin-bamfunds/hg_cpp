@@ -390,6 +390,67 @@ TEST_CASE("a changing reference context updates through two nested boundaries in
     CHECK(actual.equals({10, 20, 10, 20}));
 }
 
+namespace {
+
+const auto publish_context_reference = node([](In<REF<TS<i64>>> value,
+                                               Out<TSD<i64, REF<TS<i64>>>> output) {
+    output[1].copy(value);
+});
+
+} // namespace
+
+TEST_CASE("a TSD item reference context reacts to selector and target changes",
+          "[feature:context-time-series][feature:switch][feature:reference][series:tsd]"
+          "[transition:update][shape:nested]") {
+    const auto add_context_offset = node([](In<TS<i64>> value, In<TS<i64>, "offset"_n, context> offset) {
+        return *value + *offset;
+    });
+
+    const auto subtract_context_offset = node([](In<TS<i64>> value, In<TS<i64>, "offset"_n, context> offset) {
+        return *value - *offset;
+    });
+
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> value, wp<TS<i64>> offset) {
+        const auto reference_offset = publish_context_reference(offset)[i64{1}];
+        return with_context("offset"_n = reference_offset, [&] {
+            return switch_(selector,
+                           cases{
+                               case_(i64{1}, [&](auto input) { return add_context_offset(input); }),
+                               case_(i64{2}, [&](auto input) { return subtract_context_offset(input); }),
+                           },
+                           value);
+        });
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {1, 1, 1, 2, 2},
+                                      {1, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP},
+                                      {10, literal::SKIP, literal::SKIP, literal::SKIP, 20});
+
+    CHECK(actual.equals<i64>({11, std::nullopt, std::nullopt, -9, -19}));
+}
+
+TEST_CASE("a switch does not retick a TSD item reference argument for an unchanged selector",
+          "[feature:switch][feature:reference][series:tsd][shape:nested]") {
+    const auto read_value = node([](i64 value) { return value; });
+
+    const auto tested = [&](wp<TS<i64>> selector, wp<TS<i64>> value) {
+        const auto reference_value = publish_context_reference(value)[i64{1}];
+        return switch_(selector,
+                       cases{
+                           case_(i64{1}, [&](auto input) { return read_value(input); }),
+                           case_(i64{2}, [&](auto input) { return read_value(input); }),
+                       },
+                       reference_value);
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {1, 1, 2, 2},
+                                      {7, literal::SKIP, literal::SKIP, literal::SKIP});
+
+    CHECK(actual.equals<i64>({7, std::nullopt, 7, std::nullopt}));
+}
+
 TEST_CASE("a context time series preserves invalidation and revalidation",
           "[feature:context-time-series][feature:nested-graph][feature:validity]") {
     const auto inner = graph("name"_n = "validity_context_consumer", []() -> wp<TS<i64>> { return copy_context(); });

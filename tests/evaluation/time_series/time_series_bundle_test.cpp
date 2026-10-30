@@ -20,9 +20,9 @@
 #include <array>
 #include <chrono>
 #include <optional>
+#include <vector>
 #include <span>
 #include <utility>
-#include <vector>
 
 using namespace bg;
 using namespace bg::literals;
@@ -252,6 +252,62 @@ TEST_CASE("a free bundle follows the receiving named schema",
     const auto result = bg::run_graph(graph, {1, 2}, {0.5F, 1.5F});
 
     CHECK(result.equals({1.5F, 3.5F}));
+}
+
+TEST_CASE("a free bundle can be observed through a reference",
+          "[feature:reference][series:tsb][series:reference][representation:free][shape:chain]"
+          "[binding:value-to-reference][transition:update]") {
+    const auto observe = node([](In<REF<TSB<DerivedBundle>>> input) { return input.valid(); });
+
+    const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
+        return observe(bundle("count"_n = count, "value"_n = value));
+    };
+
+    const auto actual = bg::run_graph(graph, {1, 2}, {0.5F, 1.5F});
+
+    CHECK(actual.equals({true, std::nullopt}));
+}
+
+TEST_CASE("a reference to a free bundle samples updates to its fields",
+          "[feature:reference][feature:sampling][series:tsb][series:reference][representation:free]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto sum = node([](In<TSB<DerivedBundle>> input) { return *input->count + *input->value; });
+
+    const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
+        const auto fields = bundle("count"_n = count, "value"_n = value);
+        return sum(fields.as<REF<TSB<DerivedBundle>>>());
+    };
+
+    const auto actual = bg::run_graph(graph, {1, 2, literal::SKIP}, {0.5F, literal::SKIP, 1.5F});
+
+    CHECK(actual.equals({1.5F, 2.5F, 3.5F}));
+}
+
+TEST_CASE("a free bundle reports changes for each field independently",
+          "[feature:collection-change][series:tsb][representation:free][schema:named]"
+          "[transition:update][scalar:integer][scalar:floating-point][binding:direct]") {
+    struct Observation {
+        i64 count;
+        double value;
+        bool count_updated;
+        bool value_updated;
+
+        bool operator==(const Observation &) const = default;
+    };
+
+    const auto observe = node([](In<TSB<DerivedBundle>> input) {
+        return Observation{*input->count, *input->value, input->count.modified(), input->value.modified()};
+    });
+
+    const auto graph = [&](wp<TS<i64>> count, wp<TS<float>> value) {
+        return observe(bundle("count"_n = count, "value"_n = value));
+    };
+
+    const auto actual = bg::run_graph(graph, {1, 2, literal::SKIP}, {0.5F, literal::SKIP, 1.5F});
+
+    CHECK(actual.equals<Observation>({Observation{1, 0.5F, true, true},
+                                      Observation{2, 0.5F, true, false},
+                                      Observation{2, 1.5F, false, true}}));
 }
 
 TEST_CASE("a named bundle input accepts extra free bundle fields",
@@ -726,6 +782,31 @@ TEST_CASE("a free bundle rejects duplicate field names",
         WiringError);
 }
 
+TEST_CASE("a switch routes a free bundle between its fields and a constant bundle",
+          "[feature:switch][feature:reference][series:tsb][representation:free][schema:named]"
+          "[shape:nested][binding:value-to-reference][binding:reference-to-value][transition:update]") {
+    const auto pass_through = graph("name"_n = "pass_free_bundle",
+                                    [](wp<TSB<DerivedBundle>> input) { return input; });
+
+    const auto constant = graph("name"_n = "constant_bundle",
+                                [](wp<TSB<DerivedBundle>>) { return bundle<DerivedBundle>(i64{1}, 2.0F); });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> count, wp<TS<float>> value) {
+        const auto fields = bundle("count"_n = count, "value"_n = value);
+        return switch_(key, cases{case_(true, pass_through), case_(false, constant)}, fields);
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {false, true, false, true},
+                                      {1, literal::SKIP, 3, literal::SKIP},
+                                      {-1.0F, literal::SKIP, -3.0F, literal::SKIP});
+
+    CHECK(actual.equals({{{"count", 1}, {"value", 2.0F}},
+                         {{"count", 1}, {"value", -1.0F}},
+                         {{"count", 1}, {"value", 2.0F}},
+                         {{"count", 3}, {"value", -3.0F}}}));
+}
+
 TEST_CASE("a switch accepts native and free bundle branches",
           "[feature:switch][feature:reference][series:tsb][schema:named]"
           "[representation:free][representation:native][shape:nested][transition:update]") {
@@ -795,4 +876,62 @@ TEST_CASE("reselecting a rebuilt free bundle keeps unchanged field references",
                                       {0.5F, 1.5F, 2.5F, 3.5F});
 
     CHECK(actual.equals({10, std::nullopt, std::nullopt, 20}));
+}
+
+TEST_CASE("a nested graph observes independent updates to free bundle fields",
+          "[feature:nested-graph][feature:reference][feature:sampling][series:tsb][representation:free]"
+          "[shape:nested][binding:value-to-reference][binding:reference-to-value][transition:update]") {
+    const auto sum = node([](i64 count, float value) { return count + value; });
+
+    const auto inner = graph("name"_n = "sum_free_bundle_fields", [&](wp<TSB<DerivedBundle>> input) {
+        return sum(input->count, input->value);
+    });
+
+    const auto tested = [&](wp<TS<i64>> count, wp<TS<float>> value, wp<TS<bool>> run) {
+        return nested(inner, run, bundle("count"_n = count, "value"_n = value));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, literal::SKIP}, {0.5F, literal::SKIP, 1.5F}, {true, true, true});
+
+    CHECK(actual.equals({1.5F, 2.5F, 3.5F}));
+}
+
+TEST_CASE("a nested graph sees partial validity in a free bundle",
+          "[feature:nested-graph][feature:reference][feature:validity][series:tsb]"
+          "[representation:free][shape:nested][validity:optional][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto observe = node([](In<TSB<DerivedBundle>, optional> input) {
+        return input.valid() && input->count.valid();
+    });
+
+    const auto inner = graph("name"_n = "observe_free_bundle_count", [&](wp<TSB<DerivedBundle>> input) {
+        return observe(input);
+    });
+
+    const auto tested = [&](wp<TS<i64>> count, wp<TS<float>> value, wp<TS<bool>> run) {
+        return nested(inner, run, bundle("count"_n = count, "value"_n = value));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, literal::INVALID, 2}, {0.5F, 1.5F, 2.5F}, {true, true, true});
+
+    CHECK(actual.equals({true, false, true}));
+}
+
+TEST_CASE("a nested graph passes a free bundle reference to a value consumer",
+          "[feature:nested-graph][feature:reference][feature:sampling][series:tsb]"
+          "[representation:free][shape:nested][binding:value-to-reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto sum = node([](In<TSB<DerivedBundle>> input) { return *input->count + *input->value; });
+
+    const auto inner = graph("name"_n = "reference_free_bundle", [](wp<REF<TSB<DerivedBundle>>> input) {
+        return input;
+    });
+
+    const auto tested = [&](wp<TS<i64>> count, wp<TS<float>> value, wp<TS<bool>> run) {
+        return sum(nested(inner, run, bundle("count"_n = count, "value"_n = value)));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, literal::SKIP}, {0.5F, literal::SKIP, 1.5F}, {true, true, true});
+
+    CHECK(actual.equals({1.5F, 2.5F, 3.5F}));
 }

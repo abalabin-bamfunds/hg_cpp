@@ -2,6 +2,7 @@
 #include <bg/mesh.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
+#include <bg/reduce.hpp>
 #include <bg/switch.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
@@ -589,6 +590,148 @@ TEST_CASE("mesh supports source and sink graphs",
 
     CHECK(sink_result.equals<bg::i64>({1, 2}));
     CHECK(recorded_values == std::vector<i64>{1, 2});
+}
+
+const auto add_mesh_values = node([](i64 left, i64 right) { return left + right; });
+
+const auto sum_mesh_values = graph("name"_n = "sum_mesh_values",
+                                   [](wp<TS<i64>> left, wp<TS<i64>> right) {
+                                       return add_mesh_values(left, right);
+                                   });
+
+TEST_CASE("reduce combines mesh outputs as branches update and disappear",
+          "[feature:mesh][feature:reduce][feature:nested-graph][series:tsd]"
+          "[shape:doubly-nested][transition:update][transition:removal]") {
+    const auto tested = [](wp<TSD<i64, TS<i64>>> values,
+                           wp<TSD<i64, TS<i64>>> dependencies) {
+        const auto result = mesh(
+            [](auto item, auto dependency_key) {
+                return add_mesh_dependency(item, mesh()[dependency_key]);
+            },
+            values, dependencies);
+        return reduce(sum_mesh_values, result, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, 1}, {2, 10}}, {{1, 3}, {2, 20}}, {{2, literal::REMOVE}, {1, 4}},
+         {{1, literal::REMOVE}}},
+        {{{2, 1}}, {{2, literal::REMOVE}}});
+
+    CHECK(actual.equals<i64>({12, 23, 4, 0}));
+}
+
+TEST_CASE("mesh branches reduce nested dictionaries before using their dependencies",
+          "[feature:mesh][feature:reduce][feature:nested-graph][series:tsd]"
+          "[shape:deeply-nested][transition:update]") {
+    const auto tested = [](wp<TSD<i64, TSD<i64, TS<i64>>>> values,
+                           wp<TSD<i64, TS<i64>>> dependency_keys) {
+        const auto result = mesh(
+            [](auto items, auto dependency_key) {
+                const auto total = reduce(sum_mesh_values, items, "default"_n = i64{0});
+                return add_mesh_dependency(total, mesh()[dependency_key]);
+            },
+            values, dependency_keys);
+        return reduce(sum_mesh_values, result, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, {{10, 1}, {20, 2}}}, {2, {{10, 4}}}},
+         {{1, {{10, 10}}}}},
+        {{{2, 1}}});
+
+    CHECK(actual.equals<i64>({10, 28}));
+}
+
+TEST_CASE("mapped meshes reduce independently and rebuild after a parent returns",
+          "[feature:mesh][feature:map][feature:reduce][feature:nested-graph]"
+          "[series:tsd][shape:deeply-nested][transition:update][transition:removal]"
+          "[transition:addition]") {
+    const auto tested = [](wp<TSD<i64, TSD<i64, TS<i64>>>> values,
+                           wp<TSD<i64, TSD<i64, TS<i64>>>> dependency_keys) {
+        const auto totals = map(
+            [](auto inner_values, auto inner_dependencies) {
+                const auto branches = mesh(
+                    [](auto value, auto dependency_key) {
+                        return add_mesh_dependency(value, mesh()[dependency_key]);
+                    },
+                    inner_values, inner_dependencies);
+                return reduce(sum_mesh_values, branches, "default"_n = i64{0});
+            },
+            values, dependency_keys);
+        return reduce(sum_mesh_values, totals, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, {{1, 1}, {2, 10}}}, {2, {{1, 3}, {2, 20}}}},
+         {{1, {{1, 5}}}, {2, {{2, 30}}}},
+         {{1, literal::REMOVE}},
+         {{1, {{1, 7}, {2, 1}}}}},
+        {{{1, {{2, 1}}}, {2, {{2, 1}}}}, {{1, {{2, 1}}}, {2, {{2, 1}}}},
+         {{1, literal::REMOVE}}, {{1, {{2, 1}}}}});
+
+    CHECK(actual.equals<i64>({38, 56, 36, 51}));
+}
+
+TEST_CASE("switch-selected mesh branches feed a reduction",
+          "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
+          "[series:tsd][shape:deeply-nested][transition:update]") {
+    const auto add_amount = node([](i64 value, int amount) { return value + amount; });
+
+    const auto select_mesh_value = graph(
+        "name"_n = "select_mesh_value",
+        [=](wp<TS<i64>> key, wp<TS<i64>> item, wp<TS<i64>> dependency_key) {
+            const auto selected = add_mesh_dependency(item, mesh()[dependency_key]);
+            return switch_(key,
+                           cases{case_(i64{1}, [=](wp<TS<i64>> value) { return add_amount(value, 10); }),
+                                 case_(i64{2}, [](wp<TS<i64>> value) { return value; })},
+                           selected)
+                .as<TS<i64>>();
+        });
+
+    const auto tested = [=](wp<TSD<i64, TS<i64>>> values,
+                            wp<TSD<i64, TS<i64>>> dependencies) {
+        const auto result = mesh(select_mesh_value, values, dependencies, "__key_arg__"_n = 0);
+        return reduce(sum_mesh_values, result, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested, {{{1, 1}, {2, 10}}, {{1, 3}, {2, 20}}}, {{{2, 1}}});
+
+    CHECK(actual.equals<i64>({32, 46}));
+}
+
+TEST_CASE("a reduction observes mesh dependencies after switch outputs change",
+          "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
+          "[series:tsd][shape:deeply-nested][transition:update]") {
+    const auto add_amount = node([](i64 value, int amount) { return value + amount; });
+
+    const auto select_mesh_value = graph(
+        "name"_n = "select_mesh_value_by_parent_case",
+        [=](wp<TS<i64>>, wp<TS<i64>> item, wp<TS<i64>> selector,
+            wp<TS<i64>> dependency_key) {
+            const auto value = add_mesh_dependency(item, mesh()[dependency_key]);
+            return switch_(selector,
+                           cases{case_(i64{1}, [=](wp<TS<i64>> input) { return add_amount(input, 10); }),
+                                 case_(i64{2}, [=](wp<TS<i64>> input) { return add_amount(input, 20); })},
+                           value)
+                .as<TS<i64>>();
+        });
+
+    const auto tested = [=](wp<TS<i64>> selected_case,
+                            wp<TSD<i64, TS<i64>>> values,
+                            wp<TSD<i64, TS<i64>>> dependencies) {
+        const auto result = mesh(select_mesh_value, values, pass_through(selected_case),
+                                 dependencies, "__key_arg__"_n = 0);
+        return reduce(sum_mesh_values, result, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested, {1, 2}, {{{1, 1}, {2, 10}}, {{2, 20}}}, {{{2, 1}}});
+
+    CHECK(actual.equals<i64>({42, 82}));
 }
 
 } // namespace

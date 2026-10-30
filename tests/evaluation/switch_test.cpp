@@ -3,6 +3,7 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
+#include <bg/reduce.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/switch.hpp>
 #include <bg/testing/test_wiring.hpp>
@@ -763,6 +764,121 @@ TEST_CASE("switch crosses an additional nested graph boundary",
         tested, {1, 2, 2, 1}, {3, 3, 4, 5}, {true, true, true, true});
 
     CHECK(actual.equals<i64>({13, 23, 24, 15}));
+}
+
+TEST_CASE("switch branches consume a reduced TSD value",
+          "[feature:switch][feature:reduce][feature:nested-graph][shape:doubly-nested]"
+          "[series:tsd][transition:update][definition:function]") {
+    const auto add_values = node([](i64 left, i64 right) { return left + right; });
+
+    const auto sum_values = graph("name"_n = "sum_switch_values",
+                                  [=](wp<TS<i64>> left, wp<TS<i64>> right) {
+                                      return add_values(left, right);
+                                  });
+    const auto tested = [=](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
+        const auto total = reduce(sum_values, values, "default"_n = i64{0});
+        return switch_(key,
+                       cases{case_(i64{1}, [](auto value) { return add(value, 10); }),
+                             case_(i64{2}, [](auto value) { return add(value, 20); })},
+                       total);
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, 2, 1}, {{}, {{1, 1}}, {{2, 2}}, {{1, 3}}});
+
+    CHECK(actual.equals<i64>({10, 21, 23, 15}));
+}
+
+template <template <typename, auto...> typename Field> struct ReducedPair {
+    Field<i64> first;
+    Field<i64> second;
+};
+
+template <template <typename, auto...> typename Field> struct SwitchReducePair {
+    Field<TS<i64>> a;
+    Field<TS<i64>> b;
+};
+
+TEST_CASE("switch passes a reduced value through a free bundle argument",
+          "[feature:switch][feature:reduce][feature:nested-graph][series:tsd][series:tsb]"
+          "[schema:named][representation:free][shape:doubly-nested]") {
+    const auto add_values = node([](i64 left, i64 right) { return left + right; });
+
+    const auto sum_values = graph("name"_n = "sum_switch_values",
+                                  [&](wp<TS<i64>> left, wp<TS<i64>> right) {
+                                      return add_values(left, right);
+                                  });
+    const auto tested = [&](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
+        const auto total = reduce(sum_values, values, "default"_n = i64{0});
+        const auto arguments = bundle<TSB<ReducedPair>>(
+            "first"_n = total, "second"_n = total);
+        return switch_(key,
+                       cases{case_(DEFAULT, [&](auto pair) {
+                           return sum_values(pair->first, pair->second);
+                       })},
+                       arguments);
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 1, 1}, {{{1, 2}}, {{2, 3}}, {{1, literal::REMOVE}}});
+
+    CHECK(actual.equals<i64>({4, 10, 6}));
+}
+
+auto reduce_mapped_switch_outputs() {
+    const auto add_values = node([](i64 left, i64 right) { return left + right; });
+
+    const auto make_pair = graph("name"_n = "map_switch_output_to_bundle",
+                                 [](wp<TS<i64>> value) {
+                                     const auto selected = switch_(
+                                         value,
+                                         cases{case_(DEFAULT, [](auto input) { return add(input, 1); })},
+                                         value);
+                                     return bundle<TSB<SwitchReducePair>>("a"_n = value, "b"_n = selected);
+                                 });
+
+    const auto merge_pairs = graph("name"_n = "merge_switch_result_bundles",
+                                   [add_values](wp<TSB<SwitchReducePair>> left,
+                                                wp<TSB<SwitchReducePair>> right) {
+                                       return bundle<TSB<SwitchReducePair>>(
+                                           "a"_n = add_values(left->a, right->a),
+                                           "b"_n = add_values(left->b, right->b));
+                                   });
+
+    return [make_pair, merge_pairs](wp<TSD<i64, TS<i64>>> values) {
+        const auto initial = bundle<TSB<SwitchReducePair>>("a"_n = i64{0}, "b"_n = i64{0});
+        const auto total = reduce(merge_pairs, map(make_pair, values), "default"_n = initial)
+                               .as<TSB<SwitchReducePair>>();
+        return total->b;
+    };
+}
+
+TEST_CASE("reduce combines populated mapped bundles containing switch outputs",
+          "[feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
+          "[schema:named][shape:doubly-nested]") {
+    const auto tested = reduce_mapped_switch_outputs();
+    const auto actual = bg::run_graph(tested, {{{1, 1}}, {{2, 2}}, {{1, 2}}, {{2, 3}}, {{1, literal::REMOVE}}});
+
+    CHECK(actual.equals<i64>({2, 5, 6, 7, 4}));
+}
+
+TEST_CASE("reduce combines mapped bundles containing switch outputs from an empty dictionary",
+          "[feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
+          "[schema:named][shape:doubly-nested]") {
+    const auto tested = reduce_mapped_switch_outputs();
+    const auto actual = bg::run_graph(tested, {{}, {{1, 1}}, {{2, 2}}, {{1, 2}}, {{2, 3}}, {{1, literal::REMOVE}}});
+
+    CHECK(actual.event_count() == 5);
+    CHECK(actual.equals<i64>({std::nullopt, 2, 5, 6, 7, 4}));
+}
+
+TEST_CASE("reduce combines mapped bundles containing switch outputs when an item is invalid",
+          "[feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
+          "[schema:named][shape:doubly-nested]") {
+    const auto tested = reduce_mapped_switch_outputs();
+    const auto actual =
+        bg::run_graph(tested, {{{1, literal::INVALID}}, {{1, 1}}, {{2, 2}}, {{1, 2}}, {{2, 3}}, {{1, literal::REMOVE}}});
+
+    CHECK(actual.event_count() == 5);
+    CHECK(actual.equals<i64>({std::nullopt, 2, 5, 6, 7, 4}));
 }
 
 } // namespace

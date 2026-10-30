@@ -5,6 +5,7 @@
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/scalar/bundle/value.hpp>
+#include <bg/switch.hpp>
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -15,13 +16,23 @@
 #include <array>
 #include <cstdint>
 #include <optional>
-#include <span>
 #include <vector>
+#include <span>
 
 namespace {
 
 using namespace bg;
 using namespace bg::literals;
+
+template <template <typename, auto...> typename Field> struct MapReferenceRow {
+    Field<TS<i64>> value;
+    Field<TS<string>> label;
+};
+
+template <template <typename, auto...> typename Field> struct MapReferenceProjection {
+    Field<TS<i64>> value;
+    Field<TS<string>> label;
+};
 
 const auto increment = node([](i64 value) { return value + 1; });
 
@@ -882,6 +893,177 @@ TEST_CASE("map reads values using a nested TSS reference as its key set",
                                             {true, false, true}, {true, true, true});
 
     CHECK(actual.equals<i64>({10, std::nullopt, 30}));
+}
+
+const auto capture_dictionary = node([](In<TSD<i64, TS<i64>>> input,
+                                       Out<TSD<i64, TS<i64>>> output) {
+    output.copy_tick(input);
+});
+
+const auto capture_row_dictionary = node([](In<TSD<i64, TSB<MapReferenceRow>>> input,
+                                           Out<TSD<i64, TSB<MapReferenceRow>>> output) {
+    output.copy_tick(input);
+});
+
+TEST_CASE("map drops a removed reference item while a sibling follows its target",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][shape:doubly-nested]"
+          "[transition:removal][transition:update][binding:reference-to-reference]") {
+    const auto lookup = graph(
+        "name"_n = "lookup_row",
+        [](wp<TS<i64>> key, wp<TSD<i64, TSB<MapReferenceRow>>> rows) { return rows[key]; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> lookups,
+                            wp<TSD<i64, TSB<MapReferenceRow>>> rows) {
+        return capture_row_dictionary(map(lookup, lookups, pass_through(rows)));
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, 9}, {2, 9}}, {{1, literal::REMOVE}}, literal::SKIP},
+        {{{9, {{"value", 2}, {"label", "beta"}}}}, literal::SKIP,
+         {{9, {{"value", 3}, {"label", "updated"}}}}});
+
+    CHECK(actual.equals({{{1, {{"value", 2}, {"label", "beta"}}},
+                          {2, {{"value", 2}, {"label", "beta"}}}},
+                         {{1, literal::REMOVE}},
+                         {{2, {{"value", 3}, {"label", "updated"}}}}}));
+}
+
+TEST_CASE("map preserves keyed bundle references and materializes a distinct schema",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][series:tsb]"
+          "[schema:named][shape:doubly-nested][binding:reference-to-reference]") {
+    const auto capture_rows = node([](In<TSD<string, TSB<MapReferenceRow>>> input,
+                                      Out<TSD<string, TSB<MapReferenceRow>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto capture_projection = node([](In<TSD<string, TSB<MapReferenceProjection>>> input,
+                                            Out<TSD<string, TSB<MapReferenceProjection>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto lookup = graph(
+        "name"_n = "lookup_typed_row",
+        [](wp<TS<string>> key, wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+            return rows[key].as<TSB<MapReferenceRow>>();
+        });
+
+    const auto materialize = graph(
+        "name"_n = "materialize_typed_row",
+        [](wp<TS<string>> key, wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+            const auto row = rows[key].as<TSB<MapReferenceRow>>();
+            return bundle<MapReferenceProjection>("value"_n = row->value, "label"_n = row->label);
+        });
+
+    const auto reference_app = [&](wp<TSD<string, TS<string>>> lookups,
+                                   wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+        return capture_rows(map(lookup, lookups, pass_through(rows)));
+    };
+
+    const auto materialized_app = [&](wp<TSD<string, TS<string>>> lookups,
+                                      wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+        return capture_projection(map(materialize, lookups, pass_through(rows)));
+    };
+
+    const auto check = [&](const auto &app) {
+        const auto actual = bg::run_graph(
+            app,
+            {{{"left", "a"}, {"right", "b"}}},
+            {{{"a", {{"value", 1}, {"label", "one"}}}, {"b", {{"value", 2}, {"label", "two"}}}}});
+
+        CHECK(actual.equals({{{"left", {{"value", 1}, {"label", "one"}}},
+                             {"right", {{"value", 2}, {"label", "two"}}}}}));
+    };
+
+    check(reference_app);
+    check(materialized_app);
+}
+
+TEST_CASE("each mapped graph reads the context for its own key",
+          "[feature:map][feature:nested-graph][feature:switch][feature:context-time-series][series:tsd]"
+          "[shape:doubly-nested][transition:update][binding:reference-to-reference]") {
+    const auto add_context = node(
+        [](In<TS<i64>> value, In<TS<i64>, "offset"_n, context> offset) {
+            return *value + *offset;
+        });
+
+    const auto add_with_context = graph(
+        "name"_n = "add_mapped_context",
+        [&](wp<TS<i64>> value, wp<TS<i64>> offset, wp<TS<bool>> use_context) {
+            auto context_scope = with_context("offset"_n = offset);
+            return switch_(
+                use_context,
+                cases{
+                    case_(true, [&](auto input) { return add_context(input); }),
+                    case_(false, [](auto input) { return input; }),
+                },
+                value);
+        });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values,
+                            wp<TSD<i64, TS<i64>>> offsets,
+                            wp<TSD<i64, TS<bool>>> selectors) {
+        return capture_dictionary(map(add_with_context, values, offsets, selectors));
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, 10}, {2, 20}}, {{1, 15}}},
+        {{{1, 1}, {2, 2}}, {{2, 3}}},
+        {{{1, true}, {2, false}}, {{1, false}, {2, true}}});
+
+    CHECK(actual.equals({{{1, 11}, {2, 20}}, {{1, 15}, {2, 23}}}));
+}
+
+TEST_CASE("map restores a removed key through a retained mapped reference",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][series:tss]") {
+    const auto identity = graph("name"_n = "identity_value", [](wp<TS<i64>> value) { return value; });
+    const auto select_value = graph("name"_n = "select_mapped_value",
+                                    [](wp<TS<i64>> key, wp<TS<i64>> value) { return value; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> selected_keys) {
+        const auto mapped_values = map(identity, values);
+        const auto selected_values = map(select_value, mapped_values, selected_keys,
+                                         "__key_arg__"_n = 0, "__key_set_arg__"_n = 1);
+        return selected_values[i64{1}];
+    };
+
+    const auto actual = bg::run_graph(
+        tested, {{{1, 10}}, literal::SKIP, literal::SKIP},
+        {{1}, {literal::REMOVED(1)}, {1}});
+
+    CHECK(actual.equals<i64>({10, std::nullopt, 10}));
+}
+
+TEST_CASE("map retargets a selected dictionary reference across a nested graph",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd]") {
+    const auto select_dictionary = node(
+        [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
+           In<REF<TSD<i64, TS<i64>>>> second, Out<REF<TSD<i64, TS<i64>>>> output) {
+            output.copy(*use_second ? second : first);
+        });
+
+    const auto select = graph(
+        "name"_n = "select_dictionary",
+        [&](wp<TS<bool>> use_second, wp<TSD<i64, TS<i64>>> first,
+            wp<TSD<i64, TS<i64>>> second) {
+            return select_dictionary(use_second, first, second).as<TSD<i64, TS<i64>>>();
+        });
+
+    const auto tested = [&](wp<TS<bool>> use_second, wp<TSD<i64, TS<i64>>> first,
+                            wp<TSD<i64, TS<i64>>> second, wp<TS<bool>> run) {
+        const auto selected = nested(select, run, use_second, first, second);
+        return capture_dictionary(map([](auto value) { return value; }, selected));
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {false, true, false, literal::SKIP},
+        {{{1, 1}, {2, 2}}, literal::SKIP, {{1, 3}}, {{1, 4}}},
+        {{{1, 10}, {2, 20}}, {{1, 11}}, literal::SKIP, literal::SKIP},
+        {true, true, true, true});
+
+    CHECK(actual.equals({{{1, 1}, {2, 2}}, {{1, 11}, {2, 20}}, {{1, 3}, {2, 2}}, {{1, 4}}}));
 }
 
 } // namespace

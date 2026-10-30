@@ -12,6 +12,7 @@
 #include <bg/time_series/tss/tss_type.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/testing/test_wiring.hpp>
+#include <bg/switch.hpp>
 #include <bg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -868,6 +869,65 @@ TEST_CASE("if_then_else selects a whole TSB",
     CHECK(bg::run_graph(select, {true, false, true}, {1, 2, 3},
                               {10, 20, 30})
               .equals<i64>({101, 220, 103}));
+}
+
+TEST_CASE("if_then_else preserves free bundle references across pass-through switch reselection",
+          "[feature:operator][feature:switch][series:tsb][series:reference][representation:free]"
+          "[binding:reference-to-reference][transition:update]") {
+    using namespace bg::literals;
+
+    const auto pass_through = graph("name"_n = "pass_free_bundle",
+                                    [](wp<TSB<stream_test::stream_operator_bundle>> input) { return input; });
+
+    const auto read_left = node([](i64 left) { return left; });
+    const auto select_left = graph(
+        "name"_n = "select_free_bundle_left", [&](wp<TSB<stream_test::stream_operator_bundle>> input) {
+            return read_left(input->left);
+        });
+
+    const auto tested = [&](wp<TS<bool>> branch, wp<TS<bool>> select, wp<TS<i64>> left,
+                            wp<TS<i64>> right) {
+        const auto fields = bundle("left"_n = left, "right"_n = right);
+        const auto pass_through_output = switch_(branch, cases{case_(true, pass_through)}, fields);
+        return select_left(operators::if_then_else(select, pass_through_output, fields));
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {true, true, true, true},
+                                      {true, false, true, false},
+                                      {10, literal::SKIP, literal::SKIP, 20},
+                                      {1, literal::SKIP, literal::SKIP, 1});
+
+    CHECK(actual.equals<i64>({10, std::nullopt, std::nullopt, 20}));
+}
+
+TEST_CASE("if_then_else preserves free fixed list references across pass-through switch reselection",
+          "[feature:operator][feature:switch][series:fixed-tsl][series:reference]"
+          "[representation:free][binding:reference-to-reference][transition:update]") {
+    using namespace bg::literals;
+
+    const auto pass_through = graph("name"_n = "pass_free_list",
+                                    [](wp<TSL<TS<i64>, 2>> input) { return input; });
+
+    const auto read_first = node([](i64 first) { return first; });
+    const auto select_first = graph("name"_n = "select_free_list_first", [&](wp<TSL<TS<i64>, 2>> input) {
+        return read_first(input[0]);
+    });
+
+    const auto tested = [&](wp<TS<bool>> branch, wp<TS<bool>> select, wp<TS<i64>> first,
+                            wp<TS<i64>> second) {
+        const auto items = tsl(first, second);
+        const auto pass_through_output = switch_(branch, cases{case_(true, pass_through)}, items);
+        return select_first(operators::if_then_else(select, pass_through_output, items));
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {true, true, true, true},
+                                      {true, false, true, false},
+                                      {10, literal::SKIP, literal::SKIP, 20},
+                                      {1, literal::SKIP, literal::SKIP, 1});
+
+    CHECK(actual.equals<i64>({10, std::nullopt, std::nullopt, 20}));
 }
 
 TEST_CASE("sample uses the latest passive value and preserves output on invalidation",

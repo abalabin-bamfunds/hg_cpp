@@ -3,8 +3,11 @@
 #include <bg/graph/graph_wiring.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/wiring_context.hpp>
+#include <bg/nested.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/switch.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -99,6 +102,53 @@ TEST_CASE("a free fixed time series list coalesces source changes",
     CHECK(evaluation_count == 2);
 }
 
+TEST_CASE("a free fixed list reports item updates and partial invalidity",
+          "[feature:collection-change][series:fixed-tsl][representation:free][shape:single-node]"
+          "[transition:update][transition:invalidation][transition:revalidation][validity:optional]"
+          "[scalar:integer][binding:direct]") {
+    struct Observation {
+        bool list_valid;
+        bool first_valid;
+        bool second_valid;
+        i64 first;
+        i64 second;
+        bool first_updated;
+        bool second_updated;
+
+        bool operator==(const Observation &) const = default;
+    };
+
+    const auto observe = node([](In<TSL<TS<i64>, 2>, optional> input) {
+        const auto first = input[0];
+        const auto second = input[1];
+        return Observation{input.valid(), first.valid(), second.valid(), first.valid() ? *first : -1,
+                           second.valid() ? *second : -1, first.modified(), second.modified()};
+    });
+
+    const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second) { return observe(tsl(first, second)); };
+
+    const auto actual = bg::run_graph(graph,
+                                      {10, 20, literal::INVALID, 30},
+                                      {1, literal::SKIP, 2, literal::SKIP});
+
+    CHECK(actual.equals<Observation>({Observation{true, true, true, 10, 1, true, true},
+                                      Observation{true, true, true, 20, 1, true, false},
+                                      Observation{true, false, true, -1, 2, true, true},
+                                      Observation{true, true, true, 30, 2, true, false}}));
+}
+
+TEST_CASE("a free fixed list can be observed through a reference",
+          "[feature:reference][series:fixed-tsl][series:reference][representation:free]"
+          "[binding:value-to-reference][transition:update]") {
+    const auto observe = node([](In<REF<TSL<TS<i64>, 2>>> input) { return input.valid(); });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second) { return observe(tsl(first, second)); };
+
+    const auto actual = bg::run_graph(tested, {1, 2}, {10, 20});
+
+    CHECK(actual.equals({true, std::nullopt}));
+}
+
 TEST_CASE("a free fixed time series list follows the receiving item runtime_type",
           "[evaluation][tsl][series:fixed-tsl][free][representation:free][reference]"
           "[feature:collection-change][scalar:integer][declaration:concrete][binding:direct]") {
@@ -112,6 +162,32 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
     const auto result = bg::run_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
+}
+
+TEST_CASE("a reference can select among free fixed lists and become invalid",
+          "[evaluation][tsl][feature:reference][series:fixed-tsl][representation:free]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto select_list = node([](In<TS<i64>> index, In<REF<TSL<TS<i64>, 2>>> first,
+                                     In<REF<TSL<TS<i64>, 2>>> second,
+                                     Out<REF<TSL<TS<i64>, 2>>> output) {
+        if (*index == 0) {
+            output.copy(first);
+        } else if (*index == 1) {
+            output.copy(second);
+        } else {
+            output.invalidate();
+        }
+    });
+
+    const auto tested = [&](wp<TS<i64>> index) {
+        const auto first = tsl(operators::const_(i64{1}), operators::const_(i64{1}));
+        const auto second = tsl(operators::const_(i64{2}), operators::const_(i64{2}));
+        return select_list(index, first, second);
+    };
+
+    const auto actual = bg::run_graph(tested, {0, 2, 1, 2});
+
+    CHECK(actual.equals({{{0, 1}, {1, 1}}, literal::INVALID, {{0, 2}, {1, 2}}, literal::INVALID}));
 }
 
 TEST_CASE("a free fixed time series list preserves compound child rebinding deltas",
@@ -484,4 +560,118 @@ TEST_CASE("a nested item view retains its containing path",
     const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals({42}));
+}
+
+TEST_CASE("a switch routes a free fixed list between its items and a constant list",
+          "[feature:switch][feature:reference][series:fixed-tsl][representation:free]"
+          "[shape:nested][binding:value-to-reference][binding:reference-to-value][transition:update]") {
+    const auto pass_through = graph("name"_n = "pass_free_list",
+                                    [](wp<TSL<TS<i64>, 2>> input) { return input; });
+
+    const auto constant = graph("name"_n = "constant_list", [](wp<TSL<TS<i64>, 2>>) {
+        return tsl(operators::const_(i64{1}), operators::const_(i64{2}));
+    });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> first, wp<TS<i64>> second) {
+        const auto items = tsl(first, second);
+        return switch_(key, cases{case_(true, pass_through), case_(false, constant)}, items);
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {false, true, false, true},
+                                      {1, literal::SKIP, 3, literal::SKIP},
+                                      {-1, literal::SKIP, -3, literal::SKIP});
+
+    CHECK(actual.equals({{{0, 1}, {1, 2}},
+                         {{0, 1}, {1, -1}},
+                         {{0, 1}, {1, 2}},
+                         {{0, 3}, {1, -3}}}));
+}
+
+TEST_CASE("a nested graph observes independent updates to a free fixed list",
+          "[feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[representation:free][shape:nested][binding:value-to-reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
+    const auto inner = graph("name"_n = "sum_free_list_items", [&](wp<TSL<TS<i64>, 2>> input) {
+        return sum(input);
+    });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
+        return nested(inner, run, tsl(first, second));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, literal::SKIP}, {10, literal::SKIP, 20}, {true, true, true});
+
+    CHECK(actual.equals({11, 12, 22}));
+}
+
+TEST_CASE("a nested graph sees partial validity in a free fixed list",
+          "[feature:nested-graph][feature:reference][feature:validity][series:fixed-tsl]"
+          "[representation:free][shape:nested][validity:optional][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto observe = node([](In<TSL<TS<i64>, 2>, optional> input) {
+        return input.valid() && input[0].valid();
+    });
+
+    const auto inner = graph("name"_n = "observe_free_list_item", [&](wp<TSL<TS<i64>, 2>> input) {
+        return observe(input);
+    });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
+        return nested(inner, run, tsl(first, second));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, literal::INVALID, 2}, {10, 11, 12}, {true, true, true});
+
+    CHECK(actual.equals({true, false, true}));
+}
+
+TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
+          "[feature:switch][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[representation:free][shape:nested][binding:reference-to-reference][transition:update]") {
+    const auto pass_through = graph("name"_n = "pass_free_list",
+                                    [](wp<TSL<TS<i64>, 2>> input) { return input; });
+
+    const auto rebuild = graph("name"_n = "rebuild_free_list", [](wp<TSL<TS<i64>, 2>> input) {
+        return tsl(input[0], input[1]);
+    });
+
+    const auto first_value = node([](i64 first) { return first; });
+
+    const auto select_first = graph("name"_n = "select_free_list_first", [&](wp<TSL<TS<i64>, 2>> input) {
+        return first_value(input[0]);
+    });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> first, wp<TS<i64>> second) {
+        const auto items = tsl(first, second);
+        return select_first(switch_(key, cases{case_(true, pass_through), case_(false, rebuild)}, items));
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {true, false, true, false},
+                                      {10, literal::SKIP, literal::SKIP, 20},
+                                      {-1, -2, -3, -4});
+
+    CHECK(actual.equals({10, std::nullopt, std::nullopt, 20}));
+}
+
+TEST_CASE("a nested graph passes a free fixed list reference to a value consumer",
+          "[feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[representation:free][shape:nested][binding:value-to-reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
+    const auto inner = graph("name"_n = "reference_free_list", [](wp<REF<TSL<TS<i64>, 2>>> input) {
+        return input;
+    });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
+        return sum(nested(inner, run, tsl(first, second)));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, literal::SKIP}, {10, literal::SKIP, 20}, {true, true, true});
+
+    CHECK(actual.equals({11, 12, 22}));
 }

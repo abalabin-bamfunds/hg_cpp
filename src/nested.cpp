@@ -130,7 +130,8 @@ class NestedNodeDefinition {
             }
         }
 
-        reference_output_ = &time_series_reference_type(*output_type_, TimeSeriesGuarantee::deduplicated);
+        reference_output_ = &time_series_reference_type(output_type_->target_type(),
+                                                        TimeSeriesGuarantee::deduplicated);
         signature_ = std::make_unique<Signature>(util::symbol{"nested"}, std::move(parameters), *reference_output_);
     }
 
