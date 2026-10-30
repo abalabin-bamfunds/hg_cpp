@@ -25,7 +25,7 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
           std::span<const WiringArgument> supplied) {
     using Result = typename Graph::result_type;
     static_assert(details::is_typed_wiring_point<Result>, "a nested graph must have an output");
-    using Target = typename details::typed_wiring_point<Result>::time_series_type;
+    using Target = details::dereferenced_time_series_t<typename details::typed_wiring_point<Result>::time_series_type>;
 
     auto &outer_wiring = WiringContext::current().wiring();
     auto temporary_records = details::WiringRecordOverlay{outer_wiring};
