@@ -6,6 +6,7 @@
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
 #include "tick_codec.hpp"
+#include "queue_operations.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -337,7 +338,7 @@ bool NativeFrameStorage::copy_from(const FrameReadStorage &input, EvaluationTime
                 continue;
             const auto output_id = *destination_id;
             copied_rows_.erase(source_id, memory.memory_resource());
-            erase_for_copy(output_id, time, memory);
+            erase(output_id, time, memory);
         }
     }
     if (input.added != nullptr) {
@@ -411,7 +412,7 @@ void NativeFrameStorage::replay_copy_tick(util::buffer_reader &reader, Evaluatio
                 continue;
             const auto output_id = *destination_id;
             copied_rows_.erase(change.id, memory.memory_resource());
-            erase_for_copy(output_id, time, memory);
+            erase(output_id, time, memory);
             continue;
         }
 
@@ -569,6 +570,7 @@ const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteePara
         register_time_series_runtime_type(runtime);
         details::register_frame_series_tick_comparison(type);
         details::register_frame_series_tick_replay(runtime);
+        details::register_frame_series_queue_runtime(runtime);
         frame_series_scalar_runtime_type(static_cast<const FrameSeriesRuntimeType &>(runtime));
     }
     details::register_frame_tick_format_type(type);

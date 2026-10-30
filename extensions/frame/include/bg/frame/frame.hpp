@@ -351,12 +351,14 @@ struct NativeFrameKeyState {
 
     util::hash_dictionary<row_id_t, row_id_t> live_rows;
     util::hash_dictionary<row_id_t, KeyTuple> removed_rows;
+    util::hash_dictionary<row_id_t, row_id_t> removed_key_rows;
 
     void release(allocator memory) noexcept {
         live_rows.release(memory.memory_resource());
         removed_rows.release_with(memory.memory_resource(), [](row_id_t *) noexcept {}, [](KeyTuple *key) noexcept {
             key->~KeyTuple();
         });
+        removed_key_rows.release(memory.memory_resource());
     }
 };
 
@@ -1289,6 +1291,21 @@ class NativeFrameStorage {
         return *key;
     }
 
+    bool key_changed_this_cycle(std::span<const KeyValue> key) const {
+        if (key.size() != layout_->key_fields.size())
+            throw std::invalid_argument{"frame key width does not match its schema"};
+        if (key.empty())
+            return false;
+
+        const auto hash = hash_key(key);
+        if (const auto id = find_key(key); id && changed_.contains(*id))
+            return true;
+        return key_state().removed_key_rows.find_with(hash, [&](row_id_t id) {
+            const auto *removed_key = key_state().removed_rows.find(id);
+            return removed_key != nullptr && key_values_equal(*removed_key, key);
+        }) != nullptr;
+    }
+
     void *native_field(std::size_t index) noexcept {
         return reinterpret_cast<std::byte *>(this) + layout_->fields[index].native_offset;
     }
@@ -1381,7 +1398,11 @@ class NativeFrameStorage {
     }
 
     bool erase(row_id_t id, EvaluationTime time, allocator memory) {
-        return erase_for_copy(id, time, memory);
+        return erase_transition(id, time, memory, false);
+    }
+
+    bool erase_queue(row_id_t id, EvaluationTime time, allocator memory) {
+        return erase_transition(id, time, memory, true);
     }
 
     void compact(allocator memory) {
@@ -1465,10 +1486,10 @@ class NativeFrameStorage {
     }
 
   private:
-    bool erase_for_copy(row_id_t id, EvaluationTime time, allocator memory) {
+    bool erase_transition(row_id_t id, EvaluationTime time, allocator memory, bool retain_added_key) {
         reserve_changed_columns(memory);
         begin_cycle(time, memory);
-        if (!erase_row(id, time, memory))
+        if (!erase_row(id, time, memory, retain_added_key))
             return false;
         publish_all_columns(time, memory);
         valid_ = true;
@@ -1482,13 +1503,13 @@ class NativeFrameStorage {
         static_cast<void>(inserted);
     }
 
-    bool erase_row(row_id_t id, EvaluationTime time, allocator memory) {
+    bool erase_row(row_id_t id, EvaluationTime time, allocator memory, bool retain_added_key = false) {
         if (!rows_.contains(id))
             return false;
         const auto slot = rows_.slot_of(id);
         const auto key_hash = layout_->key_fields.empty() ? std::size_t{} : hash_row(id);
         auto retained_key = false;
-        if (!layout_->key_fields.empty() && !rows_.added().contains(id)) {
+        if (!layout_->key_fields.empty() && (retain_added_key || !rows_.added().contains(id))) {
             auto [key, inserted] = key_state().removed_rows.try_emplace(
                 id, memory.memory_resource(),
                 std::pmr::polymorphic_allocator<KeyValue>{std::addressof(memory.memory_resource())});
@@ -1501,10 +1522,16 @@ class NativeFrameStorage {
             retained_key = true;
             remove_partial_key.release();
         }
+        auto indexed_key = false;
         auto remove_retained_key = util::scope_exit{[&]() noexcept {
+            if (indexed_key)
+                remove_removed_key_index(id, key_hash, memory);
             if (retained_key)
                 key_state().removed_rows.erase(id, memory.memory_resource());
         }};
+        if (retained_key) {
+            indexed_key = index_removed_key(id, key_hash, memory);
+        }
         if (!rows_.erase(id, time, memory))
             return false;
         if (!layout_->key_fields.empty()) {
@@ -1572,6 +1599,26 @@ class NativeFrameStorage {
         return true;
     }
 
+    bool index_removed_key(row_id_t id, std::size_t hash, allocator memory) {
+        return key_state().removed_key_rows
+            .try_emplace_with(hash,
+                              [&](row_id_t candidate) {
+                                  return key_values_equal(key_state().removed_rows.at(candidate),
+                                                          key_state().removed_rows.at(id));
+                              },
+                              memory.memory_resource(), [id](row_id_t *key) { std::construct_at(key, id); },
+                              [](row_id_t *key) noexcept { std::destroy_at(key); },
+                              [id](row_id_t *value) { std::construct_at(value, id); })
+            .second;
+    }
+
+    void remove_removed_key_index(row_id_t id, std::size_t hash, allocator memory) noexcept {
+        if (!key_state().removed_key_rows.erase_with(hash, [id](row_id_t candidate) { return candidate == id; },
+                                                     memory.memory_resource(), [](row_id_t *) noexcept {},
+                                                     [](row_id_t *) noexcept {}))
+            std::terminate();
+    }
+
     bool key_matches_row_values(row_id_t id, std::span<const void *const> values) const noexcept {
         for (auto index : layout_->key_fields) {
             const auto &field = layout_->fields[index];
@@ -1604,10 +1651,12 @@ class NativeFrameStorage {
     }
 
     void begin_cycle(EvaluationTime time, allocator memory) {
-        if (rows_.change_time() != time && !layout_->key_fields.empty())
+        if (rows_.change_time() != time && !layout_->key_fields.empty()) {
             key_state().removed_rows.release_with(
                 memory.memory_resource(), [](row_id_t *) noexcept {},
                 [](details::NativeFrameKeyState::KeyTuple *key) noexcept { std::destroy_at(key); });
+            key_state().removed_key_rows.release(memory.memory_resource());
+        }
         if (!rows_.reset_changes(time))
             return;
         changed_.clear();

@@ -2,6 +2,7 @@
 #include <bg/frame/literal.hpp>
 #include "tick_codec.hpp"
 #include "format.hpp"
+#include "queue_operations.hpp"
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -228,6 +229,7 @@ void register_column_series_default_runtime(const bg::TimeSeriesType &type) {
     bg::register_time_series_runtime_type(runtime);
     bg::frame::details::register_column_series_literal_runtime(runtime);
     bg::frame::details::register_column_series_tick_writer<T>(runtime);
+    bg::frame::details::register_column_series_queue_runtime<T>(runtime);
 }
 
 void register_column_series_default_runtime(const bg::TimeSeriesType &type) {

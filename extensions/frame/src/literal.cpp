@@ -10,7 +10,6 @@
 
 #include <algorithm>
 #include <stdexcept>
-#include <variant>
 #include <vector>
 
 namespace bg::frame {
@@ -49,55 +48,6 @@ void construct_column_literal(const literal::ScalarLiteral &literal, const Scala
     visit_cell_type(column.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
         construct_column_literal<Cell>(literal, runtime, destination, memory);
     });
-}
-
-using FrameLiteralCell = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>,
-                                      std::optional<std::string_view>, std::optional<symbol>>;
-
-void initialize_frame_literal_cells(const bg::Schema &schema, std::vector<FrameLiteralCell> &cells) {
-    cells.resize(schema.field_count());
-    for (auto index = std::size_t{}; index != schema.field_count(); ++index) {
-        visit_cell_type(*schema.field(index).type, [&]<typename Cell>(std::type_identity<Cell>) {
-            cells[index].emplace<std::optional<cell_value_t<Cell>>>();
-        });
-    }
-}
-
-void read_frame_literal_cell(const literal::ScalarLiteral &literal, const Type &type,
-                             FrameLiteralCell &destination) {
-    visit_cell_type(type, [&]<typename Cell>(std::type_identity<Cell>) {
-        destination.emplace<std::optional<cell_value_t<Cell>>>(details::read_literal_cell<Cell>(literal));
-    });
-}
-
-const void *frame_literal_cell_pointer(const FrameLiteralCell &cell) {
-    return std::visit([](const auto &value) -> const void * { return std::addressof(value); }, cell);
-}
-
-KeyValue frame_literal_key_value(const FrameLiteralCell &cell, const ScalarType &type) {
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>())) {
-        const auto &value = std::get<std::optional<i64>>(cell);
-        return value ? KeyValue{*value} : KeyValue{std::monostate{}};
-    }
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<string>())) {
-        const auto &value = std::get<std::optional<std::string_view>>(cell);
-        return value ? KeyValue{ScalarValue<string>{*value}} : KeyValue{std::monostate{}};
-    }
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<symbol>())) {
-        const auto &value = std::get<std::optional<symbol>>(cell);
-        return value ? KeyValue{*value} : KeyValue{std::monostate{}};
-    }
-    throw std::invalid_argument{"frame literal key has an unsupported cell type"};
-}
-
-std::vector<KeyValue> read_frame_literal_key(std::span<const FrameLiteralCell> cells,
-                                            const details::NativeFrameLayout &layout) {
-    auto key = std::vector<KeyValue>{};
-    key.reserve(layout.key_fields.size());
-    for (const auto index : layout.key_fields) {
-        key.push_back(frame_literal_key_value(cells[index], *layout.fields[index].cell_type));
-    }
-    return key;
 }
 
 void construct_frame_literal(const literal::ScalarLiteral &literal, const ScalarRuntimeType &runtime,
@@ -244,21 +194,21 @@ void apply_native_frame_series_literal(const literal::TimeSeriesLiteral &literal
         }
 
         const auto fields = details::read_named_frame_fields(entry, schema, layout, false);
-        auto cells = std::vector<FrameLiteralCell>{};
-        initialize_frame_literal_cells(schema, cells);
+        auto cells = std::vector<details::FrameLiteralCell>{};
+        details::initialize_frame_literal_cells(layout, cells);
         for (auto index = std::size_t{}; index != fields.size(); ++index) {
             if (fields[index] != nullptr)
-                read_frame_literal_cell(*fields[index], *layout.fields[index].cell_type, cells[index]);
+                details::read_frame_literal_cell(*fields[index], *layout.fields[index].cell_type, cells[index]);
         }
 
         if (!layout.key_fields.empty()) {
-            const auto key = read_frame_literal_key(cells, layout);
+            const auto key = details::read_frame_literal_key(cells, layout);
             if (const auto id = storage.find_key(key)) {
                 auto patches = std::vector<details::NativeFrameCellPatch>(schema.field_count());
                 for (auto index = std::size_t{}; index != fields.size(); ++index) {
                     if (fields[index] != nullptr &&
                         std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
-                        patches[index] = {true, frame_literal_cell_pointer(cells[index])};
+                        patches[index] = {true, details::frame_literal_cell_pointer(cells[index])};
                 }
                 if (storage.set(*id, patches, time, memory))
                     output.publish();
@@ -269,7 +219,7 @@ void apply_native_frame_series_literal(const literal::TimeSeriesLiteral &literal
         auto values = std::vector<const void *>{};
         values.reserve(cells.size());
         for (const auto &cell : cells)
-            values.push_back(frame_literal_cell_pointer(cell));
+            values.push_back(details::frame_literal_cell_pointer(cell));
         static_cast<void>(storage.add(values, time, memory));
         output.publish();
     }

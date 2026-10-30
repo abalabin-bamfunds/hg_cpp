@@ -74,6 +74,30 @@ inline void discard_cell(util::buffer_reader &reader, const ScalarType &type) {
     throw std::invalid_argument{"frame tick payload has an unsupported cell type"};
 }
 
+template <cell_type T>
+void project_cell(const std::optional<cell_value_t<T>> &cell, ScalarBufferProjectionContext &projection) {
+    projection.write_bytes(sizeof(std::uint8_t));
+    if (!cell)
+        return;
+    if constexpr (std::same_as<T, string>)
+        projection.template emplace<ScalarValue<string>>();
+    else
+        projection.write_bytes(sizeof(cell_value_t<T>));
+}
+
+template <cell_type T>
+void write_cell(const std::optional<cell_value_t<T>> &cell, ScalarBufferWriteContext &writer, allocator &memory) {
+    const auto present = static_cast<std::uint8_t>(cell.has_value());
+    writer.write_bytes(std::as_bytes(std::span{&present, std::size_t{1}}));
+    if (!cell)
+        return;
+    if constexpr (std::same_as<T, string>) {
+        writer.emplace<ScalarValue<string>>(*cell, memory);
+    } else {
+        writer.write_bytes(std::as_bytes(std::span{std::addressof(*cell), std::size_t{1}}));
+    }
+}
+
 inline const bg::Schema &read_schema(util::buffer_reader &reader) {
     return *reader.read_raw<const bg::Schema *>();
 }

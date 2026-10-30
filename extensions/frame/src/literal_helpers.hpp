@@ -10,9 +10,51 @@
 #include <span>
 #include <stdexcept>
 #include <string_view>
+#include <variant>
 #include <vector>
 
 namespace bg::frame::details {
+
+using FrameLiteralCell = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>,
+                                      std::optional<std::string_view>, std::optional<symbol>>;
+
+inline void initialize_frame_literal_cells(const NativeFrameLayout &layout, std::vector<FrameLiteralCell> &cells) {
+    cells.resize(layout.fields.size());
+    for (auto index = std::size_t{}; index != layout.fields.size(); ++index) {
+        visit_cell_type(*layout.fields[index].cell_type, [&]<typename Cell>(std::type_identity<Cell>) {
+            cells[index].emplace<std::optional<cell_value_t<Cell>>>();
+        });
+    }
+}
+
+inline const void *frame_literal_cell_pointer(const FrameLiteralCell &cell) {
+    return std::visit([](const auto &value) -> const void * { return std::addressof(value); }, cell);
+}
+
+inline KeyValue frame_literal_key_value(const FrameLiteralCell &cell, const ScalarType &type) {
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>())) {
+        const auto &value = std::get<std::optional<i64>>(cell);
+        return value ? KeyValue{*value} : KeyValue{std::monostate{}};
+    }
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<string>())) {
+        const auto &value = std::get<std::optional<std::string_view>>(cell);
+        return value ? KeyValue{ScalarValue<string>{*value}} : KeyValue{std::monostate{}};
+    }
+    if (std::addressof(type) == std::addressof(cpp_scalar_type<symbol>())) {
+        const auto &value = std::get<std::optional<symbol>>(cell);
+        return value ? KeyValue{*value} : KeyValue{std::monostate{}};
+    }
+    throw std::invalid_argument{"frame literal key has an unsupported cell type"};
+}
+
+inline std::vector<KeyValue> read_frame_literal_key(std::span<const FrameLiteralCell> cells,
+                                                    const NativeFrameLayout &layout) {
+    auto key = std::vector<KeyValue>{};
+    key.reserve(layout.key_fields.size());
+    for (const auto index : layout.key_fields)
+        key.push_back(frame_literal_key_value(cells[index], *layout.fields[index].cell_type));
+    return key;
+}
 
 inline std::string_view read_literal_field_name(const literal::ScalarLiteral &value) {
     return value.visit(
@@ -49,6 +91,13 @@ template <cell_type T> std::optional<cell_value_t<T>> read_literal_cell(const li
             throw std::invalid_argument{"frame cells must be scalar literals"};
         });
     return result;
+}
+
+inline void read_frame_literal_cell(const literal::ScalarLiteral &literal, const ScalarType &type,
+                                   FrameLiteralCell &destination) {
+    visit_cell_type(type, [&]<typename Cell>(std::type_identity<Cell>) {
+        destination.emplace<std::optional<cell_value_t<Cell>>>(read_literal_cell<Cell>(literal));
+    });
 }
 
 inline std::vector<const literal::ScalarLiteral *>
