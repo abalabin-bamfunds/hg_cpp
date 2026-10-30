@@ -294,6 +294,19 @@ struct clearing_referenced_set_source_definition {
     void evaluate() const { output.clear(); }
 };
 
+struct invalidating_referenced_set_source_definition {
+    static constexpr bool uses_timed_scheduling = true;
+
+    Out<TSS<i64>> output;
+
+    void start(EvaluationContext *context) const {
+        output.insert(11);
+        context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
+    }
+
+    void evaluate() const { output.invalidate(); }
+};
+
 } // namespace
 
 TEST_CASE("a TSS node preserves its output when it declares preserve_output",
@@ -552,6 +565,47 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
     CHECK(validity == std::vector{true, true});
     CHECK(sizes == std::vector<std::size_t>{2, 2});
     CHECK(added == std::vector<std::vector<i64>>{{11, 12}, {13}});
+    CHECK(removed == std::vector<std::vector<i64>>{{}, {11}});
+}
+
+TEST_CASE("a TSS reference sample preserves prior validity when the old target invalidates before rebinding",
+          "[evaluation][feature:reference][feature:sampling][series:tss][feature:collection-change]"
+          "[transition:invalidation][binding:reference-to-value][scalar:integer]") {
+    auto became_valid = std::vector<bool>{};
+    auto became_invalid = std::vector<bool>{};
+    auto added = std::vector<std::vector<i64>>{};
+    auto removed = std::vector<std::vector<i64>>{};
+
+    const auto observe = node([&](In<TSS<i64>, optional> input) {
+        became_valid.push_back(input.became_valid());
+        became_invalid.push_back(input.became_invalid());
+
+        auto added_items = std::vector<i64>{};
+        input.for_each_added([&](const auto &item) { added_items.push_back(item.value()); });
+        added.push_back(std::move(added_items));
+
+        auto removed_items = std::vector<i64>{};
+        input.for_each_removed([&](const auto &item) { removed_items.push_back(item.value()); });
+        removed.push_back(std::move(removed_items));
+    });
+
+    const auto old_target = node<invalidating_referenced_set_source_definition>();
+    const auto select_after_invalidation =
+        node([](In<TSS<i64>, optional> previous, In<REF<TSS<i64>>, passive, optional> previous_reference,
+                In<REF<TSS<i64>>, passive, optional> current_reference, Out<REF<TSS<i64>>> output) {
+            output.copy(previous.valid() ? previous_reference : current_reference);
+        });
+    const auto wiring = [&](wp<TSS<i64>> current_target) {
+        const auto previous_target = old_target();
+        observe(select_after_invalidation(previous_target, previous_target, current_target));
+    };
+
+    (void)bg::run_graph(wiring, {{22}});
+
+    REQUIRE(became_valid.size() == 2);
+    CHECK(became_valid == std::vector{true, false});
+    CHECK(became_invalid == std::vector{false, false});
+    CHECK(added == std::vector<std::vector<i64>>{{11}, {22}});
     CHECK(removed == std::vector<std::vector<i64>>{{}, {11}});
 }
 
