@@ -66,6 +66,14 @@ representations. A resolved TSD representation uses the representation object as
 its storage; its runtime type resolves the current base TSD when it reads items
 or change information.
 
+Collection representation runtime types use canonical metadata for their
+semantic type and adaptation plan. TSD descriptors derive key and direct item
+metadata from their declared types. A routed REF item uses the runtime type for
+`ItemReference` storage. TSL and TSB descriptors retain each field's adaptation
+mode and use canonical requested field runtimes. Reads return the actual runtime
+type that describes the returned storage, so descriptor identity does not
+depend on source layouts.
+
 TSD supports compatible representations recursively. Examples include:
 
 | Provided type | Requested representation |

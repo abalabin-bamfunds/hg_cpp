@@ -38,7 +38,7 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
                                                 const TimeSeriesDictionaryType &type,
                                                 const TimeSeriesDictionaryRuntimeType &base_runtime_type,
                                                 const TimeSeriesRuntimeType &item_runtime_type)
-        : TimeSeriesDictionaryRepresentation{base_reference, type, base_runtime_type, item_runtime_type},
+        : TimeSeriesDictionaryRepresentation{base_reference, type},
           provider_{&provider}, item_runtime_type_{&item_runtime_type},
           retired_{&provider.allocation().memory_resource()} {
         const auto base_time_series = ResolvedTimeSeries::resolve(base_reference);
@@ -177,7 +177,6 @@ class TimeSeriesDictionaryReferenceRepresentation final : public TimeSeriesDicti
     }
 
     void notify(OutputChangeContext &context, OutputChange change) override {
-        refresh_runtime_type();
         release_retired(context.evaluation_time());
         provider_->begin_item_notification_batch();
         auto cancel_items = util::scope_exit{[&]() noexcept { provider_->cancel_item_notification_batch(); }};
