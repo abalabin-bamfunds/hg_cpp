@@ -81,6 +81,232 @@ TEST_CASE("keys_(valid_items) follows item validity and dictionary validity",
               .equals<bool>({true, false, true}));
 }
 
+TEST_CASE("keys_ reconciles scalar dictionary membership and values_ preserves duplicate values",
+          "[feature:operator][series:value][series:tss][scalar:dict][scalar:list][transition:update]") {
+    const auto keys = [](wp<TS<Dict<i64, i64>>> dictionary) { return operators::keys_(dictionary); };
+    const auto value_count = [](wp<TS<Dict<i64, i64>>> dictionary) {
+        return operators::len_(operators::values_(dictionary));
+    };
+    const auto sum_list = node([](In<TS<List<i64>>> values) {
+        const auto items = values.value_view();
+        auto sum = i64{};
+        for (auto index = std::size_t{}; index < items.size(); ++index) {
+            sum += items[index].value();
+        }
+        return sum;
+    });
+    const auto value_sum = [&](wp<TS<Dict<i64, i64>>> dictionary) {
+        return sum_list(operators::values_(dictionary));
+    };
+
+    CHECK(bg::run_graph(keys, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}})
+              .equals({{1, 2}, {3, literal::REMOVED(1)}, {literal::REMOVED(2), literal::REMOVED(3)}}));
+    CHECK(bg::run_graph(keys, bg::input<TS<Dict<i64, i64>>>({{}, {}, {{1, 7}}, {{1, 7}}}))
+              .equals({{}, literal::SKIP, {1}, literal::SKIP}));
+    CHECK(bg::run_graph(value_count, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}}).equals<i64>({2, 2, 0}));
+    CHECK(bg::run_graph(value_sum, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}}).equals<i64>({14, 14, 0}));
+}
+
+TEST_CASE("values_ snapshots valid TSD items and tracks distinct values incrementally",
+          "[feature:operator][series:tsd][series:value][series:tss][scalar:list][transition:update]"
+          "[transition:addition][transition:removal]") {
+    const auto value_count = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return operators::len_(operators::values_(dictionary));
+    };
+    const auto sum_list = node([](In<TS<List<i64>>> values) {
+        const auto items = values.value_view();
+        auto sum = i64{};
+        for (auto index = std::size_t{}; index < items.size(); ++index) {
+            sum += items[index].value();
+        }
+        return sum;
+    });
+    const auto value_sum = [&](wp<TSD<i64, TS<i64>>> dictionary) {
+        return sum_list(operators::values_(dictionary));
+    };
+    const auto distinct_values = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return operators::values_[type<TSS<i64>>](dictionary);
+    };
+    const auto input = bg::input<TSD<i64, TS<i64>>>(
+        {{{1, 10}, {2, 10}, {3, 20}}, {{1, 20}, {3, 10}}, {{2, 20}}, {{3, literal::REMOVE}},
+         {{1, literal::REMOVE}, {2, literal::REMOVE}}});
+
+    CHECK(bg::run_graph(value_count, input).equals<i64>({3, 3, 3, 2, 0}));
+    CHECK(bg::run_graph(value_sum, input).equals<i64>({40, 40, 50, 40, 0}));
+    CHECK(bg::run_graph(distinct_values, input)
+              .equals({{10, 20}, literal::SKIP, literal::SKIP, {literal::REMOVED(10)},
+                       {literal::REMOVED(20)}}));
+}
+
+TEST_CASE("values_ handles TSD item and root validity transitions",
+          "[feature:operator][series:tsd][series:value][series:tss][feature:validity]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto value_count = [](wp<TS<bool>> selected, wp<TSD<i64, TS<i64>>> dictionary) {
+        const auto current = operators::if_then_else(
+            selected, dictionary, operators::nothing[type<TSD<i64, TS<i64>>>]());
+        return operators::len_(operators::values_(current));
+    };
+    const auto distinct_values = [](wp<TS<bool>> selected, wp<TSD<i64, TS<i64>>> dictionary) {
+        const auto current = operators::if_then_else(
+            selected, dictionary, operators::nothing[type<TSD<i64, TS<i64>>>]());
+        return operators::values_[type<TSS<i64>>](current);
+    };
+    const auto selection = bg::input<TS<bool>>({true, true, true, true, true, false, true});
+    const auto dictionary = bg::input<TSD<i64, TS<i64>>>(
+        {{{1, 10}, {2, 10}}, {{1, literal::INVALID}}, {{2, literal::INVALID}}, {{1, 10}},
+         {{1, literal::REMOVE}}, literal::SKIP, {}});
+
+    CHECK(bg::run_graph(value_count, selection, dictionary).equals<i64>(
+              {2, 1, 0, 1, 0, std::nullopt, 0}));
+    CHECK(bg::run_graph(distinct_values, selection, dictionary)
+              .equals({{10}, literal::SKIP, {literal::REMOVED(10)}, {10}, {literal::REMOVED(10)},
+                       literal::INVALID, {}}));
+}
+
+TEST_CASE("values_ follows a selected dictionary reference when its target changes",
+          "[feature:operator][series:tsd][series:reference][scalar:list][transition:update]") {
+    const auto sum_list = node([](In<TS<List<i64>>> values) {
+        const auto items = values.value_view();
+        auto sum = i64{};
+        for (auto index = std::size_t{}; index < items.size(); ++index) {
+            sum += items[index].value();
+        }
+        return sum;
+    });
+    const auto sum_set = [](wp<TSS<i64>> values) { return operators::sum_("values"_n = values); };
+    const auto graph = [&](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second) {
+        return sum_list(operators::values_(operators::if_then_else(condition, first, second)));
+    };
+    const auto distinct_graph = [&](wp<TS<bool>> condition, wp<TSD<i64, TS<i64>>> first,
+                                    wp<TSD<i64, TS<i64>>> second) {
+        return sum_set(operators::values_[type<TSS<i64>>](operators::if_then_else(condition, first, second))
+                           .as<TSS<i64>>());
+    };
+
+    const auto condition = bg::input<TS<bool>>({true, false, true});
+    const auto first = bg::input<TSD<i64, TS<i64>>>({{{1, 10}}});
+    const auto second = bg::input<TSD<i64, TS<i64>>>({{{1, 100}}});
+    CHECK(bg::run_graph(graph, condition, first, second)
+              .equals<i64>({10, 100, 10}));
+    CHECK(bg::run_graph(distinct_graph, condition, first, second).equals<i64>({10, 100, 10}));
+}
+
+TEST_CASE("values_ adapts dictionary references and follows item invalidation and revalidation",
+          "[feature:operator][series:tsd][series:reference][series:value][transition:invalidation]"
+          "[transition:revalidation]") {
+    const auto make_references = node([](In<REF<TS<i64>>> value, Out<TSD<i64, REF<TS<i64>>>> output) {
+        output[1].copy(value);
+    });
+    const auto count_values = [&](wp<TS<i64>> value) {
+        return operators::len_(operators::values_(make_references(value)));
+    };
+    const auto distinct_values = [&](wp<TS<i64>> value) {
+        return operators::values_[type<TSS<i64>>](make_references(value));
+    };
+
+    const auto input = bg::input<TS<i64>>({10, literal::INVALID, 20});
+    CHECK(bg::run_graph(count_values, input).equals<i64>({1, 0, 1}));
+    CHECK(bg::run_graph(distinct_values, input).equals({{10}, {literal::REMOVED(10)}, {20}}));
+}
+
+TEST_CASE("values_ retains owned string values across dictionary updates",
+          "[feature:operator][series:value][scalar:dict][scalar:list][scalar:string][transition:update]") {
+    const auto graph = [](wp<TS<Dict<i64, string>>> dictionary) {
+        return operators::join(operators::values_(dictionary), "|");
+    };
+    const auto distinct_graph = [](wp<TSD<i64, TS<string>>> dictionary) {
+        return operators::values_[type<TSS<string>>](dictionary);
+    };
+    const auto first = std::string{"a distinct string value that does not fit in a small string buffer"};
+    const auto second = std::string{"another distinct string value that does not fit in a small string buffer"};
+
+    CHECK(bg::run_graph(graph, bg::input<TS<Dict<i64, string>>>({{{1, "first"}}, {{1, "updated"}}, {}}))
+              .equals<string>({"first", "updated", ""}));
+    const auto actual = bg::run_graph(
+        distinct_graph, bg::input<TSD<i64, TS<string>>>({{{1, first}, {2, first}}, {{1, second}},
+                                                          {{2, literal::REMOVE}}, {{1, literal::REMOVE}}}));
+    CHECK(actual.equals({{first}, {second}, {literal::REMOVED(first)}, {literal::REMOVED(second)}}));
+}
+
+TEST_CASE("values_ propagates guarantees and rejects incompatible explicit outputs",
+          "[feature:operator][feature:wiring][series:tsd][series:tss][scalar:dict][scalar:list]") {
+    const auto final_dictionary = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>,
+                                                   TimeSeriesGuarantee::final>> output) {
+        output[1].set(1);
+    });
+    const auto final_items_dictionary = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> output) {
+        output[1].set(1);
+    });
+    const auto scalar_values = [](wp<TS<Dict<i64, i64>>> dictionary) {
+        return operators::values_[type<TS<List<i64>>>](dictionary);
+    };
+    const auto wrong_scalar_values = [](wp<TS<Dict<i64, i64>>> dictionary) {
+        return operators::values_[type<TS<List<string>>>](dictionary);
+    };
+    const auto wrong_tsd_list = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return operators::values_[type<TS<List<string>>>](dictionary);
+    };
+    const auto wrong_tsd_set = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return operators::values_[type<TSS<string>>](dictionary);
+    };
+    const auto stronger_tsd_list = [](wp<TSD<i64, TS<i64>>> dictionary) {
+        return operators::values_[type<TS<List<i64>, TimeSeriesGuarantee::final>>](dictionary);
+    };
+    const auto non_hashable_values = [](wp<TSD<i64, TS<List<i64>>>> dictionary) {
+        return operators::len_(operators::values_(dictionary));
+    };
+    const auto final_list = [&] {
+        const auto values = operators::values_(final_dictionary());
+        CHECK(&values.type() == &TS<List<i64>, TimeSeriesGuarantee::final>::type());
+    };
+    const auto ordinary_list = [&] {
+        const auto values = operators::values_(final_items_dictionary());
+        CHECK(&values.type() == &TS<List<i64>>::type());
+    };
+    const auto final_set = [&] {
+        const auto values = operators::values_[type<TSS<i64, TimeSeriesGuarantee::final>>](final_dictionary());
+        CHECK(&values.type() == &TSS<i64, TimeSeriesGuarantee::final>::type());
+    };
+
+    CHECK(bg::run_graph(scalar_values, bg::input<TS<Dict<i64, i64>>>({{{1, 10}}})).equals({{10}}));
+    CHECK_THROWS_AS(bg::run_graph(wrong_scalar_values, bg::input<TS<Dict<i64, i64>>>({{{1, 10}}})),
+                    WiringError);
+    CHECK_THROWS_AS(bg::run_graph(wrong_tsd_list, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(wrong_tsd_set, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
+    CHECK_THROWS_AS(bg::run_graph(stronger_tsd_list, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
+    const auto nested_list_input = bg::input<TSD<i64, TS<List<i64>>>>({{{1, {10, 20}}}});
+    CHECK(bg::run_graph(non_hashable_values, nested_list_input).equals<i64>({1}));
+    testing::test_wiring(final_list);
+    testing::test_wiring(ordinary_list);
+    testing::test_wiring(final_set);
+}
+
+TEST_CASE("index_of accepts scalar and time-series needles for lists and fixed TSLs",
+          "[feature:operator][series:value][series:fixed-tsl][scalar:list][scalar:i64]") {
+    const auto list_scalar = [](wp<TS<List<i64>>> values) {
+        return operators::index_of(values, i64{2});
+    };
+    const auto list_series = [](wp<TS<List<i64>>> values, wp<TS<i64>> item) {
+        return operators::index_of(values, item);
+    };
+    const auto tsl_scalar = [](wp<TSL<TS<i64>, 3>> values) {
+        return operators::index_of(values, i64{20});
+    };
+    const auto tsl_series = [](wp<TSL<TS<i64>, 3>> values, wp<TS<i64>> item) {
+        return operators::index_of(values, item);
+    };
+    const auto lists = bg::input<TS<List<i64>>>({{1, 2, 2}, {3, 2}, {}});
+    const auto tsl = bg::input<TSL<TS<i64>, 3>>(
+        {{{0, 10}, {1, literal::INVALID}, {2, 20}}, {{0, 20}, {2, 20}},
+         {{0, literal::INVALID}, {1, 10}, {2, literal::INVALID}}});
+
+    CHECK(bg::run_graph(list_scalar, lists).equals<i64>({1, 1, -1}));
+    CHECK(bg::run_graph(list_series, lists, input<TS<i64>>({2, 3, 1})).equals<i64>({1, 0, -1}));
+    CHECK(bg::run_graph(tsl_scalar, tsl).equals<i64>({2, 0, -1}));
+    CHECK(bg::run_graph(tsl_series, tsl, input<TS<i64>>({20, 10, 1})).equals<i64>({2, -1, -1}));
+}
+
 TEST_CASE("len_ and is_empty accept valid TSD items",
           "[feature:operator][series:tsd][series:tss][scalar:i64][scalar:boolean][input-guarantee:valid-items]") {
     const auto length = [](wp<TSD<i64, TS<i64>>> values) { return operators::len_(valid_items(values)); };

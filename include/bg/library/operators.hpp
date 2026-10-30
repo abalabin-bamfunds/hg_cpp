@@ -142,7 +142,10 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> len_;
 extern BG_LIBRARY_EXPORT
     operator_<auto(COLLECTION, Union<"key", EQUALITY_SCALAR, TS<EQUALITY_SCALAR>>) -> bool> contains_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS<bool>> is_empty;
-extern BG_LIBRARY_EXPORT operator_<auto(TSD<K, TS_T>) -> TSS<K>> keys_;
+extern BG_LIBRARY_EXPORT operator_<auto(COLLECTION) -> TSS<K>> keys_;
+extern BG_LIBRARY_EXPORT operator_<OUT, auto(COLLECTION) -> OUT> values_;
+extern BG_LIBRARY_EXPORT
+    operator_<auto(COLLECTION, Union<"item", EQUALITY_SCALAR, TS<EQUALITY_SCALAR>>) -> i64> index_of;
 extern BG_LIBRARY_EXPORT operator_<auto(TSD<K, TS<bool>>) -> TSS<K>> keys_where_true;
 extern BG_LIBRARY_EXPORT operator_<auto(TSS<K>, TSS<K>) -> TSS<K>> bit_or;
 extern BG_LIBRARY_EXPORT operator_<auto(TSS<K>, TSS<K>) -> TSS<K>> bit_and;

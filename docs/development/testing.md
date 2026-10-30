@@ -615,6 +615,12 @@ For each reusable node and graph, test:
 
 ### Standard library
 
+- dictionary key and value queries, duplicate values, simultaneous replacements,
+  reference retargeting, invalidation and revalidation, valid empty collections,
+  owning scalar values, and incremental distinct-value membership
+- first-index queries for scalar lists and fixed TSLs, absent and duplicate values,
+  invalid immediate items, scalar and time series search items, free collections,
+  references, and output guarantees
 - UTF-8 string and symbol length, indexing, slicing, repetition, and Unicode
   case conversion, including multibyte code points, combining marks, embedded
   NUL bytes, malformed input, negative and extreme indices, output limits,
