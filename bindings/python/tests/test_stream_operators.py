@@ -23,6 +23,34 @@ def test_take_drop_and_step_are_available_to_python_graphs():
     assert bg.run_graph(step, [10, 10, 20, bg.INVALID, 30, 40, 50]) == [10, None, 20, None, None, 40, None]
 
 
+def test_take_drop_duration_and_slice_are_available_to_python_graphs():
+    @bg.graph
+    def take(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.take(value, n=timedelta(microseconds=3))
+
+    @bg.graph
+    def drop(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.drop(value, n=timedelta(microseconds=3))
+
+    @bg.graph
+    def slice(value: bg.TS[int]) -> bg.TS[int]:
+        return bg.operators.slice_(value, 1, 5, 2)
+
+    events = [1, bg.INVALID, 2, bg.INVALID, 3, 4]
+    assert bg.run_graph(take, events) == [1, None, 2, None, None, None]
+    assert bg.run_graph(drop, events) == [None, None, None, None, 3, 4]
+    assert bg.run_graph(slice, [10, bg.INVALID, 20, 30, 40, 50, bg.INVALID, 60]) == [
+        None,
+        None,
+        20,
+        None,
+        40,
+        None,
+        None,
+        None,
+    ]
+
+
 def test_resample_is_available_to_python_graphs():
     @bg.graph
     def resample(value: bg.TS[int]) -> bg.TS[int]:

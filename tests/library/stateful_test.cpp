@@ -127,6 +127,48 @@ TEST_CASE("lag delays invalidation until the next input event",
               .equals<bool>({false, true, std::nullopt, false, true}));
 }
 
+TEST_CASE("lag delays a requested number of scalar events",
+          "[feature:operator][feature:state][series:value][scalar:i64][validity:optional]"
+          "[transition:update][transition:invalidation][transition:revalidation]") {
+    const auto lag_two = [](wp<TS<i64>> value) { return operators::lag(value, 2); };
+    const auto valid_lag_two = [](wp<TS<i64>> value) { return operators::valid(operators::lag(value, 2)); };
+    const auto lag_zero = [](wp<TS<i64>> value) { return operators::lag(value, 0); };
+    const auto lag_three = [](wp<TS<i64>> value) { return operators::lag(value, 3); };
+
+    CHECK(bg::run_graph(lag_two, {literal::SKIP, 10, 20, literal::INVALID,
+                                  literal::SKIP, 30, literal::INVALID, 40})
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 10, std::nullopt,
+                            20, std::nullopt, 30}));
+    CHECK(bg::run_graph(valid_lag_two, {10, 20, literal::INVALID, 30, 40})
+              .equals<bool>({false, std::nullopt, true, std::nullopt, false}));
+    CHECK(bg::run_graph(lag_zero, {literal::SKIP, 10, literal::INVALID, 20})
+              .equals<i64>({std::nullopt, 10, std::nullopt, 20}));
+    CHECK(bg::run_graph(lag_three, {7, 7, 7, 7, 7})
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 7, 7}));
+    CHECK_THROWS_AS(bg::run_graph([](wp<TS<i64>> value) { return operators::lag(value, -1); }, {1}),
+                    WiringError);
+
+    const auto lag_constant = [] {
+        const auto result = operators::lag(operators::const_(i64{7}), 0);
+        CHECK(&result.type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
+        return result;
+    };
+    CHECK(bg::run_graph(lag_constant).equals<i64>({7}));
+}
+
+TEST_CASE("multi-event lag retains owned string and collection values",
+          "[feature:operator][feature:state][series:value][scalar:string][scalar:dict]"
+          "[transition:update]") {
+    const auto lag_string = [](wp<TS<string>> value) { return operators::lag(value, 2); };
+    CHECK(bg::run_graph(lag_string, std::array<std::string, 4>{"first", "second", "third", "fourth"})
+              .equals<string>({std::nullopt, std::nullopt, "first", "second"}));
+
+    const auto lag_dictionary = [](wp<TS<Dict<i64, string>>> value) { return operators::lag(value, 2); };
+    CHECK(bg::run_graph(lag_dictionary,
+                        {{{1, "first"}}, {{1, "second"}}, {{2, "third"}}, {{3, "fourth"}}})
+              .equals({literal::SKIP, literal::SKIP, {{1, "first"}}, {{1, "second"}}}));
+}
+
 TEST_CASE("lag publishes repeated equal values and owns scalar snapshots",
           "[feature:operator][feature:state][series:value][scalar:string][guarantee:ordinary]"
           "[validity:optional][transition:update]") {

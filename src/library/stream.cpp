@@ -4,11 +4,14 @@
 #include <bg/library/operators.hpp>
 #include <bg/node.hpp>
 #include <bg/overload.hpp>
+#include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
+#include <bg/util/buffer.hpp>
 
 #include <cstdint>
 #include <limits>
+#include <optional>
 #include <vector>
 
 namespace bg::operators::details {
@@ -348,6 +351,46 @@ struct stream_overloads {
 
     overload<take, take_impl> take_impl;
 
+    struct take_duration_impl {
+        In<TS_T, optional, dynamic_activity> value;
+        Scalar<timedelta_t> n;
+        State<std::optional<EvaluationTime>> started_at;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            const auto duration = scalar_cast<timedelta_t>(*arguments.scalar("n")).value();
+            return duration == timedelta_t{} ? &value_type.with_guarantee_limit(TimeSeriesGuarantee::final)
+                                             : &value_type;
+        }
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto duration = scalar_cast<timedelta_t>(*arguments.scalar("n")).value();
+            return duration < timedelta_t{} ? reject("duration must be nonnegative") : accept;
+        }
+
+        void start() const {
+            if (n.value() == timedelta_t{}) {
+                value.make_passive();
+            }
+        }
+
+        void evaluate() const {
+            const auto now = value.last_updated();
+            if (value.valid() && !*started_at) {
+                *started_at = now;
+            }
+            if (*started_at && now - **started_at >= n.value()) {
+                value.make_passive();
+                return;
+            }
+
+            output.copy_tick(value);
+        }
+    };
+
+    overload<take, take_duration_impl> take_duration;
+
     struct drop_impl {
         In<TS_T, optional> value;
         Scalar<i64> n;
@@ -387,6 +430,51 @@ struct stream_overloads {
 
     overload<drop, drop_impl> drop_impl;
 
+    struct drop_duration_impl {
+        In<TS_T, optional> value;
+        Scalar<timedelta_t> n;
+        State<std::optional<EvaluationTime>> started_at;
+        Out<OUT> output;
+
+        static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
+            const auto &value_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+            const auto limit = weakest(*value_type.guarantee().value(), TimeSeriesGuarantee::final);
+            return &value_type.with_guarantee_limit(limit);
+        }
+
+        void evaluate() const {
+            const auto now = value.last_updated();
+            if (value.valid() && !*started_at) {
+                *started_at = now;
+            }
+            if (!*started_at || now - **started_at < n.value()) {
+                return;
+            }
+
+            if (!value.valid() || !output.valid()) {
+                output.copy(value);
+                return;
+            }
+
+            output.copy_tick(value);
+        }
+    };
+
+    overload<drop> drop_duration{graph(
+        {"value"_n, "n"_n},
+        require = [](const WiringArguments &arguments) {
+            const auto duration = scalar_cast<timedelta_t>(*arguments.scalar("n")).value();
+            return duration < timedelta_t{} ? reject("duration must be nonnegative") : accept;
+        },
+        [](wp<TS_T> value, timedelta_t n) -> wp<OUT> {
+            if (n == timedelta_t{}) {
+                return wp<OUT>{value};
+            }
+
+            static const auto drop = node<drop_duration_impl>();
+            return wp<OUT>{drop(value, n)};
+        })};
+
     struct step_impl {
         In<TS_T, optional> value;
         Scalar<i64> n;
@@ -409,6 +497,7 @@ struct stream_overloads {
                 output.copy(value);
                 return;
             }
+
             if (*until_next > 0) {
                 --*until_next;
                 return;
@@ -420,6 +509,22 @@ struct stream_overloads {
     };
 
     overload<step, step_impl> step_impl;
+
+    overload<slice_> slice_impl{graph(
+        {"value"_n, "start"_n, "stop"_n, "step"_n},
+        require = [](const WiringArguments &arguments) {
+            const auto start = scalar_cast<i64>(*arguments.scalar("start")).value();
+            const auto stop = scalar_cast<i64>(*arguments.scalar("stop")).value();
+            const auto step = scalar_cast<i64>(*arguments.scalar("step")).value();
+            return start < 0 || stop < start || step <= 0
+                       ? reject("slice requires 0 <= start <= stop and step > 0")
+                       : accept;
+        },
+        [](wp<TS_T> value, i64 start, i64 stop, i64 step) -> wp<OUT> {
+            auto selected = operators::take(value, stop);
+            selected = operators::drop(selected, start);
+            return wp<OUT>{operators::step(selected, step)};
+        })};
 
     struct if_then_else_impl {
         In<TS<bool>> condition;
@@ -445,7 +550,7 @@ struct stream_overloads {
     overload<if_then_else, if_then_else_impl> if_then_else_impl;
 
     // Stateful operators.
-    struct lag_impl {
+    struct lag_one_impl {
         In<TS<SCALAR>, optional> value;
         State<SCALAR> previous;
         State<bool> previous_valid;
@@ -471,7 +576,74 @@ struct stream_overloads {
         }
     };
 
-    overload<lag, lag_impl> lag_impl;
+    struct lag_buffered_impl {
+        struct retained_ticks {
+            retained_ticks(util::buffer buffer, allocator memory, const TimeSeriesType &type)
+                : writer{buffer, memory}, reader{std::move(buffer), type} {}
+
+            TimeSeriesTickWriter writer;
+            TimeSeriesTickReader reader;
+        };
+
+        In<TS<SCALAR>, optional> value;
+        Scalar<i64> n;
+        State<retained_ticks *> retained;
+        State<i64> pending_count;
+        Out<TS<SCALAR>> output;
+
+        void evaluate(EvaluationContext *context) const {
+            const auto now = context->evaluation_time();
+            if (*retained == nullptr) {
+                auto memory = context->runtime_graph().allocation();
+                auto buffer = util::buffer::chain(256, memory);
+                *retained = memory.new_object<retained_ticks>(std::move(buffer), memory, value.runtime_type().type());
+            }
+
+            auto &ticks = **retained;
+            if (!ticks.writer.write(value, now)) {
+                return;
+            }
+            if (*pending_count < n.value()) {
+                ++*pending_count;
+                return;
+            }
+
+            ticks.reader.replay(output);
+        }
+
+        void stop(EvaluationContext *context) const noexcept { release(*context); }
+        void finalize(EvaluationContext *context) const noexcept { release(*context); }
+
+      private:
+        void release(EvaluationContext &context) const noexcept {
+            if (*retained == nullptr) {
+                return;
+            }
+            auto memory = context.runtime_graph().allocation();
+            memory.delete_object(*retained);
+            *retained = nullptr;
+            *pending_count = 0;
+        }
+    };
+
+    overload<lag> lag_impl{graph(
+        {"value"_n, "n"_n},
+        require = [](const WiringArguments &arguments) {
+            const auto count = scalar_cast<i64>(*arguments.scalar("n")).value();
+            return count < 0 ? reject("n must be nonnegative") : accept;
+        },
+        [](wp<TS<SCALAR>> value, i64 n) -> wp<TS<SCALAR>> {
+            if (n == 0) {
+                return value;
+            }
+            if (n == 1) {
+                static const auto lag_one = node<lag_one_impl>();
+                return lag_one(value);
+            }
+
+            static const auto lag_buffered = node<lag_buffered_impl>();
+            return lag_buffered(value, n);
+        })};
 };
 
 } // namespace

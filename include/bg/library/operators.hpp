@@ -104,14 +104,15 @@ extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> TS_T> merge;
 extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> REF<TS_T>> race;
 extern BG_LIBRARY_EXPORT operator_<OUT, auto(TS<i64>, TS_T) -> OUT> route_by_index;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, bool) -> TS<bool>> if_true;
-extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> take;
-extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> drop;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, Union<"n", i64, timedelta_t>) -> OUT> take;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, Union<"n", i64, timedelta_t>) -> OUT> drop;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> step;
+extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64, i64, i64) -> OUT> slice_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TRUE_TS, FALSE_TS) -> OUT> if_then_else;
 
 // Counting and lag.
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> i64> count;
-extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> TS<SCALAR>> lag;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>, i64) -> TS<SCALAR>> lag;
 
 // Analytical operators.
 extern BG_LIBRARY_EXPORT operator_<auto(TS<NUMERIC>) -> OUT> diff;
