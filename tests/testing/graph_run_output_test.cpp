@@ -138,10 +138,10 @@ TEST_CASE("run_graph result streams empty and bounded outputs densely",
 
     auto values_over_limit = std::array<i64, 33>{};
     values_over_limit.fill(7);
-    const auto summarized = run_graph(identity, GraphRunOptions{.start_time = EvaluationTime{}}, values_over_limit);
+    const auto summarized = run_graph(identity, values_over_limit);
     auto summary_stream = std::ostringstream{};
     summary_stream << std::hex << summarized;
-    CHECK(summary_stream.str() == "GraphRunResult(start_time=1970-01-01T00:00:00.000000Z, event_count=33, size=33)");
+    CHECK(summary_stream.str() == "GraphRunResult(start_time=1970-01-01T00:00:00.000001Z, event_count=33, size=33)");
 }
 
 TEST_CASE("run_graph result summarizes large sparse outputs without expanding them",
