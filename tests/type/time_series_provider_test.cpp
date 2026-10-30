@@ -2432,6 +2432,55 @@ TEST_CASE("runtime replay registration does not hide semantic write registration
     CHECK(output_value == 17);
 }
 
+TEST_CASE("provider replay accepts an erased output with its runtime representation",
+          "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
+    using Series = provider::Series<provider::Number<i64>>;
+    const auto &runtime_type = provider::series_runtime_type(Series::type());
+    auto dispatch = TimeSeriesDispatch<TimeSeriesTickOperations>{};
+    auto callback_count = 0;
+    auto callback_runtime_type = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+    auto callback_data = static_cast<const void *>(nullptr);
+    auto operations = TimeSeriesTickOperations::for_replay<Out<TS_T>>(
+        [&](auto &reader, const auto &output) {
+            static_assert(std::same_as<std::remove_cvref_t<decltype(output)>, Out<TS_T>>);
+            ++callback_count;
+            callback_runtime_type = &output.runtime_type();
+            callback_data = output.data();
+            auto &state = output.output_state();
+            *static_cast<i64 *>(state.mutable_data()) = reader.template read_raw<i64>();
+            state.publish();
+        });
+    REQUIRE(dispatch.add(runtime_type, std::move(operations)));
+
+    const auto buffer = util::buffer::contiguous(32);
+    const auto expected_value = i64{42};
+    {
+        auto writer = util::buffer_writer{buffer};
+        auto context = ScalarBufferWriteContext{writer};
+        details::TickHeader{details::TickOperation::tick, true}.write(context);
+        context.write_bytes(std::as_bytes(std::span{&expected_value, std::size_t{1}}));
+        writer.commit();
+    }
+
+    const auto evaluation_time = MIN_DT + std::chrono::microseconds{1};
+    auto output_time = TimeSeriesState{};
+    auto output_value = i64{};
+    auto output_state = OutputState{runtime_type};
+    output_state.bind(output_time, &output_value, evaluation_time);
+    const auto output = Out<TS_T>{TimeSeriesOutputBinding{output_state}};
+    auto reader = util::buffer_reader{buffer};
+    auto replay = details::TimeSeriesTickReplay{reader, dispatch};
+
+    replay.apply_erased(Series::type(), output);
+
+    CHECK(callback_count == 1);
+    CHECK(callback_runtime_type == &runtime_type);
+    CHECK(callback_data == &output_value);
+    CHECK(output_value == expected_value);
+    CHECK(output.valid());
+    CHECK(output.last_updated() == evaluation_time);
+}
+
 TEST_CASE("tick replay dispatch reaches provider-declared outputs",
           "[evaluation][feature:time-series-storage][series:generic][declaration:concrete]") {
     using Series = provider::RuntimeOutputSeries;

@@ -8,6 +8,7 @@
 #include <bg/time_series/time_series_output.hpp>
 #include <bg/util/buffer.hpp>
 
+#include <concepts>
 #include <functional>
 #include <utility>
 
@@ -94,8 +95,12 @@ struct TimeSeriesTickOperations {
     template <typename Output, typename Function> static Replay typed_replay(Function &&function) {
         return [function = std::forward<Function>(function)](util::buffer_reader &reader, OutputState &state) {
             const auto erased = Out<TS_T>{TimeSeriesOutputBinding{state}};
-            const auto output = erased.template as_output<Output>();
-            std::invoke(function, reader, output);
+            if constexpr (std::same_as<Output, Out<TS_T>>) {
+                std::invoke(function, reader, erased);
+            } else {
+                const auto output = erased.template as_output<Output>();
+                std::invoke(function, reader, output);
+            }
         };
     }
 
