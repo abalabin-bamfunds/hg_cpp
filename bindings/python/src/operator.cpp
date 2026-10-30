@@ -192,6 +192,7 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "pos", operators::pos);
     export_operator(operators_module, "neg", operators::neg);
     export_operator(operators_module, "abs", operators::abs);
+    export_operator(operators_module, "invert", operators::invert);
     export_operator(operators_module, "eq", operators::eq);
     export_operator(operators_module, "ne", operators::ne);
     export_operator(operators_module, "lt", operators::lt);

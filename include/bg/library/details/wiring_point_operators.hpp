@@ -120,6 +120,12 @@ auto operator-(POINT &&value) {
 
 template <typename POINT>
     requires details::wiring_point_operand<POINT>
+auto operator~(POINT &&value) {
+    return operators::invert(std::forward<POINT>(value));
+}
+
+template <typename POINT>
+    requires details::wiring_point_operand<POINT>
 auto operator!(POINT &&value) {
     return operators::not_(std::forward<POINT>(value));
 }
