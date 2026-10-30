@@ -49,6 +49,53 @@ TEST_CASE("nested graph commits omitted scalar defaults before creating boundari
     CHECK(bg::run_graph(outer, std::array{3}, std::array{true}).equals({23}));
 }
 
+template <template <typename, auto...> typename Field> struct NestedResultBase {
+    Field<TS<i64>> count;
+};
+
+template <template <typename, auto...> typename Field>
+struct NestedResultBundle : bundle_extends<NestedResultBase, Field> {
+    Field<TS<float>> value;
+};
+
+TEST_CASE("a nested graph passes a free bundle reference to a value consumer",
+          "[evaluation][nested][feature:nested-graph][feature:reference][feature:sampling][series:tsb]"
+          "[representation:free][shape:nested][binding:value-to-reference][binding:reference-to-value]"
+          "[transition:update]") {
+    const auto sum = node([](In<TSB<NestedResultBundle>> input) { return *input->count + *input->value; });
+
+    const auto inner = graph("name"_n = "reference_free_bundle", [](wp<REF<TSB<NestedResultBundle>>> input) {
+        return input;
+    });
+
+    const auto tested = [&](wp<TS<i64>> count, wp<TS<float>> value, wp<TS<bool>> run) {
+        return sum(nested(inner, run, bundle("count"_n = count, "value"_n = value)));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, literal::SKIP}, {0.5F, literal::SKIP, 1.5F}, {true, true, true});
+
+    CHECK(actual.equals({1.5F, 2.5F, 3.5F}));
+}
+
+TEST_CASE("a nested graph passes a free fixed list reference to a value consumer",
+          "[evaluation][nested][feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[representation:free][shape:nested][binding:value-to-reference][binding:reference-to-value]"
+          "[transition:update]") {
+    const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
+
+    const auto inner = graph("name"_n = "reference_free_fixed_list", [](wp<REF<TSL<TS<i64>, 2>>> input) {
+        return input;
+    });
+
+    const auto tested = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> run) {
+        return sum(nested(inner, run, tsl(first, second)));
+    };
+
+    const auto actual = bg::run_graph(tested, {1, 2, literal::SKIP}, {10, literal::SKIP, 20}, {true, true, true});
+
+    CHECK(actual.equals({11, 12, 22}));
+}
+
 struct LifecycleIncrement {
     In<TS<i64>> input;
     Out<TS<i64>> output;
