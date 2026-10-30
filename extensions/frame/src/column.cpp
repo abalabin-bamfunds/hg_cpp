@@ -18,6 +18,18 @@
 
 namespace {
 
+const bg::ScalarRuntimeType &default_column_scalar_runtime_type(const bg::ScalarType &type) {
+    const auto &column = static_cast<const bg::frame::ColumnType &>(type);
+    return bg::frame::visit_cell_type(column.cell_type(), []<typename Cell>(std::type_identity<Cell>)
+                                          -> const bg::ScalarRuntimeType & {
+        return bg::cpp_scalar_runtime_type<bg::frame::Column<Cell>>();
+    });
+}
+
+const bg::TimeSeriesRuntimeType &default_column_series_runtime_type(const bg::TimeSeriesType &type) {
+    return bg::frame::column_time_series_runtime_type(type);
+}
+
 template <bg::frame::cell_type T>
 class NativeColumnSeriesRuntimeType final : public bg::frame::ColumnSeriesRuntimeType<T> {
   public:
@@ -234,6 +246,7 @@ const bg::frame::ColumnType &bg::frame::column_type(const bg::ScalarType &cell_t
     const auto &type =
         bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnType, std::hash<const bg::ScalarType *>>(
             &cell_type, [&] { return std::make_unique<bg::frame::ColumnType>(cell_type); });
+    type.set_default_runtime_type_factory(&default_column_scalar_runtime_type);
     details::register_column_literal_type(type);
     details::register_column_format_type(type);
     return type;
@@ -267,10 +280,12 @@ const bg::frame::ColumnSeriesType &bg::frame::column_series_type(const bg::Scala
     const auto &type =
         bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnSeriesType, ColumnSeriesTypeKeyHash>(
             key, [&] { return std::make_unique<bg::frame::ColumnSeriesType>(cell_type, guarantee); });
-    if (type.is_resolved())
+    if (type.is_resolved()) {
+        type.set_default_runtime_type_factory(&default_column_series_runtime_type);
         bg::frame::visit_cell_type(type.cell_type(), []<typename Cell>(std::type_identity<Cell>) {
             static_cast<void>(bg::cpp_scalar_runtime_type<bg::frame::Column<Cell>>());
         });
+    }
     details::register_column_tick_format_type(type);
     register_column_series_default_runtime(type);
     return type;

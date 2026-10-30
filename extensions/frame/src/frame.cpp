@@ -18,6 +18,17 @@
 namespace bg::frame {
 namespace {
 
+const ScalarRuntimeType &default_frame_scalar_runtime_type(const ScalarType &type) {
+    return frame_snapshot_runtime_type(static_cast<const FrameType &>(type));
+}
+
+const TimeSeriesRuntimeType &default_frame_series_runtime_type(const TimeSeriesType &type) {
+    return details::canonical_frame_series_runtime_type(
+        type, [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
+            return std::make_unique<details::NativeFrameSeriesRuntimeType>(series_type);
+        });
+}
+
 struct FrameSeriesKey {
     const SchemaType *schema;
     std::variant<TimeSeriesGuarantee, const GuaranteeVariable *> guarantee;
@@ -534,6 +545,7 @@ const FrameType &frame_type(const SchemaType &schema) {
     validate_frame_schema(schema);
     const auto &type = TypeRegistry::instance().get_or_create<FrameType, std::hash<const SchemaType *>>(
         std::addressof(schema), [&] { return std::make_unique<FrameType>(schema); });
+    type.set_default_runtime_type_factory(&default_frame_scalar_runtime_type);
     details::register_frame_literal_type(type);
     details::register_frame_format_type(type);
     if (type.is_resolved()) {
@@ -549,6 +561,7 @@ const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteePara
     const auto &type = TypeRegistry::instance().get_or_create<FrameSeriesType, FrameSeriesKeyHash>(
         key, [&] { return std::make_unique<FrameSeriesType>(schema, std::move(guarantee)); });
     if (type.is_resolved()) {
+        type.set_default_runtime_type_factory(&default_frame_series_runtime_type);
         const auto &runtime = details::canonical_frame_series_runtime_type(
             type, [](const TimeSeriesType &series_type) -> std::unique_ptr<TimeSeriesRuntimeType> {
                 return std::make_unique<details::NativeFrameSeriesRuntimeType>(series_type);
