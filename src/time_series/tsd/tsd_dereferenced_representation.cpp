@@ -756,7 +756,7 @@ template <bool Recursive> class DereferencedTimeSeriesDictionaryRepresentation f
                 previous = ResolvedTimeSeries::resolve(reference);
             }
         }
-        const auto sample = SampledReferenceChange::create(previous, current, item_runtime_type_->type(),
+        const auto sample = SampledReferenceChange::create(*item_runtime_type_, previous, current,
                                                            evaluation_time, provider_->allocation());
         if (!sample) {
             return;

@@ -19,6 +19,8 @@
 #include <bg/time_series/literal_operations.hpp>
 #include <bg/time_series/output_binding.hpp>
 #include <bg/time_series/output_state.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tick_operations.hpp>
 #include <bg/time_series/time_series_type_traits.hpp>
 #include <bg/time_series/tick_serializer.hpp>
@@ -63,6 +65,9 @@ inline int written_tick_count{};
 inline int replayed_tick_count{};
 inline int discarded_tick_count{};
 inline int run_graph_comparison_count{};
+inline int reference_sample_factory_calls{};
+inline int reference_samples_created{};
+inline int reference_samples_destroyed{};
 
 struct ScalarTickState {
     int writes{};
@@ -156,6 +161,10 @@ bool NumberType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
 
 template <typename Item, auto... Properties>
 struct Series : bg::TimeSeriesDeclaration<Series<Item, Properties...>, Properties...> {};
+
+template <template <typename, auto...> typename Field> struct SampleBundle {
+    Field<Series<bg::i64>> value;
+};
 
 using OwnedPayloadSeries = Series<Number<bool>>;
 using TsdFailureSeries = Series<Number<bg::byte>>;
@@ -260,6 +269,8 @@ class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
         *static_cast<bg::i64 *>(output.mutable_data()) = *static_cast<const bg::i64 *>(input.data());
         output.publish();
     }
+
+    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
 };
 
 const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type) {
@@ -271,6 +282,58 @@ const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &t
         entry->second = std::make_unique<SeriesRuntimeType>(type);
     }
     return *entry->second;
+}
+
+class SampledSeries final : public bg::details::ReferenceSample {
+  public:
+    SampledSeries(const bg::TimeSeriesType &type, bg::details::ResolvedTimeSeries previous,
+                  bg::details::ResolvedTimeSeries current, bg::EvaluationTime evaluation_time,
+                  bg::allocator &memory)
+        : runtime_type{&series_runtime_type(type)}, previous_source{previous}, current_source{current},
+          sampled_last_updated{bg::TimeSeriesState::from_validity_transition(
+              evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid())},
+          memory{memory} {
+        ++reference_samples_created;
+    }
+
+    ~SampledSeries() override { ++reference_samples_destroyed; }
+
+    void retain() noexcept override { ++reference_count; }
+    void release() noexcept override {
+        if (--reference_count == 0) {
+            memory.delete_object(this);
+        }
+    }
+
+    bg::TimeSeriesRuntimeType::ConstItem input() const noexcept override {
+        return {*runtime_type, sampled_last_updated, current_source.storage};
+    }
+
+    bg::details::ResolvedTimeSeries previous() const noexcept override { return previous_source; }
+
+  private:
+    const bg::TimeSeriesRuntimeType *runtime_type;
+    bg::details::ResolvedTimeSeries previous_source;
+    bg::details::ResolvedTimeSeries current_source;
+    bg::TimeSeriesState sampled_last_updated;
+    bg::allocator memory;
+    std::size_t reference_count{1};
+};
+
+bg::details::ReferenceSample *create_sampled_series(const bg::TimeSeriesType &type,
+                                                     bg::details::ResolvedTimeSeries previous,
+                                                     bg::details::ResolvedTimeSeries current,
+                                                     bg::EvaluationTime evaluation_time, bg::allocator &memory) {
+    ++reference_sample_factory_calls;
+    if ((previous.runtime_type == nullptr && current.runtime_type == nullptr) ||
+        (!previous.valid() && !current.valid())) {
+        return nullptr;
+    }
+    return memory.new_object<SampledSeries>(type, previous, current, evaluation_time, memory);
+}
+
+bg::details::ReferenceSampleFactory SeriesRuntimeType::reference_sample_factory() const noexcept {
+    return &create_sampled_series;
 }
 
 struct SeriesViewStorage {
@@ -666,6 +729,152 @@ TEST_CASE("a provider runtime without a copy implementation rejects copying",
     auto output = OutputState{runtime};
 
     CHECK_THROWS_AS(runtime.copy(input, output), std::logic_error);
+}
+
+TEST_CASE("provider runtime types create reference samples with requested semantic identity",
+          "[feature:time-series-provider][feature:reference][sampling][series:generic]") {
+    using Series = provider::Series<i64>;
+
+    const auto &requested_runtime = provider::series_runtime_type(Series::type());
+    const auto &source_runtime = provider::series_view_runtime_type(Series::type());
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto current_time = previous_time + std::chrono::microseconds{1};
+    const auto evaluation_time = current_time + std::chrono::microseconds{1};
+    auto previous_value = provider::SeriesViewStorage{.value = 17};
+    auto current_value = provider::SeriesViewStorage{.value = 42};
+    const auto previous = details::ResolvedTimeSeries{TimeSeriesState{previous_time}, &previous_value,
+                                                       &source_runtime};
+    const auto current = details::ResolvedTimeSeries{TimeSeriesState{current_time}, &current_value,
+                                                      &source_runtime};
+    auto memory_resource = counting_memory_resource{};
+    auto memory = allocator{memory_resource};
+    provider::reference_sample_factory_calls = 0;
+    provider::reference_samples_created = 0;
+    provider::reference_samples_destroyed = 0;
+
+    auto sample = details::SampledReferenceChange::create(requested_runtime, previous, current,
+                                                           evaluation_time, memory);
+    REQUIRE(sample);
+    CHECK(provider::reference_sample_factory_calls == 1);
+    CHECK(provider::reference_samples_created == 1);
+    CHECK(memory_resource.allocations() == 1);
+
+    const auto input = sample.input();
+    CHECK(&input.runtime_type == &requested_runtime);
+    CHECK(&input.runtime_type.type() == &requested_runtime.type());
+    CHECK(&input.runtime_type != &source_runtime);
+    CHECK(input.value == &current_value);
+    CHECK(*static_cast<const i64 *>(input.value) == 42);
+    CHECK(input.last_updated.time() == evaluation_time);
+    CHECK(sample.previous().runtime_type == &source_runtime);
+    CHECK(sample.previous().storage == &previous_value);
+
+    sample.retain();
+    sample.release();
+    CHECK(memory_resource.allocations() == 1);
+    sample.release();
+    CHECK(memory_resource.allocations() == 0);
+    CHECK(provider::reference_samples_destroyed == 1);
+}
+
+TEST_CASE("fixed collection samples dispatch to provider child runtimes and release nested samples",
+          "[feature:time-series-provider][feature:reference][sampling][tsb][series:generic]") {
+    using Bundle = TSB<provider::SampleBundle>;
+
+    const auto &runtime_type = cpp_time_series_runtime_type<Bundle>();
+    auto source_memory = allocator{};
+    auto *previous_storage = source_memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(previous_storage, source_memory);
+    const auto release_previous = util::scope_exit{[&]() noexcept {
+        runtime_type.destroy_value(previous_storage, source_memory);
+        source_memory.deallocate_bytes(previous_storage, runtime_type.value_size(), runtime_type.value_alignment());
+    }};
+    auto *current_storage = source_memory.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
+    runtime_type.construct_runtime_value(current_storage, source_memory);
+    const auto release_current = util::scope_exit{[&]() noexcept {
+        runtime_type.destroy_value(current_storage, source_memory);
+        source_memory.deallocate_bytes(current_storage, runtime_type.value_size(), runtime_type.value_alignment());
+    }};
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto current_time = previous_time + std::chrono::microseconds{1};
+    const auto evaluation_time = current_time + std::chrono::microseconds{1};
+    const auto previous_item = runtime_type.item(previous_storage, 0);
+    const auto current_item = runtime_type.item(current_storage, 0);
+    *static_cast<i64 *>(previous_item.value) = 17;
+    *static_cast<i64 *>(current_item.value) = 29;
+    previous_item.last_updated.publish(previous_time);
+    current_item.last_updated.publish(current_time);
+
+    auto sample_memory_resource = counting_memory_resource{};
+    auto sample_memory = allocator{sample_memory_resource};
+    provider::reference_sample_factory_calls = 0;
+    provider::reference_samples_created = 0;
+    provider::reference_samples_destroyed = 0;
+
+    auto sample = details::SampledReferenceChange::create(
+        runtime_type,
+        {TimeSeriesState{previous_time}, previous_storage, &runtime_type},
+        {TimeSeriesState{current_time}, current_storage, &runtime_type}, evaluation_time, sample_memory);
+    REQUIRE(sample);
+    const auto input = sample.input();
+    CHECK(&input.runtime_type.type() == &runtime_type.type());
+    CHECK(provider::reference_sample_factory_calls == 0);
+
+    const auto item = input.runtime_type.item(input.value, 0);
+    const auto &item_runtime = provider::series_runtime_type(provider::Series<i64>::type());
+    CHECK(provider::reference_sample_factory_calls == 1);
+    CHECK(provider::reference_samples_created == 1);
+    CHECK(&item.runtime_type == &item_runtime);
+    CHECK(&item.runtime_type.type() == &item_runtime.type());
+    CHECK(item.value == current_item.value);
+    CHECK(*static_cast<const i64 *>(item.value) == 29);
+    CHECK(item.last_updated.time() == evaluation_time);
+
+    sample.release();
+    CHECK(sample_memory_resource.allocations() == 0);
+    CHECK(provider::reference_samples_destroyed == 1);
+}
+
+TEST_CASE("a provider reference samples retargeted valid sources at the reference time",
+          "[feature:time-series-provider][feature:reference][sampling][series:generic][feature:test-graph]") {
+    using Series = provider::Series<i64>;
+
+    struct Observation {
+        i64 value;
+        EvaluationTime sample_time;
+        EvaluationTime selection_time;
+    };
+
+    auto observations = std::vector<Observation>{};
+    provider::reference_sample_factory_calls = 0;
+    provider::reference_samples_created = 0;
+    provider::reference_samples_destroyed = 0;
+
+    const auto provide = node([](In<TS<i64>> input, Out<Series, provider::view> output) {
+        output.set(*input);
+    });
+    const auto select = node(
+        [](In<TS<bool>> choose_second, In<REF<Series>, passive> first, In<REF<Series>, passive> second,
+           Out<REF<Series>> output) { output.copy(*choose_second ? second : first); });
+    const auto consume = node([&](In<Series> input, In<TS<bool>> choose_second, Out<TS<i64>> output) {
+        observations.push_back({input.value(), input.last_updated(), choose_second.last_updated()});
+        output.set(input.value());
+    });
+    const auto graph = [&](wp<TS<i64>> first, wp<TS<i64>> second, wp<TS<bool>> choose_second) {
+        return consume(select(choose_second, provide(first), provide(second)), choose_second);
+    };
+
+    const auto actual = bg::run_graph(graph, {101, literal::SKIP, literal::SKIP},
+                                      {202, literal::SKIP, literal::SKIP}, {false, true, false});
+
+    CHECK(actual.equals<i64>({101, 202, 101}));
+    REQUIRE(observations.size() == 3);
+    for (const auto &observation : observations)
+        CHECK(observation.sample_time == observation.selection_time);
+    CHECK(provider::reference_sample_factory_calls == 3);
+    CHECK(provider::reference_samples_created == 3);
+    CHECK(provider::reference_samples_destroyed == 3);
 }
 
 struct RuntimeProviderViewDefinition {

@@ -2516,8 +2516,9 @@ TEST_CASE("sampled set changes preserve keys from each source runtime layout",
         current_storage.release(current_key_runtime, current_layout, memory, [](std::uint32_t) noexcept {});
     }};
     sample = details::SampledReferenceChange::create(
+        cpp_time_series_runtime_type<TSS<Key>>(),
         {TimeSeriesState{previous_time}, &previous_storage, &previous_runtime},
-        {TimeSeriesState{current_time}, &current_storage, &current_runtime}, TSS<Key>::type(), current_time,
+        {TimeSeriesState{current_time}, &current_storage, &current_runtime}, current_time,
         sample_memory);
     REQUIRE(sample);
     const auto input = sample.input();
@@ -2546,6 +2547,19 @@ TEST_CASE("sampled set changes preserve keys from each source runtime layout",
           util::occupancy_index::npos);
 }
 
+TEST_CASE("invalid set targets do not create a reference sample",
+          "[evaluation][reference][sampling][tss][feature:reference][transition:invalidation]") {
+    auto memory = allocator{};
+    auto storage = details::time_series_set_storage{};
+    const auto &runtime_type = cpp_time_series_runtime_type<TSS<i64>>();
+    const auto invalid = details::ResolvedTimeSeries{initial_time_series_state, &storage, &runtime_type};
+
+    const auto sample = details::SampledReferenceChange::create(
+        runtime_type, invalid, invalid, MIN_DT + std::chrono::microseconds{1}, memory);
+
+    CHECK_FALSE(sample);
+}
+
 TEST_CASE("sampled set and dictionary descriptors stay stable through repeated sampling",
           "[evaluation][reference][sampling][tss][tsd][feature:reference]") {
     auto memory = allocator{};
@@ -2563,7 +2577,7 @@ TEST_CASE("sampled set and dictionary descriptors stay stable through repeated s
 
         for (auto index = 0; index < 16; ++index) {
             const auto evaluation_time = initial_time + std::chrono::microseconds{index + 1};
-            const auto sample = details::SampledReferenceChange::create(previous, initial, runtime_type.type(),
+            const auto sample = details::SampledReferenceChange::create(runtime_type, previous, initial,
                                                                          evaluation_time, memory);
             if (!sample) {
                 CHECK(sample);

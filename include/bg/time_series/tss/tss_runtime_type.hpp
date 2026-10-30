@@ -44,6 +44,8 @@ class TimeSeriesSetRuntimeType : public TimeSeriesRuntimeType {
 
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
 
+    ReferenceSampleFactory reference_sample_factory() const noexcept override;
+
     virtual RetainedSetKey retain_key(void *value, const ScalarData &key, allocator &memory) const;
     virtual void release_key(void *value, item_id_t id, allocator &memory) const noexcept;
 
