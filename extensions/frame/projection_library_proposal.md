@@ -213,21 +213,12 @@ The scalar and time series integration audit covers these operation sets:
 | Time series literals and captured expectation comparison | Implemented for both families. |
 | Retained ticks | Write, discard, and native replay are implemented. Public feedback and gate tests verify retention and replay/live transitions. |
 | Live and retained tick formatting | Implemented through `TimeSeriesTickFormatOperations`. |
-| Reference sampling | Public A/B/A switching reproduces missing row changes and child modifications; a BG provider interface is required. |
+| Reference sampling | Implemented through BG's runtime sample factory for TSC and TSF, including inherited schemas and cycle-start row removals. |
 | Queue literal serialization | BG's queue codec rejects provider-defined time series; supporting TSF/TSC requires a separate BG extension hook. |
 
-`SampledReferenceChange::create` currently constructs samples for built-in
-TSB, fixed TSL, TSS, and TSD types. It has no frame-provider sampling path.
-TSF's fixed columns do not by themselves describe row additions/removals for
-its TSC children.
-
-The public reference-switch probe initializes two valid, unchanged TSF targets
-and selects A/B/A. Current values switch correctly and the root publishes a
-tick, but row changes are empty and child columns report no modifications.
-This prevents consumers from processing the switch incrementally.
-
-Discuss the provider-facing BG sampling interface before implementation. The
-frame extension must supply sampling through that interface.
+Frame runtimes supply `TimeSeriesRuntimeType::reference_sample_factory()`.
+[Reference sampling](README.md#reference-sampling) defines the resulting row
+changes and child notifications.
 
 The existing runtime copy hooks and tick replay registrations already provide
 the entry points for copying and delay. Additional core facilities require a
@@ -249,8 +240,8 @@ and the full frame suite pass against the matching BG build.
    copying; public sampling and tick-selection verification.
 4. Implemented: retained-tick replay and scalar/tick formatting through the
    existing operation registries; public feedback and buffering verification.
-5. Review and implement the required provider reference-sampling extension;
-   verify reference selection and nested graph boundaries.
+5. Implemented: provider reference sampling, reference selection, and nested
+   graph verification.
 6. Review deduplicated guarantees separately, then extend the reduction and
    operator library according to application needs.
 
