@@ -478,6 +478,8 @@ graph compilation or evaluation.
   invalid children, and reader preservation
 - queue message serialization for scalar and collection literals, frame targets and sizes, root skip, malformed
   selectors and markers, scalar ownership, concurrent reservation rollover, and failure cleanup
+- provider queue operations, exact-runtime eligibility, nested collection traversal, invalidation admission,
+  retry without consuming ownership, failed-write prefix cleanup, and complete payload cleanup after apply failure
 - queue handle copying and moving, independent concurrent writers, closed-write rejection before serialization,
   retained handles after controller destruction, and shutdown waiting for accepted writes, including failures
 - single-consumer engine wakeups, concurrent notification coalescing, publication visibility after wake,
