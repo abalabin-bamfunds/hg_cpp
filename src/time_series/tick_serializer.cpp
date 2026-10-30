@@ -462,8 +462,7 @@ class QueueMessageCodec {
 
 } // namespace
 
-void validate_queue_output_type(const TimeSeriesRuntimeType &runtime_type, QueueMode mode) {
-    const auto &queue_dispatch = TimeSeriesDispatch<TimeSeriesQueueOperations>::instance();
+void validate_queue_output_type(const TimeSeriesType &type, QueueMode mode) {
     auto validate_type = [&](auto &&self, const TimeSeriesType &current) -> void {
         if (current.guarantee().value() != TimeSeriesGuarantee::ordinary) {
             throw std::invalid_argument{"queue outputs require the ordinary guarantee"};
@@ -505,7 +504,12 @@ void validate_queue_output_type(const TimeSeriesRuntimeType &runtime_type, Queue
             });
     };
 
-    validate_type(validate_type, runtime_type.type());
+    validate_type(validate_type, type);
+}
+
+void validate_queue_output_type(const TimeSeriesRuntimeType &runtime_type, QueueMode mode) {
+    validate_queue_output_type(runtime_type.type(), mode);
+    const auto &queue_dispatch = TimeSeriesDispatch<TimeSeriesQueueOperations>::instance();
 
     auto validate_runtime = [&](auto &&self, const TimeSeriesRuntimeType &current) -> void {
         current.type().visit(
