@@ -160,10 +160,24 @@ root tick schedule.
 
 The first tick prints three branch dictionaries with `direct` values
 `k00: 2` through `k04: 6`, matching the expected printed values. The nested
-literal equality check still returns false. Root scheduling is therefore
-excluded from this discrepancy; the remaining finding is an unresolved nested
-payload equality failure. The evidence does not distinguish a payload defect
-from a comparison defect.
+literal equality check returns false because the expected literal has an extra
+sequence around its three branch entries. `matches_dictionary()` treats each
+top-level element of a TSD tick as a key/value pair. The extra sequence makes
+the first element contain three fields, so `scalar_literal::pair()` throws
+`invalid_argument`; `matches_sequence()` catches it and returns false.
+
+A probe using the exact original and corrected brace shapes confirmed the
+structure: the original first tick has one entry with three fields, while the
+corrected first tick has three entries with two fields each. The minimal test
+correction is to remove one brace pair around the first tick's branch entries.
+The committed test expectation remains unchanged.
+
+The focused test prints the expected payload and one-present/five-skipped
+schedule, then reports `false`. A standalone run using headers from
+`cbfa8cb6`, which match the existing Release core, reports
+`original=0, corrected=1, event_count=1`. An earlier probe used headers with a
+different virtual layout and crashed; that result was an ABI mismatch in the
+probe setup. No production code or committed test expectation changed.
 
 Temporary post-run diagnostics recorded the result in
 `build/release/ownership-metadata-test.log`. They were removed without changing
