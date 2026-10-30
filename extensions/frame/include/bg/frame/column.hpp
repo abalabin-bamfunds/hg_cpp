@@ -670,13 +670,15 @@ template <typename T> struct ColumnStorage {
     explicit ColumnStorage(ColumnSnapshot<T> *value) noexcept : snapshot{value} {}
     ColumnStorage(const NativeColumnData<T> &value, const NativeRows &physical_rows, RowSet visible,
                   const util::index<> *added = nullptr, const util::index<> *modified = nullptr,
-                  const util::index<> *removed = nullptr, EvaluationTime time = MIN_DT) noexcept;
+                  const util::index<> *removed = nullptr, EvaluationTime time = MIN_DT,
+                  const void *cycle_start_domain = nullptr) noexcept;
     ColumnStorage(const NativeColumnData<T> &value, const NativeRowSlots &physical_rows, RowSet visible,
                   const util::index<> &added, const util::index<> &modified, const util::index<> &removed,
-                  EvaluationTime time) noexcept
+                  EvaluationTime time, const void *cycle_start_domain = nullptr) noexcept
         : native{&value}, physical_rows{&physical_rows}, visible_rows{visible}, coverage{visible},
           added{std::addressof(added)}, modified{std::addressof(modified)}, removed{std::addressof(removed)},
-          change_time{time} {}
+          change_time{time}, cycle_start_domain{cycle_start_domain == nullptr ? visible.identity
+                                                                            : cycle_start_domain} {}
     const NativeColumnData<T> *native{};
     const NativeRows *rows{};
     const NativeRowSlots *physical_rows{};
@@ -687,6 +689,7 @@ template <typename T> struct ColumnStorage {
     const util::index<> *modified{};
     const util::index<> *removed{};
     EvaluationTime change_time{MIN_DT};
+    const void *cycle_start_domain{};
 };
 
 class RowDomain {
@@ -1041,14 +1044,16 @@ class NativeRows {
 template <typename T>
 ColumnStorage<T>::ColumnStorage(const NativeColumnData<T> &value, const NativeRows &rows) noexcept
     : native{&value}, rows{&rows}, physical_rows{&rows.slots()}, visible_rows{RowSet::native(rows)},
-      coverage{visible_rows} {}
+      coverage{visible_rows}, cycle_start_domain{visible_rows.identity} {}
 
 template <typename T>
 ColumnStorage<T>::ColumnStorage(const NativeColumnData<T> &value, const NativeRows &physical_rows, RowSet visible,
                                 const util::index<> *added, const util::index<> *modified,
-                                const util::index<> *removed, EvaluationTime time) noexcept
+                                const util::index<> *removed, EvaluationTime time,
+                                const void *cycle_start_domain) noexcept
     : native{&value}, rows{&physical_rows}, physical_rows{&physical_rows.slots()}, visible_rows{visible},
-      coverage{visible}, added{added}, modified{modified}, removed{removed}, change_time{time} {}
+      coverage{visible}, added{added}, modified{modified}, removed{removed}, change_time{time},
+      cycle_start_domain{cycle_start_domain == nullptr ? visible.identity : cycle_start_domain} {}
 
 inline RowSet RowSet::native(const NativeRows &rows) noexcept {
     return RowSet{
@@ -2123,6 +2128,7 @@ template <typename T> struct ColumnViewOutputStorage {
         scalar.modified = std::addressof(modified_rows);
         scalar.removed = std::addressof(membership.removed_rows);
         scalar.change_time = time;
+        scalar.cycle_start_domain = membership.cycle_start_domain;
         return binding.transitioned || !modified_rows.empty();
     }
 
@@ -2134,6 +2140,7 @@ template <typename T> struct ColumnViewOutputStorage {
         scalar.modified = std::addressof(modified_rows);
         scalar.removed = std::addressof(membership.removed_rows);
         scalar.change_time = membership.delta_time;
+        scalar.cycle_start_domain = membership.cycle_start_domain;
     }
 
     void release(allocator memory) noexcept {
@@ -2165,7 +2172,7 @@ template <typename T> struct ColumnComputedOutputStorage {
         if (binding.new_cycle)
             cells.reset_changes();
         scalar = ColumnStorage<T>{cells, physical_rows, input.visible_rows, membership.added_rows,
-                                  cells.modified(), membership.removed_rows, time};
+                                  cells.modified(), membership.removed_rows, time, membership.cycle_start_domain};
         return binding.transitioned;
     }
 
@@ -2184,7 +2191,7 @@ template <typename T> struct ColumnComputedOutputStorage {
         if (binding.new_cycle)
             cells.reset_changes();
         scalar = ColumnStorage<T>{cells, physical_rows, rows, membership.added_rows, cells.modified(),
-                                  membership.removed_rows, time};
+                                  membership.removed_rows, time, membership.cycle_start_domain};
         return binding.transitioned;
     }
 
@@ -2246,6 +2253,7 @@ template <typename T> struct ColumnComputedOutputStorage {
         scalar.modified = std::addressof(cells.modified());
         scalar.removed = std::addressof(membership.removed_rows);
         scalar.change_time = membership.delta_time;
+        scalar.cycle_start_domain = membership.cycle_start_domain;
     }
 
     void release(allocator memory) noexcept {
@@ -2270,6 +2278,7 @@ template <typename T> struct ColumnComputedOutputStorage {
         scalar.modified = std::addressof(cells.modified());
         scalar.removed = std::addressof(membership.removed_rows);
         scalar.change_time = time;
+        scalar.cycle_start_domain = membership.cycle_start_domain;
     }
 };
 

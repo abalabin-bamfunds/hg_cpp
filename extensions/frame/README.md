@@ -340,6 +340,26 @@ Native outputs also support retained-tick replay through BG's tick operations.
 Replay and live `copy_tick()` share the destination's row mapping, allowing a
 buffering node to switch between them. Retained ticks own their cell values.
 
+## Reference sampling
+
+Dereferencing `REF<TSC<T>>` and `REF<TSF<Schema>>` inputs samples frame values
+when the selected target changes. A sample reads values from the current target
+and reports the switch at the current evaluation time. It does not modify either
+target.
+
+TSC samples compare the previous target's pre-cycle rows with the current
+target's rows. A domain change reports prior rows as removed and current rows as
+added, even when row IDs collide. Rows common to one domain are reported as
+modified. This includes a switch between two frame columns that share row
+membership.
+
+TSF samples retain the current target's actual schema, including inherited
+fields beyond a base-schema input. Every sampled child uses the requested frame
+guarantee. Child columns share the sampled frame's row-change sets and publish
+as modified on a target switch. Invalidating a TSF view carries cycle-start row
+removals into each child column sample, including source removals earlier in
+the cycle. A valid zero-column frame retains its rows.
+
 ## Formatting
 
 Include `<bg/scalar/format.hpp>` to format `Scalar<Column<T>>` and

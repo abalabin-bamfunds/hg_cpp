@@ -19,6 +19,14 @@ namespace bg {
 
 namespace frame {
 
+namespace details {
+template <cell_type T>
+bg::details::ReferenceSample *create_sampled_column(const TimeSeriesType &type,
+                                                    bg::details::ResolvedTimeSeries previous,
+                                                    bg::details::ResolvedTimeSeries current,
+                                                    EvaluationTime evaluation_time, allocator &memory);
+}
+
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct TSF;
 
@@ -52,6 +60,9 @@ const ColumnSeriesType &column_series_type(const ScalarType &cell_type, Guarante
 template <cell_type T> class ColumnSeriesRuntimeType : public TimeSeriesRuntimeType {
   public:
     virtual ColumnSeriesView<T> input_view(const void *value) const noexcept = 0;
+    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override {
+        return &details::create_sampled_column<T>;
+    }
 
   protected:
     ColumnSeriesRuntimeType(const TimeSeriesType &type, std::size_t size, std::size_t alignment,

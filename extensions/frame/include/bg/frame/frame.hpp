@@ -265,12 +265,14 @@ struct NativeFrameFieldLayout {
     using bind_column_series_view_function = void (*)(const void *, void *);
     using bind_view_storage_function = void (*)(void *, const FrameColumnReadBinding &, RowSet,
                                                 const util::index<> *, const util::index<> *,
-                                                const util::index<> *, EvaluationTime);
+                                                const util::index<> *, EvaluationTime, const void *);
+    using invalidate_view_storage_function = void (*)(void *, const util::index<> *, const util::index<> *,
+                                                      const util::index<> *, EvaluationTime, const void *);
     using set_slots_function = bool (*)(void *, const NativeRowSlots &, const util::index<> &, row_id_t,
                                         const void *, allocator);
     using bind_computed_storage_function = void (*)(void *, const void *, const NativeRowSlots &, RowSet,
                                                     const util::index<> *, const util::index<> *,
-                                                    const util::index<> *, EvaluationTime);
+                                                    const util::index<> *, EvaluationTime, const void *);
     using read_binding_function = FrameColumnReadBinding (*)(const void *);
     using copy_snapshot_column_function = void *(*)(const FrameColumnReadBinding &, std::size_t, allocator);
     using release_snapshot_column_function = void (*)(void *);
@@ -314,6 +316,7 @@ struct NativeFrameFieldLayout {
     bind_column_view_function bind_column_view{};
     bind_column_series_view_function bind_column_series_view{};
     bind_view_storage_function bind_view_storage{};
+    invalidate_view_storage_function invalidate_view_storage{};
     set_slots_function set_slots{};
     bind_computed_storage_function bind_computed_storage{};
     read_binding_function read_binding{};
@@ -372,6 +375,7 @@ template <template <template <typename, auto...> typename> typename Schema> stru
         bg::details::hierarchical_scalar_schema_reflection<Schema>::field_count;
     Schema<ColumnStorage> columns;
     RowSet rows{};
+    const void *cycle_start_domain{};
     const util::index<> *added{};
     const util::index<> *removed{};
     const util::index<> *changed{};
@@ -405,6 +409,7 @@ struct FrameReadStorage {
 
     const bg::Schema *schema{};
     RowSet rows{};
+    const void *cycle_start_domain{};
     bool valid{};
     bool modified{};
     std::size_t size{};
@@ -510,6 +515,7 @@ const ScalarRuntimeType &frame_snapshot_runtime_type(const FrameType &type);
 class FrameSeriesRuntimeType : public TimeSeriesRuntimeType {
   public:
     virtual FrameReadStorage input_storage(const void *value) const noexcept = 0;
+    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
     const ScalarRuntimeType &scalar_runtime_type() const {
         if (const auto *runtime = scalar_runtime_.load(std::memory_order_acquire))
             return *runtime;
@@ -812,6 +818,8 @@ FrameReadStorage frame_read_storage(const FrameStorage<Schema> &storage, const v
     auto result = FrameReadStorage{};
     result.schema = std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>());
     result.rows = storage.rows;
+    result.cycle_start_domain = storage.cycle_start_domain == nullptr ? storage.rows.identity
+                                                                       : storage.cycle_start_domain;
     result.valid = scalar_value || storage.valid;
     result.size = storage.size;
     result.added = storage.added;
@@ -887,6 +895,7 @@ inline FrameStorage<Schema> FrameReadStorage::typed_storage(const std::array<std
         (details::bind_typed_frame_column<Schema, Index>(result, *this, ordinals[Index]), ...);
     }(std::make_index_sequence<Count>{});
     result.rows = rows;
+    result.cycle_start_domain = cycle_start_domain == nullptr ? rows.identity : cycle_start_domain;
     result.added = added;
     result.removed = removed;
     result.changed = changed;
@@ -1680,6 +1689,7 @@ inline FrameReadStorage frame_read_storage(const NativeFrameStorage &frame, cons
     auto result = FrameReadStorage{};
     result.schema = frame.layout().schema;
     result.rows = RowSet::native(frame.rows());
+    result.cycle_start_domain = result.rows.identity;
     result.valid = scalar_value || frame.valid();
     result.size = frame.size();
     result.added = std::addressof(frame.added());
@@ -1836,7 +1846,8 @@ template <cell_type Cell> void bind_runtime_frame_column_view(const void *source
 template <cell_type Cell>
 void bind_frame_view_storage(void *destination, const FrameColumnReadBinding &source, RowSet visible_rows,
                              const util::index<> *added, const util::index<> *modified,
-                             const util::index<> *removed, EvaluationTime time) {
+                             const util::index<> *removed, EvaluationTime time,
+                             const void *cycle_start_domain) {
     if (source.cell_type != std::addressof(cpp_scalar_type<Cell>()) || source.payload == nullptr ||
         source.copy_column_storage == nullptr)
         throw std::invalid_argument{"frame column type does not match the view schema"};
@@ -1848,16 +1859,35 @@ void bind_frame_view_storage(void *destination, const FrameColumnReadBinding &so
     column.modified = modified;
     column.removed = removed;
     column.change_time = time;
+    column.cycle_start_domain = cycle_start_domain;
+}
+
+template <cell_type Cell>
+void invalidate_frame_view_storage(void *destination, const util::index<> *added, const util::index<> *modified,
+                                   const util::index<> *removed, EvaluationTime time,
+                                   const void *cycle_start_domain) noexcept {
+    auto &column = *static_cast<ColumnStorage<Cell> *>(destination);
+    column.native = nullptr;
+    column.rows = nullptr;
+    column.physical_rows = nullptr;
+    column.snapshot = nullptr;
+    column.visible_rows = {};
+    column.coverage = {};
+    column.added = added;
+    column.modified = modified;
+    column.removed = removed;
+    column.change_time = time;
+    column.cycle_start_domain = cycle_start_domain;
 }
 
 template <cell_type Cell>
 void bind_frame_computed_storage(void *destination, const void *native, const NativeRowSlots &physical_rows,
                                 RowSet visible_rows, const util::index<> *added,
                                 const util::index<> *modified, const util::index<> *removed,
-                                EvaluationTime time) {
+                                EvaluationTime time, const void *cycle_start_domain) {
     *static_cast<ColumnStorage<Cell> *>(destination) = ColumnStorage<Cell>{
         *static_cast<const NativeColumnData<Cell> *>(native), physical_rows, visible_rows,
-        *added, *modified, *removed, time};
+        *added, *modified, *removed, time, cycle_start_domain};
 }
 
 inline FrameColumnReadBinding runtime_frame_column_binding(const ColumnView<> &column) {
@@ -1979,6 +2009,7 @@ class NativeFrame {
                   storage_->column_storage(Index))),
          ...);
         result.rows = RowSet::native(storage_->rows());
+        result.cycle_start_domain = result.rows.identity;
         result.added = std::addressof(storage_->added());
         result.removed = std::addressof(storage_->removed());
         result.changed = std::addressof(storage_->changed());
@@ -2049,6 +2080,7 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .bind_column_view = &bind_frame_column_view<Cell>,
         .bind_column_series_view = &bind_frame_column_series_view<Cell>,
         .bind_view_storage = &bind_frame_view_storage<Cell>,
+        .invalidate_view_storage = &invalidate_frame_view_storage<Cell>,
         .set_slots = [](void *field, const NativeRowSlots &rows, const util::index<> &added, row_id_t id,
                         const void *value, allocator memory) {
             return static_cast<NativeColumnData<Cell> *>(field)->set(
@@ -2500,7 +2532,8 @@ class RuntimeFrameViewOutputStorage {
         const auto *native_modified = field.column.modified(native_field(this, index));
         field.column.bind_computed_storage(
             column_storage(this, index), native_field(this, index), *computed_rows(this), source_rows,
-            std::addressof(added_rows), native_modified, std::addressof(removed_rows), time);
+            std::addressof(added_rows), native_modified, std::addressof(removed_rows), time,
+            cycle_start_domain);
         if (changed)
             child_state(this, index).publish(time);
     }
@@ -2824,7 +2857,8 @@ class RuntimeFrameViewOutputStorage {
                 const auto &field = layout->fields[index];
                 field.column.bind_computed_storage(
                     column_storage(this, index), native_field(this, index), *computed_rows(this), output_rows,
-                    std::addressof(added_rows), native_modified, std::addressof(removed_rows), time);
+                    std::addressof(added_rows), native_modified, std::addressof(removed_rows), time,
+                    cycle_start_domain);
                 continue;
             }
             const auto mapping_index = static_cast<util::contiguous_bunch<AssignedFieldMapping>::size_type>(index);
@@ -2867,7 +2901,7 @@ class RuntimeFrameViewOutputStorage {
             }
             layout->fields[index].column.bind_view_storage(
                 column_storage(this, index), binding, output_rows, std::addressof(added_rows),
-                std::addressof(output_modified), std::addressof(removed_rows), time);
+                std::addressof(output_modified), std::addressof(removed_rows), time, cycle_start_domain);
         }
 
         this->filtering = filtering;
@@ -2913,6 +2947,9 @@ class RuntimeFrameViewOutputStorage {
             auto &field = field_state(this, index);
             field.modified_rows.clear();
             field.mapping = {};
+            layout->fields[index].column.invalidate_view_storage(
+                column_storage(this, index), std::addressof(added_rows), std::addressof(field.modified_rows),
+                std::addressof(removed_rows), time, cycle_start_domain);
             if (is_computed(index))
                 layout->fields[index].column.reset(native_field(this, index));
         }
@@ -3481,6 +3518,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
         result.rows = storage.valid
                           ? (storage.filtering ? storage.filter_rows() : storage.source_rows)
                           : RowSet{};
+        result.cycle_start_domain = storage.cycle_start_domain;
         result.valid = storage.valid;
         result.modified = storage.delta_time != MIN_DT && !storage.changed_columns.empty();
         result.size = result.rows.count();

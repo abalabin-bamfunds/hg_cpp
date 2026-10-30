@@ -56,29 +56,40 @@ Replay registration belongs only to native destination runtimes; common writing
 and discard belong to the semantic type. Discard, comparison, and formatting
 skip changed-column ordinals without allocating a vector.
 
-The public reference-switch probe initializes two valid, unchanged TSF targets
-and selects A/B/A. Values change correctly (10/20/10) and the root publishes a
-tick, but switches report empty row changes and false child modification flags.
-The existing sampling implementation handles only built-in families. A BG
-provider sampling hook requires discussion before implementation.
-Queued literals also require a BG extension hook: the current queue codec
-explicitly rejects provider-defined time series. Retained replay does not add
-queue-literal serialization.
+Frame TSC and TSF runtime types now provide BG's reference-sampling factory.
+`reference_sample.cpp` builds sampled child runtimes from the requested frame
+type and the current target's actual schema. `ColumnStorage` and
+`FrameReadStorage` retain the cycle-start row domain so a later switch can
+interpret normalized additions and removals against the correct domain. Native
+TSC deltas must come from `ColumnSeriesView::added()` and
+`ColumnSeriesView::removed()`; `ColumnStorage` leaves those pointers unset for
+native row storage.
 
-The reference-switch diagnostic source and executable remain in the lane's
-ignored `build/frame-release/` directory. Run it from the lane root:
+The original reference-switch probe now reports row changes and child
+modification on switches. `reference_sample_test.cpp` covers a nested TSF
+switch through a base-schema input with an actual derived schema, shared child
+row masks, a TSC domain switch with colliding IDs and an invalidated previous
+target, `copy_tick()` into output-owned row IDs, a same-domain TSC switch whose
+common rows are modified, valid zero-row TSC and TSF switches, and zero-column
+TSF samples. It also verifies cycle-start removals on invalidated TSF views for
+the parent frame and child column, after both an A-to-B rebind and a source row
+removal earlier in the cycle.
 
-```sh
-conda run --no-capture-output -n hg-build ./build/frame-release/reference_switch_probe
-```
+Verification after rebasing onto main `2de7d53f`:
 
-The reference probe reports values 10/20/10, root modification on each switch,
-and missing row changes and child modification flags after the first target.
+- The matching BG Release library build and install passed with ICU 78 from the
+  `hg-build` Conda environment.
+- The Arrow-on frame Release build passed.
+- All 13 frame CTest executables passed.
+- `git diff --check` passed.
+
+Queued literals still use a codec that rejects provider-defined time series.
+Retained replay does not add queue-literal serialization.
 
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is based on main `467c66b3` and includes
+`agent/frame-with-columns`. The lane is based on main `2de7d53f` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
