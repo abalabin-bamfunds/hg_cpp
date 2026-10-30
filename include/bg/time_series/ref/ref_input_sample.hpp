@@ -25,7 +25,8 @@ struct SampledReferenceChange
     using Base::Base;
 
     static SampledReferenceChange create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                         EvaluationTime evaluation_time, allocator &memory);
+                                         const TimeSeriesType &type, EvaluationTime evaluation_time,
+                                         allocator &memory);
     void retain() const noexcept;
     void release() const noexcept;
     TimeSeriesRuntimeType::ConstItem input() const noexcept;

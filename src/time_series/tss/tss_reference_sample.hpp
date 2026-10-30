@@ -16,12 +16,12 @@ struct SampledSet {
         item_id_t new_id;
     };
 
-    SampledSet(const TimeSeriesSetRuntimeType &shape, ResolvedTimeSeries previous, ResolvedTimeSeries current,
+    SampledSet(const TimeSeriesSetType &type, ResolvedTimeSeries previous, ResolvedTimeSeries current,
                EvaluationTime evaluation_time, allocator &memory);
     ~SampledSet();
 
-    static SampledSet *create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                              EvaluationTime evaluation_time, allocator &memory);
+    static SampledSet *create(const TimeSeriesSetType &type, ResolvedTimeSeries previous,
+                              ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
     void retain() noexcept { ++reference_count; }
     void release() noexcept;
     TimeSeriesRuntimeType::ConstItem input() const noexcept;

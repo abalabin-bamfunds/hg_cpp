@@ -118,7 +118,8 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
 
     Scalar<K> item_at(item_id_t position) const {
         if (sampled()) {
-            return Scalar<K>::from(key_runtime_type(), set_runtime_type().set_key(data(), position));
+            const auto key = set_runtime_type().set_key_data(data(), position);
+            return Scalar<K>::from(key.runtime_type(), key.data());
         }
         return Scalar<K>::from(key_runtime_type(), storage().key(position, key_layout()));
     }
@@ -240,7 +241,8 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     void apply_sampled(details::TimeSeriesSetRuntimeType::Range range, Function &function) const {
         auto id = set_runtime_type().set_next_item_id(last_updated_state(), data(), range, 0);
         while (id != util::occupancy_index::npos) {
-            std::invoke(function, Scalar<K>::from(key_runtime_type(), set_runtime_type().set_key(data(), id)));
+            const auto key = set_runtime_type().set_key_data(data(), id);
+            std::invoke(function, Scalar<K>::from(key.runtime_type(), key.data()));
             id = set_runtime_type().set_next_item_id(last_updated_state(), data(), range, id + 1);
         }
     }

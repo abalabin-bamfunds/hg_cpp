@@ -3,6 +3,7 @@
 #include <bg/util/index.hpp>
 #include <bg/util/static_storage.hpp>
 #include <bg/util/scope_exit.hpp>
+#include <bg/scalar/runtime_type.hpp>
 
 #include <cassert>
 #include <exception>
@@ -18,8 +19,8 @@ constexpr auto previous_item_flag = item_id_t{1} << 31;
 
 class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
   public:
-    explicit SampledSetRuntimeType(const TimeSeriesSetRuntimeType &shape);
-    static const SampledSetRuntimeType &for_shape(const TimeSeriesSetRuntimeType &shape);
+    explicit SampledSetRuntimeType(const TimeSeriesSetType &type);
+    static const SampledSetRuntimeType &for_type(const TimeSeriesSetType &type);
 
     std::size_t set_size(const void *value) const override;
     bool set_contains(const void *value, const ScalarData &key) const override;
@@ -31,6 +32,7 @@ class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
     RetainedSetKey retain_key(void *value, const ScalarData &key, allocator &memory) const override;
     void release_key(void *, item_id_t, allocator &) const noexcept override;
     const void *set_key(const void *value, item_id_t id) const noexcept override;
+    ScalarData set_key_data(const void *value, item_id_t id) const noexcept override;
     item_id_t set_next_item_id(const TimeSeriesState &last_updated, const void *value, Range range,
                                item_id_t start) const override;
     bool has_item_id_remapping(const void *value) const override;
@@ -46,9 +48,9 @@ class SampledSetRuntimeType final : public TimeSeriesSetRuntimeType {
 
 } // namespace
 
-SampledSet::SampledSet(const TimeSeriesSetRuntimeType &shape, ResolvedTimeSeries previous, ResolvedTimeSeries current,
+SampledSet::SampledSet(const TimeSeriesSetType &type, ResolvedTimeSeries previous, ResolvedTimeSeries current,
                        EvaluationTime evaluation_time, allocator &memory)
-    : runtime_type{&SampledSetRuntimeType::for_shape(shape)},
+    : runtime_type{&SampledSetRuntimeType::for_type(type)},
       previous{previous}, current{current}, item_id_remappings{&memory.memory_resource()}, memory{memory} {
     sampled_last_updated = TimeSeriesState::from_validity_transition(
         evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid());
@@ -95,7 +97,7 @@ void SampledSet::populate_changes() const {
                                    : nullptr;
 
     const auto record_previous_item = [&](item_id_t id) {
-        const auto key = ScalarData{previous_type->key_runtime_type(), previous_type->set_key(previous.storage, id)};
+        const auto key = previous_type->set_key_data(previous.storage, id);
         if (previous_changed_this_cycle &&
             previous_type->set_was_added(previous.last_updated, previous.storage, key)) {
             return;
@@ -136,7 +138,7 @@ void SampledSet::populate_changes() const {
              id != util::occupancy_index::npos;
              id = current_type->set_next_item_id(current.last_updated, current.storage,
                                                  TimeSeriesSetRuntimeType::Range::current, id + 1)) {
-            const auto key = ScalarData{current_type->key_runtime_type(), current_type->set_key(current.storage, id)};
+            const auto key = current_type->set_key_data(current.storage, id);
             if (!previous_contains(key)) {
                 added.set(id, memory);
             }
@@ -149,30 +151,36 @@ void SampledSet::populate_changes() const {
 
 namespace {
 
-SampledSetRuntimeType::SampledSetRuntimeType(const TimeSeriesSetRuntimeType &shape)
-    : TimeSeriesSetRuntimeType{static_cast<const TimeSeriesSetType &>(shape.type()), shape.key_runtime_type(),
+SampledSetRuntimeType::SampledSetRuntimeType(const TimeSeriesSetType &type)
+    : TimeSeriesSetRuntimeType{type, resolve_scalar_runtime_type(type.item_type(), {}),
                                sizeof(SampledSet), alignof(SampledSet), false, true} {}
 
-const SampledSetRuntimeType &SampledSetRuntimeType::for_shape(const TimeSeriesSetRuntimeType &shape) {
+const SampledSetRuntimeType &SampledSetRuntimeType::for_type(const TimeSeriesSetType &type) {
     struct Entry {
-        const TimeSeriesSetRuntimeType *shape;
+        const TimeSeriesSetType *type;
         std::unique_ptr<SampledSetRuntimeType> runtime_type;
     };
 
     static auto mutex = util::static_storage<std::mutex>{};
     static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
-    const auto existing = std::ranges::find(cache, &shape, &Entry::shape);
+    {
+        const auto lock = std::lock_guard{mutex.get()};
+        const auto existing = std::ranges::find(cache, &type, &Entry::type);
+        if (existing != cache.end()) {
+            return *existing->runtime_type;
+        }
+    }
+
+    auto runtime_type = std::make_unique<SampledSetRuntimeType>(type);
+    const auto lock = std::lock_guard{mutex.get()};
+    const auto existing = std::ranges::find(cache, &type, &Entry::type);
     if (existing != cache.end()) {
         return *existing->runtime_type;
     }
-
-    auto runtime_type = std::make_unique<SampledSetRuntimeType>(shape);
-    const auto &result = *runtime_type;
-    cache.push_back({&shape, std::move(runtime_type)});
-    return result;
+    cache.push_back({&type, std::move(runtime_type)});
+    return *cache.back().runtime_type;
 }
 
 bool SampledSetRuntimeType::changed(const TimeSeriesState &last_updated, const SampledSet &sample, Range range,
@@ -253,6 +261,15 @@ const void *SampledSetRuntimeType::set_key(const void *value, item_id_t id) cons
         .set_key(time_series.storage, position);
 }
 
+ScalarData SampledSetRuntimeType::set_key_data(const void *value, item_id_t id) const noexcept {
+    const auto &sampled = *static_cast<const SampledSet *>(value);
+    const auto from_previous = (id & previous_item_flag) != 0;
+    const auto &time_series = from_previous ? sampled.previous : sampled.current;
+    const auto position = id & ~previous_item_flag;
+    return static_cast<const TimeSeriesSetRuntimeType &>(*time_series.runtime_type)
+        .set_key_data(time_series.storage, position);
+}
+
 item_id_t SampledSetRuntimeType::set_next_item_id(const TimeSeriesState &last_updated, const void *value,
                                                   Range range, item_id_t start) const {
     const auto &sampled = *static_cast<const SampledSet *>(value);
@@ -308,15 +325,13 @@ void SampledSetRuntimeType::destroy_value(void *value, allocator &) const noexce
 
 } // namespace
 
-SampledSet *SampledSet::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                               EvaluationTime evaluation_time, allocator &memory) {
+SampledSet *SampledSet::create(const TimeSeriesSetType &type, ResolvedTimeSeries previous,
+                               ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory) {
     if (previous.runtime_type == nullptr && current.runtime_type == nullptr) {
         return nullptr;
     }
 
-    const auto &shape = static_cast<const TimeSeriesSetRuntimeType &>(
-        *(current.runtime_type != nullptr ? current.runtime_type : previous.runtime_type));
-    return memory.new_object<SampledSet>(shape, previous, current, evaluation_time, memory);
+    return memory.new_object<SampledSet>(type, previous, current, evaluation_time, memory);
 }
 
 void SampledSet::release() noexcept {

@@ -137,7 +137,7 @@ template <> struct scalar_storage_traits<test_scalar_provider::value> {
     using value_type = test_scalar_provider::value_view;
 
     static constexpr bool supports_equality = true;
-    static constexpr bool supports_hash = false;
+    static constexpr bool supports_hash = true;
     static constexpr bool uses_variable_memory = false;
     static constexpr bool requires_finalization = false;
     static constexpr bool assign_uses_memory_resource = false;
@@ -186,6 +186,8 @@ template <> struct scalar_storage_traits<test_scalar_provider::value> {
     }
 
     static bool equals(value_type left, value_type right) noexcept { return left.get() == right.get(); }
+
+    static std::size_t hash(value_type) noexcept { return 0; }
 
     static void construct(stored_type *destination, test_scalar_provider::value source, allocator &) {
         std::construct_at(destination, source.number);

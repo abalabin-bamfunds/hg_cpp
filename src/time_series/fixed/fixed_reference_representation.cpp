@@ -424,7 +424,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
                                                      &notify_target_callback, &publish_item_changes_callback);
         }
         const auto current = new_reference ? ResolvedTimeSeries::resolve(new_reference) : ResolvedTimeSeries{};
-        replace_sample(target, previous, current, evaluation_time);
+        replace_sample(target, field.runtime_type->type(), previous, current, evaluation_time);
         refresh_snapshot(target);
         update_output_state(target, current.valid(), evaluation_time);
         modified_.set(id, provider_->allocation());
@@ -491,7 +491,8 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
         item.runtime_type = nullptr;
     }
 
-    void replace_sample(DereferencedItem &item, ResolvedTimeSeries previous, ResolvedTimeSeries current,
+    void replace_sample(DereferencedItem &item, const TimeSeriesType &type, ResolvedTimeSeries previous,
+                        ResolvedTimeSeries current,
                         EvaluationTime evaluation_time) {
         auto replacement = SampledReferenceChange{};
         if (item.sample) {
@@ -502,7 +503,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
             item.sample = {};
             return;
         }
-        replacement = SampledReferenceChange::create(previous, current, evaluation_time, provider_->allocation());
+        replacement = SampledReferenceChange::create(previous, current, type, evaluation_time, provider_->allocation());
         item.sample.release();
         item.sample = {};
         if (replacement) {
@@ -532,9 +533,9 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
         const auto previous = snapshot(target);
         const auto current = target.reference ? ResolvedTimeSeries::resolve(target.reference) : ResolvedTimeSeries{};
         if (change == OutputChange::invalidation) {
-            replace_sample(target, previous, {}, context.evaluation_time());
+            replace_sample(target, field.runtime_type->type(), previous, {}, context.evaluation_time());
         } else if (change == OutputChange::revalidation) {
-            replace_sample(target, {}, current, context.evaluation_time());
+            replace_sample(target, field.runtime_type->type(), {}, current, context.evaluation_time());
         }
         refresh_snapshot(target);
         update_output_state(target, current.valid(), context.evaluation_time());
@@ -589,7 +590,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
                 if (field.mode == FieldMode::dereferenced) {
                     auto &target = dereferenced_items_[field.state_index];
                     const auto previous = snapshot(target);
-                    replace_sample(target, previous, {}, context.evaluation_time());
+                    replace_sample(target, field.runtime_type->type(), previous, {}, context.evaluation_time());
                     if (target.output_last_updated.valid()) {
                         target.output_last_updated.invalidate(context.evaluation_time());
                     }
@@ -640,7 +641,7 @@ class FixedCollectionRepresentation final : public ReferenceRepresentation {
                 bind(target, id, field, base, context.evaluation_time());
                 const auto current = target.reference ? ResolvedTimeSeries::resolve(target.reference)
                                                       : ResolvedTimeSeries{};
-                replace_sample(target, previous, current, context.evaluation_time());
+                replace_sample(target, field.runtime_type->type(), previous, current, context.evaluation_time());
                 modified_.set(id, provider_->allocation());
                 changed = true;
             } else {

@@ -10,12 +10,13 @@
 namespace bg::details {
 
 struct SampledFixedCollection {
-    SampledFixedCollection(const TimeSeriesRuntimeType &shape, ResolvedTimeSeries previous,
+    SampledFixedCollection(const TimeSeriesType &type, ResolvedTimeSeries previous,
                            ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
     ~SampledFixedCollection();
 
-    static SampledFixedCollection *create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                          EvaluationTime evaluation_time, allocator &memory);
+    static SampledFixedCollection *create(const TimeSeriesType &type, ResolvedTimeSeries previous,
+                                          ResolvedTimeSeries current, EvaluationTime evaluation_time,
+                                          allocator &memory);
     void retain() noexcept { ++reference_count; }
     void release() noexcept;
     TimeSeriesRuntimeType::ConstItem input() const noexcept;
