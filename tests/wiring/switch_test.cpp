@@ -221,6 +221,107 @@ TEST_CASE("switch uses the weakest compatible case output guarantee",
     });
 }
 
+TEST_CASE("switch accepts dictionary branches with reference and value items",
+          "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
+          "[series:tsd][series:reference][binding:reference-to-value][definition:function]") {
+    const auto key = node([](Out<TS<i64>>) {});
+
+    const auto reference_source = node([](Out<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::final>>>>) {});
+
+    const auto value_source = node([](Out<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>>>) {});
+
+    const auto reference_branch = graph(
+        "name"_n = "reference_dictionary_switch_source",
+        [&]() -> wp<TSD<i64, REF<TS<i64, TimeSeriesGuarantee::final>>>> { return reference_source(); });
+
+    const auto value_branch = graph(
+        "name"_n = "value_dictionary_switch_source",
+        [&]() -> wp<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>>> { return value_source(); });
+
+    const auto value_consumer = graph(
+        "name"_n = "value_dictionary_switch_consumer",
+        [](wp<TSD<i64, TS<i64>>> input) { return input; });
+
+    const auto reference_consumer = graph(
+        "name"_n = "reference_dictionary_switch_consumer",
+        [](wp<REF<TSD<i64, REF<TS<i64>>>>> input) { return input; });
+
+    const auto check_output = [&](const auto &branch_cases) {
+        const auto output = switch_(key(), branch_cases);
+        CHECK(output.type().target_type().accepts(TSD<i64, REF<TS<i64, TimeSeriesGuarantee::final>>>::type()));
+        CHECK(output.type().target_type().accepts(TSD<i64, TS<i64, TimeSeriesGuarantee::const_>>::type()));
+        CHECK_NOTHROW(value_consumer(static_cast<WiringPoint>(output)));
+        CHECK_NOTHROW(reference_consumer(static_cast<WiringPoint>(output)));
+    };
+
+    testing::test_wiring([&] {
+        check_output(cases{case_(i64{1}, reference_branch), case_(DEFAULT, value_branch)});
+        check_output(cases{case_(DEFAULT, value_branch), case_(i64{1}, reference_branch)});
+    });
+
+    const auto incompatible_source = node([](Out<TSD<string, TS<i64>>>) {});
+
+    const auto incompatible_branch = graph(
+        "name"_n = "incompatible_key_dictionary_switch_source",
+        [&]() -> wp<TSD<string, TS<i64>>> { return incompatible_source(); });
+
+    testing::test_wiring([&] {
+        CHECK_THROWS_WITH(
+            (void)switch_(key(), cases{case_(i64{1}, value_branch), case_(i64{2}, incompatible_branch)}),
+            "switch case output types are incompatible");
+    });
+}
+
+TEST_CASE("switch list outputs accept reference and value item branches",
+          "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
+          "[series:fixed-tsl][series:reference][binding:reference-to-value][definition:function]") {
+    const auto key = node([](Out<TS<i64>>) {});
+
+    const auto reference_source = node([](Out<TSL<REF<TS<i64, TimeSeriesGuarantee::final>>, 2>>) {});
+
+    const auto value_source = node([](Out<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2>>) {});
+
+    const auto reference_branch = graph(
+        "name"_n = "reference_list_switch_source",
+        [&]() -> wp<TSL<REF<TS<i64, TimeSeriesGuarantee::final>>, 2>> { return reference_source(); });
+
+    const auto value_branch = graph(
+        "name"_n = "value_list_switch_source",
+        [&]() -> wp<TSL<TS<i64, TimeSeriesGuarantee::const_>, 2>> { return value_source(); });
+
+    const auto value_consumer = graph(
+        "name"_n = "value_list_switch_consumer",
+        [](wp<TSL<TS<i64>, 2>> input) { return input; });
+
+    const auto reference_consumer = graph(
+        "name"_n = "reference_list_switch_consumer",
+        [](wp<REF<TSL<REF<TS<i64>>, 2>>> input) { return input; });
+
+    const auto check_output = [&](const auto &branch_cases) {
+        const auto output = switch_(key(), branch_cases);
+        CHECK(output.type().target_type().accepts(TSL<REF<TS<i64, TimeSeriesGuarantee::final>>, 2>::type()));
+        CHECK(output.type().target_type().accepts(TSL<TS<i64, TimeSeriesGuarantee::const_>, 2>::type()));
+        CHECK_NOTHROW(value_consumer(static_cast<WiringPoint>(output)));
+        CHECK_NOTHROW(reference_consumer(static_cast<WiringPoint>(output)));
+    };
+
+    testing::test_wiring([&] {
+        check_output(cases{case_(i64{1}, reference_branch), case_(DEFAULT, value_branch)});
+        check_output(cases{case_(DEFAULT, value_branch), case_(i64{1}, reference_branch)});
+    });
+
+    const auto longer_source = node([](Out<TSL<TS<i64>, 3>>) {});
+
+    const auto longer_branch = graph("name"_n = "longer_list_switch_source",
+                                     [&]() -> wp<TSL<TS<i64>, 3>> { return longer_source(); });
+
+    testing::test_wiring([&] {
+        CHECK_THROWS_WITH(
+            (void)switch_(key(), cases{case_(i64{1}, value_branch), case_(i64{2}, longer_branch)}),
+            "switch case output types are incompatible");
+    });
+}
+
 TEST_CASE("switch resolves bundles whose matching fields have different guarantees",
           "[feature:switch][feature:wiring][feature:operator][feature:type-system]"
           "[series:tsb][schema:named][guarantee:ordinary][guarantee:final][definition:function]") {

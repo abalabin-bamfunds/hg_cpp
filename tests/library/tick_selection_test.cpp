@@ -231,3 +231,75 @@ TEST_CASE("take state is independent for switch branches and map keys",
                               {{{1, 10}}, {{1, literal::REMOVE}}, {{1, 20}}, {{1, 21}}, {{1, 22}}})
               .equals({10, 0, 20, 21, literal::SKIP}));
 }
+
+template <template <typename, auto...> typename Field> struct cascaded_take_branch {
+    Field<TSD<string, TS<double>>> direct;
+    Field<TSD<string, TS<double>>> gated;
+};
+
+template <template <typename, auto...> typename Field> struct cascaded_take_frame {
+    Field<TSB<cascaded_take_branch>> item;
+    Field<TSD<string, TSB<cascaded_take_branch>>> items;
+};
+
+TEST_CASE("take keeps the initial map of branches across nested switch replacement",
+          "[feature:operator][feature:map][feature:switch][feature:nested-graph]"
+          "[feature:reference][feature:lifecycle][series:tsd][series:tsb][series:reference]"
+          "[binding:reference-to-value][schema:named][shape:deeply-nested]"
+          "[transition:update][transition:removal][transition:addition]") {
+    const auto increment = graph("name"_n = "increment_branch_values",
+                                 [](wp<TS<double>> value) { return value + 1.0; });
+
+    const auto empty_values = node([](Out<TSD<string, TS<double>>>) {});
+
+    const auto build_branch = graph(
+        "name"_n = "build_take_branch",
+        [=](wp<TSD<string, TS<double>>> values, wp<TS<bool>> gate) {
+            const auto direct = map(increment, values);
+            const auto gated = switch_(gate,
+                                      cases{case_(true, [](auto input) { return input; }),
+                                            case_(false, [=](auto) { return empty_values(); })},
+                                      direct);
+            return bundle<cascaded_take_branch>("direct"_n = direct, "gated"_n = gated);
+        });
+
+    const auto build_frame = graph(
+        "name"_n = "build_take_frame",
+        [=](wp<TSD<string, TSD<string, TS<double>>>> values, wp<TS<bool>> gate) {
+            const auto items = map(build_branch, values, pass_through(gate));
+            return bundle<cascaded_take_frame>("item"_n = items["branch_0"], "items"_n = items);
+        });
+
+    const auto tested = [=](wp<TSD<string, TSD<string, TS<double>>>> branches,
+                            wp<TS<bool>> outer_gate, wp<TS<bool>> inner_gate) {
+        const auto frame = switch_(outer_gate,
+                                   cases{case_(false, build_frame), case_(true, build_frame)},
+                                   branches, inner_gate)
+                               .as<TSB<cascaded_take_frame>>();
+
+        // hgraph's frame.items is value-valued, so take the same representation before limiting ticks.
+        const auto items = frame->items.as<TSD<string, TSB<cascaded_take_branch>>>();
+        return operators::take(items, 1);
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{"branch_0", {{"k00", 1.0}, {"k01", 2.0}, {"k02", 3.0}, {"k03", 4.0}, {"k04", 5.0}}},
+          {"branch_1", {{"k00", 1.0}, {"k01", 2.0}, {"k02", 3.0}, {"k03", 4.0}, {"k04", 5.0}}},
+          {"branch_2", {{"k00", 1.0}, {"k01", 2.0}, {"k02", 3.0}, {"k03", 4.0}, {"k04", 5.0}}}},
+         literal::SKIP, literal::SKIP,
+         {{"branch_0", {{"k00", literal::REMOVE}, {"k01", literal::REMOVE}}},
+          {"branch_1", {{"k00", literal::REMOVE}, {"k01", literal::REMOVE}}}},
+         literal::SKIP,
+         {{"branch_0", {{"extra", 10.0}}},
+          {"branch_1", {{"extra", 10.0}}},
+          {"branch_2", {{"k00", literal::REMOVE}, {"extra", 10.0}}}}},
+        {false, literal::SKIP, true, literal::SKIP, literal::SKIP, literal::SKIP},
+        {false, literal::SKIP, literal::SKIP, literal::SKIP, true, literal::SKIP});
+
+    CHECK(actual.equals({
+        {{{"branch_0", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}},
+          {"branch_1", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}},
+          {"branch_2", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}}}},
+        literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}));
+}

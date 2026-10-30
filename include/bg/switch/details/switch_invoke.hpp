@@ -8,6 +8,7 @@
 
 #include <concepts>
 #include <functional>
+#include <memory>
 #include <span>
 #include <tuple>
 #include <type_traits>
@@ -19,7 +20,7 @@ namespace details {
 
 template <typename Key, typename Function> struct switch_case {
     Key key;
-    Function function;
+    std::shared_ptr<const Function> function;
 };
 
 template <typename... Case>
@@ -48,18 +49,18 @@ inline constexpr bool is_switch_key_tuple_v =
     is_switch_key_tuple<std::remove_cvref_t<T>>::value;
 
 template <typename Function, typename... Arguments> struct BoundSwitchGraphFunction {
-    Function function;
+    std::shared_ptr<const Function> function;
 
     decltype(auto) operator()(Arguments... arguments) const {
-        return std::invoke(function, std::move(arguments)...);
+        return std::invoke(*function, std::move(arguments)...);
     }
 };
 
 template <typename Function, typename... Arguments>
-auto bound_switch_graph(const Function &function) {
+auto bound_switch_graph(std::shared_ptr<const Function> function) {
     using Bound = BoundSwitchGraphFunction<Function, argument_value_t<Arguments>...>;
     auto signature = make_graph_signature<Bound>(util::symbol{"switch_function"});
-    return GraphTemplate{std::move(signature), Bound{function}};
+    return GraphTemplate{std::move(signature), Bound{std::move(function)}};
 }
 
 GraphArgument build_switch_graph_argument(
@@ -102,14 +103,16 @@ auto select_switch_overload(SelectOverload &&select_overload, WiringArgument key
 }
 
 template <typename Function, typename Arguments, std::size_t... Index>
-auto bound_switch_graph_for_arguments(const Function &function, std::index_sequence<Index...>) {
-    return bound_switch_graph<Function, std::tuple_element_t<Index, Arguments>...>(function);
+auto bound_switch_graph_for_arguments(std::shared_ptr<const Function> function,
+                                      std::index_sequence<Index...>) {
+    return bound_switch_graph<Function, std::tuple_element_t<Index, Arguments>...>(
+        std::move(function));
 }
 
 template <typename Function, typename Arguments>
-auto bound_switch_graph_for_arguments(const Function &function) {
+auto bound_switch_graph_for_arguments(std::shared_ptr<const Function> function) {
     return bound_switch_graph_for_arguments<Function, Arguments>(
-        function, std::make_index_sequence<std::tuple_size_v<Arguments>>{});
+        std::move(function), std::make_index_sequence<std::tuple_size_v<Arguments>>{});
 }
 
 template <typename SelectOverload, typename Key, typename Cases, typename... Arguments>
@@ -122,7 +125,6 @@ auto invoke_switch(SelectOverload &&select_overload, Key key, const Cases &case_
         std::forward<Arguments>(arguments)...};
     auto supplied = switch_supplied_arguments(supplied_tuple);
     auto prepared_cases = std::vector<PreparedSwitchCase>{};
-    auto owned_graphs = std::vector<std::shared_ptr<const WiringTemplate>>{};
 
     std::apply(
         [&](const auto &...item) {
@@ -130,24 +132,23 @@ auto invoke_switch(SelectOverload &&select_overload, Key key, const Cases &case_
                 return;
             } else {
                 const auto append = [&](const auto &entry) {
-                    using Function = std::remove_cvref_t<decltype(entry.function)>;
-                    const WiringTemplate *function{};
+                    using Function = std::remove_cvref_t<decltype(*entry.function)>;
+                    auto function_owner = std::shared_ptr<const WiringTemplate>{};
                     if constexpr (std::derived_from<Function, WiringTemplate>) {
-                        function = &entry.function;
+                        function_owner = entry.function;
                     } else {
                         auto graph = bound_switch_graph_for_arguments<Function,
                                                                       decltype(supplied_tuple)>(
                             entry.function);
-                        auto owned = std::make_shared<decltype(graph)>(std::move(graph));
-                        function = owned.get();
-                        owned_graphs.push_back(std::move(owned));
+                        function_owner = std::make_shared<decltype(graph)>(std::move(graph));
                     }
 
                     auto prepared = PreparedSwitchCase{
                         .keys = {},
                         .default_case = false,
-                        .function = function,
+                        .function = function_owner.get(),
                         .preserve_argument_names = std::derived_from<Function, WiringTemplate>,
+                        .function_owner = std::move(function_owner),
                     };
                     if constexpr (std::same_as<std::remove_cvref_t<decltype(entry.key)>,
                                                default_switch_case_t>) {
@@ -190,7 +191,7 @@ struct switch_operator_implementation {
             if (item.function == nullptr) {
                 throw WiringError{"a switch case requires a graph"};
             }
-            prepared_cases.push_back({item.keys, item.default_case, item.function, true});
+            prepared_cases.push_back({item.keys, item.default_case, item.function, true, {}});
         }
 
         auto prepared = build_switch_graph_argument(key_point, arguments, prepared_cases);
@@ -210,8 +211,10 @@ struct switch_operator_implementation {
 
 template <typename Key, typename Function>
 auto case_(Key &&key, Function &&function) {
-    return details::switch_case<std::decay_t<Key>, std::decay_t<Function>>{
-        std::forward<Key>(key), std::forward<Function>(function)};
+    using StoredFunction = std::decay_t<Function>;
+    return details::switch_case<std::decay_t<Key>, StoredFunction>{
+        std::forward<Key>(key),
+        std::make_shared<const StoredFunction>(std::forward<Function>(function))};
 }
 
 template <typename... Case>

@@ -313,7 +313,7 @@ class SwitchGraphArgumentBuilder {
         const TimeSeriesType *target{};
         if (result) {
             structure_result = wiring->complete_pending_wiring(*result);
-            target = &structure_result->type().target_type();
+            target = &structure_result->type().target_type().reference_free_type();
         } else {
             (void)wiring->complete_pending_wiring();
         }
@@ -343,7 +343,8 @@ class SwitchGraphArgumentBuilder {
         node_.cases.push_back({
             .keys = std::move(stored_keys),
             .default_case = item.default_case,
-            .branch = {.wiring = std::move(wiring),
+            .branch = {.function_owner = item.function_owner,
+                       .wiring = std::move(wiring),
                        .inputs = std::move(boundary_inputs),
                        .inherited_parameter_start = inherited_parameter_start,
                        .output_node = output_node},
