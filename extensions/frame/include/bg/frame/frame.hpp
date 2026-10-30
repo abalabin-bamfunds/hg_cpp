@@ -2195,11 +2195,48 @@ class RuntimeFrameViewOutputStorage {
     util::index<> changed_rows;
     util::index<> predicate_rows;
     EvaluationTime delta_time{MIN_DT};
+    const void *cycle_start_domain{};
+    bool cycle_started{};
     bool filtering{};
     bool valid{};
     const details::NativeFrameLayout *source_layout{};
     const bg::Schema *assigned_source_schema{};
     const TimeSeriesBundleType *assigned_bundle_schema{};
+
+    void record_removed_row(row_id_t id, const void *domain, allocator memory) {
+        if (domain == cycle_start_domain) {
+            if (!added_rows.reset(id))
+                removed_rows.set(id, memory.memory_resource());
+        } else {
+            added_rows.reset(id);
+        }
+    }
+
+    void record_added_row(row_id_t id, const void *domain, allocator memory) {
+        if (domain == cycle_start_domain) {
+            if (!removed_rows.reset(id))
+                added_rows.set(id, memory.memory_resource());
+        } else {
+            added_rows.set(id, memory.memory_resource());
+        }
+    }
+
+    void begin_cycle(EvaluationTime time) {
+        if (cycle_started && delta_time == time)
+            return;
+        added_rows.clear();
+        removed_rows.clear();
+        changed_rows.clear();
+        changed_columns.clear();
+        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
+            field_state(this, index).modified_rows.clear();
+            if (is_computed(index))
+                layout->fields[index].column.reset(native_field(this, index));
+        }
+        delta_time = time;
+        cycle_start_domain = valid ? source_rows.identity : nullptr;
+        cycle_started = true;
+    }
 
     void initialize(const RuntimeFrameViewLayout &runtime_layout) noexcept {
         layout = std::addressof(runtime_layout);
@@ -2592,7 +2629,7 @@ class RuntimeFrameViewOutputStorage {
         };
         validate_key_mapping(input, source_indices);
         const auto previous = previous_rows.source();
-        const auto row_domain_changed = previous.identity != nullptr && previous.identity != input.rows.identity;
+        const auto row_domain_changed = valid && previous.identity != input.rows.identity;
         const auto row_set_rebound = !valid || previous.context != input.rows.context;
         const auto input_delta_current = input.modified && input.change_time == input.last_updated;
         for (std::size_t index = 0; index != layout->fields.size(); ++index) {
@@ -2644,76 +2681,65 @@ class RuntimeFrameViewOutputStorage {
         if (row_domain_changed)
             clear_computed_fields(memory);
 
-        const auto new_cycle = !valid || delta_time != time;
+        const auto new_cycle = !cycle_started || delta_time != time;
+        if (new_cycle)
+            begin_cycle(time);
         const auto rebuild_predicate = filtering &&
                                        (rebuild_requested_predicate || !valid || row_set_rebound ||
                                         row_domain_changed || (input.modified && !input_delta_current));
         auto selected_order_dirty = filtering &&
                                     (!valid || row_set_rebound || row_domain_changed ||
                                      (input.modified && !input_delta_current));
-        if (new_cycle) {
-            added_rows.clear();
-            removed_rows.clear();
-            changed_rows.clear();
-            changed_columns.clear();
-            for (std::size_t index = 0; index != layout->fields.size(); ++index) {
-                field_state(this, index).modified_rows.clear();
-                if (is_computed(index))
-                    layout->fields[index].column.reset(native_field(this, index));
-            }
-            delta_time = time;
-        }
         predicate_rows.clear();
 
         const auto clear_modified = [&](row_id_t id) {
             for (std::size_t index = 0; index != layout->fields.size(); ++index)
                 field_state(this, index).modified_rows.reset(id);
         };
-        const auto remove_filter_row = [&](row_id_t id, bool preserve_domain_removal) {
+        const auto remove_filter_row = [&](row_id_t id, const void *domain) {
             if (!selected_rows.exclude(id))
                 return;
             selected_order_dirty = true;
             remove_computed_row(id, memory);
-            if (preserve_domain_removal || !added_rows.reset(id))
-                removed_rows.set(id, memory.memory_resource());
+            record_removed_row(id, domain, memory);
             changed_rows.reset(id);
             clear_modified(id);
         };
-        const auto add_filter_row = [&](row_id_t id, bool preserve_domain_addition) {
+        const auto add_filter_row = [&](row_id_t id, const void *domain) {
             if (!selected_rows.include(id, memory))
                 return;
             selected_order_dirty = true;
             add_computed_row(id, memory);
-            if (preserve_domain_addition || !removed_rows.reset(id))
-                added_rows.set(id, memory.memory_resource());
+            record_added_row(id, domain, memory);
             changed_rows.set(id, memory.memory_resource());
         };
-        const auto remove_projection_row = [&](row_id_t id, bool preserve_domain_removal) {
+        const auto remove_projection_row = [&](row_id_t id, const void *domain) {
             remove_computed_row(id, memory);
-            if (preserve_domain_removal || !added_rows.reset(id))
-                removed_rows.set(id, memory.memory_resource());
+            record_removed_row(id, domain, memory);
             changed_rows.reset(id);
             clear_modified(id);
         };
-        const auto add_projection_row = [&](row_id_t id, bool preserve_domain_addition) {
+        const auto add_projection_row = [&](row_id_t id, const void *domain) {
             add_computed_row(id, memory);
-            if (preserve_domain_addition || !removed_rows.reset(id))
-                added_rows.set(id, memory.memory_resource());
+            record_added_row(id, domain, memory);
             changed_rows.set(id, memory.memory_resource());
         };
 
         if (row_domain_changed) {
             if (filtering) {
-                selected_rows.for_each_selected([&](row_id_t id) { remove_filter_row(id, true); });
+                selected_rows.for_each_selected(
+                    [&](row_id_t id) { remove_filter_row(id, previous.identity); });
                 selected_rows.clear();
             } else {
-                previous_rows.for_each_selected([&](row_id_t id) { remove_projection_row(id, true); });
+                previous_rows.for_each_selected(
+                    [&](row_id_t id) { remove_projection_row(id, previous.identity); });
             }
+            added_rows.clear();
             previous_rows.clear();
             input.rows.each([&](row_id_t id) {
                 previous_rows.include(id, memory);
                 if (!filtering)
-                    add_projection_row(id, true);
+                    add_projection_row(id, input.rows.identity);
             });
         } else if (row_set_rebound || (input.modified && !input_delta_current)) {
             previous_rows.for_each_selected([&](row_id_t id) {
@@ -2722,15 +2748,15 @@ class RuntimeFrameViewOutputStorage {
             });
             for (auto id : predicate_rows) {
                 if (filtering)
-                    remove_filter_row(id, false);
+                    remove_filter_row(id, input.rows.identity);
                 else
-                    remove_projection_row(id, false);
+                    remove_projection_row(id, input.rows.identity);
                 previous_rows.exclude(id);
             }
             predicate_rows.clear();
             input.rows.each([&](row_id_t id) {
                 if (!previous_rows.contains(id) && !filtering)
-                    add_projection_row(id, false);
+                    add_projection_row(id, input.rows.identity);
                 previous_rows.include(id, memory);
             });
         } else if (input_delta_current) {
@@ -2738,9 +2764,9 @@ class RuntimeFrameViewOutputStorage {
                 for (auto id : *input.removed)
                     if (!input.rows.has(id) && previous_rows.contains(id)) {
                         if (filtering)
-                            remove_filter_row(id, false);
+                            remove_filter_row(id, input.rows.identity);
                         else
-                            remove_projection_row(id, false);
+                            remove_projection_row(id, input.rows.identity);
                         previous_rows.exclude(id);
                     }
             if (input.added != nullptr)
@@ -2749,7 +2775,7 @@ class RuntimeFrameViewOutputStorage {
                         if (filtering && !rebuild_predicate)
                             predicate_rows.set(id, memory.memory_resource());
                         else if (!filtering)
-                            add_projection_row(id, false);
+                            add_projection_row(id, input.rows.identity);
                         previous_rows.include(id, memory);
                     }
         }
@@ -2764,9 +2790,9 @@ class RuntimeFrameViewOutputStorage {
             const auto consume_batch = [&](std::span<const row_id_t> ids, const ColumnBatch<bool> &values) {
                 for (auto position = std::size_t{}; position != ids.size(); ++position) {
                     if (values.is_valid(position) && values.value_at(position))
-                        add_filter_row(ids[position], row_domain_changed);
+                        add_filter_row(ids[position], input.rows.identity);
                     else
-                        remove_filter_row(ids[position], false);
+                        remove_filter_row(ids[position], input.rows.identity);
                 }
             };
             if (rebuild_predicate && input.rows.count() != 0)
@@ -2849,7 +2875,29 @@ class RuntimeFrameViewOutputStorage {
         return any_change;
     }
 
-    void invalidate(allocator memory) noexcept {
+    void invalidate(EvaluationTime time, allocator memory) {
+        if (valid) {
+            const auto &output_rows = filtering ? selected_rows : previous_rows;
+            const auto new_cycle = !cycle_started || time != delta_time;
+            if (new_cycle || source_rows.identity == cycle_start_domain) {
+                auto extent = removed_rows.size();
+                output_rows.for_each_selected([&](row_id_t id) {
+                    extent = std::max(extent, static_cast<util::index<>::size_type>(id + 1));
+                });
+                removed_rows.grow(extent, memory.memory_resource());
+            }
+        }
+        begin_cycle(time);
+        if (valid) {
+            if (source_rows.identity == cycle_start_domain) {
+                const auto &output_rows = filtering ? selected_rows : previous_rows;
+                output_rows.for_each_selected([&](row_id_t id) {
+                    if (!added_rows.contains(id))
+                        removed_rows.set(id, memory.memory_resource());
+                });
+            }
+            added_rows.clear();
+        }
         clear_assigned_fields(memory);
         clear_computed_fields(memory);
         previous_rows.clear();
@@ -2858,8 +2906,6 @@ class RuntimeFrameViewOutputStorage {
         selected_rows.bind({});
         clear_selected_order();
         source_rows = {};
-        added_rows.clear();
-        removed_rows.clear();
         changed_rows.clear();
         predicate_rows.clear();
         changed_columns.clear();
@@ -2894,22 +2940,10 @@ class RuntimeFrameViewOutputStorage {
         if (layout->has_computed_fields)
             computed_rows(this)->release(memory);
         source_rows = {};
+        delta_time = MIN_DT;
+        cycle_start_domain = nullptr;
+        cycle_started = false;
         valid = false;
-    }
-
-    void begin_cycle(EvaluationTime time) {
-        if (delta_time == time)
-            return;
-        added_rows.clear();
-        removed_rows.clear();
-        changed_rows.clear();
-        changed_columns.clear();
-        for (std::size_t index = 0; index != layout->fields.size(); ++index) {
-            field_state(this, index).modified_rows.clear();
-            if (is_computed(index))
-                layout->fields[index].column.reset(native_field(this, index));
-        }
-        delta_time = time;
     }
 
     void clear_computed_fields(allocator memory) noexcept {
@@ -3491,7 +3525,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
     }
     void invalidate_output(const OutputState &output) const override {
         auto &storage = *static_cast<Storage *>(output.mutable_data());
-        storage.invalidate(output.allocator());
+        storage.invalidate(output.context().evaluation_time(), output.allocator());
         this->invalidate_output_items(output);
         this->invalidate_output_value(output);
     }

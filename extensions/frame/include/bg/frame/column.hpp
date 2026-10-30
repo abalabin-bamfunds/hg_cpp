@@ -1868,6 +1868,8 @@ struct ColumnRowMembership {
     util::index<> removed_rows;
     Mapping mapping{};
     EvaluationTime delta_time{MIN_DT};
+    const void *cycle_start_domain{};
+    bool cycle_started{};
     bool valid{};
 
     template <typename T, typename OnAdd, typename OnRemove>
@@ -1924,50 +1926,86 @@ struct ColumnRowMembership {
                       const util::index<> *source_added, const util::index<> *source_removed, EvaluationTime time,
                       allocator memory, OnAdd &&on_add, OnRemove &&on_remove) {
         const auto previous_row_set = previous_rows.source();
-        const auto row_domain_changed = previous_row_set.identity != nullptr &&
-                                        previous_row_set.identity != visible_rows.identity;
+        const auto previous_domain = valid ? previous_row_set.identity : nullptr;
+        const auto row_domain_changed = valid && previous_domain != visible_rows.identity;
         const auto row_set_rebound = !valid || previous_row_set.context != visible_rows.context;
-        const auto new_cycle = !valid || time != delta_time;
+        const auto new_cycle = !cycle_started || time != delta_time;
         const auto was_valid = valid;
-        if (new_cycle) {
-            added_rows.clear();
-            removed_rows.clear();
-            delta_time = time;
-        }
+        if (new_cycle)
+            begin_cycle(time);
+
+        const auto reserve_rows = [&](util::index<> &index, const auto &rows) {
+            auto extent = index.size();
+            rows.each([&](row_id_t id) { extent = std::max(extent, static_cast<util::index<>::size_type>(id + 1)); });
+            index.grow(extent, memory.memory_resource());
+        };
+        const auto reserve_selected = [&](util::index<> &index, const SelectedRows &rows) {
+            auto extent = index.size();
+            rows.for_each_selected([&](row_id_t id) {
+                extent = std::max(extent, static_cast<util::index<>::size_type>(id + 1));
+            });
+            index.grow(extent, memory.memory_resource());
+        };
 
         auto transitioned = false;
+        const auto remove_delta = [&](row_id_t id) {
+            if (visible_rows.identity != nullptr && visible_rows.identity == cycle_start_domain) {
+                if (!added_rows.reset(id))
+                    removed_rows.set(id, memory.memory_resource());
+            } else {
+                added_rows.reset(id);
+            }
+        };
+        const auto add_delta = [&](row_id_t id) {
+            if (visible_rows.identity != nullptr && visible_rows.identity == cycle_start_domain) {
+                if (!removed_rows.reset(id))
+                    added_rows.set(id, memory.memory_resource());
+            } else {
+                added_rows.set(id, memory.memory_resource());
+            }
+        };
         const auto remove_row = [&](row_id_t id) {
             std::invoke(on_remove, id);
-            if (!added_rows.reset(id))
-                removed_rows.set(id, memory.memory_resource());
+            remove_delta(id);
             previous_rows.exclude(id);
             transitioned = true;
         };
         const auto add_row = [&](row_id_t id) {
             std::invoke(on_add, id);
-            if (!removed_rows.reset(id))
-                added_rows.set(id, memory.memory_resource());
+            add_delta(id);
             previous_rows.include(id, memory);
             transitioned = true;
         };
 
         if (row_domain_changed) {
+            if (previous_domain == cycle_start_domain)
+                reserve_selected(removed_rows, previous_rows);
             previous_rows.for_each_selected([&](row_id_t id) {
+                if (previous_domain == cycle_start_domain) {
+                    if (!added_rows.reset(id))
+                        removed_rows.set(id, memory.memory_resource());
+                } else {
+                    added_rows.reset(id);
+                }
                 std::invoke(on_remove, id);
-                removed_rows.set(id, memory.memory_resource());
                 transitioned = true;
             });
+            added_rows.clear();
             previous_rows.clear();
+            reserve_rows(added_rows, visible_rows);
             visible_rows.each([&](row_id_t id) {
                 std::invoke(on_add, id);
-                added_rows.set(id, memory.memory_resource());
+                add_delta(id);
+                previous_rows.include(id, memory);
                 transitioned = true;
             });
         } else if (row_set_rebound) {
-            previous_rows.for_each_selected([&](row_id_t id) {
-                if (!visible_rows.has(id))
-                    remove_row(id);
-            });
+            if (was_valid) {
+                previous_rows.for_each_selected([&](row_id_t id) {
+                    if (!visible_rows.has(id))
+                        remove_row(id);
+                });
+            }
             visible_rows.each([&](row_id_t id) {
                 if (!previous_rows.contains(id))
                     add_row(id);
@@ -1993,8 +2031,6 @@ struct ColumnRowMembership {
         }
 
         previous_rows.bind(visible_rows);
-        if (row_domain_changed || row_set_rebound)
-            visible_rows.each([&](row_id_t id) { previous_rows.include(id, memory); });
         valid = true;
         return {row_domain_changed, row_set_rebound, input_changes_current, false, new_cycle,
                 source_modified && !row_domain_changed && !row_set_rebound && !input_changes_current,
@@ -2002,18 +2038,41 @@ struct ColumnRowMembership {
     }
 
     void begin_cycle(EvaluationTime time) noexcept {
-        if (!valid || time == delta_time)
+        if (cycle_started && time == delta_time)
             return;
         added_rows.clear();
         removed_rows.clear();
         delta_time = time;
+        cycle_started = true;
+        cycle_start_domain = valid ? previous_rows.source().identity : nullptr;
+        if (!valid) {
+            previous_rows.clear();
+            previous_rows.bind({});
+        }
     }
 
-    void invalidate() noexcept {
+    void invalidate(EvaluationTime time, allocator memory) {
+        const auto current_domain = previous_rows.source().identity;
+        const auto new_cycle = !cycle_started || time != delta_time;
+        if (valid && (new_cycle || current_domain == cycle_start_domain)) {
+            auto extent = removed_rows.size();
+            previous_rows.for_each_selected([&](row_id_t id) {
+                extent = std::max(extent, static_cast<util::index<>::size_type>(id + 1));
+            });
+            removed_rows.grow(extent, memory.memory_resource());
+        }
+        begin_cycle(time);
+        if (valid) {
+            if (cycle_start_domain != nullptr && current_domain == cycle_start_domain) {
+                previous_rows.for_each_selected([&](row_id_t id) {
+                    if (!added_rows.contains(id))
+                        removed_rows.set(id, memory.memory_resource());
+                });
+            }
+            added_rows.clear();
+        }
         previous_rows.clear();
         previous_rows.bind({});
-        added_rows.clear();
-        removed_rows.clear();
         mapping = {};
         valid = false;
     }
@@ -2023,6 +2082,8 @@ struct ColumnRowMembership {
         added_rows.release(memory.memory_resource());
         removed_rows.release(memory.memory_resource());
         mapping = {};
+        cycle_start_domain = nullptr;
+        cycle_started = false;
         valid = false;
     }
 };
@@ -2065,10 +2126,14 @@ template <typename T> struct ColumnViewOutputStorage {
         return binding.transitioned || !modified_rows.empty();
     }
 
-    void invalidate() noexcept {
-        membership.invalidate();
+    void invalidate(EvaluationTime time, allocator memory) {
+        membership.invalidate(time, memory);
         modified_rows.clear();
         scalar = {};
+        scalar.added = std::addressof(membership.added_rows);
+        scalar.modified = std::addressof(modified_rows);
+        scalar.removed = std::addressof(membership.removed_rows);
+        scalar.change_time = membership.delta_time;
     }
 
     void release(allocator memory) noexcept {
@@ -2171,12 +2236,16 @@ template <typename T> struct ColumnComputedOutputStorage {
             });
     }
 
-    void invalidate(allocator memory) noexcept {
+    void invalidate(EvaluationTime time, allocator memory) {
+        membership.invalidate(time, memory);
         cells.clear(physical_rows, memory);
         physical_rows.release(memory);
-        membership.invalidate();
         cells.reset_changes();
         scalar = {};
+        scalar.added = std::addressof(membership.added_rows);
+        scalar.modified = std::addressof(cells.modified());
+        scalar.removed = std::addressof(membership.removed_rows);
+        scalar.change_time = membership.delta_time;
     }
 
     void release(allocator memory) noexcept {

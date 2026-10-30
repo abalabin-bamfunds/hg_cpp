@@ -6439,6 +6439,88 @@ void test_view_updates_do_not_traverse_source_rows() {
     });
 }
 
+void test_projection_normalizes_row_domain_deltas() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto first = NativeFrame<Quotes>{};
+    auto second = NativeFrame<Quotes>{};
+    auto third = NativeFrame<Quotes>{};
+    auto release = util::scope_exit{[&]() noexcept {
+        first.release(memory);
+        second.release(memory);
+        third.release(memory);
+    }};
+    const auto time = MIN_DT + EvaluationTime::duration{1};
+    const auto add_row = [&](auto &frame, i64 size) {
+        return frame.add(Quotes<Cell>{.size = Cell<i64>{size}, .bid = Cell<double>{10.0},
+                                      .ask = Cell<double>{11.0}},
+                         time, memory);
+    };
+    const auto first_zero = add_row(first, 5);
+    const auto first_one = add_row(first, 6);
+    const auto second_zero = add_row(second, 7);
+    const auto third_zero = add_row(third, 8);
+    const auto third_one = add_row(third, 9);
+    require(first_zero == second_zero && second_zero == third_zero && first_one == third_one,
+            "test setup did not create colliding IDs across distinct row domains");
+
+    auto input = native_frame_input(first);
+    const auto bid_field = std::array{input.field_index(util::symbol{"bid"})};
+    with_runtime_view_storage<BidOnly>(memory, [&](auto &projection, const auto &) {
+        with_runtime_view_storage<Quotes>(memory, [&](auto &filter, const auto &) {
+            const auto all_fields = std::array<std::size_t, 3>{0, 1, 2};
+            const auto predicate_index = input.field_index(util::symbol{"size"});
+            const auto select_all = [](row_id_t) { return true; };
+            const auto bind_views = [&](const FrameReadStorage &source, EvaluationTime evaluation_time) {
+                static_cast<void>(projection.bind_projection(source, bid_field, evaluation_time, memory));
+                static_cast<void>(bind_filter(filter, source, all_fields, predicate_index, select_all,
+                                              evaluation_time, memory));
+            };
+            const auto has_origin_removals_and_target_additions = [&](const auto &view, row_id_t target_zero,
+                                                                     bool has_target_one) {
+                return view.removed_rows.contains(first_zero) && view.removed_rows.contains(first_one) &&
+                       view.added_rows.contains(target_zero) &&
+                       (!has_target_one || view.added_rows.contains(third_one));
+            };
+
+            bind_views(input, time);
+            const auto cycle_time = time + EvaluationTime::duration{1};
+            bind_views(input, cycle_time);
+            const auto second_input = native_frame_input(second);
+            bind_views(second_input, cycle_time);
+            require(has_origin_removals_and_target_additions(projection, second_zero, false) &&
+                        has_origin_removals_and_target_additions(filter, second_zero, false),
+                    "TSF projection or filter lost origin removals alongside colliding target additions");
+
+            const auto third_input = native_frame_input(third);
+            bind_views(third_input, cycle_time);
+            require(has_origin_removals_and_target_additions(projection, third_zero, true) &&
+                        has_origin_removals_and_target_additions(filter, third_zero, true),
+                    "TSF projection or filter did not replace additions after a second domain switch");
+
+            bind_views(input, cycle_time);
+            require(projection.added_rows.empty() && projection.removed_rows.empty() &&
+                        filter.added_rows.empty() && filter.removed_rows.empty(),
+                    "TSF projection or filter did not cancel deltas after returning to the origin domain");
+
+            const auto next_time = cycle_time + EvaluationTime::duration{1};
+            projection.invalidate(next_time, memory);
+            filter.invalidate(next_time, memory);
+            require(projection.added_rows.empty() && projection.removed_rows.contains(first_zero) &&
+                        projection.removed_rows.contains(first_one) && filter.added_rows.empty() &&
+                        filter.removed_rows.contains(first_zero) && filter.removed_rows.contains(first_one),
+                    "TSF projection or filter invalidation did not normalize current origin membership");
+            bind_views(input, next_time);
+            require(projection.added_rows.empty() && projection.removed_rows.empty() &&
+                        filter.added_rows.empty() && filter.removed_rows.empty(),
+                    "TSF projection or filter revalidation did not cancel invalidation deltas");
+        });
+    });
+}
+
 void test_filter_row_set_reads_cached_source_order() {
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -7362,8 +7444,8 @@ void test_incremental_numeric_filter() {
                 bid_for(observations[7], 0) == 12.5 && bid_for(observations[7], 1) == 20.5,
             "numeric filter lost row/value alignment or reused row identity incorrectly");
     require(!observations[8].valid && observations[8].became_invalid &&
-                observations[8].changed.empty() && observations[8].removed.empty(),
-            "numeric filter did not propagate source invalidation");
+                observations[8].changed.empty() && observations[8].removed == std::vector<row_id_t>{0, 1},
+            "numeric filter did not preserve selected row removals across source invalidation");
     require(observations[9].valid && observations[9].became_valid && observations[9].rows.empty(),
             "numeric filter did not rebuild after an empty source revalidation");
     require(snapshots.size() == commands.size() && snapshots[2] && snapshots[2]->view().value().size() == 2 &&
@@ -8198,6 +8280,7 @@ int main() {
         test_tsf_projection_rejects_empty_row_domain_mismatch();
         test_tsf_projection_rejects_native_columns_from_another_logical_domain();
         test_view_updates_do_not_traverse_source_rows();
+        test_projection_normalizes_row_domain_deltas();
         test_filter_row_set_reads_cached_source_order();
         test_filtered_row_set_reuses_order_prefix();
         test_nested_and_fragmented_row_set_span_proofs();

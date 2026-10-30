@@ -1117,6 +1117,63 @@ void test_tsc_view_revalidates_coverage_when_mapping_changes() {
     require(rejected, "TSC view accepted missing retained coverage after its source mapping changed");
 }
 
+void test_tsc_membership_normalizes_row_domain_deltas() {
+    using namespace bg;
+    using namespace bg::frame;
+
+    auto resource = std::pmr::monotonic_buffer_resource{};
+    const auto memory = allocator{resource};
+    auto first_rows = NativeRows{};
+    auto second_rows = NativeRows{};
+    auto third_rows = NativeRows{};
+    auto membership = ColumnRowMembership{};
+    auto release = util::scope_exit{[&]() noexcept {
+        membership.release(memory);
+        third_rows.release(memory);
+        second_rows.release(memory);
+        first_rows.release(memory);
+    }};
+
+    const auto first_time = MIN_DT + EvaluationTime::duration{1};
+    const auto first_zero = first_rows.add(first_time, memory);
+    const auto first_one = first_rows.add(first_time, memory);
+    const auto second_zero = second_rows.add(first_time, memory);
+    const auto third_zero = third_rows.add(first_time, memory);
+    const auto third_one = third_rows.add(first_time, memory);
+    require(first_zero == second_zero && second_zero == third_zero && first_one == third_one,
+            "test setup did not create colliding TSC IDs across row domains");
+
+    const auto transition = [&](const NativeRows &rows, EvaluationTime time) {
+        static_cast<void>(membership.bind_rows(RowSet::native(rows), false, false, nullptr, nullptr, time, memory,
+                                               [](row_id_t) {}, [](row_id_t) {}));
+    };
+    transition(first_rows, first_time);
+    const auto cycle_time = first_time + EvaluationTime::duration{1};
+    transition(first_rows, cycle_time);
+    transition(second_rows, cycle_time);
+    require(membership.removed_rows.contains(first_zero) && membership.removed_rows.contains(first_one) &&
+                membership.added_rows.contains(second_zero),
+            "TSC membership lost origin removals alongside colliding target additions");
+
+    transition(third_rows, cycle_time);
+    require(membership.removed_rows.contains(first_zero) && membership.removed_rows.contains(first_one) &&
+                membership.added_rows.contains(third_zero) && membership.added_rows.contains(third_one),
+            "TSC membership did not replace additions after a second domain switch");
+
+    transition(first_rows, cycle_time);
+    require(membership.added_rows.empty() && membership.removed_rows.empty(),
+            "TSC membership did not cancel deltas after returning to the origin domain");
+
+    const auto next_time = cycle_time + EvaluationTime::duration{1};
+    membership.invalidate(next_time, memory);
+    require(membership.added_rows.empty() && membership.removed_rows.contains(first_zero) &&
+                membership.removed_rows.contains(first_one),
+            "TSC invalidation did not normalize membership in a later cycle");
+    transition(first_rows, next_time);
+    require(membership.added_rows.empty() && membership.removed_rows.empty(),
+            "TSC revalidation did not cancel invalidation deltas against the origin domain");
+}
+
 void test_tsc_view_clears_modified_rows_removed_during_the_same_cycle() {
     using namespace bg;
     using namespace bg::frame;
@@ -1651,6 +1708,7 @@ int main() {
         test_tsc_view_uses_logical_order_and_validates_added_local_rows();
         test_tsc_view_rejects_native_rows_from_another_logical_domain();
         test_tsc_view_revalidates_coverage_when_mapping_changes();
+        test_tsc_membership_normalizes_row_domain_deltas();
         test_tsc_view_clears_modified_rows_removed_during_the_same_cycle();
         test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets();
         test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries();

@@ -110,7 +110,7 @@ class ColumnBindingViewSeriesRuntimeType final : public bg::frame::ColumnSeriesR
     }
     void invalidate_output(const bg::OutputState &output) const override {
         auto *storage = static_cast<bg::frame::ColumnViewOutputStorage<T> *>(output.mutable_data());
-        storage->invalidate();
+        storage->invalidate(output.context().evaluation_time(), output.allocator());
         bg::TimeSeriesRuntimeType::invalidate_output_value(output);
     }
 };
@@ -134,7 +134,7 @@ class ComputedColumnSeriesRuntimeType final : public bg::frame::ColumnSeriesRunt
     }
     void invalidate_output(const bg::OutputState &output) const override {
         auto *storage = static_cast<bg::frame::ColumnComputedOutputStorage<T> *>(output.mutable_data());
-        storage->invalidate(output.allocator());
+        storage->invalidate(output.context().evaluation_time(), output.allocator());
         bg::TimeSeriesRuntimeType::invalidate_output_value(output);
     }
 };
