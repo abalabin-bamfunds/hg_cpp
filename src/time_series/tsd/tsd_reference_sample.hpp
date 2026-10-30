@@ -11,7 +11,9 @@
 
 namespace bg::details {
 
-struct SampledDictionary {
+struct SampledSet;
+
+struct SampledDictionary final : ReferenceSample {
     enum class Target { previous, current };
 
     struct Child {
@@ -26,21 +28,22 @@ struct SampledDictionary {
 
     SampledDictionary(const TimeSeriesDictionaryType &type, ResolvedTimeSeries previous,
                       ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
-    ~SampledDictionary();
+    ~SampledDictionary() override;
 
     static SampledDictionary *create(const TimeSeriesDictionaryType &type, ResolvedTimeSeries previous,
                                      ResolvedTimeSeries current, EvaluationTime evaluation_time,
                                      allocator &memory);
     ResolvedTimeSeries key_set(Target target) const;
-    void retain() noexcept { ++reference_count; }
-    void release() noexcept;
-    TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    void retain() noexcept override { ++reference_count; }
+    void release() noexcept override;
+    TimeSeriesRuntimeType::ConstItem input() const noexcept override;
+    ResolvedTimeSeries previous() const noexcept override { return previous_source; }
     void populate_changes() const;
 
     const TimeSeriesDictionaryRuntimeType *runtime_type;
     std::size_t reference_count{1};
-    ResolvedTimeSeries previous;
-    ResolvedTimeSeries current;
+    ResolvedTimeSeries previous_source;
+    ResolvedTimeSeries current_source;
     TimeSeriesState sampled_last_updated;
     mutable util::index<> added;
     mutable util::index<> removed;

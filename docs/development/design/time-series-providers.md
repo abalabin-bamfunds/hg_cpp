@@ -51,6 +51,16 @@ runtime describes storage, construction, destruction, invalidation, and any
 contained time series. Family-specific access and mutation operations belong
 to the provider's runtime interface.
 
+A runtime may override `reference_sample_factory()` when dereferencing its
+time series requires a sampled view. BG calls the factory on the runtime
+requested by the receiving input and passes the requested semantic type, the
+previous and current source descriptors, the sampling time, and an allocator.
+The returned sample owns one reference and supplies an input view whose runtime
+has the requested semantic type. The sample may use the actual runtime types in
+the source descriptors to interpret their storage. It may borrow that storage
+through the receiving cycle. Return `nullptr` when the transition has no sample.
+See [reference sampling](time-series-references.md#input-sampling).
+
 Generic output copying calls the output runtime type's `copy_tick()` or
 `copy()` with the input and output bindings. A provider implements these
 operations to support [tick and value copying](node-api.md#output-parameters).

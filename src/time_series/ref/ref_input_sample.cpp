@@ -1,14 +1,5 @@
 #include <bg/time_series/ref/ref_input_sample.hpp>
 
-#include "../fixed/fixed_reference_sample.hpp"
-#include "../tsd/tsd_reference_sample.hpp"
-#include "../tss/tss_reference_sample.hpp"
-
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <cassert>
@@ -25,61 +16,37 @@ ResolvedTimeSeries ReferenceInputSampleStorage::previous() const noexcept {
     return sample().previous();
 }
 
-SampledReferenceChange SampledReferenceChange::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                                       const TimeSeriesType &type,
+SampledReferenceChange SampledReferenceChange::create(const TimeSeriesRuntimeType &requested_runtime_type,
+                                                       ResolvedTimeSeries previous, ResolvedTimeSeries current,
                                                        EvaluationTime evaluation_time, allocator &memory) {
-    if (previous.runtime_type == nullptr && current.runtime_type == nullptr) {
+    const auto factory = requested_runtime_type.reference_sample_factory();
+    if (factory == nullptr) {
         return {};
     }
 
-    const auto *list_type = type_cast<TimeSeriesListType>(&type);
-    if ((list_type != nullptr && list_type->item_count() != std::dynamic_extent) ||
-        type_cast<TimeSeriesBundleType>(&type) != nullptr) {
-        return SampledReferenceChange{SampledFixedCollection::create(type, previous, current, evaluation_time, memory)};
-    }
-
-    if (!previous.valid() && !current.valid()) {
-        return {};
-    }
-
-    if (const auto *set_type = type_cast<TimeSeriesSetType>(&type); set_type != nullptr) {
-        return SampledReferenceChange{SampledSet::create(*set_type, previous, current, evaluation_time, memory)};
-    }
-
-    if (const auto *dictionary_type = type_cast<TimeSeriesDictionaryType>(&type); dictionary_type != nullptr) {
-        return SampledReferenceChange{
-            SampledDictionary::create(*dictionary_type, previous, current, evaluation_time, memory)};
-    }
-
-    return {};
+    return SampledReferenceChange{factory(requested_runtime_type.type(), previous, current, evaluation_time, memory)};
 }
 
 void SampledReferenceChange::retain() const noexcept {
-    if (!*this) {
-        return;
+    if (sample_ != nullptr) {
+        sample_->retain();
     }
-    visit([](SampledSet *sample) { sample->retain(); },
-          [](SampledDictionary *sample) { sample->retain(); },
-          [](SampledFixedCollection *sample) { sample->retain(); });
 }
 
 void SampledReferenceChange::release() const noexcept {
-    if (!*this) {
-        return;
+    if (sample_ != nullptr) {
+        sample_->release();
     }
-    visit([](SampledSet *sample) { sample->release(); },
-          [](SampledDictionary *sample) { sample->release(); },
-          [](SampledFixedCollection *sample) { sample->release(); });
 }
 
 TimeSeriesRuntimeType::ConstItem SampledReferenceChange::input() const noexcept {
-    assert(*this);
-    return visit([](const auto *sample) { return sample->input(); });
+    assert(sample_ != nullptr);
+    return sample_->input();
 }
 
 ResolvedTimeSeries SampledReferenceChange::previous() const noexcept {
-    assert(*this);
-    return visit([](const auto *sample) { return sample->previous; });
+    assert(sample_ != nullptr);
+    return sample_->previous();
 }
 
 ReferenceInputSampleLookup::~ReferenceInputSampleLookup() { clear(); }
@@ -101,7 +68,7 @@ SampledReferenceChange ReferenceInputSampleLookup::get(Reference previous_refere
         return existing->sample;
     }
 
-    auto sample = SampledReferenceChange::create(previous, current, runtime_type.type(), evaluation_time, *memory_);
+    auto sample = SampledReferenceChange::create(runtime_type, previous, current, evaluation_time, *memory_);
     if (!sample) {
         return {};
     }

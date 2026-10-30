@@ -50,6 +50,7 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
     const ScalarRuntimeType &key_runtime_type() const noexcept { return *key_; }
     const TimeSeriesRuntimeType &key_set_runtime_type() const noexcept { return *keys_; }
     const TimeSeriesRuntimeType &item_runtime_type() const noexcept { return *item_; }
+    ReferenceSampleFactory reference_sample_factory() const noexcept override;
 
     virtual RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const {
         auto &keys = static_cast<time_series_dict_storage *>(value)->key_storage().value;
