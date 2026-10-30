@@ -9,6 +9,7 @@
 #include <bg/scalar/list/scalar.hpp>
 #include <bg/scalar/tuple/scalar.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
+#include <bg/web/client_auth.hpp>
 #include <bg/web/http_server.hpp>
 #include <bg/web/websocket_client.hpp>
 
@@ -123,8 +124,8 @@ TEST_CASE("WebSocket client runtime rejects a base-only authentication value",
     run_graph(
         [&] {
             const auto source = websocket_runtime_source(WebSocketClientOptions{});
-            submit(operators::getattr(source, util::symbol{"runtime"}));
-            collect(operators::getattr(source, util::symbol{"connect_responses"}));
+            submit(source->runtime);
+            collect(source->connect_responses);
         },
         GraphRunOptions{.engine = EvaluationEngine::realtime,
                         .run_time = std::chrono::seconds{3},
@@ -160,7 +161,7 @@ TEST_CASE("WebSocket client runtime sends typed Basic authentication", "[feature
         }
     });
     const auto handler = graph([&](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
-        const auto connect = operators::getattr(request, util::symbol{"connect_request"});
+        const auto connect = request->connect_request;
         inspect_handshake(connect);
 
         const auto handshake = make_http_response(101, { {"Sec-WebSocket-Protocol", "chat"} }, {});
@@ -199,8 +200,8 @@ TEST_CASE("WebSocket client runtime sends typed Basic authentication", "[feature
             (void)route();
             const auto port = http_server();
             const auto source = websocket_runtime_source(WebSocketClientOptions{});
-            submit(port, operators::getattr(source, util::symbol{"runtime"}));
-            collect(operators::getattr(source, util::symbol{"connect_responses"}));
+            submit(port, source->runtime);
+            collect(source->connect_responses);
         },
         GraphRunOptions{.services = &catalogue,
                         .engine = EvaluationEngine::realtime,
@@ -210,6 +211,183 @@ TEST_CASE("WebSocket client runtime sends typed Basic authentication", "[feature
     CHECK(submitted);
     CHECK(response_status == 101);
     CHECK(observed_authorization == "Basic YWxpY2U6c2VjcmV0");
+}
+
+TEST_CASE("WebSocket client transport waits for origin credentials before handshake",
+          "[feature:websocket][feature:auth][feature:service]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+    register_client_transports(catalogue, "websocket-auth");
+
+    auto credential_ready_writer = Queue{};
+    const auto credential_ready = queue<TS<bool>>(
+        start = [&](Queue queue) { credential_ready_writer = std::move(queue); });
+    const auto credentials = graph([](wp<TS<string>> origin, wp<TS<bool>, "ready"_n> ready) {
+        (void)origin;
+        const auto credential = node([](In<TS<bool>> ready, Out<TS<Bundle<BearerAuth>>> output) {
+            if (!ready.valid() || !*ready) {
+                output.invalidate();
+                return;
+            }
+            auto memory = allocator{};
+            const auto bearer = bundle<BearerAuth>(memory, "token"_n = "websocket-token");
+            output.set_value(bearer.view());
+        })(ready);
+        return wp<TS<Bundle<BearerAuth>>>{*credential};
+    });
+    auto observed_authorization = std::string{};
+    auto observed_target = std::string{};
+    auto response_status = i64{};
+    auto pending_close_status = i64{};
+    auto handshake_count = std::size_t{};
+    auto echoed_messages = std::vector<std::vector<std::byte>>{};
+    auto request_writer = Queue{};
+    const auto requests = queue<TSB<BinaryWebSocketClientRequest>>(
+        start = [&](Queue queue) { request_writer = std::move(queue); });
+
+    const auto inspect_handshake = node([&](In<TS<Bundle<HttpServerRequest>>> request) {
+        ++handshake_count;
+        observed_target = std::string{scalar_cast<string>(request.value()[1]).value()};
+        const auto headers = scalar_cast<List<Header>>(request.value()[4]);
+        for (auto index = std::size_t{}; index < headers.size(); ++index) {
+            const auto header = headers[index];
+            if (scalar_cast<string>(header.template get<0>()).value() == "Authorization") {
+                observed_authorization = std::string{scalar_cast<string>(header.template get<1>()).value()};
+            }
+        }
+    });
+    const auto handler = graph([&](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
+        inspect_handshake(request->connect_request);
+        const auto handshake = make_http_response(101, {}, {});
+        const auto messages = operators::emit(request->messages);
+        return bundle<WebSocketResponse<bytes>::schema>(
+            "connect_response"_n = operators::const_(handshake.view()),
+            "message"_n = messages,
+            "close"_n = operators::nothing[type<TS<Bundle<WebSocketClose>>>]());
+    });
+    const auto route = websocket_handler("/auth", handler);
+    const auto first_message = std::array{std::byte{0x41}};
+    const auto second_message = std::array{std::byte{0x42}};
+    const auto third_message = std::array{std::byte{0x43}};
+    auto post_handshake_update_sent = false;
+    auto pending_close_sent = false;
+    auto bound_port_value = i64{};
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            register_client_auth("websocket-auth", ClientAuthRegex{"ws://127[.]0[.]0[.]1:[0-9]+"}, credentials,
+                                 "ready"_n = credential_ready());
+            const auto reply = websocket_client(requests());
+            (void)node([&](In<TS<i64>> bound_port) {
+                bound_port_value = *bound_port;
+                const auto origin = "ws://127.0.0.1:" + std::to_string(*bound_port);
+                const auto first_request = make_connect_request(origin + "/auth?connection=old");
+                const auto replacement_request = make_connect_request(origin + "/auth?connection=replacement");
+                if (!request_writer.write(literal::TimeSeriesLiteral{
+                        {"connect_request", first_request.view()},
+                        {"message", literal::ScalarLiteral(std::span<const std::byte>{first_message})}}) ||
+                    !request_writer.write(literal::TimeSeriesLiteral{
+                        {"connect_request", replacement_request.view()},
+                        {"message", literal::ScalarLiteral(std::span<const std::byte>{second_message})}}) ||
+                    !credential_ready_writer.write(literal::TimeSeriesLiteral(true))) {
+                    throw std::runtime_error{"could not queue the authenticated WebSocket connection"};
+                }
+            })(port);
+            (void)node([&](In<TSB<BinaryWebSocketClientReply>> value) {
+                if (value->connect_response.valid() && value->connect_response.modified()) {
+                    const auto status = scalar_cast<i64>(value->connect_response.value()[0]).value();
+                    if (status == 101 && !post_handshake_update_sent) {
+                        response_status = status;
+                        post_handshake_update_sent = true;
+                        if (!credential_ready_writer.write(literal::TimeSeriesLiteral(false)) ||
+                            !request_writer.write(literal::TimeSeriesLiteral{
+                                {"message", literal::ScalarLiteral(std::span<const std::byte>{third_message})}})) {
+                            throw std::runtime_error{"could not queue the post-handshake WebSocket update"};
+                        }
+                    }
+                    if (status == 599 && pending_close_sent) {
+                        pending_close_status = status;
+                        stop.request_stop();
+                    }
+                }
+                if (!value->messages.valid() || !value->messages.modified()) return;
+                const auto received = value->messages.value_view();
+                for (auto index = std::size_t{}; index < received.size(); ++index) {
+                    echoed_messages.push_back(copy_bytes(received[index]));
+                }
+                if (echoed_messages.size() >= 2 && !pending_close_sent) {
+                    pending_close_sent = true;
+                    const auto request = make_connect_request(
+                        "ws://127.0.0.1:" + std::to_string(bound_port_value) + "/auth?connection=closed");
+                    const auto close = make_close(1000, "cancel pending handshake");
+                    if (!request_writer.write(literal::TimeSeriesLiteral{{"connect_request", request.view()},
+                                                                         {"close", close.view()}}) ||
+                        !credential_ready_writer.write(literal::TimeSeriesLiteral(true))) {
+                        throw std::runtime_error{"could not queue the pending WebSocket close"};
+                    }
+                }
+            })(reply);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{4},
+                        .stop_token = stop.get_token()});
+
+    CHECK(response_status == 101);
+    CHECK(pending_close_status == 599);
+    CHECK(observed_authorization == "Bearer websocket-token");
+    CHECK(observed_target == "/auth?connection=replacement");
+    CHECK(handshake_count == 1);
+    CHECK(echoed_messages == std::vector<std::vector<std::byte>>{
+                                 {std::byte{0x42}}, {std::byte{0x43}}});
+}
+
+TEST_CASE("WebSocket client keeps waiting when matched credentials stay invalid",
+          "[feature:websocket][feature:auth][feature:service]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_client_transports(catalogue, "websocket-auth-timeout", HttpClientOptions{},
+                               WebSocketClientOptions{.handshake_timeout = std::chrono::milliseconds{20}});
+    const auto credentials = graph([](wp<TS<string>> origin) {
+        (void)origin;
+        return operators::nothing[type<TS<Bundle<BearerAuth>>>]();
+    });
+    auto request_writer = Queue{};
+    const auto requests = queue<TSB<BinaryWebSocketClientRequest>>(
+        start = [&](Queue queue) { request_writer = std::move(queue); });
+    auto response_status = i64{};
+    auto response_body = std::string{};
+
+    run_graph(
+        [&] {
+            register_client_auth("websocket-auth-timeout", "ws://127.0.0.1:9", credentials);
+            const auto reply = websocket_client(requests());
+            (void)node([&](Out<TS<i64>> output) {
+                const auto request = make_connect_request("ws://127.0.0.1:9/socket");
+                if (!request_writer.write(literal::TimeSeriesLiteral{{"connect_request", request.view()}})) {
+                    throw std::runtime_error{"could not queue the waiting WebSocket connection"};
+                }
+                output.set(1);
+            })();
+            (void)node([&](In<TSB<BinaryWebSocketClientReply>> value) {
+                if (!value->connect_response.valid() || !value->connect_response.modified()) return;
+                const auto response = value->connect_response.value();
+                response_status = scalar_cast<i64>(response[0]).value();
+                const auto body = scalar_cast<bytes>(response[2]).value();
+                response_body.assign(reinterpret_cast<const char *>(body.data()), body.size());
+                stop.request_stop();
+            })(reply);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{3},
+                        .stop_token = stop.get_token()});
+
+    CHECK(response_status == 599);
+    CHECK(response_body == "WebSocket connection timed out waiting for credentials");
 }
 
 TEST_CASE("WebSocket client exchanges binary messages before close and returns handshake metadata",
@@ -227,7 +405,7 @@ TEST_CASE("WebSocket client exchanges binary messages before close and returns h
         start = [&](Queue queue) { request_writer = std::move(queue); });
     const auto echo = graph([finished_bytes, &server_received_final_message](
                                 wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
-        const auto messages = operators::getattr(request, util::symbol{"messages"});
+        const auto messages = request->messages;
         (void)node([&server_received_final_message, finished_bytes](In<TS<List<bytes>>> values) {
             if (!values.valid() || !values.modified()) return;
             const auto messages = values.value_view();
@@ -240,7 +418,7 @@ TEST_CASE("WebSocket client exchanges binary messages before close and returns h
         })(messages);
         const auto finished_value = ScalarValue<bytes>{std::span<const std::byte>{finished_bytes}};
         const auto message = operators::emit(messages);
-        const auto finished = operators::eq(message, operators::const_(finished_value.view()));
+        const auto finished = message == operators::const_(finished_value.view());
         const auto no_message = operators::nothing[type<TS<bytes>>]();
         const auto response_message = operators::if_then_else(finished, no_message, message);
         const auto close_value = make_close(1000, "finished");

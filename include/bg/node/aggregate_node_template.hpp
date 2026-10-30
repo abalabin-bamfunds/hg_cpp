@@ -39,7 +39,9 @@ class AggregateNodeTemplate final
     }
 
     bool uses_queue() const noexcept override {
-        if constexpr (requires { Definition::uses_queue; }) {
+        if constexpr (details::aggregate_node_has_queue_start<Definition>) {
+            return true;
+        } else if constexpr (requires { Definition::uses_queue; }) {
             return static_cast<bool>(Definition::uses_queue);
         }
         return false;

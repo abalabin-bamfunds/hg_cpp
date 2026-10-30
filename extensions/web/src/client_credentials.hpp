@@ -13,18 +13,18 @@
 
 namespace bg::web::details {
 
-enum class ClientAuthKind { unsupported, anonymous, basic, digest, negotiate, ntlm, bearer, headers };
+enum class ClientAuthMethod { unsupported, anonymous, basic, digest, negotiate, ntlm, bearer, headers };
 
-inline ClientAuthKind client_auth_kind(Scalar<Bundle<Auth>> value) {
+inline ClientAuthMethod client_auth_method(Scalar<Bundle<Auth>> value) {
     const auto &type = value.type();
-    if (&type == &cpp_scalar_type<Bundle<AnonymousAuth>>()) return ClientAuthKind::anonymous;
-    if (&type == &cpp_scalar_type<Bundle<BasicAuth>>()) return ClientAuthKind::basic;
-    if (&type == &cpp_scalar_type<Bundle<DigestAuth>>()) return ClientAuthKind::digest;
-    if (&type == &cpp_scalar_type<Bundle<NegotiateAuth>>()) return ClientAuthKind::negotiate;
-    if (&type == &cpp_scalar_type<Bundle<NtlmAuth>>()) return ClientAuthKind::ntlm;
-    if (&type == &cpp_scalar_type<Bundle<BearerAuth>>()) return ClientAuthKind::bearer;
-    if (&type == &cpp_scalar_type<Bundle<HeaderAuth>>()) return ClientAuthKind::headers;
-    return ClientAuthKind::unsupported;
+    if (&type == &cpp_scalar_type<Bundle<AnonymousAuth>>()) return ClientAuthMethod::anonymous;
+    if (&type == &cpp_scalar_type<Bundle<BasicAuth>>()) return ClientAuthMethod::basic;
+    if (&type == &cpp_scalar_type<Bundle<DigestAuth>>()) return ClientAuthMethod::digest;
+    if (&type == &cpp_scalar_type<Bundle<NegotiateAuth>>()) return ClientAuthMethod::negotiate;
+    if (&type == &cpp_scalar_type<Bundle<NtlmAuth>>()) return ClientAuthMethod::ntlm;
+    if (&type == &cpp_scalar_type<Bundle<BearerAuth>>()) return ClientAuthMethod::bearer;
+    if (&type == &cpp_scalar_type<Bundle<HeaderAuth>>()) return ClientAuthMethod::headers;
+    return ClientAuthMethod::unsupported;
 }
 
 inline bool valid_bearer_token(std::string_view value) noexcept {

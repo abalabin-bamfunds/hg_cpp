@@ -16,8 +16,7 @@ struct HttpClientOptions {
     std::size_t max_response_body_size{8 * 1024 * 1024};
 };
 
-inline const auto http_client =
-    service<auto(TS<Bundle<HttpClientRequest>>) -> TS<Bundle<HttpResponse>>>{"http_client", {"request"}};
+extern BG_WEB_EXPORT const service<auto(TS<Bundle<HttpClientRequest>>) -> TS<Bundle<HttpResponse>>> http_client;
 
 // Builds a request/reply service implementation that sends each valid request update over HTTP/1.1.
 BG_WEB_EXPORT std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options = {});

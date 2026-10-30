@@ -36,6 +36,45 @@ def test_reference_service_captures_registered_graph_output_in_run_graph():
     assert profiler.root_graph_id() is not None
 
 
+def test_native_service_export_checks_signature_family_and_identity():
+    from bg._bg_test_extension import export_alternate_native_service, export_native_service
+
+    @bg.service
+    def declaration(value: bg.TS[int]) -> bg.TS[int]:
+        pass
+
+    export_native_service(declaration)
+    export_native_service(declaration)
+    with pytest.raises(ValueError, match="different native service"):
+        export_alternate_native_service(declaration)
+
+    @bg.service
+    def wrong_count(value: bg.TS[int], extra: bg.TS[int]) -> bg.TS[int]:
+        pass
+
+    @bg.service
+    def wrong_name(input: bg.TS[int]) -> bg.TS[int]:
+        pass
+
+    @bg.service
+    def wrong_type(value: bg.TS[str]) -> bg.TS[int]:
+        pass
+
+    @bg.service
+    def wrong_output(value: bg.TS[int]) -> bg.TS[str]:
+        pass
+
+    @bg.reference_service
+    def wrong_family(key: int) -> bg.TS[int]:
+        pass
+
+    for service in (wrong_count, wrong_name, wrong_type, wrong_output):
+        with pytest.raises(ValueError, match="service signature"):
+            export_native_service(service)
+    with pytest.raises(ValueError, match="service family"):
+        export_native_service(wrong_family)
+
+
 def test_reference_service_selects_implementation_by_scalar_filter():
     @bg.source_node
     def alternate_source() -> bg.TS[int]:

@@ -829,6 +829,25 @@ An exported class can be the base of a Python `@schema` subclass. With a scalar
 descriptor, export supplies a field constructor unless the class declares
 `__init__`. Conflicting schema registration raises an error.
 
+Use `<bg/python/service.hpp>` to bind a Python service declaration to an existing
+C++ service:
+
+```cpp
+bg::python::export_service(python_declaration, native_service);
+```
+
+Export before wiring or registering implementations, while holding the GIL.
+The declarations must agree on their signatures and whether they define a
+request/reply, subscription, or reference service. Python then uses the C++
+service identity. The native service must outlive the Python declaration.
+Repeating the same export is allowed; binding an exported
+declaration to a different service raises an error.
+
+Native extensions can access a Python catalogue's existing C++ catalogue with
+`bg::python::service_catalogue(wrapper)` from `<bg/python/service_catalogue.hpp>`.
+Hold the GIL when calling it. The returned reference remains valid while the
+Python wrapper lives.
+
 `PythonScalarConversions::add_python_type` associates a Python class with a
 scalar type. Lookup follows the Python method resolution order. Register the
 corresponding Python-to-scalar conversion before values of a new scalar type

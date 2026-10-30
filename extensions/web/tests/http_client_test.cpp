@@ -11,8 +11,9 @@
 #include <bg/web/http_client.hpp>
 #include <bg/web/http_server.hpp>
 #include <bg/web/auth.hpp>
+#include <bg/web/client_auth.hpp>
 
-#include "../src/client_output.hpp"
+#include "../src/client_source.hpp"
 #include "../src/client_runtime.hpp"
 
 #include "../src/http_header.hpp"
@@ -77,27 +78,6 @@ struct ObservedResponse {
     HeaderValues headers;
     std::vector<std::byte> body;
 };
-
-struct ClientRuntimeSource {
-    Scalar<Opaque<HttpClientOptions>> options;
-    State<ClientRuntime *> runtime_state;
-    Out<TSB<bg::web::details::ClientOutput>> output;
-
-    static constexpr bool uses_queue = true;
-    static constexpr bool deduplicate_wiring = false;
-
-    void start(EvaluationContext *context) const {
-        auto output_queue = context->runtime_graph().make_queue(context->node_index());
-        auto runtime = std::make_unique<ClientRuntime>(options.value(), std::move(output_queue));
-        output->runtime.set(runtime.get());
-        *runtime_state = runtime.release();
-    }
-
-    void stop() const noexcept { delete std::exchange(*runtime_state, nullptr); }
-    void finalize() const noexcept { delete std::exchange(*runtime_state, nullptr); }
-};
-
-const auto client_runtime_source = node<ClientRuntimeSource>();
 
 ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
     auto result = ObservedResponse{};
@@ -168,9 +148,9 @@ TEST_CASE("HTTP client runtime handles Basic and Negotiate authentication", "[fe
         [&] {
             (void)route();
             const auto port = http_server();
-            const auto source = client_runtime_source(HttpClientOptions{});
-            submit(port, operators::getattr(source, util::symbol{"runtime"}));
-            collect(operators::getattr(source, util::symbol{"replies"}));
+            const auto source = bg::web::details::client_source(HttpClientOptions{});
+            submit(port, source->runtime);
+            collect(source->replies);
         },
         GraphRunOptions{.services = &catalogue,
                         .engine = EvaluationEngine::realtime,
@@ -208,9 +188,9 @@ TEST_CASE("HTTP client runtime rejects a base-only authentication value", "[feat
 
     run_graph(
         [&] {
-            const auto source = client_runtime_source(HttpClientOptions{});
-            submit(operators::getattr(source, util::symbol{"runtime"}));
-            collect(operators::getattr(source, util::symbol{"replies"}));
+            const auto source = bg::web::details::client_source(HttpClientOptions{});
+            submit(source->runtime);
+            collect(source->replies);
         },
         GraphRunOptions{.engine = EvaluationEngine::realtime,
                         .run_time = std::chrono::seconds{3},
@@ -221,6 +201,296 @@ TEST_CASE("HTTP client runtime rejects a base-only authentication value", "[feat
     CHECK(response->status == 599);
     CHECK(std::string{reinterpret_cast<const char *>(response->body.data()), response->body.size()} ==
           "HTTP authentication schema is not supported");
+}
+
+TEST_CASE("HTTP client credential graph fetches a token from an anonymous origin",
+          "[feature:http][feature:auth]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+    register_client_transports(catalogue, "client-auth-test");
+
+    auto request_writer = Queue{};
+    const auto requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) {
+        request_writer = queue;
+    });
+    auto observed_authorization = std::string{};
+    auto response = std::optional<ObservedResponse>{};
+    auto submitted = false;
+    auto credential_status = i64{-1};
+    const auto handler = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                  Out<TS<Bundle<HttpResponse>>> output) {
+        const auto path = scalar_cast<string>(request.value()[2]).value();
+        if (path == "/token") {
+            constexpr auto token = std::string_view{"roundtrip-token"};
+            const auto body = std::span<const std::byte>{reinterpret_cast<const std::byte *>(token.data()),
+                                                         token.size()};
+            const auto value = make_response(200, {}, body);
+            output.set_value(value.view());
+            return;
+        }
+
+        const auto headers = scalar_cast<List<Header>>(request.value()[4]);
+        for (auto index = std::size_t{}; index < headers.size(); ++index) {
+            const auto header = headers[index];
+            if (scalar_cast<string>(header.template get<0>()).value() == "Authorization") {
+                observed_authorization = scalar_cast<string>(header.template get<1>()).value();
+            }
+        }
+        const auto value = make_response(204, {});
+        output.set_value(value.view());
+    });
+    const auto credential_request = node([](In<TS<i64>> port, Out<TS<Bundle<HttpClientRequest>>> output) {
+        const auto request = make_request("GET", "http://localhost:" + std::to_string(*port) + "/token");
+        output.set_value(request.view());
+    });
+    const auto credential_value = node([&](In<TS<Bundle<HttpResponse>>> response,
+                                           Out<TS<Bundle<BearerAuth>>> output) {
+        credential_status = scalar_cast<i64>(response.value()[0]).value();
+        const auto body = scalar_cast<bytes>(response.value()[2]).value();
+        const auto token = std::string{reinterpret_cast<const char *>(body.data()), body.size()};
+        auto memory = allocator{};
+        const auto bearer = bundle<BearerAuth>(memory, "token"_n = token);
+        output.set_value(bearer.view());
+    });
+    const auto credential_graph = graph([&](wp<TS<string>> origin, wp<TS<i64>, "port"_n> port) {
+        (void)origin;
+        return credential_value(http_client(credential_request(port)));
+    });
+    const auto token_route = http_handler("/token", handler);
+    const auto route = http_handler("/client-auth-roundtrip", handler);
+    const auto collect = node([&](In<TS<Bundle<HttpResponse>>> reply) {
+        if (!reply.valid() || !reply.modified()) return;
+        response.emplace(observe(reply.value()));
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            (void)token_route();
+            (void)route();
+            const auto port = http_server();
+            register_client_auth("client-auth-test", ClientAuthRegex{"http://127[.]0[.]0[.]1:[0-9]+"},
+                                credential_graph, "port"_n = port);
+            const auto reply = http_client(requests());
+            (void)node([&](In<TS<i64>> bound_port) {
+                if (!bound_port.valid() || !bound_port.modified() || submitted) return;
+                const auto request = make_request(
+                    "GET", "http://127.0.0.1:" + std::to_string(*bound_port) + "/client-auth-roundtrip");
+                if (!request_writer.write(literal::TimeSeriesLiteral(request.view()))) {
+                    throw std::runtime_error{"could not queue the authenticated HTTP request"};
+                }
+                submitted = true;
+            })(port);
+            collect(reply);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{4},
+                        .stop_token = stop.get_token()});
+
+    REQUIRE(submitted);
+    REQUIRE(credential_status == 200);
+    REQUIRE(response.has_value());
+    CHECK(response->status == 204);
+    CHECK(observed_authorization == "Bearer roundtrip-token");
+}
+
+TEST_CASE("HTTP client works anonymously when no client auth registration exists", "[feature:http][feature:auth]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+    register_client_transports(catalogue, "client-anonymous");
+
+    auto request_writer = Queue{};
+    const auto requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) {
+        request_writer = std::move(queue);
+    });
+    auto status = i64{};
+    auto saw_authorization = false;
+    auto submitted = false;
+    const auto handler = node([&](In<TS<Bundle<HttpServerRequest>>> request, Out<TS<Bundle<HttpResponse>>> output) {
+        const auto headers = scalar_cast<List<Header>>(request.value()[4]);
+        for (auto index = std::size_t{}; index < headers.size(); ++index) {
+            saw_authorization |= scalar_cast<string>(headers[index].template get<0>()).value() == "Authorization";
+        }
+        const auto response = make_response(204, {});
+        output.set_value(response.view());
+    });
+    const auto route = http_handler("/anonymous", handler);
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            const auto response = http_client(requests());
+            (void)node([&](In<TS<i64>> bound_port) {
+                if (!bound_port.modified() || submitted) return;
+                const auto request = make_request("GET", "http://127.0.0.1:" + std::to_string(*bound_port) +
+                                                             "/anonymous");
+                if (!request_writer.write(literal::TimeSeriesLiteral(request.view()))) {
+                    throw std::runtime_error{"could not queue the anonymous HTTP request"};
+                }
+                submitted = true;
+            })(port);
+            (void)node([&](In<TS<Bundle<HttpResponse>>> reply) {
+                if (!reply.modified() || !reply.valid()) return;
+                status = scalar_cast<i64>(reply.value()[0]).value();
+                stop.request_stop();
+            })(response);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{4},
+                        .stop_token = stop.get_token()});
+
+    CHECK(submitted);
+    CHECK(status == 204);
+    CHECK_FALSE(saw_authorization);
+}
+
+TEST_CASE("HTTP client keeps only the latest request while credentials are pending", "[feature:http][feature:auth]") {
+    const auto use_different_origin = GENERATE(false, true);
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue);
+    register_client_transports(catalogue, "client-auth-ticks");
+
+    auto request_writer = Queue{};
+    const auto requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) {
+        request_writer = queue;
+    });
+    auto credential_ready_writer = Queue{};
+    const auto credential_ready = queue<TS<bool>>(start = [&](Queue queue) {
+        credential_ready_writer = queue;
+    });
+    auto server_requests = std::size_t{};
+    auto authenticated_requests = std::size_t{};
+    auto replies = std::size_t{};
+    auto served_latest = false;
+    auto submitted = false;
+    auto updates_failed = false;
+
+    const auto handler = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                  Out<TS<Bundle<HttpResponse>>> output) {
+        ++server_requests;
+        const auto headers = scalar_cast<List<Header>>(request.value()[4]);
+        for (auto index = std::size_t{}; index < headers.size(); ++index) {
+            const auto header = headers[index];
+            if (scalar_cast<string>(header.template get<0>()).value() == "X-Request" &&
+                scalar_cast<string>(header.template get<1>()).value() == "new") {
+                served_latest = true;
+            }
+            if (scalar_cast<string>(header.template get<0>()).value() == "Authorization" &&
+                scalar_cast<string>(header.template get<1>()).value() == "Bearer delayed-token") {
+                ++authenticated_requests;
+            }
+        }
+        const auto value = make_response(204, {});
+        output.set_value(value.view());
+    });
+    const auto credential_graph = graph([&](wp<TS<string>>, wp<TS<bool>, "ready"_n> ready) {
+        const auto credential = node([](In<TS<bool>> ready, Out<TS<Bundle<BearerAuth>>> output) {
+            if (!ready.valid() || !*ready) {
+                output.invalidate();
+                return;
+            }
+            auto memory = allocator{};
+            const auto bearer = bundle<BearerAuth>(memory, "token"_n = "delayed-token");
+            output.set_value(bearer.view());
+        })(ready);
+        return wp<TS<Bundle<BearerAuth>>>{*credential};
+    });
+    const auto route = http_handler("/wait-for-auth", handler);
+    const auto collect = node([&](In<TS<Bundle<HttpResponse>>> response) {
+        if (!response.valid() || !response.modified()) return;
+        ++replies;
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            register_client_auth("client-auth-ticks", ClientAuthRegex{"http://(127[.]0[.]0[.]1|localhost):[0-9]+"},
+                                credential_graph, "ready"_n = credential_ready());
+            const auto response = http_client(requests());
+            (void)node([&](In<TS<i64>> bound_port) {
+                if (!bound_port.valid() || !bound_port.modified() || submitted) return;
+                const auto port_text = std::to_string(*bound_port);
+                const auto first_request = make_request("GET", "http://127.0.0.1:" + port_text + "/wait-for-auth",
+                                                        {{"X-Request", "old"}});
+                const auto second_host = use_different_origin ? "localhost" : "127.0.0.1";
+                const auto second_request =
+                    make_request("GET", "http://" + std::string{second_host} + ":" + port_text + "/wait-for-auth",
+                                 {{"X-Request", "new"}});
+                updates_failed = !request_writer.write(literal::TimeSeriesLiteral(first_request.view())) ||
+                                 !request_writer.write(literal::TimeSeriesLiteral(second_request.view())) ||
+                                 !credential_ready_writer.write(literal::TimeSeriesLiteral(true));
+                submitted = true;
+            })(port);
+            collect(response);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{5},
+                        .stop_token = stop.get_token()});
+
+    REQUIRE(submitted);
+    CHECK_FALSE(updates_failed);
+    CHECK(server_requests == 1);
+    CHECK(authenticated_requests == 1);
+    CHECK(served_latest);
+    CHECK(replies == 1);
+}
+
+TEST_CASE("HTTP client keeps waiting when matched credentials stay invalid", "[feature:http][feature:auth]") {
+    auto stop = std::stop_source{};
+    auto catalogue = ServiceCatalogue{};
+    register_client_transports(catalogue, "client-auth-timeout", HttpClientOptions{.timeout =
+                                                                                     std::chrono::milliseconds{20}});
+
+    auto request_writer = Queue{};
+    const auto requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) {
+        request_writer = queue;
+    });
+    auto submitted = false;
+    auto response = std::optional<ObservedResponse>{};
+    const auto credential_graph = graph([](wp<TS<string>> origin) {
+        (void)origin;
+        return operators::nothing[type<TS<Bundle<Auth>>>]();
+    });
+    const auto collect = node([&](In<TS<Bundle<HttpResponse>>> reply) {
+        if (!reply.valid() || !reply.modified()) return;
+        response.emplace(observe(reply.value()));
+        stop.request_stop();
+    });
+
+    run_graph(
+        [&] {
+            register_client_auth("client-auth-timeout", "http://127.0.0.1:1", credential_graph);
+            const auto reply = http_client(requests());
+            (void)node([&](Out<TS<i64>> output) {
+                if (submitted) return;
+                const auto request = make_request("GET", "http://127.0.0.1:1/wait");
+                if (!request_writer.write(literal::TimeSeriesLiteral(request.view()))) {
+                    throw std::runtime_error{"could not queue the timed HTTP request"};
+                }
+                submitted = true;
+                output.set(1);
+            })();
+            collect(reply);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{2},
+                        .stop_token = stop.get_token()});
+
+    REQUIRE(submitted);
+    REQUIRE(response.has_value());
+    CHECK(response->status == 599);
+    CHECK(std::string{reinterpret_cast<const char *>(response->body.data()), response->body.size()} ==
+          "HTTP request timed out waiting for credentials");
 }
 
 TEST_CASE("Latin-1 HTTP header values convert to UTF-8", "[feature:http]") {

@@ -46,7 +46,9 @@ be delayed.
 `gate(condition, value, buffer_length=...)` retains input events while the condition
 is false or invalid. Opening replays the oldest event immediately, then at most one
 event per microsecond. Closing pauses the queue; value invalidation is retained as an
-event, while condition invalidation preserves the output and queue. An open gate with
+event, while condition invalidation preserves the output and queue. A valid `reset`
+tick discards queued events and cancels the drain timer before handling a value tick
+in the same cycle. Reset preserves the output and condition state. An open gate with
 no backlog forwards directly. `buffer_length` must be positive; overflow raises an
 error. The output guarantee is limited to `final`. See [retained events](library-time.md#retained-events)
 for collection and reference behavior.

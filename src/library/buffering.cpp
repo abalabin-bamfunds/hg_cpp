@@ -31,6 +31,7 @@ struct buffering_overloads {
         In<TS<bool>, optional> condition;
         In<TS_T, optional> value;
         Scalar<i64> buffer_length;
+        In<SIGNAL, optional> reset;
         State<retained_ticks *> retained;
         State<i64> pending_count;
         State<bool> was_open;
@@ -50,6 +51,10 @@ struct buffering_overloads {
         void evaluate(EvaluationContext *context) const {
             const auto now = context->evaluation_time();
             const auto has_current_tick = value.modified() && value.last_updated() == now;
+            if (reset.modified() && reset.valid()) {
+                release(*context);
+            }
+
             const auto open = condition.valid() && *condition;
             if (!open) {
                 close(*context);
@@ -132,7 +137,9 @@ struct buffering_overloads {
         }
 
         void release(EvaluationContext &context) const noexcept {
+            cancel_drain(context);
             if (*retained == nullptr) {
+                *pending_count = 0;
                 return;
             }
             auto memory = context.runtime_graph().allocation();
@@ -142,7 +149,11 @@ struct buffering_overloads {
         }
     };
 
-    overload<gate, gate_impl> gate_impl;
+    overload<gate> gate_without_reset_overload{graph([](wp<TS<bool>> condition, wp<TS_T> value, i64 buffer_length) {
+        static const auto gate = node<gate_impl>();
+        return gate(condition, value, buffer_length, nothing[type<TS<bool>>]());
+    })};
+    overload<gate, gate_impl> gate_with_reset_overload;
 
     struct batch_impl {
         static constexpr bool uses_timed_scheduling = true;

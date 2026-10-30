@@ -1,4 +1,5 @@
 #include <bg/graph.hpp>
+#include <bg/library.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/map.hpp>
 #include <bg/node.hpp>
@@ -10,7 +11,9 @@
 #include <bg/web/websocket_client.hpp>
 
 #include "websocket_client_output.hpp"
+#include "websocket_client_source_replies.hpp"
 #include "websocket_client_runtime.hpp"
+#include "websocket_client_update_sink.hpp"
 #include "runtime_logging.hpp"
 
 #include <memory>
@@ -29,11 +32,9 @@ struct WebSocketClientSource {
     State<WebSocketClientRuntime *> runtime_state;
     Out<TSB<details::WebSocketClientOutput>> output;
 
-    static constexpr bool uses_queue = true;
     static constexpr bool deduplicate_wiring = false;
 
-    void start(EvaluationContext *context) const {
-        auto output_queue = context->runtime_graph().make_queue(context->node_index());
+    void start(Queue output_queue) const {
         auto runtime = std::make_unique<WebSocketClientRuntime>(options.value(), std::move(output_queue));
         output->runtime.set(runtime.get());
         *runtime_state = runtime.release();
@@ -47,64 +48,16 @@ struct WebSocketClientMessagesSource {
     In<TS<Opaque<WebSocketClientRuntime *>>, passive> runtime;
     Out<TSD<i64, TSD<i64, TS<List<bytes>>>>> messages;
 
-    static constexpr bool uses_queue = true;
     static constexpr bool deduplicate_wiring = false;
     static constexpr auto queue_mode = QueueMode::batch;
 
-    void start(EvaluationContext *context) const {
-        runtime.value()->attach_message_queue(context->runtime_graph().make_queue(context->node_index()));
-    }
-};
-
-struct WebSocketClientUpdateSink {
-    In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_id;
-    In<TS<Bundle<WebSocketConnectRequest>>, optional> connect;
-    In<TS<bytes>, optional> message;
-    In<TS<Bundle<WebSocketClose>>, optional> close;
-    In<TS<Opaque<WebSocketClientRuntime *>>, passive> runtime;
-    In<TS<Bundle<Auth>>, optional, passive> credentials;
-    State<i64> sequence;
-
-    void start() const {
-        *sequence = 0;
-    }
-
-    void evaluate() const {
-        try {
-            auto connect_value = std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>>{};
-            auto sequence_value = *sequence;
-            if (connect.modified() && connect.valid()) {
-                auto *client_runtime = runtime.value();
-                sequence_value = client_runtime->next_connection_sequence();
-                connect_value.emplace(connect.value());
-            }
-
-            auto message_value = std::optional<ScalarValue<bytes>>{};
-            if (message.modified() && message.valid()) message_value.emplace(message.value());
-            auto close_value = std::optional<ScalarValue<Bundle<WebSocketClose>>>{};
-            if (close.modified() && close.valid()) close_value.emplace(close.value());
-            if (!connect_value && !message_value && !close_value) return;
-
-            auto credentials_value = std::optional<ScalarValue<Bundle<Auth>>>{};
-            if (connect_value && credentials.valid()) credentials_value.emplace(credentials.value());
-
-            runtime.value()->update(client_id.value(), sequence_value, std::move(connect_value),
-                                    std::move(message_value), std::move(close_value),
-                                    std::move(credentials_value));
-            *sequence = sequence_value;
-        } catch (...) {
-            details::log_runtime_failure("WebSocket client update submission failed", std::current_exception());
-        }
-    }
-
-    void stop() const noexcept {
-        if (*sequence != 0) runtime.value()->cancel(client_id.value(), *sequence);
+    void start(Queue messages_queue) const {
+        runtime.value()->attach_message_queue(std::move(messages_queue));
     }
 };
 
 const auto websocket_client_source = node<WebSocketClientSource>();
 const auto websocket_client_messages_source = node<WebSocketClientMessagesSource>();
-const auto websocket_client_update_sink = node<WebSocketClientUpdateSink>();
 } // namespace
 
 std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptions options) {
@@ -113,49 +66,53 @@ std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptio
         [options = std::move(options)](
             wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientRequest>>, "request"_n> requests)
             -> wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientReply>>> {
-            const auto source = websocket_client_source(options);
-            const auto messages = websocket_client_messages_source(source->runtime);
+            const auto source = details::wire_websocket_client_source_replies(options);
 
             const auto request_sink = graph(
                 "name"_n = "websocket_client_request_sink",
-                [](wp<TS<service_client_id_t>, "key"_n> client_id,
+                [options](wp<TS<service_client_id_t>, "key"_n> client_id,
                    wp<TSB<BinaryWebSocketClientRequest>, "request"_n> request,
                    wp<TS<Opaque<WebSocketClientRuntime *>>, "runtime"_n> runtime) {
-                    websocket_client_update_sink(
-                        client_id, operators::getattr(request, util::symbol{"connect_request"}),
-                        operators::getattr(request, util::symbol{"message"}),
-                        operators::getattr(request, util::symbol{"close"}), runtime,
-                        operators::nothing[type<TS<Bundle<Auth>>>]());
-                });
-
-            const auto replies = graph(
-                "name"_n = "websocket_client_replies",
-                [](wp<TS<service_client_id_t>, "key"_n> client_id,
-                   wp<TS<i64>, "sequence"_n> sequence,
-                   wp<TSD<i64, TSD<i64, TS<Bundle<HttpResponse>>>>, "connect_responses"_n> connect_responses,
-                   wp<TSD<i64, TSD<i64, TS<List<bytes>>>>, "messages"_n> messages,
-                   wp<TSD<i64, TSD<i64, TS<Bundle<WebSocketClose>>>>, "closes"_n> closes)
-                    -> wp<TSB<BinaryWebSocketClientReply>> {
-                    const auto current = [&](auto dictionary) {
-                        const auto values = operators::getitem(dictionary, client_id);
-                        return operators::getitem(values, sequence);
-                    };
-                    const auto response = current(connect_responses);
-                    const auto received_messages = current(messages);
-                    const auto close_value = current(closes);
-                    return bundle<BinaryWebSocketClientReply>(
-                        "connect_response"_n = response,
-                        "messages"_n = received_messages,
-                        "close"_n = close_value);
+                    const auto connect = request->connect_request;
+                    details::websocket_client_update_sink(
+                        client_id, connect, request->message, request->close, connect,
+                        operators::nothing[type<TS<string>>](), runtime,
+                        operators::nothing[type<TS<Bundle<Auth>>>](), options);
                 });
 
             map(request_sink, requests, source->runtime);
-            const auto reply_values = map(replies, source->current_sequences,
-                                          pass_through(source->connect_responses), pass_through(messages),
-                                          pass_through(source->closes));
-            return wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientReply>>>{reply_values};
+            return wp<TSD<service_client_id_t, TSB<BinaryWebSocketClientReply>>>{source->replies};
         });
     return std::make_shared<decltype(implementation)>(std::move(implementation));
+}
+
+wp<TSB<details::WebSocketClientSourceReplies>>
+details::wire_websocket_client_source_replies(WebSocketClientOptions options) {
+    const auto source = websocket_client_source(std::move(options));
+    const auto messages = websocket_client_messages_source(source->runtime);
+
+    const auto replies = graph(
+        "name"_n = "websocket_client_replies",
+        [](wp<TS<service_client_id_t>, "key"_n> client_id,
+           wp<TS<i64>, "sequence"_n> sequence,
+           wp<TSD<i64, TSD<i64, TS<Bundle<HttpResponse>>>>, "connect_responses"_n> connect_responses,
+           wp<TSD<i64, TSD<i64, TS<List<bytes>>>>, "messages"_n> messages,
+           wp<TSD<i64, TSD<i64, TS<Bundle<WebSocketClose>>>>, "closes"_n> closes)
+            -> wp<TSB<BinaryWebSocketClientReply>> {
+            const auto current = [&](auto dictionary) {
+                const auto values = dictionary[client_id];
+                return values[sequence];
+            };
+            return bundle<BinaryWebSocketClientReply>(
+                "connect_response"_n = current(connect_responses), "messages"_n = current(messages),
+                "close"_n = current(closes));
+        });
+
+    const auto reply_values = map(replies, source->current_sequences,
+                                  pass_through(source->connect_responses), pass_through(messages),
+                                  pass_through(source->closes));
+    return bundle<details::WebSocketClientSourceReplies>("runtime"_n = source->runtime,
+                                                          "replies"_n = reply_values);
 }
 
 } // namespace bg::web

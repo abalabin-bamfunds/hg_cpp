@@ -13,7 +13,11 @@ from ._bg_web import (
     _http_merge_responses,
     _http_response_field,
     _http_server_impl,
+    _normalize_client_auth_origin,
+    _register_client_transports,
     _register_schemas,
+    _register_services,
+    _validate_client_auth_regex,
 )
 
 
@@ -91,6 +95,11 @@ class HeaderAuth(Auth):
     headers: list[tuple[str, str]]
 
 
+class _ClientAuthMatcher:
+    pattern: str
+    regex: bool
+
+
 _register_schemas(
     HttpPeer,
     HttpServerRequest,
@@ -104,6 +113,7 @@ _register_schemas(
     NtlmAuth,
     BearerAuth,
     HeaderAuth,
+    _ClientAuthMatcher,
 )
 
 from .auth import AuthDecision, _policy_graphs
@@ -238,6 +248,93 @@ def http_client_impl(timeout=timedelta(seconds=30), max_response_body_size=8 * 1
 
     return implementation
 
+
+@bg.service
+def client_auth_registration(matcher: bg.TS[_ClientAuthMatcher], scope: str) -> bg.TSS[str]:
+    """Internal service that requests credentials for selected origins."""
+    raise RuntimeError("client_auth_registration is a service declaration")
+
+
+@bg.service
+def client_credential_submission(credentials: bg.TSD[str, bg.TS[Auth]], scope: str) -> None:
+    """Internal outputless service that submits credentials for an auth registration."""
+    raise RuntimeError("client_credential_submission is a service declaration")
+
+
+_register_services(http_client, client_auth_registration, client_credential_submission)
+
+
+class ClientAuthRegex:
+    """Match a client authentication origin with a full-match regular expression."""
+
+    def __init__(self, pattern):
+        if not isinstance(pattern, str):
+            raise TypeError("client auth regular expression must be a string")
+        _validate_client_auth_regex(pattern)
+        self.pattern = pattern
+
+
+def register_client_auth(scope, matcher, credential_graph, *args, **kwargs):
+    """Register a graph that returns Auth for each origin selected by matcher."""
+    if not isinstance(scope, str):
+        raise TypeError("client auth scope must be a string")
+    if not isinstance(credential_graph, bg.GraphDefinition):
+        raise TypeError("register_client_auth expects a decorated @graph credential graph")
+
+    if isinstance(matcher, ClientAuthRegex):
+        pattern = matcher.pattern
+        is_regex = True
+    elif isinstance(matcher, str):
+        pattern = _normalize_client_auth_origin(matcher)
+        is_regex = False
+    else:
+        raise TypeError("client auth matcher must be an origin string or ClientAuthRegex")
+
+    registration_id = bg.service_client_id()
+    client_auth_registration.client_requests(
+        registration_id,
+        bg.operators.const_(_ClientAuthMatcher(pattern=pattern, regex=is_regex)),
+        scope,
+    )
+    origins = client_auth_registration.client_replies(registration_id, scope)
+    named_arguments = {name: bg.pass_through(value) for name, value in kwargs.items()}
+    if "__key_arg__" in named_arguments:
+        raise ValueError("__key_arg__ is reserved by register_client_auth")
+    named_arguments["__key_arg__"] = 0
+    credentials = bg.map(
+        credential_graph,
+        origins,
+        *(bg.pass_through(value) for value in args),
+        **named_arguments,
+    )
+    client_credential_submission.client_requests(registration_id, credentials, scope)
+
+
+def register_client_transports(
+    catalogue,
+    scope,
+    timeout=timedelta(seconds=30),
+    max_response_body_size=8 * 1024 * 1024,
+):
+    """Register HTTP and WebSocket client transports and scoped auth services."""
+    if not isinstance(catalogue, bg.ServiceCatalogue):
+        raise TypeError("register_client_transports expects a ServiceCatalogue")
+    if not isinstance(scope, str):
+        raise TypeError("client auth scope must be a string")
+    if not isinstance(timeout, timedelta):
+        raise TypeError("timeout must be a datetime.timedelta")
+    timeout_ms = timeout.days * 86_400_000 + timeout.seconds * 1000 + timeout.microseconds // 1000
+    if timeout_ms <= 0:
+        raise ValueError("timeout must be at least one millisecond")
+    if (
+        isinstance(max_response_body_size, bool)
+        or not isinstance(max_response_body_size, int)
+        or max_response_body_size < 0
+    ):
+        raise ValueError("max_response_body_size must be a non-negative integer")
+
+    _register_client_transports(catalogue._native_catalogue, scope, timeout_ms, max_response_body_size)
+
 __all__ = [
     "HttpPeer",
     "HttpServerRequest",
@@ -251,10 +348,13 @@ __all__ = [
     "NtlmAuth",
     "BearerAuth",
     "HeaderAuth",
+    "ClientAuthRegex",
     "AuthDecision",
     "http_handler",
     "register_http_server",
     "http_server",
     "http_client",
     "http_client_impl",
+    "register_client_auth",
+    "register_client_transports",
 ]

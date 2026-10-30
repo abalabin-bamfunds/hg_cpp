@@ -7,6 +7,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace bg::web {
 
@@ -26,7 +27,10 @@ class WebSocketClientRuntime {
                 std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                 std::optional<ScalarValue<bytes>> message,
                 std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                std::optional<ScalarValue<Bundle<Auth>>> credentials = std::nullopt);
+                std::optional<ScalarValue<Bundle<Auth>>> credentials = std::nullopt,
+                std::chrono::steady_clock::time_point deadline = {});
+    void begin_connect(i64 client_id, i64 sequence);
+    void fail(i64 client_id, i64 sequence, std::string_view message) noexcept;
     void cancel(i64 client_id, i64 sequence) noexcept;
 
   private:

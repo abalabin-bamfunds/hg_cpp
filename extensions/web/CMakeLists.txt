@@ -33,6 +33,8 @@ endif()
 add_library(
     bg_web SHARED
     src/client_runtime.cpp
+    src/client_auth.cpp
+    src/client_transports.cpp
     src/http_client.cpp
     src/http_server.cpp
     src/server_runtime.cpp
@@ -81,7 +83,7 @@ if(BG_BUILD_PYTHON)
         set(BG_WEB_PYTHON_BUILD_RPATH "$ORIGIN/../..;$ORIGIN/../../../../bindings/python;$ORIGIN/../../../..")
         set(BG_WEB_PYTHON_INSTALL_RPATH "$ORIGIN/../${CMAKE_INSTALL_LIBDIR}")
     endif()
-    nanobind_add_module(_bg_web NB_SHARED src/python.cpp)
+    nanobind_add_module(_bg_web STABLE_ABI NB_SHARED src/python.cpp)
     target_compile_features(_bg_web PRIVATE cxx_std_23)
     target_link_libraries(_bg_web PRIVATE bg::python bg::web)
     set_target_properties(
@@ -103,7 +105,7 @@ if(BG_BUILD_PYTHON)
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_library>" "$<TARGET_FILE_DIR:_bg_web>"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_python>" "$<TARGET_FILE_DIR:_bg_web>"
             COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_web>" "$<TARGET_FILE_DIR:_bg_web>"
-            COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nanobind>" "$<TARGET_FILE_DIR:_bg_web>"
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nanobind-abi3>" "$<TARGET_FILE_DIR:_bg_web>"
             VERBATIM
         )
     endif()
@@ -115,7 +117,7 @@ if(BG_BUILD_PYTHON)
             "$<TARGET_FILE:bg_library>"
             "$<TARGET_FILE:bg_python>"
             "$<TARGET_FILE:bg_web>"
-            "$<TARGET_FILE:nanobind>"
+            "$<TARGET_FILE:nanobind-abi3>"
             DESTINATION bg_web
         )
     endif()

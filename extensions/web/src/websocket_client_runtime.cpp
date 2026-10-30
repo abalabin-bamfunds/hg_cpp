@@ -194,15 +194,19 @@ class WebSocketClientImplementation final {
                 std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                 std::optional<ScalarValue<bytes>> message,
                 std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                std::optional<ScalarValue<Bundle<Auth>>> credentials) {
+                std::optional<ScalarValue<Bundle<Auth>>> credentials,
+                std::chrono::steady_clock::time_point deadline) {
         if (stopped_.load(std::memory_order_acquire)) return;
         started_ = true;
+        if (deadline == std::chrono::steady_clock::time_point{}) {
+            deadline = std::chrono::steady_clock::now() + options_.handshake_timeout;
+        }
         try {
             asio::post(io_, [this, client_id, sequence, connect = std::move(connect), message = std::move(message),
-                             close = std::move(close), credentials = std::move(credentials)]() mutable {
+                             close = std::move(close), credentials = std::move(credentials), deadline]() mutable {
                 try {
                     apply_update(client_id, sequence, std::move(connect), std::move(message), std::move(close),
-                                 std::move(credentials));
+                                 std::move(credentials), deadline);
                 } catch (...) {
                     fail_update(client_id, sequence, std::current_exception());
                 }
@@ -210,6 +214,56 @@ class WebSocketClientImplementation final {
         } catch (...) {
             record_failure(std::current_exception());
             throw;
+        }
+    }
+
+    void begin_connect(i64 client_id, i64 sequence) {
+        if (stopped_.load(std::memory_order_acquire)) return;
+        started_ = true;
+        try {
+            asio::post(io_, [this, client_id, sequence] {
+                try {
+                    const auto active = active_.find(client_id);
+                    if (active != active_.end() && active->second.sequence == sequence) return;
+
+                    auto connection = std::shared_ptr<Connection>{};
+                    if (active != active_.end()) {
+                        const auto previous_sequence = active->second.sequence;
+                        connection = std::move(active->second.connection);
+                        clear_bucket(client_id, previous_sequence, sequence);
+                    } else {
+                        publish_current_sequence(client_id, sequence);
+                    }
+                    active_.insert_or_assign(client_id, ActiveConnection{.sequence = sequence});
+                    if (connection) connection->cancel();
+                } catch (...) {
+                    record_failure(std::current_exception());
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
+    }
+
+    void fail(i64 client_id, i64 sequence, std::string_view message) noexcept {
+        if (stopped_.load(std::memory_order_acquire)) return;
+        try {
+            const auto text = std::string{message};
+            asio::post(io_, [this, client_id, sequence, text] {
+                try {
+                    const auto active = active_.find(client_id);
+                    if (active == active_.end() || active->second.sequence != sequence) return;
+                    auto connection = std::move(active->second.connection);
+                    active->second.connection.reset();
+                    clear_bucket(client_id, sequence, sequence);
+                    write_connect_response(client_id, sequence, error_response(text));
+                    if (connection) connection->cancel();
+                } catch (...) {
+                    record_failure(std::current_exception());
+                }
+            });
+        } catch (...) {
+            record_failure(std::current_exception());
         }
     }
 
@@ -257,7 +311,8 @@ class WebSocketClientImplementation final {
         i64 sequence() const noexcept { return sequence_; }
 
         void start(ScalarValue<Bundle<WebSocketConnectRequest>> connect,
-                   std::optional<ScalarValue<Bundle<Auth>>> auth_value) {
+                   std::optional<ScalarValue<Bundle<Auth>>> auth_value,
+                   std::chrono::steady_clock::time_point deadline) {
             try {
                 const auto value = connect.view();
                 const auto url = std::string{scalar_cast<string>(value[0]).value()};
@@ -300,7 +355,12 @@ class WebSocketClientImplementation final {
                 }
 
                 auto timeout = websocket::stream_base::timeout::suggested(beast::role_type::client);
-                timeout.handshake_timeout = client_.options_.handshake_timeout;
+                const auto remaining = deadline - std::chrono::steady_clock::now();
+                if (remaining <= std::chrono::steady_clock::duration::zero()) {
+                    fail_before_handshake("WebSocket connection timed out");
+                    return;
+                }
+                timeout.handshake_timeout = remaining;
                 stream_.set_option(timeout);
                 stream_.read_message_max(client_.options_.max_message_size);
                 stream_.set_option(websocket::stream_base::decorator(
@@ -310,7 +370,7 @@ class WebSocketClientImplementation final {
                 request_headers_.clear();
                 state_ = State::resolving;
                 auto self = shared_from_this();
-                timeout_.expires_after(client_.options_.handshake_timeout);
+                timeout_.expires_at(deadline);
                 timeout_.async_wait(guarded_callback(self, [](Connection &connection, beast::error_code error) {
                     if (error || !connection.current() || connection.state_ == State::finished ||
                         connection.state_ == State::open || connection.state_ == State::closing) {
@@ -406,17 +466,17 @@ class WebSocketClientImplementation final {
         }
 
         std::optional<std::string> configure_auth(Scalar<Bundle<Auth>> auth) {
-            const auto kind = details::client_auth_kind(auth);
-            if (kind == details::ClientAuthKind::unsupported) {
+            const auto auth_method = details::client_auth_method(auth);
+            if (auth_method == details::ClientAuthMethod::unsupported) {
                 return std::string{"WebSocket authentication schema is not supported"};
             }
-            if (kind == details::ClientAuthKind::anonymous) return std::nullopt;
+            if (auth_method == details::ClientAuthMethod::anonymous) return std::nullopt;
 
             const auto request_authorization = std::ranges::any_of(request_headers_, [](const auto &header) {
                 return beast::iequals(header.first, "authorization");
             });
 
-            if (kind == details::ClientAuthKind::basic) {
+            if (auth_method == details::ClientAuthMethod::basic) {
                 const auto basic = scalar_cast<Bundle<BasicAuth>>(auth);
                 const auto username = scalar_cast<string>(basic[0]).value();
                 const auto password = scalar_cast<string>(basic[1]).value();
@@ -431,7 +491,7 @@ class WebSocketClientImplementation final {
                 request_headers_.emplace_back("Authorization", "Basic " + base64(value));
                 return std::nullopt;
             }
-            if (kind == details::ClientAuthKind::bearer) {
+            if (auth_method == details::ClientAuthMethod::bearer) {
                 const auto token = scalar_cast<string>(scalar_cast<Bundle<BearerAuth>>(auth)[0]).value();
                 if (details::contains_nul(token) || !details::valid_bearer_token(token)) {
                     return std::string{"WebSocket bearer credentials are invalid"};
@@ -442,7 +502,7 @@ class WebSocketClientImplementation final {
                 request_headers_.emplace_back("Authorization", "Bearer " + std::string{token});
                 return std::nullopt;
             }
-            if (kind != details::ClientAuthKind::headers) {
+            if (auth_method != details::ClientAuthMethod::headers) {
                 return std::string{"WebSocket authentication schema is not supported"};
             }
 
@@ -537,6 +597,10 @@ class WebSocketClientImplementation final {
 
         void on_handshake(beast::error_code error) {
             if (!current() || state_ == State::finished) return;
+            if (std::chrono::steady_clock::now() >= timeout_.expiry()) {
+                fail_before_handshake("WebSocket connection timed out");
+                return;
+            }
             if (error) {
                 if (error == websocket::error::upgrade_declined && response_.result_int() != 0 &&
                     response_.result() != http::status::switching_protocols) {
@@ -716,20 +780,23 @@ class WebSocketClientImplementation final {
                       std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                       std::optional<ScalarValue<bytes>> message,
                       std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                      std::optional<ScalarValue<Bundle<Auth>>> credentials) {
+                      std::optional<ScalarValue<Bundle<Auth>>> credentials,
+                      std::chrono::steady_clock::time_point deadline) {
         if (connect) {
-            const auto found = active_.find(client_id);
-            if (found != active_.end()) {
-                auto previous = std::move(found->second);
-                active_.erase(found);
-                clear_bucket(client_id, previous.sequence, sequence);
-                if (previous.connection) previous.connection->cancel();
-            } else {
+            const auto active = active_.find(client_id);
+            if (active != active_.end() && active->second.sequence == sequence && active->second.connection) return;
+            if (active != active_.end() && active->second.sequence != sequence) {
+                const auto previous_sequence = active->second.sequence;
+                auto old_connection = std::move(active->second.connection);
+                clear_bucket(client_id, previous_sequence, sequence);
+                if (old_connection) old_connection->cancel();
+            } else if (active == active_.end()) {
                 publish_current_sequence(client_id, sequence);
             }
+
             auto connection = std::make_shared<Connection>(*this, client_id, sequence);
-            active_.emplace(client_id, ActiveConnection{.sequence = sequence, .connection = connection});
-            connection->start(std::move(*connect), std::move(credentials));
+            active_.insert_or_assign(client_id, ActiveConnection{.sequence = sequence, .connection = connection});
+            connection->start(std::move(*connect), std::move(credentials), deadline);
             if (message) connection->enqueue_message(std::move(*message));
             if (close) connection->close(std::move(*close));
             return;
@@ -746,8 +813,9 @@ class WebSocketClientImplementation final {
         const auto found = active_.find(client_id);
         if (found == active_.end() || found->second.sequence != sequence) return;
         auto connection = std::move(found->second.connection);
-        active_.erase(found);
-        clear_bucket(client_id, sequence, std::nullopt);
+        found->second.connection.reset();
+        clear_bucket(client_id, sequence, sequence);
+        write_connect_response(client_id, sequence, error_response("WebSocket connection failed"));
         if (connection) connection->cancel();
     }
 
@@ -881,9 +949,18 @@ void WebSocketClientRuntime::update(i64 client_id, i64 sequence,
                                     std::optional<ScalarValue<Bundle<WebSocketConnectRequest>>> connect,
                                     std::optional<ScalarValue<bytes>> message,
                                     std::optional<ScalarValue<Bundle<WebSocketClose>>> close,
-                                    std::optional<ScalarValue<Bundle<Auth>>> credentials) {
+                                    std::optional<ScalarValue<Bundle<Auth>>> credentials,
+                                    std::chrono::steady_clock::time_point deadline) {
     implementation_->update(client_id, sequence, std::move(connect), std::move(message), std::move(close),
-                            std::move(credentials));
+                            std::move(credentials), deadline);
+}
+
+void WebSocketClientRuntime::begin_connect(i64 client_id, i64 sequence) {
+    implementation_->begin_connect(client_id, sequence);
+}
+
+void WebSocketClientRuntime::fail(i64 client_id, i64 sequence, std::string_view message) noexcept {
+    implementation_->fail(client_id, sequence, message);
 }
 
 void WebSocketClientRuntime::cancel(i64 client_id, i64 sequence) noexcept {

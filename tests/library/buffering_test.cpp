@@ -61,6 +61,48 @@ TEST_CASE("gate queues values while its initial condition is invalid",
     CHECK(bg::run_graph(gate, {literal::INVALID, true}, {1, 2}).equals<i64>({std::nullopt, 1, 2}));
 }
 
+TEST_CASE("gate reset discards closed events before retaining the current tick",
+          "[feature:operator][feature:timed-scheduling][series:value][transition:update]") {
+    const auto gate = [](wp<TS<bool>> condition, wp<TS<i64>> value, wp<TS<bool>> reset) {
+        return operators::gate(condition, value, "reset"_n = reset);
+    };
+
+    CHECK(bg::run_graph(gate, input<TS<bool>>({false, false, false, true}), input<TS<i64>>({1, 2, 3, 4}),
+                        input<TS<bool>>({literal::SKIP, literal::SKIP, true, literal::SKIP}))
+              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 3, 4}));
+}
+
+TEST_CASE("gate reset does not publish or invalidate the previous output",
+          "[feature:operator][feature:timed-scheduling][series:value][transition:update]") {
+    const auto gate = [](wp<TS<bool>> condition, wp<TS<i64>> value, wp<TS<i64>> reset) {
+        return operators::gate(condition, value, "reset"_n = reset);
+    };
+
+    CHECK(bg::run_graph(gate, input<TS<bool>>({true, true, true}),
+                        input<TS<i64>>({1, literal::SKIP, literal::SKIP}),
+                        input<TS<i64>>({literal::SKIP, 1, literal::SKIP}))
+              .equals<i64>({1, std::nullopt, std::nullopt}));
+
+    const auto remains_valid = [](wp<TS<bool>> condition, wp<TS<i64>> value, wp<TS<i64>> reset) {
+        return operators::sample(reset, operators::valid(operators::gate(condition, value, "reset"_n = reset)));
+    };
+    CHECK(bg::run_graph(remains_valid, input<TS<bool>>({true, true, true}),
+                        input<TS<i64>>({1, literal::SKIP, literal::SKIP}),
+                        input<TS<i64>>({literal::SKIP, 1, literal::SKIP}))
+              .equals<bool>({std::nullopt, true, std::nullopt}));
+}
+
+TEST_CASE("gate reset during drain discards queued events before the current tick",
+          "[feature:operator][feature:timed-scheduling][series:value][transition:update]") {
+    const auto gate = [](wp<TS<bool>> condition, wp<TS<i64>> value, wp<TS<i64>> reset) {
+        return operators::gate(condition, value, "reset"_n = reset);
+    };
+
+    CHECK(bg::run_graph(gate, input<TS<bool>>({false, true, true}), input<TS<i64>>({1, 2, 3}),
+                        input<TS<i64>>({literal::SKIP, literal::SKIP, 1}))
+              .equals<i64>({std::nullopt, 1, 3}));
+}
+
 TEST_CASE("gate retains set and dictionary deltas", "[feature:operator][feature:timed-scheduling]"
           "[series:tss][series:tsd][scalar:i64][transition:update]") {
     const auto gate_set = [](wp<TS<bool>> condition, wp<TSS<i64>> value) {
