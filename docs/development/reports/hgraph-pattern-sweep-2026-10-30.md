@@ -73,6 +73,10 @@ variant, Python conversion behavior, or the full REF-consumer parameterizations.
 Services and feedback patterns also remain outside this round. The six passing
 cases do not establish coverage of the full upstream suites.
 
+The [reference-consumer follow-up](hgraph-reference-consumer-sweep-2026-10-30.md)
+checks source switching and selected REF-consumer combinations and records the
+attribute projection exclusion.
+
 ## Verification
 
 The focused library runner passed **221 test cases and 469 assertions**. It

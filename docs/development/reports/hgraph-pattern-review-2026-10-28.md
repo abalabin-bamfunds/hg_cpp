@@ -58,6 +58,7 @@ which remain the [coverage source](../testing.md#coverage-model).
 - [Free bundles and fixed lists](hgraph-free-bundle-pattern-findings-2026-10-28.md).
 - [Nested graph compositions](hgraph-nested-pattern-findings-2026-10-28.md).
 - [Follow-up collection and graph-pattern sweep](hgraph-pattern-sweep-2026-10-30.md).
+- [Reference-consumer sweep](hgraph-reference-consumer-sweep-2026-10-30.md).
 
 ## Original results
 
