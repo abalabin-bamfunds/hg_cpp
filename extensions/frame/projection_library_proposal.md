@@ -234,9 +234,9 @@ the entry points for copying and delay. Additional core facilities require a
 concrete missing operation.
 
 `TimeSeriesTickOperations::typed_replay<Out<TS_T>>` passes its existing erased
-output directly to the callback. BG commit `ce14d7c0`, included on the frame
-lane as `d4b0a205`, provides this behavior. Provider replay tests and the full
-frame suite pass against the matching BG build.
+output directly to the callback. BG commit `ce14d7c0`, merged into main as
+`3cc9691b`, provides this behavior. Provider replay tests
+and the full frame suite pass against the matching BG build.
 
 ## Implementation order
 

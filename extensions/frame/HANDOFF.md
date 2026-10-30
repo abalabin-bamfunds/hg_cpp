@@ -4,11 +4,11 @@ Updated: 2026-10-30.
 
 ## Active extension integration
 
-Uncommitted work on this lane adds native `copy`/`copy_tick`, typed time-series
+Committed frame work on this lane adds native `copy`/`copy_tick`, typed time-series
 visitation, scalar formatting, and live/retained tick formatting. Native TSC
 and TSF retained replay use BG's existing operation registry and share live
 copying's output-owned row mapping. The separate BG erased-replay fix is
-included as `d4b0a205` (original commit `ce14d7c0`).
+included as `3cc9691b` (original commit `ce14d7c0`).
 
 The complete Release build with Arrow enabled passed using `j12`. All 12 frame
 CTest executables passed. Coverage includes all five cell types,
@@ -42,7 +42,11 @@ matching BG Release build and installation passed. Frame regressions passed for
 long-string feedback, public `gate` transitions between retained replay and
 live copying on one destination, and multiple retained records replayed in one
 evaluation. The latter verifies that child modification flags accumulate.
-`git diff --check` passed. Main remains unchanged.
+`git diff --check` passed. BG support is merged into main at `467c66b3`.
+The Release core and library suite passed all 2,934 configured CTest tests;
+Python and Web were disabled. The frame implementation is committed on its
+lane and remains unchanged from checkpoint `5eabd231`. All 12 frame CTest
+targets passed after rebasing onto main.
 
 Review also requires preserving publication after an addition/removal cancels
 the row delta. TSF retained records must preserve changed-column flags for
@@ -74,7 +78,7 @@ and missing row changes and child modification flags after the first target.
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is rebased onto main `4bc849f8` and includes
+`agent/frame-with-columns`. The lane is based on main `467c66b3` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
@@ -155,11 +159,10 @@ and retains the source key tuple order.
 
 The approved BG metadata API is `SchemaMetadata::copy_with(overrides, remove)`.
 It removes listed names, then applies overrides, and replaces `with_overrides`.
-The isolated core change is in `.lanes/schema-metadata-copy` on
-`agent/schema-metadata-copy` at `ff57649a`, included in this lane as `4b687a13`
-after rebasing onto `dfe929f0`.
+The original isolated core change is `ff57649a` in `.lanes/schema-metadata-copy`.
+Main includes it as `d413e317`.
 Its Release engine build succeeded; focused schema tests passed 11 cases and
-50 assertions. The core change is not merged into main.
+50 assertions.
 
 Projection uses `copy_with({}, {"bg.frame.key"})` when key columns are omitted,
 preserving unrelated metadata. Regression tests cover declared and anonymous
@@ -407,11 +410,14 @@ state is on main through merge `04518839`.
 [CONSOLIDATION.md](CONSOLIDATION.md) records the integrated BG changes, archive,
 completed lane retirement, and consumer verification.
 
+The table and build directories below describe earlier checkpoints. Current
+locations and verification are recorded under [Development lanes](#development-lanes).
+
 | Work | Location / branch | State |
 | --- | --- | --- |
-| BG baseline for current consumer builds | Lane-local Release and Debug installs | `5d48e914` plus bounded bitmap search `73622fb7`; original optimization comparisons held `5d48e914` fixed |
-| Bounded bitmap search | `.lanes/index-bounded-search`, `agent/index-bounded-search` | Utility-only commit `de53c9e7`; applied to the frame lane as `73622fb7`; not merged into main |
-| Active frame work | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
+| BG baseline for earlier consumer builds | Lane-local Release and Debug installs | `5d48e914` plus bounded bitmap search `73622fb7`; original optimization comparisons held `5d48e914` fixed |
+| Bounded bitmap search | `.lanes/index-bounded-search`, `agent/index-bounded-search` | Original utility commit `de53c9e7`; main includes it as `2d8c2704` |
+| Earlier frame foundation | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
 | Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
@@ -419,7 +425,7 @@ completed lane retirement, and consumer verification.
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
 | Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
 
-The current frame verification uses these consumer directories:
+The earlier frame verification used these consumer directories:
 `build/tsf-row-release-arrow-off` and `build/tsf-row-release-arrow-on` use the
 lane-local Release BG install at `dependencies/bg-frame-core-bounded-release-install`;
 `build/tsf-row-debug-asan-arrow-on` uses the matching Debug install at
