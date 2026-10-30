@@ -5,9 +5,10 @@ This report compares free bundle and fixed-list patterns in hgraph 0.5.42 and
 updates, validity, switch branches, and nested graph boundaries. It records
 coverage and unresolved differences; it does not propose implementation fixes.
 
-The [BG `dfe929f0` recheck](hgraph-pattern-recheck-2026-10-29.md) supersedes the
-failure statuses below. Structural activation capture and rebuilt-list item
-identity now pass. The four free-structure wiring reproductions still fail.
+The [BG `2de7d53f` recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
+failure statuses below. The mixed and rebuilt-free bundle switch cases,
+structural activation capture, and rebuilt-list item identity now pass. Nested
+free bundle/list REF pass-through remains a wiring failure.
 
 The initial BG baseline is `11ba59a4`; final validation uses `8058a013`. See
 the [review summary](hgraph-pattern-review-2026-10-28.md) for build details. The 0.5

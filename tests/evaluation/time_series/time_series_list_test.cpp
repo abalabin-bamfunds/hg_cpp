@@ -8,7 +8,6 @@
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/switch.hpp>
-#include <bg/time_series/tick_format.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tsl/tsl_type.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
@@ -20,7 +19,6 @@
 #include <array>
 #include <chrono>
 #include <optional>
-#include <string>
 #include <vector>
 
 using namespace bg;
@@ -164,6 +162,32 @@ TEST_CASE("a free fixed time series list follows the receiving item runtime_type
     const auto result = bg::run_graph(graph, {1, 2}, {10, 20});
 
     CHECK(result.equals({11, 22}));
+}
+
+TEST_CASE("a reference can select among free fixed lists and become invalid",
+          "[evaluation][tsl][feature:reference][series:fixed-tsl][representation:free]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto select_list = node([](In<TS<i64>> index, In<REF<TSL<TS<i64>, 2>>> first,
+                                     In<REF<TSL<TS<i64>, 2>>> second,
+                                     Out<REF<TSL<TS<i64>, 2>>> output) {
+        if (*index == 0) {
+            output.copy(first);
+        } else if (*index == 1) {
+            output.copy(second);
+        } else {
+            output.invalidate();
+        }
+    });
+
+    const auto tested = [&](wp<TS<i64>> index) {
+        const auto first = tsl(operators::const_(i64{1}), operators::const_(i64{1}));
+        const auto second = tsl(operators::const_(i64{2}), operators::const_(i64{2}));
+        return select_list(index, first, second);
+    };
+
+    const auto actual = bg::run_graph(tested, {0, 2, 1, 2});
+
+    CHECK(actual.equals({{{0, 1}, {1, 1}}, literal::INVALID, {{0, 2}, {1, 2}}, literal::INVALID}));
 }
 
 TEST_CASE("a free fixed time series list preserves compound child rebinding deltas",
@@ -558,14 +582,6 @@ TEST_CASE("a switch routes a free fixed list between its items and a constant li
                                       {1, literal::SKIP, 3, literal::SKIP},
                                       {-1, literal::SKIP, -3, literal::SKIP});
 
-    auto observed = std::vector<std::string>{};
-    for (auto tick_index = std::size_t{}; tick_index < actual.size(); ++tick_index) {
-        actual.visit_tick(tick_index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
-            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
-        });
-    }
-    CAPTURE(observed);
-
     CHECK(actual.equals({{{0, 1}, {1, 2}},
                          {{0, 1}, {1, -1}},
                          {{0, 1}, {1, 2}},
@@ -637,14 +653,6 @@ TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
                                       {true, false, true, false},
                                       {10, literal::SKIP, literal::SKIP, 20},
                                       {-1, -2, -3, -4});
-
-    auto observed = std::vector<std::string>{};
-    for (auto tick_index = std::size_t{}; tick_index < actual.size(); ++tick_index) {
-        actual.visit_tick(tick_index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
-            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
-        });
-    }
-    CAPTURE(observed);
 
     CHECK(actual.equals({10, std::nullopt, std::nullopt, 20}));
 }

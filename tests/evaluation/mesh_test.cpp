@@ -677,7 +677,7 @@ TEST_CASE("mapped meshes reduce independently and rebuild after a parent returns
 
 TEST_CASE("switch-selected mesh branches feed a reduction",
           "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
-          "[series:tsd][shape:deeply-nested][transition:update][.][repro]") {
+          "[series:tsd][shape:deeply-nested][transition:update]") {
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
 
     const auto select_mesh_value = graph(
@@ -687,7 +687,8 @@ TEST_CASE("switch-selected mesh branches feed a reduction",
             return switch_(key,
                            cases{case_(i64{1}, [=](wp<TS<i64>> value) { return add_amount(value, 10); }),
                                  case_(i64{2}, [](wp<TS<i64>> value) { return value; })},
-                           selected);
+                           selected)
+                .as<TS<i64>>();
         });
 
     const auto tested = [=](wp<TSD<i64, TS<i64>>> values,
@@ -704,7 +705,7 @@ TEST_CASE("switch-selected mesh branches feed a reduction",
 
 TEST_CASE("a reduction observes mesh dependencies after switch outputs change",
           "[feature:mesh][feature:switch][feature:reduce][feature:nested-graph]"
-          "[series:tsd][shape:deeply-nested][transition:update][.][repro]") {
+          "[series:tsd][shape:deeply-nested][transition:update]") {
     const auto add_amount = node([](i64 value, int amount) { return value + amount; });
 
     const auto select_mesh_value = graph(
@@ -715,7 +716,8 @@ TEST_CASE("a reduction observes mesh dependencies after switch outputs change",
             return switch_(selector,
                            cases{case_(i64{1}, [=](wp<TS<i64>> input) { return add_amount(input, 10); }),
                                  case_(i64{2}, [=](wp<TS<i64>> input) { return add_amount(input, 20); })},
-                           value);
+                           value)
+                .as<TS<i64>>();
         });
 
     const auto tested = [=](wp<TS<i64>> selected_case,

@@ -4,6 +4,12 @@ This review selects higher-level graph compositions from hgraph 0.5 and 0.8
 tests and checks whether BG has corresponding behavior tests. It adds regression
 tests only. It does not change engine code.
 
+The [latest BG recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
+failure statuses below: the `take` composition and switch/mesh/reduce cases now
+pass in the ordinary focused run. The two switch/mesh cases pass after adding
+concrete `.as<TS<i64>>()` return annotations to their callbacks. The explicit
+nested REF result boundaries still fail during wiring.
+
 The source snapshots are hgraph 0.5 at `c34dba1d` and hgraph 0.8 at
 `b9305bb2`. Final validation uses BG `8058a013`; full source revisions
 are recorded in the [review summary](hgraph-pattern-review-2026-10-28.md).

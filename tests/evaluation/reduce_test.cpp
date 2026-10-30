@@ -1,6 +1,7 @@
 #include <bg/graph.hpp>
 #include <bg/map.hpp>
 #include <bg/node.hpp>
+#include <bg/operators.hpp>
 #include <bg/reduce.hpp>
 #include <bg/reduce/details/reduce_graph_argument.hpp>
 #include <bg/run_graph.hpp>
@@ -621,6 +622,60 @@ TEST_CASE("reduce accepts TSD values",
     const auto actual = bg::run_graph(tested, {{{1, {{1, 2}, {2, 3}}}, {2, {{1, 5}, {3, 7}}}}});
 
     CHECK(actual.equals({{{1, 2}, {2, 3}, {3, 7}}}));
+}
+
+TEST_CASE("reduce maps and combines nested dictionaries",
+          "[feature:reduce][feature:map][series:tsd][shape:doubly-nested]") {
+    const auto add = graph("name"_n = "add_defaulted_values",
+                           [](wp<TS<i64>> left, wp<TS<i64>> right) {
+                               return add_values(operators::default_(left, i64{0}),
+                                                 operators::default_(right, i64{0}));
+                           });
+    const auto merge = graph("name"_n = "merge_nested_dictionaries",
+                             [add](wp<TSD<i64, TS<i64>>> left, wp<TSD<i64, TS<i64>>> right) {
+                                 return map(add, left, right).as<TSD<i64, TS<i64>>>();
+                             });
+
+    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) { return reduce(merge, values); };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, {{1, 1}, {2, 2}}}},
+         {{2, {{1, 3}, {2, 4}}}},
+         {{3, {{2, 1}, {3, 3}}}}});
+
+    CHECK(actual.equals({{{1, 1}, {2, 2}}, {{1, 4}, {2, 6}}, {{1, 4}, {2, 7}, {3, 3}}}));
+}
+
+template <template <typename, auto...> typename Field> struct ReduceMapBundle {
+    Field<TSD<i64, TS<i64>>> values;
+};
+
+TEST_CASE("reduce maps a projected bundle of nested dictionaries",
+          "[feature:reduce][feature:map][series:tsd][series:tsb][shape:doubly-nested]") {
+    const auto add = graph("name"_n = "add_nested_dictionary_values",
+                           [](wp<TS<i64>> left, wp<TS<i64>> right) { return add_values(left, right); });
+
+    const auto merge = graph("name"_n = "merge_projected_nested_dictionaries",
+                             [add](wp<TSD<i64, TS<i64>>> left, wp<TSD<i64, TS<i64>>> right) {
+                                 return map(add, left, right).as<TSD<i64, TS<i64>>>();
+                             });
+
+    const auto wrap = graph("name"_n = "wrap_nested_dictionary",
+                            [](wp<TSD<i64, TS<i64>>> values) {
+                                return bundle<ReduceMapBundle>("values"_n = values);
+                            });
+    const auto project = graph("name"_n = "project_nested_dictionary",
+                               [](wp<TSB<ReduceMapBundle>> row) { return row->values; });
+
+    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
+        const auto projected = map(project, map(wrap, values));
+        return reduce(merge, projected);
+    };
+
+    const auto actual = bg::run_graph(tested, {{{1, {{1, 1}}}, {2, {{1, 2}}}}});
+
+    CHECK(actual.equals({{{1, 3}}}));
 }
 
 TEST_CASE("reduce accepts TSS values",

@@ -5,8 +5,8 @@ on references across nested graph boundaries, free bundles and fixed lists, and
 compositions of map, switch, mesh, and reduce. Implementation changes require a
 separate decision after review.
 
-The [latest recheck](hgraph-pattern-recheck-2026-10-29.md) records results after
-rebasing onto BG `dfe929f0`. The original results below retain their stated revisions.
+The [latest recheck](hgraph-pattern-recheck-2026-10-30.md) records results after
+rebasing onto BG `2de7d53f`. The original results below retain their stated revisions.
 
 ## Source revisions
 
@@ -161,15 +161,17 @@ These source expectations are not used as BG failure oracles.
 
 ## Scope assessment
 
-These source patterns were inspected but not executed as exact BG reproductions.
-The dispositions below use the BG `dfe929f0` contract. Non-scalar TSD reduction
-is now supported; its two earlier exclusions remain unverified compositions.
+The remaining source patterns below were assessed against BG `2de7d53f` but
+were not executed as exact BG reproductions. The `test_reduce_map` and
+`test_reduce_from_switch` compositions were checked in the [latest
+recheck](hgraph-pattern-recheck-2026-10-30.md#upstream-pattern-mapping).
+Non-scalar TSD reduction is now supported.
 
 | Source test | Required functionality | Disposition |
 | --- | --- | --- |
 | 0.5 `_wiring/test_map.py::test_tsl_map_wiring`, `test_tsl_map_wiring_no_key`; 0.5/0.8 `_wiring/test_reduce.py::test_tsl_reduce*` | Higher-order map/reduce over fixed TSL | BG's [map](../design/map.md) and [reduce](../design/reduce.md) operate on TSD. Fixed TSL storage and free TSL construction have separate tests. |
-| 0.5 `_wiring/test_reduce.py::test_reduce_map`; 0.8 `test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | Reduce `TSD<K, TSD<J, TS<V>>>` into a TSD using a mapped reducer. | Unverified composition. Current [reduce](../design/reduce.md) accepts non-scalar TSD items and returns a reference to the reduced result. The former item-type exclusion no longer applies. |
-| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | Unverified composition. Current reduce accepts TSB-valued items; `reduce accepts TSB values` covers the basic reduction. The former item-type exclusion no longer applies. |
+| 0.5 `_wiring/test_reduce.py::test_reduce_map`; 0.8 `test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | Reduce `TSD<K, TSD<J, TS<V>>>` into a TSD using a mapped reducer. | Ported and passing as `reduce maps and combines nested dictionaries` and `reduce maps a projected bundle of nested dictionaries`; see the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#upstream-pattern-mapping). |
+| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | The populated sequence passes. The initially empty dictionary and invalid-item initial variants remain hidden failures; the output validity path is unresolved. See the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#remaining-findings). |
 | 0.5 `_wiring/test_reduce.py::test_reduce_tuple` | Ordered fold of each `TS<tuple<int, ...>>` tick into a string, starting from a `TS<string>` seed. | Unsupported fold. Current reduce consumes a TSD and returns an item-compatible time series. A scalar-item reduction accepts a scalar default. This source case requires a scalar-collection fold, a different accumulator type, and a time-series seed. Tuple values themselves are supported. |
 | 0.8 `test_reduce_zero_semantics.py::test_ordered_reduce_retains_delayed_source_schedules` | Ordered, non-associative reduction and a time series zero. | Unsupported reduction semantics. BG reduce requires an associative and commutative operation. Its scalar-item path accepts a scalar default. |
 | 0.8 `ported/_wiring/test_context.py::test_context_crosses_stacked_try_except_boundaries` | A graph boundary that captures exceptions as output | BG [exception handling](../design/evaluation.md#exceptions) stops the graph and propagates the exception. No `try_except` operation was found in the public API. |

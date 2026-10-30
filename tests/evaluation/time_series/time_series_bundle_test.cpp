@@ -14,17 +14,15 @@
 #include <bg/time_series/tsb/tsb_output.hpp>
 #include <bg/time_series/tsl/tsl_input.hpp>
 #include <bg/time_series/tsl/tsl_output.hpp>
-#include <bg/time_series/tick_format.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <chrono>
 #include <optional>
-#include <span>
-#include <string>
-#include <utility>
 #include <vector>
+#include <span>
+#include <utility>
 
 using namespace bg;
 using namespace bg::literals;
@@ -803,14 +801,6 @@ TEST_CASE("a switch routes a free bundle between its fields and a constant bundl
                                       {1, literal::SKIP, 3, literal::SKIP},
                                       {-1.0F, literal::SKIP, -3.0F, literal::SKIP});
 
-    auto observed = std::vector<std::string>{};
-    for (auto tick_index = std::size_t{}; tick_index < actual.size(); ++tick_index) {
-        actual.visit_tick(tick_index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
-            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
-        });
-    }
-    CAPTURE(observed);
-
     CHECK(actual.equals({{{"count", 1}, {"value", 2.0F}},
                          {{"count", 1}, {"value", -1.0F}},
                          {{"count", 1}, {"value", 2.0F}},
@@ -818,7 +808,7 @@ TEST_CASE("a switch routes a free bundle between its fields and a constant bundl
 }
 
 TEST_CASE("a switch accepts native and free bundle branches",
-          "[.][repro][feature:switch][feature:reference][series:tsb][schema:named]"
+          "[feature:switch][feature:reference][series:tsb][schema:named]"
           "[representation:free][representation:native][shape:nested][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_bundle",
                                     [](wp<TSB<DerivedBundle>> input) { return input; });
@@ -860,7 +850,7 @@ TEST_CASE("a switch accepts native and free bundle branches",
 }
 
 TEST_CASE("reselecting a rebuilt free bundle keeps unchanged field references",
-          "[.][repro][feature:switch][feature:reference][feature:sampling][series:tsb][representation:free]"
+          "[feature:switch][feature:reference][feature:sampling][series:tsb][representation:free]"
           "[shape:nested][binding:reference-to-reference][transition:update]") {
     const auto pass_through = graph("name"_n = "pass_free_bundle",
                                     [](wp<TSB<DerivedBundle>> input) { return input; });

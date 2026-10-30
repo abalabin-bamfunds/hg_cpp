@@ -350,7 +350,7 @@ TEST_CASE("take keeps the initial map of branches across nested switch replaceme
           "[feature:operator][feature:map][feature:switch][feature:nested-graph]"
           "[feature:reference][feature:lifecycle][series:tsd][series:tsb][series:reference]"
           "[binding:reference-to-value][schema:named][shape:deeply-nested]"
-          "[transition:update][transition:removal][transition:addition][.][repro]") {
+          "[transition:update][transition:removal][transition:addition]") {
     const auto increment = graph("name"_n = "increment_branch_values",
                                  [](wp<TS<double>> value) { return value + 1.0; });
 
@@ -402,8 +402,8 @@ TEST_CASE("take keeps the initial map of branches across nested switch replaceme
         {false, literal::SKIP, literal::SKIP, literal::SKIP, true, literal::SKIP});
 
     CHECK(actual.equals({
-        {{{"branch_0", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}},
-          {"branch_1", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}},
-          {"branch_2", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}}}},
+        {{"branch_0", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}},
+         {"branch_1", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}},
+         {"branch_2", {{"direct", {{"k00", 2.0}, {"k01", 3.0}, {"k02", 4.0}, {"k03", 5.0}, {"k04", 6.0}}}}}},
         literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}));
 }

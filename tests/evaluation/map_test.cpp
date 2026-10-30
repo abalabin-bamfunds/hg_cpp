@@ -9,7 +9,6 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tick_format.hpp>
 #include <bg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -17,9 +16,8 @@
 #include <array>
 #include <cstdint>
 #include <optional>
-#include <span>
-#include <string>
 #include <vector>
+#include <span>
 
 namespace {
 
@@ -27,6 +25,11 @@ using namespace bg;
 using namespace bg::literals;
 
 template <template <typename, auto...> typename Field> struct MapReferenceRow {
+    Field<TS<i64>> value;
+    Field<TS<string>> label;
+};
+
+template <template <typename, auto...> typename Field> struct MapReferenceProjection {
     Field<TS<i64>> value;
     Field<TS<string>> label;
 };
@@ -926,6 +929,56 @@ TEST_CASE("map drops a removed reference item while a sibling follows its target
                          {{2, {{"value", 3}, {"label", "updated"}}}}}));
 }
 
+TEST_CASE("map preserves keyed bundle references and materializes a distinct schema",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][series:tsb]"
+          "[schema:named][shape:doubly-nested][binding:reference-to-reference]") {
+    const auto capture_rows = node([](In<TSD<string, TSB<MapReferenceRow>>> input,
+                                      Out<TSD<string, TSB<MapReferenceRow>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto capture_projection = node([](In<TSD<string, TSB<MapReferenceProjection>>> input,
+                                            Out<TSD<string, TSB<MapReferenceProjection>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto lookup = graph(
+        "name"_n = "lookup_typed_row",
+        [](wp<TS<string>> key, wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+            return rows[key].as<TSB<MapReferenceRow>>();
+        });
+
+    const auto materialize = graph(
+        "name"_n = "materialize_typed_row",
+        [](wp<TS<string>> key, wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+            const auto row = rows[key].as<TSB<MapReferenceRow>>();
+            return bundle<MapReferenceProjection>("value"_n = row->value, "label"_n = row->label);
+        });
+
+    const auto reference_app = [&](wp<TSD<string, TS<string>>> lookups,
+                                   wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+        return capture_rows(map(lookup, lookups, pass_through(rows)));
+    };
+
+    const auto materialized_app = [&](wp<TSD<string, TS<string>>> lookups,
+                                      wp<TSD<string, TSB<MapReferenceRow>>> rows) {
+        return capture_projection(map(materialize, lookups, pass_through(rows)));
+    };
+
+    const auto check = [&](const auto &app) {
+        const auto actual = bg::run_graph(
+            app,
+            {{{"left", "a"}, {"right", "b"}}},
+            {{{"a", {{"value", 1}, {"label", "one"}}}, {"b", {{"value", 2}, {"label", "two"}}}}});
+
+        CHECK(actual.equals({{{"left", {{"value", 1}, {"label", "one"}}},
+                             {"right", {{"value", 2}, {"label", "two"}}}}}));
+    };
+
+    check(reference_app);
+    check(materialized_app);
+}
+
 TEST_CASE("each mapped graph reads the context for its own key",
           "[feature:map][feature:nested-graph][feature:switch][feature:context-time-series][series:tsd]"
           "[shape:doubly-nested][transition:update][binding:reference-to-reference]") {
@@ -1009,14 +1062,6 @@ TEST_CASE("map retargets a selected dictionary reference across a nested graph",
         {{{1, 1}, {2, 2}}, literal::SKIP, {{1, 3}}, {{1, 4}}},
         {{{1, 10}, {2, 20}}, {{1, 11}}, literal::SKIP, literal::SKIP},
         {true, true, true, true});
-
-    auto observed = std::vector<std::string>{};
-    for (auto index = std::size_t{}; index < actual.size(); ++index) {
-        actual.visit_tick(index, [&](const TimeSeriesType &type, bool valid, util::buffer_reader &reader) {
-            observed.push_back(fmt::format("{}", tick(type, valid, reader)));
-        });
-    }
-    CAPTURE(observed);
 
     CHECK(actual.equals({{{1, 1}, {2, 2}}, {{1, 11}, {2, 20}}, {{1, 3}, {2, 2}}, {{1, 4}}}));
 }
