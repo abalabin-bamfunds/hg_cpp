@@ -21,3 +21,11 @@ input behavior, retained output and state, and errors.
 - [Time operators](library-time.md)
 - [Collection operators](library-collections.md)
 - [Text operations](library-text.md)
+
+## Extensions
+
+- [HTTP clients and servers](../extensions/web.md),
+  [authentication](../extensions/web-auth.md), and [WebSocket](../extensions/websocket.md).
+- [Columns and frames](../extensions/frame.md),
+  [column expressions and table transformations](../extensions/frame-expressions.md), and
+  [frame nodes and Arrow interchange](../extensions/frame-nodes.md).

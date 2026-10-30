@@ -7,11 +7,15 @@ runs. The choice determines branch evaluation and retained state.
 | --- | --- | --- |
 | Fixed configuration | Native `if` | Chooses connections during construction |
 | One of two changing values | `if_then_else` | Follows the selected input; both calculations remain connected |
+| Two complementary destinations | [`if_`](../../reference/library-selection.md#if_) | Routes to the true or false field |
+| A signal for true ticks | [`if_true`](../../reference/library-selection.md#if_true) | Emits true and ignores false ticks |
+| A destination selected by number | [`route_by_index`](../../reference/library-selection.md#route_by_index) | Routes into one fixed-list slot |
 | Forward while enabled | `filter_` | Forwards while open; retains output while closed |
 | Retain updates while closed | `gate` | Queues input events and replays them when open |
 | Collect scalar values | `batch` | Publishes queued values when opened or when its timer expires |
 | A value while an input is unavailable | `default_` | Uses a fallback until the source has a current value |
 | Updates from alternative publishers | `merge` | Selects the leftmost valid input that changed |
+| One publisher while it remains valid | [`race`](../../reference/library-selection.md#race) | Retains the earliest continuously valid input |
 | One active calculation | `switch_` | Starts the selected graph instance and stops the previous instance |
 
 ## Fixed conditions

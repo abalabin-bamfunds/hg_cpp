@@ -24,6 +24,7 @@ the site. Paths in the following table are relative to `docs/user/`.
 | `guide/execution/` | Applications and time patterns |
 | `how-to/` | Testing, diagnostics, integration, worked applications |
 | `reference/` | API contracts and library operations |
+| `extensions/` | Optional extension setup, graph patterns, and node APIs |
 
 Use relative Markdown links and descriptive anchors. Keep one primary explanation
 for each concept. Introduce its purpose, show code and results, then state constraints.
@@ -53,9 +54,29 @@ block. Signature fragments omit an output block and are not executed. Use
 `Output (ellipsis):` only for variable fields such as timing or generated paths.
 Plain output labels require exact matches.
 
+Live network examples use `Response:` for the received response. Verify them separately
+with a local listener; the deterministic example checker does not collect them.
+
 `docs/tools/example_sources.py` collects examples from the homepage, guide, task pages,
-and reference. The checker and Sphinx download generator use the same sources.
+reference, and extension pages. The checker and Sphinx download generator use the same sources.
 Generated sources belong to ignored `docs/user/_generated/` and `build/doc-examples/`.
+
+Use `<!-- runnable-example: cpp -->` for a page whose API is currently C++ only.
+It requires at least one C++ program with an output block and no runnable Python
+blocks. Its download table has no Python source file.
+
+Extension pages declare CMake dependencies once per page:
+
+```html
+<!-- example-libraries: bg::frame -->
+<!-- example-source: extensions/frame -->
+```
+
+`example-libraries` lists space-separated targets; its default is `bg::library`.
+`example-source` adds one directory relative to `BG_SOURCE_DIR` with `add_subdirectory`.
+The checker supplies the current checkout; downloaded projects ask the consumer to set
+that path. The web extension uses `bg::web` without a source directory because its
+target belongs to the installed BG package.
 
 ## Verification
 

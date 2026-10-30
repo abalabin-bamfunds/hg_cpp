@@ -51,6 +51,7 @@ imports and headers.
 | `if_` | [Reference](library-selection.md#if_) |
 | `if_then_else` | [Reference](library-selection.md#if_then_else) |
 | `if_true` | [Reference](library-selection.md#if_true) |
+| `index_of` | [Reference](library-collections.md#collection-queries) |
 | `invert` | [Reference](library-numeric.md#integer-bitwise-operators) |
 | `is_empty` | [Reference](library-collections.md#time-series-set-operations) |
 | `join` | [Reference](library-text.md#split-and-join) |
@@ -109,8 +110,10 @@ imports and headers.
 | `take` | [Reference](library-selection.md#take-drop-step) |
 | `throttle` | [Reference](library-time.md#throttle) |
 | `timeout` | [Reference](library-time.md#timeout) |
+| `type_` (C++) | {ref}`Reference <concrete-scalar-type>` |
 | `uncollapse_keys` | [Reference](library-collections.md#dictionary-transforms) |
 | `unpartition` | [Reference](library-collections.md#dictionary-transforms) |
 | `upper` | [Reference](library-text.md#construction-and-queries) |
 | `valid` | [Reference](library-selection.md#valid) |
 | `valid_items` | [Reference](graph-code.md#optional-arguments) |
+| `values_` | [Reference](library-collections.md#collection-queries) |

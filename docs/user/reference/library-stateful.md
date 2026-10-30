@@ -28,6 +28,80 @@ equal-valued ticks remain separate events. Positive lag produces an ordinary out
 the first `n` events produce no output, and the final `n` events remain unpublished
 unless more input events arrive.
 
+Keep a two-event separation from the current value:
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import lag
+
+@graph
+def previous(value: int) -> int:
+    return lag(value, 2)
+
+print(run_graph(previous, [10, 11, None, 12, 13]))
+```
+
+Output:
+
+```text
+[None, None, None, 10, 11]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto previous(wp<TS<i64>> value) {
+    return lag(value, 2);
+}
+
+int main() {
+    std::cout << run_graph(previous, {10, 11, SKIP, 12, 13}) << '\n';
+}
+```
+
+Output:
+
+```text
+[None, None, None, 10, 11]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
 ## sums, mins, maxs, means
 
 `sums(value)`, `mins(value)`, `maxs(value)`, and `means(value)` calculate over

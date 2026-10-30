@@ -18,6 +18,89 @@ valid event establishes a new baseline. Skipped cycles do not affect the
 duration. Ordinary equal-valued ticks are separate events. The output guarantee
 retains the input guarantee up to final.
 
+Measure spacing between input updates in microseconds. Each literal position is one microsecond:
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from datetime import timedelta
+from bg import node, graph, run_graph
+from bg.operators import elapsed
+
+@node
+def microseconds(value: timedelta) -> int:
+    return value // timedelta(microseconds=1)
+
+@graph
+def spacing(value: int) -> int:
+    return microseconds(elapsed(value))
+
+print(run_graph(spacing, [10, None, 20, 30, None, 40]))
+```
+
+Output:
+
+```text
+[None, None, 2, 1, None, 2]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/run_graph.hpp>
+#include <bg/node.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+using namespace bg::literals;
+
+auto microseconds = node([](timedelta_t value) { return value.count(); });
+
+auto spacing(wp<TS<i64>> value) {
+    return microseconds(elapsed(value));
+}
+
+int main() {
+    std::cout << run_graph(spacing, {10, SKIP, 20, 30, SKIP, 40}) << '\n';
+}
+```
+
+Output:
+
+```text
+[None, None, 2, 1, None, 2]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
 ## delay
 
 `delay(value, duration)` publishes each input event at its original evaluation time plus

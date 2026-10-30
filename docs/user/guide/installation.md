@@ -60,3 +60,9 @@ Shared-library installations may require the installation's library directory on
 platform's library search path. On Windows, add its `bin` directory to `PATH`.
 
 The [example downloads](../how-to/examples.md) include Python source and C++ projects.
+
+## Optional extensions
+
+The [web extension](../extensions/index.md#web) adds HTTP and WebSocket services.
+The [frame extension](../extensions/index.md#frame) adds C++ columns and tables.
+Their build options and example targets are documented separately.
