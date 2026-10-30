@@ -32,10 +32,24 @@ Typed bundle construction retains the actual field argument types:
 `src/time_series/tsb/wiring.cpp:315-337`. Thus a valid bundle root can contain
 valid REF handles whose targets are invalid.
 
-An optional field-projection observer compiled but exited with SIGSEGV; the
-original graph did not. This diagnostic crash is unclassified. Resolved-storage
-pointer comparisons across adapters were not used to infer reduce selection.
-The raw-reference probe remains an ignored local artifact in the
-`nested-reference-output` lane; it is not a tracked source or a reproducible
-command from this lane. Neither diagnostic was rerun during the current
-integration verification.
+The optional field-projection probe's SIGSEGV came from its observer node
+template lifetime. The probe declared `const auto observe = node<TraceInputs>()`
+inside the graph callback, then returned a call to that template. Wiring retains
+node-template references until graph compilation finishes, so the callback
+returned while the retained template was still needed. Moving `observe` to
+namespace scope removed the SIGSEGV. This follows the
+[node-template lifetime contract](../design/graph-wiring.md#wiring-template-call).
+
+That corrected broad probe then aborted with an uncaught
+`std::invalid_argument` (`the requested time series representation is not
+implemented`), a separate unsupported representation request. A narrower
+observer that reads only `mapped[1].as<TSB<SwitchReducePair>>()->a`,
+`mapped[1].as<TSB<SwitchReducePair>>()->b`, and
+`reduced.as<TSB<SwitchReducePair>>()->b` ran the empty, invalid-item, and
+populated sequences without a crash against the matching current library. The
+original graph outputs were unchanged. No production change was needed for
+this diagnostic crash.
+
+Resolved-storage pointer comparisons across adapters were not used to infer
+reduce selection. The raw-reference probe remains an ignored local artifact in
+the `nested-reference-output` lane; it was not part of this diagnosis.

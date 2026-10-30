@@ -85,8 +85,9 @@ removed.
 
 The integrated verification builds and runs nine engine test files and two
 library test files. It does not run the complete test suite or the optional
-diagnostic observer. The observer's prior SIGSEGV remains unclassified and is
-not part of these results.
+diagnostic observer. A later [diagnosis](map-switch-reduce-first-tick-2026-10-30.md)
+traced the observer's SIGSEGV to its node-template lifetime. That separate
+diagnostic run is not part of these test counts.
 
 | Target | Test files | Cases | Assertions | Result |
 | --- | ---: | ---: | ---: | --- |
