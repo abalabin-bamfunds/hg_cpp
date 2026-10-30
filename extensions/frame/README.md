@@ -258,6 +258,45 @@ removal or invalidation. A later addition requires a new name, including when
 storage reuses an internal row ID. These names apply only to expectations;
 unkeyed input literals continue to append rows.
 
+## Queued literals
+
+Include `<bg/queue.hpp>`. Native TSC and TSF outputs accept the existing
+[row literal syntax](#tsf-row-updates) through `Queue::write()`.
+
+```cpp
+const auto updates = bg::queue<TSF<KeyedQuotes>>(
+    bg::start = [](Queue queue) {
+        queue.write(literal::TimeSeriesLiteral{{{"id", i64{1}}, {"price", 10.0}}});
+        queue.write(literal::TimeSeriesLiteral{{{"id", i64{2}}, {"price", 20.0}}});
+        queue.write(literal::TimeSeriesLiteral{{{"id", i64{1}}, {"price", 11.0}}});
+    });
+auto q = updates();
+```
+
+In standard mode, the first two messages update independent keys in one cycle.
+The third message waits until the next cycle. A supplied non-key field is an
+effective change even when its value is equal. Removing an absent key and
+upserting an existing key without non-key fields are no-ops. Entries within
+one message apply in written order.
+
+A removed key remains recorded for admission through the cycle, including when
+an addition and removal cancel the row delta. A later message that reinserts
+that key therefore waits until the next cycle. Non-key cell values are released
+on removal.
+
+Unkeyed TSF and standalone TSC messages append rows. Eliding mode applies
+messages in order without standard admission checks; appends still accumulate.
+An effective invalidation and a later revalidation use separate cycles in
+standard mode. Empty literals validate invalid empty outputs.
+
+Wiring-time schemas pass
+`frame_series_type(schema, TimeSeriesGuarantee::ordinary)` as `bg::output_type`
+to `bg::queue()`. Queue registrations retain the fixed schema; messages do not repeat it.
+Built-in TSB, fixed TSL, and TSD can contain queued frame and column values.
+Borrowed and computed output runtimes and batch mode do not accept these
+queued literals. Encoded cell values own their data independently of producer
+literal storage.
+
 ## TSC input/output surface
 
 Include `<bg/frame/tsc.hpp>` for the typed views.

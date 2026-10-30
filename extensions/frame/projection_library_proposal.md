@@ -1,7 +1,7 @@
 # Frame projection and standard library integration
 
-Status: projection and row-count queries are implemented. Copying, retained-tick
-replay, and formatting integration are in progress.
+Status: projection, row-count queries, copying, retained-tick replay, formatting,
+reference sampling, and native queue literals are implemented.
 
 ## Purpose
 
@@ -207,14 +207,14 @@ The scalar and time series integration audit covers these operation sets:
 | Scalar buffer storage | BG's generic owning `ScalarValue` encoding applies; a specialized encoding is optional. |
 | Scalar formatting | Implemented through `ScalarFormatOperations` for both scalar families and native/Arrow layouts. |
 | Time series declarations, runtime selection, output options | Implemented for native, view, and computed layouts. |
-| Publication, invalidation, validity, child access and notifications | Implemented; verify composition while adding copy support. |
+| Publication, invalidation, validity, child access and notifications | Implemented and covered by copy, sampling, replay, and queue composition tests. |
 | Typed input/output visitation | Implemented by forwarding to BG's erased views. |
 | Time series copying | Implemented for matching schemas and inherited-prefix copying into Base destinations. |
 | Time series literals and captured expectation comparison | Implemented for both families. |
 | Retained ticks | Write, discard, and native replay are implemented. Public feedback and gate tests verify retention and replay/live transitions. |
 | Live and retained tick formatting | Implemented through `TimeSeriesTickFormatOperations`. |
 | Reference sampling | Implemented through BG's runtime sample factory for TSC and TSF, including inherited schemas and cycle-start row removals. |
-| Queue literal serialization | BG's queue codec rejects provider-defined time series; supporting TSF/TSC requires a separate BG extension hook. |
+| Queue literal serialization | Native TSC and TSF register `TimeSeriesQueueOperations`. Borrowed/computed runtimes and batch queues are unsupported. |
 
 Frame runtimes supply `TimeSeriesRuntimeType::reference_sample_factory()`.
 [Reference sampling](README.md#reference-sampling) defines the resulting row
@@ -242,7 +242,9 @@ and the full frame suite pass against the matching BG build.
    existing operation registries; public feedback and buffering verification.
 5. Implemented: provider reference sampling, reference selection, and nested
    graph verification.
-6. Review deduplicated guarantees separately, then extend the reduction and
+6. Implemented: native queue literals through BG's provider queue operations;
+   keyed admission, append accumulation, and built-in collection nesting.
+7. Review deduplicated guarantees separately, then extend the reduction and
    operator library according to application needs.
 
 Each implementation stage includes review before the next stage starts.

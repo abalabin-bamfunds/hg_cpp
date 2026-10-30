@@ -2,7 +2,31 @@
 
 Updated: 2026-10-30.
 
-## Active extension integration
+## Current verification
+
+The agreed standard library integration is complete: projection, row-count
+queries, copying, retained replay, formatting, reference sampling, and native
+queue literals. The [integration audit](projection_library_proposal.md#bg-extension-points-to-review)
+records supported operations and limits.
+
+At `589e19b3`, the matching Release build with Arrow enabled passed all 14
+frame CTest executables. The queue suite passed 10 cases and 88 assertions.
+`5cc5b9e3` registers the default scalar and time series runtimes through BG's
+existing registration API. Literal inputs select semantic types, not runtime
+layouts.
+
+BG queue support passed 97 cases and 4,921 assertions. Its full Release suite
+passed 3,001 of 3,002 tests. The remaining test,
+`take keeps the initial map of branches across nested switch replacement`,
+also fails on unchanged main `97dd0e1b` at
+`tests/library/tick_selection_test.cpp:404`. Python 3.13 syntax compilation of
+`bindings/python/src/node_definition.cpp` passed; a full Python build was not
+part of this verification.
+
+The sections below retain verification results from earlier implementation
+stages. Current build commands are in [Adding and replacing frame columns](#adding-and-replacing-frame-columns).
+
+## Standard library integration
 
 Committed frame work on this lane adds native `copy`/`copy_tick`, typed time-series
 visitation, scalar formatting, and live/retained tick formatting. Native TSC
@@ -83,22 +107,29 @@ Verification after rebasing onto main `2de7d53f`:
 - All 13 frame CTest executables passed.
 - `git diff --check` passed.
 
-Queued literals still use a codec that rejects provider-defined time series.
-Retained replay does not add queue-literal serialization.
+Native TSC and TSF queued literals use BG's separate
+`TimeSeriesQueueOperations` registration. The
+[queue contract](README.md#queued-literals) defines keyed admission and append
+semantics. `src/queue_operations.cpp` captures the fixed schema and owns encoded
+cell payloads independently of producer storage. Standard admission uses live
+key lookup and a hash index over retained removed keys, including canceled
+same-cycle additions. It does not scan table rows or removed-key tuples.
+
+BG support is committed in `.lanes/queue-extension` as `352c5800`, `0fb3b607`,
+and `3c225039`; this lane includes them as `e32ef393`, `aff53548`, and
+`e29a7e1d`. Frame queue operations and tests are committed as `589e19b3`.
 
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is based on main `2de7d53f` and includes
+`agent/frame-with-columns`. The lane is based on main `97dd0e1b` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
 
-Unfinished type registration is isolated in `.lanes/type-registration` on
-`agent/type-registration`. `TYPE_REGISTRATION_HANDOFF.md` in that lane records
-the agreed single-threaded registration contract and the preserved draft. The
-semantic-only literal source change and default runtime registration remain
-there. The frame lane does not contain the transaction draft.
+Main includes the single-threaded type registration implementation and the
+semantic-only literal input API. Frame tests use semantic type annotations;
+literal input descriptors do not select output runtime layouts.
 
 Scalar constant and scalar time series broadcasting in `with_columns` is
 implemented in `98ad0b2d`. Schema-driven projection and explicit output schema
@@ -178,7 +209,7 @@ Its Release engine build succeeded; focused schema tests passed 11 cases and
 Projection uses `copy_with({}, {"bg.frame.key"})` when key columns are omitted,
 preserving unrelated metadata. Regression tests cover declared and anonymous
 schemas. Verification against the core change passed as listed below.
-Keep this work on the frame lane until review and integration are authorized.
+The projection implementation is included in the completed integration audit.
 
 Verification before rebasing onto `dfe929f0`:
 
