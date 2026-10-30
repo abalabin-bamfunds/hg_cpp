@@ -4,8 +4,11 @@
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/runtime_graph.hpp>
 #include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/reduce.hpp>
 #include <hg/run_graph.hpp>
 #include <hg/simulation_evaluation_engine.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,6 +19,12 @@
 #include <vector>
 
 using namespace hg;
+using namespace hg::literals;
+
+template <template <typename, auto...> typename Field> struct NestedDictionaryBundle {
+    Field<TSD<i64, TS<i64>>> values;
+    Field<TS<i64>> marker;
+};
 
 TEST_CASE("rekey routes source time series and applies mapping changes before assignments",
           "[feature:operator][feature:reference][series:tsd][feature:collection-change][validity:optional]") {
@@ -224,6 +233,29 @@ TEST_CASE("partition moves a source key by removing its old group before assignm
                        {{"odd", literal::REMOVE}, {"even", {{1, 11}}}}}));
 }
 
+TEST_CASE("partitioned dictionaries reduce group totals across moves and removals",
+          "[feature:reduce][feature:map][feature:reference][series:tsd][shape:nested]"
+          "[transition:update][transition:addition][transition:removal]") {
+    const auto add = node([](i64 left, i64 right) { return left + right; });
+    const auto add_graph = graph("name"_n = "add_partition_group_values",
+                                 [&](wp<TS<i64>> left, wp<TS<i64>> right) { return add(left, right); });
+    const auto sum_group = graph("name"_n = "sum_partition_group",
+                                 [&](wp<TSD<i64, TS<i64>>> values) {
+                                     return reduce(add_graph, values, "default"_n = i64{0});
+                                 });
+    const auto materialize = node([](In<TSD<string, TS<i64>>> input,
+                                     Out<TSD<string, TS<i64>>> output) { output.copy_tick(input); });
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TSD<i64, TS<string>>> groups) {
+        return materialize(map(sum_group, operators::partition(values, groups)));
+    };
+
+    CHECK(hg::run_graph(tested,
+                        {{{1, 10}, {2, 20}, {3, 30}}, {{1, 11}}, literal::SKIP, {{3, 40}}},
+                        {{{1, "a"}, {2, "a"}, {3, "b"}}, {{3, literal::REMOVE}}, {{2, "b"}}, {{3, "b"}}})
+              .equals({{{"a", 30}, {"b", 30}}, {{"a", 31}, {"b", literal::REMOVE}},
+                       {{"a", 11}, {"b", 20}}, {{"b", 60}}}));
+}
+
 TEST_CASE("partition keeps empty groups when remove_empty is false",
           "[feature:operator][feature:reference][series:tsd][feature:collection-change]") {
     const auto materialize = node([](In<TSD<string, TSD<i64, TS<i64>>>> input,
@@ -420,6 +452,35 @@ TEST_CASE("collapse_keys and uncollapse_keys preserve nested collection deltas",
                         hg::input<TSD<Tuple<i64, string>, TS<i64>>>({{{{1, "a"}, 5}, {{1, "b"}, 6}},
                                                                      {{{1, "a"}, literal::REMOVE}}}))
               .equals({{{1, {{"a", 5}, {"b", 6}}}}, {{1, {{"a", literal::REMOVE}}}}}));
+}
+
+TEST_CASE("nested map projection preserves the final inner key removal",
+          "[feature:map][feature:nested-graph][feature:reference][series:tsd][series:tsb]"
+          "[shape:doubly-nested][transition:removal]") {
+    const auto wrap = graph("name"_n = "wrap_nested_dictionary",
+                            [](wp<TSD<i64, TS<i64>>> values) {
+                                return bundle<NestedDictionaryBundle>(
+                                    "values"_n = values, "marker"_n = operators::const_(i64{1}));
+                            });
+    const auto project = graph("name"_n = "project_nested_dictionary",
+                               [](wp<TSB<NestedDictionaryBundle>> row) { return row->values; });
+    const auto materialize = node([](In<TSD<Tuple<string, i64>, TS<i64>>> input,
+                                     Out<TSD<Tuple<string, i64>, TS<i64>>> output) { output.copy_tick(input); });
+    const auto tested = [&](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+        return materialize(operators::collapse_keys(map(project, map(wrap, values))));
+    };
+
+    CHECK(hg::run_graph(tested,
+                        {{{"A", {{1, 10}, {2, 20}}}},
+                         {{"A", {{1, literal::REMOVE}}}},
+                         {{"A", {{2, literal::REMOVE}}}},
+                         {{"A", {{1, 30}}}},
+                         {{"A", {{1, literal::REMOVE}}}}})
+              .equals({{{{"A", 1}, 10}, {{"A", 2}, 20}},
+                       {{{"A", 1}, literal::REMOVE}},
+                       {{{"A", 2}, literal::REMOVE}},
+                       {{{"A", 1}, 30}},
+                       {{{"A", 1}, literal::REMOVE}}}));
 }
 
 TEST_CASE("uncollapse_keys keeps empty groups when remove_empty is false",

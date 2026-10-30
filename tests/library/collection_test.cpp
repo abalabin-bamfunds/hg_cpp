@@ -518,6 +518,33 @@ TEST_CASE("TSD set operators support reference and nested items",
               .equals({{1, 3}, {2}}));
 }
 
+TEST_CASE("dictionary selection follows references returned by an identity map",
+          "[feature:operator][feature:getitem][feature:map][series:tsd][series:reference]"
+          "[transition:update][transition:addition][transition:removal]") {
+    const auto identity = graph("name"_n = "identity_dictionary_item",
+                                [](wp<TS<i64>> value) { return value; });
+    const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+    const auto with_map = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> keys) {
+        return copy(operators::getitem(map(identity, values), keys));
+    };
+    const auto without_map = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> keys) {
+        return copy(operators::getitem(values, keys));
+    };
+
+    const auto values = hg::input<TSD<i64, TS<i64>>>(
+        {{{1, 10}, {2, 20}}, {{1, 11}}, {{3, 30}}, {{2, literal::REMOVE}}});
+    const auto keys = hg::input<TSS<i64>>({{1, 2}, literal::SKIP, {literal::REMOVED(1), 3}, literal::SKIP});
+    const auto actual = hg::run_graph(with_map, values, keys);
+    const auto direct = hg::run_graph(without_map, values, keys);
+
+    CHECK(actual.equals({{{1, 10}, {2, 20}}, {{1, 11}}, {{1, literal::REMOVE}, {3, 30}},
+                         {{2, literal::INVALID}}}));
+    CHECK(direct.equals({{{1, 10}, {2, 20}}, {{1, 11}}, {{1, literal::REMOVE}, {3, 30}},
+                         {{2, literal::INVALID}}}));
+}
+
 TEST_CASE("keys_ projects an ordinary dictionary without adding a runtime node",
           "[feature:operator][feature:graph-compilation][series:tsd][series:tss]") {
     const auto dictionary = node([](Out<TSD<i64, TS<i64>>> output) { output[1].set(1); });

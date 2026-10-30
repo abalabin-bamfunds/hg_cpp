@@ -53,6 +53,11 @@ template <template <typename, auto...> typename Field> struct mixed_guarantee_bu
     Field<TS<i64, TimeSeriesGuarantee::const_>> constant;
 };
 
+template <template <typename, auto...> typename Field> struct nested_dictionary_bundle {
+    Field<TSD<i64, TS<i64>>> items;
+    Field<TS<i64>> marker;
+};
+
 } // namespace stream_test
 
 TEST_CASE("type_ reports scalar type and deduplicates repeated values",
@@ -1014,6 +1019,29 @@ TEST_CASE("dedup suppresses consecutive equal values",
 
     CHECK(hg::run_graph(deduplicate, {1, 1, 2, 2})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
+}
+
+TEST_CASE("dedup publishes an initially empty dictionary before its first item",
+          "[feature:operator][series:tsd][guarantee:deduplicated][transition:first-tick]"
+          "[transition:addition][transition:removal][transition:resurrection]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> values) {
+        return operators::len_(operators::dedup(values));
+    };
+
+    CHECK(hg::run_graph(graph, {{}, {{1, 10}}, {{1, literal::REMOVE}}, {{1, 10}}})
+              .equals<i64>({0, 1, 0, 1}));
+}
+
+TEST_CASE("dedup publishes an empty dictionary child in a bundle",
+          "[feature:operator][series:tsb][series:tsd][schema:named][guarantee:deduplicated]"
+          "[transition:first-tick][transition:addition][transition:removal]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> items) {
+        const auto values = bundle<stream_test::nested_dictionary_bundle>(items, operators::const_(i64{1}));
+        return operators::len_(operators::getattr(operators::dedup(values), "items"_sym));
+    };
+
+    CHECK(hg::run_graph(graph, {{}, {{1, 10}}, {{1, literal::REMOVE}}})
+              .equals<i64>({0, 1, 0}));
 }
 
 TEST_CASE("dedup publishes the same value after invalidation",

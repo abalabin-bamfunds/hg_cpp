@@ -50,3 +50,4 @@ history and are marked `superseded`.
 - [hgraph graph-pattern review](reports/hgraph-pattern-review-2026-10-28.md): source patterns, additional tests, and classified findings.
 - [hgraph pattern recheck](reports/hgraph-pattern-recheck-2026-10-29.md): remaining failures after the reference identity correction.
 - [hgraph pattern recheck, 2026-10-30](reports/hgraph-pattern-recheck-2026-10-30.md): historical `2de7d53f` results and current focused verification after the nested-reference and switch-output corrections.
+- [hgraph pattern sweep, 2026-10-30](reports/hgraph-pattern-sweep-2026-10-30.md): additional collection and graph-composition cases with current classifications.
