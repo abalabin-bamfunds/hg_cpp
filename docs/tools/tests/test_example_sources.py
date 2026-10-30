@@ -153,6 +153,74 @@ Output:
         ])
         self.assertEqual([example.title for example in examples], ["Topic", "Topic", "Library topic"])
 
+    def test_collects_cpp_only_extension_examples_and_cmake_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            page = root / "docs/user/extensions/frame/topic.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("""# Frame extension
+
+<!-- example-libraries: bg::frame -->
+<!-- example-source: extensions/frame -->
+<!-- runnable-example: cpp -->
+
+```cpp
+int main() { return 0; }
+```
+Output:
+```text
+frame ready
+```
+""")
+
+            examples = collect_examples(root)
+
+        self.assertEqual(len(examples), 1)
+        example = examples[0]
+        self.assertEqual(example.page, "extensions/frame/topic.md")
+        self.assertEqual(example.python, "")
+        self.assertEqual(example.python_output, "")
+        self.assertEqual(example.cpp, "int main() { return 0; }")
+        self.assertEqual(example.cpp_output, "frame ready")
+        self.assertEqual(example.cpp_libraries, ("bg::frame",))
+        self.assertEqual(example.cmake_source, "extensions/frame")
+
+    def test_cpp_only_page_rejects_python_examples_and_default_marker_stays_paired(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary)
+            page = root / "docs/user/extensions/frame/topic.md"
+            page.parent.mkdir(parents=True)
+            page.write_text("""<!-- runnable-example: cpp -->
+```python
+print('unexpected')
+```
+Output:
+```text
+unexpected
+```
+```cpp
+int main() {}
+```
+Output:
+```text
+ok
+```
+""")
+            with self.assertRaisesRegex(ValueError, r"C\+\+-only page"):
+                collect_examples(root)
+
+            page.write_text("""<!-- runnable-example -->
+```cpp
+int main() {}
+```
+Output:
+```text
+ok
+```
+""")
+            with self.assertRaisesRegex(ValueError, "same nonzero number"):
+                collect_examples(root)
+
     def test_marked_pages_require_nonzero_matching_pairs(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -305,7 +373,8 @@ elapsed: ... ns
         self.assertTrue(examples)
         self.assertEqual(len({example.slug for example in examples}), len(examples))
         for example in examples:
-            self.assertTrue(example.python)
+            if not example.python:
+                self.assertTrue(example.page.startswith("extensions/"), example.name)
             self.assertTrue(example.cpp)
             self.assertIn("int main()", example.cpp, example.name)
 
@@ -331,6 +400,37 @@ elapsed: ... ns
                 self.assertIn("find_package(bg CONFIG REQUIRED)", cmake)
                 self.assertIn("target_link_libraries(example PRIVATE bg::library)", cmake)
                 self.assertIn("## Build and run", archive.read("README.md").decode())
+
+    def test_downloads_skip_python_and_include_extension_cmake_dependencies(self):
+        from example_sources import Example
+
+        example = Example(
+            name="extensions/frame/topic.md:1",
+            slug="extensions-frame-topic-01",
+            page="extensions/frame/topic.md",
+            title="Frame extension",
+            python="",
+            python_output="",
+            python_ellipsis=False,
+            cpp="int main() { return 0; }",
+            cpp_output="frame ready",
+            cpp_ellipsis=False,
+            cpp_libraries=("bg::frame",),
+            cmake_source="extensions/frame",
+        )
+        with tempfile.TemporaryDirectory() as temporary:
+            docs = Path(temporary) / "docs"
+            write_downloads([example], docs)
+
+            downloads = docs / "_generated/publish/downloads"
+            self.assertFalse((downloads / f"{example.slug}.py").exists())
+            catalog = (docs / "_generated/examples.md").read_text()
+            self.assertIn("| — |", catalog)
+            self.assertNotIn(".py`", catalog)
+            with ZipFile(downloads / f"{example.slug}.zip") as archive:
+                cmake = archive.read("CMakeLists.txt").decode()
+                self.assertIn("add_subdirectory(\"${BG_SOURCE_DIR}/extensions/frame\" bg_extension)", cmake)
+                self.assertIn("target_link_libraries(example PRIVATE bg::frame)", cmake)
 
 
 if __name__ == "__main__":
