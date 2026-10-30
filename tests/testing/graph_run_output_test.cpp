@@ -11,6 +11,7 @@
 #include <chrono>
 #include <memory>
 #include <ranges>
+#include <sstream>
 #include <span>
 #include <string>
 #include <vector>
@@ -65,6 +66,93 @@ TEST_CASE("run_graph stores distant output as a sparse event",
     CHECK(std::ranges::equal(result.events(), std::array{event_time}));
     CHECK(result[3'600'000'000]->view().value() == 7);
     CHECK_FALSE(result.equals<i64>({7}));
+}
+
+TEST_CASE("run_graph result streams small scalar outputs as a dense sequence",
+          "[testing][evaluation][feature:test-graph]") {
+    const auto identity = [](wp<TS<i64>> input) { return input; };
+    const auto result = run_graph(identity, {1, literal::SKIP, 3, literal::INVALID});
+
+    const auto format_result = [&] {
+        auto stream = std::ostringstream{};
+        stream << result;
+        return stream.str();
+    };
+
+    CHECK(format_result() == "[1, None, 3, None]");
+    CHECK(result[0]->view().value() == 1);
+    CHECK(format_result() == "[1, None, 3, None]");
+}
+
+TEST_CASE("run_graph result streams collection deltas through the tick formatter",
+          "[testing][evaluation][feature:test-graph][series:tss]") {
+    const auto identity = [](wp<TSS<i64>> input) { return wp<>{input}; };
+    const auto result = run_graph(identity, {{1, 2}, {literal::REMOVED(1)}});
+    auto stream = std::ostringstream{};
+
+    stream << result;
+
+    CHECK(stream.str() == "[{1, 2}, {REMOVED(1)}]");
+}
+
+TEST_CASE("run_graph result streams nested dictionary changes and preserves string payloads",
+          "[testing][evaluation][feature:test-graph][series:tsd][shape:nested]") {
+    const auto nested_identity = [](wp<TSD<i64, TSD<i64, TS<i64>>>> input) { return wp<>{input}; };
+    const auto nested = run_graph(nested_identity,
+                                  {{{1, {{2, 20}}}}, {{1, {{2, literal::INVALID}}}}, {{1, literal::REMOVE}}});
+    auto nested_stream = std::ostringstream{};
+    nested_stream << nested;
+    CHECK(nested_stream.str() == "[{1: {2: 20}}, {1: {2: INVALID}}, {1: REMOVE}]");
+
+    const auto string_identity = [](wp<TS<string>> input) { return input; };
+    const auto strings = run_graph(string_identity, {"stable string payload"});
+    const auto format_strings = [&] {
+        auto stream = std::ostringstream{};
+        stream << strings;
+        return stream.str();
+    };
+
+    CHECK(strings.equals<string>({"stable string payload"}));
+    CHECK(format_strings() == "[\"stable string payload\"]");
+    CHECK(strings.equals<string>({"stable string payload"}));
+    CHECK(format_strings() == "[\"stable string payload\"]");
+}
+
+TEST_CASE("run_graph result streams empty and bounded outputs densely",
+          "[testing][evaluation][feature:test-graph]") {
+    const auto identity = [](wp<TS<i64>> input) { return input; };
+    const auto empty = run_graph(identity, GraphRunOptions{.capture_output = false}, {1, 2});
+    auto empty_stream = std::ostringstream{};
+    empty_stream << empty;
+    CHECK(empty_stream.str() == "[]");
+
+    auto values = std::array<i64, 32>{};
+    values.fill(7);
+    const auto result = run_graph(identity, values);
+    auto stream = std::ostringstream{};
+    stream << result;
+
+    CHECK(result.size() == 32);
+    CHECK(stream.str().starts_with("[7, 7,"));
+    CHECK(stream.str().ends_with(", 7]"));
+
+    auto values_over_limit = std::array<i64, 33>{};
+    values_over_limit.fill(7);
+    const auto summarized = run_graph(identity, GraphRunOptions{.start_time = EvaluationTime{}}, values_over_limit);
+    auto summary_stream = std::ostringstream{};
+    summary_stream << std::hex << summarized;
+    CHECK(summary_stream.str() == "GraphRunResult(start_time=1970-01-01T00:00:00.000000Z, event_count=33, size=33)");
+}
+
+TEST_CASE("run_graph result summarizes large sparse outputs without expanding them",
+          "[testing][evaluation][feature:test-graph][feature:simulation]") {
+    const auto source = node<sparse_output_source>();
+    const auto result = run_graph([&] { return source(); });
+    auto stream = std::ostringstream{};
+
+    stream << result;
+
+    CHECK(stream.str() == "GraphRunResult(start_time=1970-01-01T00:00:00.000001Z, event_count=1, size=3600000001)");
 }
 
 template <template <typename, auto...> typename Field> struct OutputScalarBundle {
