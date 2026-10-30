@@ -20,7 +20,7 @@ class QueueMessageWriter;
 class QueueWriteGate;
 class EngineWakeup;
 
-void validate_queue_output_type(const TimeSeriesType &type, QueueMode mode);
+void validate_queue_output_type(const TimeSeriesRuntimeType &runtime_type, QueueMode mode);
 } // namespace details
 
 // A queue handle writes to one destination. Copying creates an independent writer cursor. Distinct handles may write
