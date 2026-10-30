@@ -2112,7 +2112,7 @@ TEST_CASE("queue providers project, inspect, and apply their payloads",
     const auto evaluation_time = previous_time + std::chrono::microseconds{1};
     const auto buffer = util::buffer::concurrent_chain(128, 4);
     auto writer = details::QueueMessageWriter{buffer, 43, runtime_type};
-    REQUIRE(writer.write(literal::TimeSeriesLiteral{i64{37}}));
+    REQUIRE(writer.write(literal::TimeSeriesLiteral(i64{37})));
     CHECK(provider::queue_operation_state.project_calls == 2);
     CHECK(provider::queue_operation_state.write_calls == 1);
 
@@ -2153,7 +2153,7 @@ TEST_CASE("queue providers apply invalidation and discard encoded payloads",
 
     const auto invalidation_buffer = util::buffer::concurrent_chain(128, 4);
     auto invalidation_writer = details::QueueMessageWriter{invalidation_buffer, 44, runtime_type};
-    REQUIRE(invalidation_writer.write(literal::TimeSeriesLiteral{literal::INVALID}));
+    REQUIRE(invalidation_writer.write(literal::TimeSeriesLiteral(literal::INVALID)));
     output_time.publish(previous_time);
     auto invalidation_reader = details::QueueMessageReader{invalidation_buffer};
     REQUIRE(invalidation_reader.apply(output_state, QueueMode::standard));
@@ -2163,7 +2163,7 @@ TEST_CASE("queue providers apply invalidation and discard encoded payloads",
 
     const auto discard_buffer = util::buffer::concurrent_chain(128, 4);
     auto discard_writer = details::QueueMessageWriter{discard_buffer, 45, runtime_type};
-    REQUIRE(discard_writer.write(literal::TimeSeriesLiteral{i64{91}}));
+    REQUIRE(discard_writer.write(literal::TimeSeriesLiteral(i64{91})));
     auto discard_reader = details::QueueMessageReader{discard_buffer};
     REQUIRE(discard_reader.discard(Series::type()));
     CHECK(provider::queue_operation_state.discard_calls == 1);
@@ -2206,26 +2206,47 @@ TEST_CASE("queue provider replay consumes a failing payload and discards later s
         auto writer = details::QueueMessageWriter{buffer, 48, bundle_runtime_type, memory};
         REQUIRE(writer.write(literal::TimeSeriesLiteral{{"first", i64{11}}, {"second", i64{22}}}));
 
-        const auto previous_time = MIN_DT + std::chrono::microseconds{1};
-        const auto evaluation_time = previous_time + std::chrono::microseconds{1};
-        auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
-                                                     bundle_runtime_type.value_alignment());
-        bundle_runtime_type.construct_runtime_value(bundle_storage, memory);
-        auto destroy_bundle = util::scope_exit{[&]() noexcept {
-            bundle_runtime_type.destroy_value(bundle_storage, memory);
-            memory.deallocate_bytes(bundle_storage, bundle_runtime_type.value_size(),
-                                    bundle_runtime_type.value_alignment());
-        }};
-        auto bundle_time = TimeSeriesState{previous_time};
-        auto bundle_state = OutputState{bundle_runtime_type};
-        bundle_state.bind(bundle_time, bundle_storage, evaluation_time);
-        provider::queue_owned_operation_state.fail_apply = true;
-        auto reader = details::QueueMessageReader{buffer};
+        auto failure = std::string{};
+        auto apply_calls = 0;
+        auto discard_calls = 0;
+        auto has_next_target = false;
+        auto replay_action = provider::ContextAction{[&](EvaluationContext &context) {
+            auto *allocation_owner = details::ScalarAllocationPool::create(memory);
+            auto release_allocation_owner = util::scope_exit{[&]() noexcept { allocation_owner->release(); }};
+            const auto allocation_context = details::ScalarAllocationContext{memory, *allocation_owner, &buffer, 0};
+            auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
+                                                         bundle_runtime_type.value_alignment());
+            bundle_runtime_type.construct_runtime_value(bundle_storage, memory);
+            auto destroy_bundle = util::scope_exit{[&]() noexcept {
+                bundle_runtime_type.destroy_value(bundle_storage, memory);
+                memory.deallocate_bytes(bundle_storage, bundle_runtime_type.value_size(),
+                                        bundle_runtime_type.value_alignment());
+            }};
+            auto bundle_time = TimeSeriesState{context.evaluation_time()};
+            auto bundle_state = OutputState{bundle_runtime_type};
+            bundle_state.bind(bundle_time, bundle_storage, context);
+            provider::queue_owned_operation_state.fail_apply = true;
+            auto reader = details::QueueMessageReader{buffer};
 
-        CHECK_THROWS_AS(reader.apply(bundle_state, QueueMode::standard), std::runtime_error);
-        CHECK(provider::queue_owned_operation_state.apply_calls == 1);
-        CHECK(provider::queue_owned_operation_state.discard_calls == 1);
-        CHECK_FALSE(reader.next_target());
+            try {
+                reader.apply(bundle_state, QueueMode::standard);
+            } catch (const std::runtime_error &error) {
+                failure = error.what();
+            }
+            apply_calls = provider::queue_owned_operation_state.apply_calls;
+            discard_calls = provider::queue_owned_operation_state.discard_calls;
+            has_next_target = reader.next_target().has_value();
+        }};
+        auto replay_action_value = ScalarValue<Opaque<provider::ContextAction *>>{&replay_action};
+        const auto replay_node = node<provider::ContextActionNode>();
+        const auto graph = [&](wp<TS<i64>> trigger) { return replay_node(replay_action_value, trigger); };
+        const auto graph_result = run_graph(graph, {79});
+
+        CHECK(graph_result.equals<i64>({79}));
+        CHECK(failure == "provider queue apply failed after an owned payload");
+        CHECK(apply_calls == 1);
+        CHECK(discard_calls == 1);
+        CHECK_FALSE(has_next_target);
     }
 
     CHECK(resource.allocations > 0);
@@ -2244,8 +2265,8 @@ TEST_CASE("provider queue conflicts retain owned payloads for retry and apply or
         auto memory = allocator{resource};
         const auto buffer = util::buffer::concurrent_chain(128, 4);
         auto writer = details::QueueMessageWriter{buffer, 50, runtime_type, memory};
-        REQUIRE(writer.write(literal::TimeSeriesLiteral{i64{17}}));
-        REQUIRE(writer.write(literal::TimeSeriesLiteral{i64{23}}));
+        REQUIRE(writer.write(literal::TimeSeriesLiteral(i64{17})));
+        REQUIRE(writer.write(literal::TimeSeriesLiteral(i64{23})));
         const auto deallocations_after_write = resource.deallocations;
 
         const auto previous_time = MIN_DT + std::chrono::microseconds{1};
@@ -2286,7 +2307,7 @@ TEST_CASE("failed provider queue writes discard their completed owned payload pr
         const auto buffer = util::buffer::concurrent_chain(128, 4);
         auto writer = details::QueueMessageWriter{buffer, 51, runtime_type, memory};
         provider::queue_owned_operation_state.fail_write = true;
-        CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral{i64{91}}), std::runtime_error);
+        CHECK_THROWS_AS(writer.write(literal::TimeSeriesLiteral(i64{91})), std::runtime_error);
     }
 
     CHECK(provider::queue_owned_operation_state.write_calls == 1);
@@ -2307,7 +2328,7 @@ TEST_CASE("queue provider invalidation conflicts through nested bundles",
     const auto evaluation_time = previous_time + std::chrono::microseconds{1};
     const auto buffer = util::buffer::concurrent_chain(128, 4);
     auto writer = details::QueueMessageWriter{buffer, 49, bundle_runtime_type};
-    REQUIRE(writer.write(literal::TimeSeriesLiteral{literal::INVALID}));
+    REQUIRE(writer.write(literal::TimeSeriesLiteral(literal::INVALID)));
 
     auto memory = allocator{};
     auto *bundle_storage = memory.allocate_bytes(bundle_runtime_type.value_size(),
