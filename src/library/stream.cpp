@@ -4,8 +4,12 @@
 #include <bg/library/operators.hpp>
 #include <bg/node.hpp>
 #include <bg/overload.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
+#include <bg/time_series/tsl/tsl_type.hpp>
 
 #include <cstdint>
+#include <limits>
+#include <vector>
 
 namespace bg::operators::details {
 namespace {
@@ -14,6 +18,7 @@ using namespace bg::literals;
 
 inline constexpr auto DEDUPED = guarantee_variable<"DEDUPED", TimeSeriesGuarantee::deduplicated>;
 inline constexpr auto G = guarantee_variable<"G">;
+using SIZE_DECLARATION = std::remove_cv_t<decltype(SIZE)>;
 
 struct stream_overloads {
     // Validity queries.
@@ -59,6 +64,176 @@ struct stream_overloads {
     };
 
     overload<count, count_impl> count_impl;
+
+    // Conditional and indexed routing.
+    struct if_true_impl {
+        In<TS<bool>, dynamic_activity> condition;
+        Scalar<bool> tick_once_only;
+        Out<TS<bool>> output;
+
+        void evaluate() const {
+            if (!condition.value()) {
+                return;
+            }
+
+            output.set(true);
+            if (tick_once_only.value()) {
+                condition.make_passive();
+            }
+        }
+
+        static constexpr auto on_invalidation = preserve_output;
+    };
+
+    overload<if_true, if_true_impl> if_true_impl;
+
+    struct if_impl {
+        In<TS<bool>, optional> condition;
+        In<REF<TS_T>, optional> value;
+        Out<TSB<if_result>> output;
+
+        void evaluate() const {
+            if (!condition.valid()) {
+                output->true_value.invalidate();
+                output->false_value.invalidate();
+                return;
+            }
+            if (condition.value()) {
+                output->true_value.copy(value);
+                output->false_value.invalidate();
+            } else {
+                output->true_value.invalidate();
+                output->false_value.copy(value);
+            }
+        }
+    };
+
+    overload<if_, if_impl> if_impl;
+
+    struct race_selection_impl {
+        In<TSL<TS<bool>, SIZE>> validities;
+        In<TSL<REF<TS_T>, SIZE>, optional> candidates;
+        Out<REF<TS_T>> output;
+
+        void evaluate() const {
+            auto selected = std::numeric_limits<std::size_t>::max();
+            auto earliest_validity = EvaluationTime::max();
+            for (auto index = std::size_t{}; index < validities.size(); ++index) {
+                if (!validities[index].valid() || !validities[index].value()) {
+                    continue;
+                }
+
+                const auto validity_started = validities[index].last_updated();
+                if (selected == std::numeric_limits<std::size_t>::max() || validity_started < earliest_validity) {
+                    selected = index;
+                    earliest_validity = validity_started;
+                }
+            }
+
+            if (selected == std::numeric_limits<std::size_t>::max()) {
+                output.invalidate();
+                return;
+            }
+
+            output.copy(candidates[selected]);
+        }
+    };
+
+    struct race_graph_impl {
+        wp<TSL<TS_T, SIZE>, "values"_n, var_args, optional> values;
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            if (arguments.size() == 0) {
+                return reject("race requires at least one input");
+            }
+            const auto &captured = type_cast<TimeSeriesType>(TSL<TS_T, SIZE>::type().resolve(arguments.type_map()));
+            const auto &list = type_cast<TimeSeriesListType>(captured.target_type());
+            if (list.item_count() == 0) {
+                return reject("race requires at least one input");
+            }
+            return accept;
+        }
+
+        wp<REF<TS_T>> wire() const {
+            if (values.size() == 1) {
+                return wp<REF<TS_T>>{values[0].time_series()};
+            }
+
+            auto validities = std::vector<WiringPoint>{};
+            auto candidates = std::vector<WiringPoint>{};
+            validities.reserve(values.size());
+            candidates.reserve(values.size());
+            for (auto index = std::size_t{}; index < values.size(); ++index) {
+                auto candidate = values[index].time_series();
+                validities.push_back(bg::operators::valid(candidate));
+                candidates.push_back(candidate);
+            }
+
+            static const auto impl = node<race_selection_impl>();
+            return wp<REF<TS_T>>::from_validated(impl(tsl(validities), tsl(candidates)));
+        }
+    };
+
+    overload<race> race_impl{graph<race_graph_impl>()};
+
+    struct route_by_index_impl {
+        In<TS<i64>, optional> index;
+        In<REF<TS_T>, optional> value;
+        Out<TSL<REF<TS_T>, SIZE>> output;
+        State<i64> selected_index;
+        State<bool> has_selection;
+
+        static const TimeSeriesType *requested_result(const WiringArguments &arguments) {
+            const auto *mapping = arguments.type_map().find(bg::details::type_parameter<OUT>());
+            const auto *requested_mapping = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
+            return requested_mapping == nullptr || *requested_mapping == nullptr
+                       ? nullptr
+                       : type_cast<TimeSeriesType>(*requested_mapping);
+        }
+
+        static std::size_t resolve(SIZE_DECLARATION, const WiringArguments &arguments) {
+            const auto *result = requested_result(arguments);
+            const auto *list = result == nullptr ? nullptr
+                                                 : type_cast<TimeSeriesListType>(&result->target_type());
+            return list == nullptr ? std::dynamic_extent : list->item_count();
+        }
+
+        static RequirementResult require(const WiringArguments &arguments) {
+            const auto *result = requested_result(arguments);
+            const auto *list = result == nullptr ? nullptr
+                                                 : type_cast<TimeSeriesListType>(&result->target_type());
+            if (list == nullptr || list->item_count() == std::dynamic_extent) {
+                return reject("route_by_index requires a fixed TSL result type");
+            }
+
+            const auto *resolved = arguments.resolved_output_type();
+            if (resolved == nullptr || !result->accepts(*resolved)) {
+                return reject("route_by_index requires a compatible fixed TSL result type");
+            }
+
+            return accept;
+        }
+
+        void evaluate() const {
+            const auto next_index = index.valid() ? index.value() : i64{-1};
+            if (next_index < 0 || static_cast<std::size_t>(next_index) >= output.size()) {
+                if (*has_selection) {
+                    output[static_cast<std::size_t>(*selected_index)].invalidate();
+                    *has_selection = false;
+                }
+                return;
+            }
+
+            if (*has_selection && *selected_index != next_index) {
+                output[static_cast<std::size_t>(*selected_index)].invalidate();
+            }
+            output[static_cast<std::size_t>(next_index)].copy(value);
+            *selected_index = next_index;
+            *has_selection = true;
+        }
+    };
+
+    overload<route_by_index, route_by_index_impl> route_by_index_impl;
 
     // Tick selection.
     struct sample_impl {

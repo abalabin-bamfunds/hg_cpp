@@ -1103,6 +1103,10 @@ void bind_core(nb::module_ &module) {
         const auto &bundle = static_cast<const TimeSeriesBundleType &>(TSB<operators::key_value>::type());
         export_schema(python_type, bundle.schema());
     });
+    module.def("_register_if_result_schema", [](nb::handle python_type) {
+        const auto &bundle = static_cast<const TimeSeriesBundleType &>(TSB<operators::if_result>::type());
+        export_schema(python_type, bundle.schema());
+    });
     module.def("_bundle_scalar_type", [](const TypeDescriptor &schema_type) {
         const auto *schema = schema_type.schema();
         if (schema == nullptr) {

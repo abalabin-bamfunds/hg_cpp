@@ -35,6 +35,11 @@ using TRUE_TS = TimeSeriesVariable<"TRUE_TS">;
 using FALSE_TS = TimeSeriesVariable<"FALSE_TS">;
 using K1 = ScalarVariable<"K1", Hashable>;
 
+template <template <typename, auto...> typename Field> struct if_result {
+    Field<REF<TS_T>> true_value;
+    Field<REF<TS_T>> false_value;
+};
+
 // Arithmetic and unary operators.
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 extern BG_LIBRARY_EXPORT operator_<auto(SCALAR, SCALAR) -> SCALAR> sub;
@@ -90,10 +95,14 @@ extern BG_LIBRARY_EXPORT operator_<auto(TS<SCALAR>) -> const Type *> type_;
 // Tick selection.
 extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TSB<if_result>> if_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T, i64) -> TS_T> gate;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS<SCALAR>, timedelta_t, i64) -> TS<List<SCALAR>>> batch;
 extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> TS_T> merge;
+extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> REF<TS_T>> race;
+extern BG_LIBRARY_EXPORT operator_<OUT, auto(TS<i64>, TS_T) -> OUT> route_by_index;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, bool) -> TS<bool>> if_true;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> take;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> drop;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T, i64) -> OUT> step;

@@ -44,10 +44,14 @@ all_valid = _native.all_valid
 count = _native.count
 sample = _native.sample
 dedup = _native.dedup
+if_ = _native.if_
 filter_ = _native.filter_
 gate = _native.gate
 batch = _native.batch
 merge = _native.merge
+race = _native.race
+route_by_index = _native.route_by_index
+if_true = _native.if_true
 take = _native.take
 drop = _native.drop
 step = _native.step
@@ -133,6 +137,8 @@ __all__ = [
     "ewma",
     "floordiv",
     "filter_",
+    "if_",
+    "if_true",
     "gate",
     "batch",
     "emit",
@@ -151,6 +157,7 @@ __all__ = [
     "lt",
     "map",
     "merge",
+    "race",
     "match_",
     "matches",
     "max_",
@@ -175,6 +182,7 @@ __all__ = [
     "pos",
     "round",
     "resample",
+    "route_by_index",
     "sample",
     "schedule",
     "casefold",
