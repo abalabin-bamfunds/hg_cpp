@@ -5,10 +5,10 @@ This report compares free bundle and fixed-list patterns in hgraph 0.5.42 and
 updates, validity, switch branches, and nested graph boundaries. It records
 coverage and unresolved differences; it does not propose implementation fixes.
 
-The [BG `2de7d53f` recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
+The [latest BG recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
 failure statuses below. The mixed and rebuilt-free bundle switch cases,
 structural activation capture, and rebuilt-list item identity now pass. Nested
-free bundle/list REF pass-through remains a wiring failure.
+free bundle/list REF pass-through now passes after the nested output correction.
 
 The initial BG baseline is `11ba59a4`; final validation uses `8058a013`. See
 the [review summary](hgraph-pattern-review-2026-10-28.md) for build details. The 0.5
@@ -130,9 +130,10 @@ required assertion or propagates the wiring exception.
 
 The passing free-structure tests exercise source updates, skipped ticks,
 partial invalidation, revalidation, reference conversion, and nested boundaries.
-The switch and nested REF cases listed under verified failures do not establish
-their intended behavior. The passing tests do not establish behavior for all
-possible nesting depths, reference chains, or branch lifecycle combinations.
+The switch activation, switch branch compatibility, rebuilt-list identity, and
+nested REF cases that failed in the original verification pass in the latest
+integrated recheck. These tests do not establish behavior for all possible
+nesting depths, reference chains, or branch lifecycle combinations.
 
 The nested partial-validity and independent item-update cases are BG coverage
 additions. The reviewed 0.8 nested-wiring test file does not contain a direct

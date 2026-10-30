@@ -1,12 +1,10 @@
 # hgraph pattern recheck, 2026-10-30
 
-The review lane `agent/hgraph-pattern-review` was rebased onto the fixed BG
-baseline `2de7d53f`. The recheck builds the nine affected test translation
-units against that baseline's headers and runs them against its Release
-libraries. Production headers and source match `2de7d53f`. Later `main` commits
-were not tested. The recheck changes tests and reports only.
+This report preserves the focused recheck on BG baseline `2de7d53f` and records
+the later integrated verification after the nested-reference and switch-output
+corrections. The original counts and failures remain pinned to `2de7d53f`.
 
-## Remaining findings
+## Historical findings on `2de7d53f`
 
 Four hidden engine cases remain, grouped into two findings.
 
@@ -24,7 +22,7 @@ composition or provide validity observations.
 
 ## Upstream pattern mapping
 
-| Upstream pattern | BG case | Current result |
+| Upstream pattern | BG case | Result on `2de7d53f` |
 | --- | --- | --- |
 | 0.5 `test_tsl_ref_flipping` | `a reference can select among free fixed lists and become invalid` | Pass; BG asserts explicit invalidation where upstream uses `None`. |
 | 0.5 `test_reduce_map` | `reduce maps and combines nested dictionaries` | Pass. |
@@ -43,13 +41,13 @@ and rebuilt-free bundle switch cases, free bundle/list activation cases,
 rebuilt-list item identity case, and `take` composition also pass. The map
 retarget regression continues to pass.
 
-## Historical suite failures
+## Historical suite failures at `2de7d53f`
 
 The earlier complete-suite run recorded a hierarchical scalar conflict failure
 and Python web binding failures. This focused recheck does not rerun the full
 suite, so those failures remain historical and unrechecked on `2de7d53f`.
 
-## Verification
+## Historical verification on `2de7d53f`
 
 All nine review test translation units compile with GCC Release flags and
 `NDEBUG`. The focused engine and library executables load lane-local copies of
@@ -64,6 +62,58 @@ The manifest pins verification to `2de7d53f`, even if `main` advances.
 | Ordinary library cases in the affected test files | 72 | All pass. |
 | Hidden engine reproductions | 4 | All fail: two nested REF wiring cases and two initial-default variants. |
 
-The hidden engine cases retain their assertions and use `[.][repro]`. The
-ordinary library run includes the `take` composition and passes it. There are no
-hidden library reproductions in the current test set.
+The hidden engine cases retained their assertions and used `[.][repro]` in this
+historical run. The ordinary library run included the `take` composition and
+passed it. There were no hidden library reproductions in that test set.
+
+## Current integrated verification
+
+The integrated lane contains root revision `1ad2adff`, switch output
+compatibility and case-lifetime corrections, and the nested reference-valued
+output correction. The nested correction is commit `a391afff`; the lane head
+before these test and report updates is `62b94622`. Verification uses headers
+and matching libraries built from this integrated tree.
+
+All four cases from the historical findings now pass as ordinary tests. The
+nested free bundle and fixed-list REF outputs pass through the nested graph to
+their value consumers. The two mapped switch/reduce cases expect `SKIP` at the
+initial empty or invalid-item state, followed by the same values as before:
+`2, 5, 6, 7, 4`. BG does not publish a value tick at those initial states. The
+tests assert five emitted events and preserve their original graph inputs and
+inherited bundle schema; the redundant copies in `nested_graph_test.cpp` were
+removed.
+
+The integrated verification builds and runs nine engine test files and two
+library test files. It does not run the complete test suite or the optional
+diagnostic observer. The observer's prior SIGSEGV remains unclassified and is
+not part of these results.
+
+| Target | Test files | Cases | Assertions | Result |
+| --- | ---: | ---: | ---: | --- |
+| Focused engine runner | 9 | 270 | 405 | All pass. |
+| Focused library runner | 2 | 77 | 162 | All pass. |
+
+The focused runs contain 347 cases and 567 assertions. The runner executables
+are `build/integration/hgraph-pattern-engine-tests` and
+`build/integration/hgraph-pattern-library-tests`. Both load the matching
+lane-local Release libraries from `build/current-release`.
+
+Build and run commands from the lane root:
+
+```sh
+cmake --build build/current-release --target bg bg_library -j 4
+cmake --build build/integration/cmake --target hgraph-pattern-engine-tests -j 4
+cmake --build build/integration/library-cmake --target hgraph-pattern-library-tests -j 2
+build/integration/hgraph-pattern-engine-tests --reporter compact
+build/integration/hgraph-pattern-library-tests --reporter compact
+```
+
+The focused runner project is stored in the ignored `build/integration`
+directory. Runtime and executable hashes from this verification are:
+
+| File | SHA-256 |
+| --- | --- |
+| `build/current-release/libbg.so` | `30443b271d4f61e6b87837ed9decad5cdd1d8829271adb45c09ddb296a03e2b9` |
+| `build/current-release/libbg_library.so` | `1c588c02436e31bcdb7ecea38ac0faa736c9cd208bfcaab2756b83edee49d3e8` |
+| `build/integration/hgraph-pattern-engine-tests` | `99ae294c830ce43b05c6b1452f4dd94c338ce33ac87dbcc5591d5b13beb5ffec` |
+| `build/integration/hgraph-pattern-library-tests` | `714b7bc268eb90b973357c095b46d37b90081cfdb26376cd47daee5705caec9c` |

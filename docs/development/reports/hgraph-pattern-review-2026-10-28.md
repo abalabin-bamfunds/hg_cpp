@@ -5,8 +5,9 @@ on references across nested graph boundaries, free bundles and fixed lists, and
 compositions of map, switch, mesh, and reduce. Implementation changes require a
 separate decision after review.
 
-The [latest recheck](hgraph-pattern-recheck-2026-10-30.md) records results after
-rebasing onto BG `2de7d53f`. The original results below retain their stated revisions.
+The [latest recheck](hgraph-pattern-recheck-2026-10-30.md) retains the historical
+`2de7d53f` results and records current focused verification after the nested
+reference-output and switch-output corrections.
 
 ## Source revisions
 
@@ -72,7 +73,7 @@ approved defect or implementation task.
 | --- | --- | --- |
 | Selected dictionary reference omits a held key on retargeting across a nested graph. | 1 | Resolved by the library merge; ordinary regression passes on `c8b33979`. |
 | Switch rejects native/free TSB branches, rebuilt free TSB branches, or reference/owned TSD branches. | 3 | Wiring compatibility failures. The TSD failure blocks the cascaded map/switch/`take` pattern before evaluation. |
-| Nested TSB/TSL REF pass-through attempts to create a reference targeting a reference. | 2 | Wiring failures against the documented reference-preserving nested boundary. |
+| Nested TSB/TSL REF pass-through attempts to create a reference targeting a reference. | 2 | Historical wiring failures on earlier revisions; both pass after the nested output correction. |
 | Mesh/switch/reduce compositions fail type resolution, including with typed callbacks. | 2 | Wiring failures; runtime behavior remains unverified. |
 | Free TSB/TSL switch activations capture empty structural deltas while scalar consumers read held values. | 2 | Collection observation gap. Sampling and capture require separate investigation. |
 | Reselecting a rebuilt free list emits extra ticks for an unchanged item source. | 1 | Confirmed on `8f0eaab6`: `{10, 10, 10, 20}` instead of `{10, SKIP, SKIP, 20}`. Item selection creates different reference handles for the same source; the binding reports their changes as updates. See the [trace](hgraph-free-bundle-pattern-findings-2026-10-28.md#rebuilt-list-item-reference-trace). |
@@ -171,7 +172,7 @@ Non-scalar TSD reduction is now supported.
 | --- | --- | --- |
 | 0.5 `_wiring/test_map.py::test_tsl_map_wiring`, `test_tsl_map_wiring_no_key`; 0.5/0.8 `_wiring/test_reduce.py::test_tsl_reduce*` | Higher-order map/reduce over fixed TSL | BG's [map](../design/map.md) and [reduce](../design/reduce.md) operate on TSD. Fixed TSL storage and free TSL construction have separate tests. |
 | 0.5 `_wiring/test_reduce.py::test_reduce_map`; 0.8 `test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | Reduce `TSD<K, TSD<J, TS<V>>>` into a TSD using a mapped reducer. | Ported and passing as `reduce maps and combines nested dictionaries` and `reduce maps a projected bundle of nested dictionaries`; see the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#upstream-pattern-mapping). |
-| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | The populated sequence passes. The initially empty dictionary and invalid-item initial variants remain hidden failures; the output validity path is unresolved. See the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#remaining-findings). |
+| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | The populated sequence passes. The empty-dictionary and invalid-item variants produce `SKIP` on the initial BG tick, then match the remaining values; their tests now assert that BG result. See the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#current-integrated-verification). |
 | 0.5 `_wiring/test_reduce.py::test_reduce_tuple` | Ordered fold of each `TS<tuple<int, ...>>` tick into a string, starting from a `TS<string>` seed. | Unsupported fold. Current reduce consumes a TSD and returns an item-compatible time series. A scalar-item reduction accepts a scalar default. This source case requires a scalar-collection fold, a different accumulator type, and a time-series seed. Tuple values themselves are supported. |
 | 0.8 `test_reduce_zero_semantics.py::test_ordered_reduce_retains_delayed_source_schedules` | Ordered, non-associative reduction and a time series zero. | Unsupported reduction semantics. BG reduce requires an associative and commutative operation. Its scalar-item path accepts a scalar default. |
 | 0.8 `ported/_wiring/test_context.py::test_context_crosses_stacked_try_except_boundaries` | A graph boundary that captures exceptions as output | BG [exception handling](../design/evaluation.md#exceptions) stops the graph and propagates the exception. No `try_except` operation was found in the public API. |

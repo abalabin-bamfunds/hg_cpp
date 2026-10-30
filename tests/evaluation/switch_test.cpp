@@ -861,22 +861,24 @@ TEST_CASE("reduce combines populated mapped bundles containing switch outputs",
 }
 
 TEST_CASE("reduce combines mapped bundles containing switch outputs from an empty dictionary",
-          "[.][repro][feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
+          "[feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
           "[schema:named][shape:doubly-nested]") {
     const auto tested = reduce_mapped_switch_outputs();
     const auto actual = bg::run_graph(tested, {{}, {{1, 1}}, {{2, 2}}, {{1, 2}}, {{2, 3}}, {{1, literal::REMOVE}}});
 
-    CHECK(actual.equals<i64>({0, 2, 5, 6, 7, 4}));
+    CHECK(actual.event_count() == 5);
+    CHECK(actual.equals<i64>({std::nullopt, 2, 5, 6, 7, 4}));
 }
 
 TEST_CASE("reduce combines mapped bundles containing switch outputs when an item is invalid",
-          "[.][repro][feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
+          "[feature:reduce][feature:map][feature:switch][series:tsd][series:tsb]"
           "[schema:named][shape:doubly-nested]") {
     const auto tested = reduce_mapped_switch_outputs();
     const auto actual =
         bg::run_graph(tested, {{{1, literal::INVALID}}, {{1, 1}}, {{2, 2}}, {{1, 2}}, {{2, 3}}, {{1, literal::REMOVE}}});
 
-    CHECK(actual.equals<i64>({0, 2, 5, 6, 7, 4}));
+    CHECK(actual.event_count() == 5);
+    CHECK(actual.equals<i64>({std::nullopt, 2, 5, 6, 7, 4}));
 }
 
 } // namespace

@@ -2,9 +2,10 @@
 
 Verified on root revision `97dd0e1b` with the nested-output fix `773fee39`.
 
-Both reproduction tests expect `0` on the first tick, but BG captures `SKIP`.
-The populated control matches. `visit_tick` confirmed these are skipped slots,
-not invalid ticks. The original graph does not crash.
+The original reproductions expected `0` on the first tick, but BG captures
+`SKIP`. The populated control matches. `visit_tick` confirmed these are skipped
+slots, not invalid ticks. The final BG tests now expect `SKIP` at the first
+position; later values are unchanged. The original graph does not crash.
 
 | Input | Expected | Captured |
 | --- | --- | --- |
@@ -13,7 +14,7 @@ not invalid ticks. The original graph does not crash.
 | Populated control | `2,5,6,7,4` | `2,5,6,7,4` |
 
 The graph helper and tests are in
-`.lanes/hgraph-pattern-review/tests/evaluation/switch_test.cpp:828-880`.
+[`switch_test.cpp`](../../../tests/evaluation/switch_test.cpp).
 
 - Empty first tick: the source TSD root is valid; the map output root is
   invalid. `NestedReduceRuntime::evaluate` invalidates output for an invalid
@@ -34,7 +35,7 @@ valid REF handles whose targets are invalid.
 An optional field-projection observer compiled but exited with SIGSEGV; the
 original graph did not. This diagnostic crash is unclassified. Resolved-storage
 pointer comparisons across adapters were not used to infer reduce selection.
-The raw-reference probe is retained at ignored artifact
-`build/release/map_reduce_original_probe.cpp`; run it with
-`./build/release/map_reduce_original_probe`. No production code or normal tests
-changed.
+The raw-reference probe remains an ignored local artifact in the
+`nested-reference-output` lane; it is not a tracked source or a reproducible
+command from this lane. Neither diagnostic was rerun during the current
+integration verification.

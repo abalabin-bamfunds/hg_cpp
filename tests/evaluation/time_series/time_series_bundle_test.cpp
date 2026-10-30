@@ -918,7 +918,7 @@ TEST_CASE("a nested graph sees partial validity in a free bundle",
 }
 
 TEST_CASE("a nested graph passes a free bundle reference to a value consumer",
-          "[.][repro][feature:nested-graph][feature:reference][feature:sampling][series:tsb]"
+          "[feature:nested-graph][feature:reference][feature:sampling][series:tsb]"
           "[representation:free][shape:nested][binding:value-to-reference]"
           "[binding:reference-to-value][transition:update]") {
     const auto sum = node([](In<TSB<DerivedBundle>> input) { return *input->count + *input->value; });

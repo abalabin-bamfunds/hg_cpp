@@ -658,7 +658,7 @@ TEST_CASE("reselecting a rebuilt free list keeps unchanged item references",
 }
 
 TEST_CASE("a nested graph passes a free fixed list reference to a value consumer",
-          "[.][repro][feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
+          "[feature:nested-graph][feature:reference][feature:sampling][series:fixed-tsl]"
           "[representation:free][shape:nested][binding:value-to-reference]"
           "[binding:reference-to-value][transition:update]") {
     const auto sum = node([](In<TSL<TS<i64>, 2>> input) { return *input[0] + *input[1]; });
