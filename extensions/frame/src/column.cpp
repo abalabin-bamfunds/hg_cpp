@@ -1,5 +1,7 @@
 #include <bg/frame/tsc.hpp>
 #include <bg/frame/literal.hpp>
+#include "tick_codec.hpp"
+#include "format.hpp"
 
 #include <bg/type/type_map.hpp>
 #include <bg/type/type_resolution_error.hpp>
@@ -32,6 +34,38 @@ class NativeColumnSeriesRuntimeType final : public bg::frame::ColumnSeriesRuntim
         auto *column = static_cast<bg::frame::NativeColumn<T> *>(value);
         column->release(memory);
         std::destroy_at(column);
+    }
+    void copy(const bg::TimeSeriesInputData &input, bg::OutputState &output) const override {
+        if (!input.valid()) {
+            output.invalidate();
+            return;
+        }
+        if (std::addressof(input.runtime_type().type()) != std::addressof(this->type()))
+            throw std::invalid_argument{"TSC copy requires a matching cell type"};
+        const auto &source_runtime =
+            static_cast<const bg::frame::ColumnSeriesRuntimeType<T> &>(input.runtime_type());
+        auto &destination = *static_cast<bg::frame::NativeColumn<T> *>(output.mutable_data());
+        const auto source = source_runtime.input_view(input.data());
+        destination.copy_from(source, output.evaluation_time(), output.allocator(), true);
+        output.publish();
+    }
+    void copy_tick(const bg::TimeSeriesInputData &input, bg::OutputState &output) const override {
+        if (!input.modified() || input.last_updated() != output.evaluation_time())
+            return;
+        if (!input.valid()) {
+            output.invalidate();
+            return;
+        }
+        if (std::addressof(input.runtime_type().type()) != std::addressof(this->type()))
+            throw std::invalid_argument{"TSC copy requires a matching cell type"};
+        const auto &source_runtime =
+            static_cast<const bg::frame::ColumnSeriesRuntimeType<T> &>(input.runtime_type());
+        auto &destination = *static_cast<bg::frame::NativeColumn<T> *>(output.mutable_data());
+        const auto source = source_runtime.input_view(input.data());
+        const auto full_copy = destination.needs_full_copy(source, output.valid());
+        if (!destination.copy_from(source, output.evaluation_time(), output.allocator(), full_copy))
+            return;
+        output.publish();
     }
     void invalidate_output(const bg::OutputState &output) const override {
         auto *value = static_cast<bg::frame::NativeColumn<T> *>(output.mutable_data());
@@ -146,6 +180,7 @@ const NativeColumnSeriesRuntimeType<T> &ordinary_column_series_runtime_type(cons
     const auto &runtime_value = runtime.get();
     if (std::addressof(runtime_value.type()) != std::addressof(type))
         throw std::logic_error{"frame TSC runtime was requested for a non-canonical type"};
+    bg::frame::details::register_column_series_tick_replay<T>(runtime_value);
     return runtime_value;
 }
 
@@ -200,6 +235,7 @@ const bg::frame::ColumnType &bg::frame::column_type(const bg::ScalarType &cell_t
         bg::TypeRegistry::instance().get_or_create<bg::frame::ColumnType, std::hash<const bg::ScalarType *>>(
             &cell_type, [&] { return std::make_unique<bg::frame::ColumnType>(cell_type); });
     details::register_column_literal_type(type);
+    details::register_column_format_type(type);
     return type;
 }
 
@@ -235,6 +271,7 @@ const bg::frame::ColumnSeriesType &bg::frame::column_series_type(const bg::Scala
         bg::frame::visit_cell_type(type.cell_type(), []<typename Cell>(std::type_identity<Cell>) {
             static_cast<void>(bg::cpp_scalar_runtime_type<bg::frame::Column<Cell>>());
         });
+    details::register_column_tick_format_type(type);
     register_column_series_default_runtime(type);
     return type;
 }
@@ -272,6 +309,50 @@ bool bg::frame::ColumnSeriesType::do_match(const bg::Type &supplied, bg::TypeMap
 }
 
 namespace bg {
+template <typename T>
+void frame::NativeColumn<T>::replay_copy_tick(util::buffer_reader &reader, EvaluationTime time, allocator memory) {
+    const auto source_domain = reinterpret_cast<const void *>(reader.read_raw<std::uintptr_t>());
+    if (copy_source_domain_ != source_domain) {
+        clear(time, memory);
+        copy_source_domain_ = source_domain;
+    } else if (rows_.reset_changes(time)) {
+        cells_.reset_changes();
+    }
+
+    for (;;) {
+        const auto header = bg::details::TickHeader::read(reader);
+        if (header.operation == bg::details::TickOperation::end)
+            return;
+
+        const auto source_id = reader.read_raw<frame::row_id_t>();
+        if (header.operation == bg::details::TickOperation::remove) {
+            const auto *destination_id = copied_rows_.find(source_id);
+            if (destination_id == nullptr)
+                continue;
+            const auto output_id = *destination_id;
+            copied_rows_.erase(source_id, memory.memory_resource());
+            static_cast<void>(erase_for_copy(output_id, time, memory));
+            continue;
+        }
+        if (header.operation != bg::details::TickOperation::add &&
+            header.operation != bg::details::TickOperation::tick)
+            throw std::invalid_argument{"invalid column tick operation"};
+
+        const auto value = frame::details::tick_codec::read_cell<T>(reader);
+        if (header.operation == bg::details::TickOperation::add) {
+            if (copied_rows_.contains(source_id))
+                throw std::logic_error{"column tick added an active row ID"};
+            map_source_row(source_id, add(value, time, memory), memory);
+            continue;
+        }
+
+        const auto *destination_id = copied_rows_.find(source_id);
+        if (destination_id == nullptr)
+            throw std::logic_error{"column tick row mapping is missing; a full copy is required"};
+        static_cast<void>(set(*destination_id, value, time, memory));
+    }
+}
+
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<double>>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<bool>>();
@@ -397,5 +478,10 @@ template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime
 template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<bool>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<string>(const TimeSeriesType &);
 template const TimeSeriesRuntimeType &frame::column_computed_time_series_runtime_type<symbol>(const TimeSeriesType &);
+template void frame::NativeColumn<bool>::replay_copy_tick(util::buffer_reader &, EvaluationTime, allocator);
+template void frame::NativeColumn<i64>::replay_copy_tick(util::buffer_reader &, EvaluationTime, allocator);
+template void frame::NativeColumn<double>::replay_copy_tick(util::buffer_reader &, EvaluationTime, allocator);
+template void frame::NativeColumn<string>::replay_copy_tick(util::buffer_reader &, EvaluationTime, allocator);
+template void frame::NativeColumn<symbol>::replay_copy_tick(util::buffer_reader &, EvaluationTime, allocator);
 
 } // namespace bg

@@ -30,6 +30,7 @@
 #include <bg/scalar/details/allocation_pool.hpp>
 #include <bg/util/compile_time_string.hpp>
 #include <bg/util/contiguous_bunch.hpp>
+#include <bg/util/buffer.hpp>
 #include <bg/util/hash_dictionary.hpp>
 #include <bg/util/reflection.hpp>
 #include <bg/util/static_storage.hpp>
@@ -1247,6 +1248,13 @@ class NativeFrameStorage {
     const NativeRows &rows() const noexcept { return rows_; }
     const util::index<> &changed_columns() const noexcept { return changed_columns_; }
     const util::index<> &changed() const noexcept { return changed_; }
+    bool needs_full_copy(const FrameReadStorage &input) const noexcept {
+        return !valid_ || copy_source_domain_ != input.rows.identity;
+    }
+
+    BG_FRAME_EXPORT bool copy_from(const FrameReadStorage &input, EvaluationTime time, allocator memory,
+                                   bool full_copy);
+    void replay_copy_tick(util::buffer_reader &reader, EvaluationTime time, allocator memory);
 
     std::optional<row_id_t> find_key(std::span<const KeyValue> key) const {
         if (key.size() != layout_->key_fields.size())
@@ -1364,14 +1372,7 @@ class NativeFrameStorage {
     }
 
     bool erase(row_id_t id, EvaluationTime time, allocator memory) {
-        reserve_changed_columns(memory);
-        begin_cycle(time, memory);
-        if (!erase_row(id, time, memory))
-            return false;
-        publish_all_columns(time, memory);
-        valid_ = true;
-        bind_column_storage();
-        return true;
+        return erase_for_copy(id, time, memory);
     }
 
     void compact(allocator memory) {
@@ -1394,6 +1395,8 @@ class NativeFrameStorage {
     }
 
     void clear(EvaluationTime time, allocator memory) {
+        copied_rows_.release(memory.memory_resource());
+        copy_source_domain_ = nullptr;
         reserve_changed_columns(memory);
         begin_cycle(time, memory);
         const auto was_valid = valid_;
@@ -1431,6 +1434,8 @@ class NativeFrameStorage {
         }
         changed_.release(memory.memory_resource());
         changed_columns_.release(memory.memory_resource());
+        copied_rows_.release(memory.memory_resource());
+        copy_source_domain_ = nullptr;
         for (const auto &field : layout_->fields) {
             field.destroy_storage(bytes + field.column_storage_offset);
             std::destroy_at(reinterpret_cast<TimeSeriesState *>(bytes + field.child_state_offset));
@@ -1451,6 +1456,23 @@ class NativeFrameStorage {
     }
 
   private:
+    bool erase_for_copy(row_id_t id, EvaluationTime time, allocator memory) {
+        reserve_changed_columns(memory);
+        begin_cycle(time, memory);
+        if (!erase_row(id, time, memory))
+            return false;
+        publish_all_columns(time, memory);
+        valid_ = true;
+        bind_column_storage();
+        return true;
+    }
+
+    void map_source_row(row_id_t source_id, row_id_t destination_id, allocator memory) {
+        const auto inserted = copied_rows_.try_emplace(source_id, memory.memory_resource(), destination_id).second;
+        assert(inserted);
+        static_cast<void>(inserted);
+    }
+
     bool erase_row(row_id_t id, EvaluationTime time, allocator memory) {
         if (!rows_.contains(id))
             return false;
@@ -1616,6 +1638,8 @@ class NativeFrameStorage {
     util::index<> changed_;
     util::index<> changed_columns_;
     bool valid_{};
+    const void *copy_source_domain_{};
+    util::hash_dictionary<row_id_t, row_id_t> copied_rows_;
 };
 
 namespace details {
@@ -3286,6 +3310,38 @@ class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeT
         return static_cast<const NativeFrameStorage *>(value)->valid();
     }
 
+    void copy(const TimeSeriesInputData &input, OutputState &output) const override {
+        if (!input.valid()) {
+            output.invalidate();
+            return;
+        }
+        const auto &source_runtime = static_cast<const FrameSeriesRuntimeType &>(input.runtime_type());
+        auto &destination = *static_cast<NativeFrameStorage *>(output.mutable_data());
+        auto source = source_runtime.input_storage(input.data());
+        source.last_updated = input.last_updated();
+        source.modified = input.modified();
+        destination.copy_from(source, output.evaluation_time(), output.allocator(), true);
+        output.publish();
+    }
+
+    void copy_tick(const TimeSeriesInputData &input, OutputState &output) const override {
+        if (!input.modified() || input.last_updated() != output.evaluation_time())
+            return;
+        if (!input.valid()) {
+            output.invalidate();
+            return;
+        }
+        const auto &source_runtime = static_cast<const FrameSeriesRuntimeType &>(input.runtime_type());
+        auto &destination = *static_cast<NativeFrameStorage *>(output.mutable_data());
+        auto source = source_runtime.input_storage(input.data());
+        source.last_updated = input.last_updated();
+        source.modified = input.modified();
+        const auto full_copy = destination.needs_full_copy(source);
+        if (!destination.copy_from(source, output.evaluation_time(), output.allocator(), full_copy))
+            return;
+        output.publish();
+    }
+
     FrameReadStorage input_storage(const void *value) const noexcept override {
         return frame_read_storage(*static_cast<const NativeFrameStorage *>(value), value, this);
     }
@@ -3696,7 +3752,6 @@ inline const TimeSeriesRuntimeType &canonical_frame_view_runtime_type(
         }
     }
     frame_series_scalar_runtime_type(*runtime);
-    details::register_frame_series_tick_writer(*runtime);
     return *runtime;
 }
 
@@ -3856,6 +3911,10 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
     }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
 
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
+    }
+
     static constexpr auto name = ParsedProperties::name;
     static constexpr auto activity = ParsedProperties::activity;
     static constexpr auto validity = ParsedProperties::validity;
@@ -3995,7 +4054,23 @@ class Out<frame::TSF<Schema, Properties...>> {
     }
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename Input, auto... InputProperties>
+    void copy(const In<Input, InputProperties...> &input) const {
+        binding_->runtime_type().copy(input.input_data(), binding_.get());
+    }
+
+    template <typename Input, auto... InputProperties>
+    void copy_tick(const In<Input, InputProperties...> &input) const {
+        binding_->runtime_type().copy_tick(input.input_data(), binding_.get());
+    }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = frame::TSF<Schema, Properties...>;
 
@@ -4172,7 +4247,13 @@ class FrameViewOutputImplementation {
 
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = bg::details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
   protected:
     template <template <template <typename, auto...> typename> typename SourceSchema,

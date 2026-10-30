@@ -7,10 +7,12 @@
 #include <bg/time_series/tick_serializer.hpp>
 #include <bg/time_series/details/scalar_literal.hpp>
 #include "literal_helpers.hpp"
+#include "tick_codec.hpp"
 
 #include <algorithm>
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -23,15 +25,12 @@
 namespace bg::frame::details {
 namespace {
 
-using Cell = std::variant<std::monostate, std::optional<bool>, std::optional<i64>, std::optional<double>,
-                          std::optional<std::string_view>, std::optional<symbol>>;
-
-struct FrameChange {
-    bg::details::TickOperation operation;
-    row_id_t id{};
-    std::vector<KeyValue> key;
-    std::vector<Cell> cells;
-};
+using tick_codec::Cell;
+using tick_codec::FrameChange;
+using tick_codec::discard_cell;
+using tick_codec::read_cell;
+using tick_codec::read_change;
+using tick_codec::read_schema;
 
 struct ExpectedFrameChange {
     bool removal{};
@@ -240,11 +239,28 @@ void write_live_key(ScalarBufferWriteContext &writer, const std::vector<FrameCol
         write_column_cell(writer, columns, index, id, memory);
 }
 
-void write_frame_tick(const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &writer, allocator &memory) {
-    const auto storage = input.extension_descriptor();
+void write_frame_tick(const bg::details::TimeSeriesInputData &input, ScalarBufferWriteContext &writer,
+                      allocator &memory) {
+    const auto &runtime = static_cast<const FrameSeriesRuntimeType &>(input.runtime_type());
+    auto storage = runtime.input_storage(input.data());
+    storage.last_updated = input.last_updated();
+    storage.modified = input.modified();
     const auto &layout = native_frame_layout(*storage.schema);
 
     bg::details::write_bytes(writer, storage.schema);
+    bg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.rows.identity));
+    auto changed_columns = std::vector<std::size_t>{};
+    if (storage.change_time == input.last_updated()) {
+        storage.each_changed_column(std::addressof(changed_columns), [](void *context, std::size_t index) {
+            static_cast<std::vector<std::size_t> *>(context)->push_back(index);
+        });
+    }
+    if (changed_columns.size() > std::numeric_limits<std::uint32_t>::max())
+        throw std::length_error{"frame tick has too many changed columns"};
+    bg::details::write_bytes(writer, static_cast<std::uint32_t>(changed_columns.size()));
+    for (const auto index : changed_columns)
+        bg::details::write_bytes(writer, static_cast<std::uint32_t>(index));
+
     if (storage.change_time != input.last_updated()) {
         bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
         return;
@@ -268,10 +284,6 @@ void write_frame_tick(const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &wr
             }
         }
 
-    auto changed_columns = std::vector<std::size_t>{};
-    storage.each_changed_column(std::addressof(changed_columns), [](void *context, std::size_t index) {
-        static_cast<std::vector<std::size_t> *>(context)->push_back(index);
-    });
     if (storage.changed != nullptr) {
         for (const auto id : *storage.changed) {
             if ((storage.added != nullptr && storage.added->contains(id)) ||
@@ -304,6 +316,7 @@ template <cell_type T>
 void write_column_tick(const In<TSC<T>> &input, ScalarBufferWriteContext &writer, allocator &memory) {
     const auto descriptor = input.extension_descriptor();
     const auto storage = ColumnSeriesView<T>{descriptor.storage};
+    bg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.row_domain()));
     if (storage.change_time() != input.last_updated()) {
         bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
         return;
@@ -328,112 +341,10 @@ void write_column_tick(const In<TSC<T>> &input, ScalarBufferWriteContext &writer
     bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
 }
 
-template <cell_type T> std::optional<cell_value_t<T>> read_cell(util::buffer_reader &reader) {
-    if (reader.read_raw<std::uint8_t>() == 0)
-        return std::nullopt;
-    if constexpr (std::same_as<T, string>) {
-        const auto value = reader.peek<ScalarValue<string>>().view().value();
-        reader.consume<ScalarValue<string>>();
-        return value;
-    } else {
-        return reader.read_raw<cell_value_t<T>>();
-    }
-}
-
-Cell read_cell(util::buffer_reader &reader, const ScalarType &type) {
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>()))
-        return read_cell<bool>(reader);
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>()))
-        return read_cell<i64>(reader);
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<double>()))
-        return read_cell<double>(reader);
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<string>()))
-        return read_cell<string>(reader);
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<symbol>()))
-        return read_cell<symbol>(reader);
-    throw std::invalid_argument{"frame tick payload has an unsupported cell type"};
-}
-
-void discard_cell(util::buffer_reader &reader, const ScalarType &type) {
-    if (reader.read_raw<std::uint8_t>() == 0)
-        return;
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<bool>())) {
-        static_cast<void>(reader.read_raw<bool>());
-        return;
-    }
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<i64>())) {
-        static_cast<void>(reader.read_raw<i64>());
-        return;
-    }
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<double>())) {
-        static_cast<void>(reader.read_raw<double>());
-        return;
-    }
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<string>())) {
-        reader.skip<ScalarValue<string>>();
-        return;
-    }
-    if (std::addressof(type) == std::addressof(cpp_scalar_type<symbol>())) {
-        static_cast<void>(reader.read_raw<symbol>());
-        return;
-    }
-    throw std::invalid_argument{"frame tick payload has an unsupported cell type"};
-}
-
-const bg::Schema &read_schema(util::buffer_reader &reader) {
-    return *reader.read_raw<const bg::Schema *>();
-}
-
-void read_key(util::buffer_reader &reader, const NativeFrameLayout &layout, std::vector<KeyValue> &key) {
-    key.reserve(layout.key_fields.size());
-    for (auto index : layout.key_fields) {
-        visit_cell_type(*layout.fields[index].cell_type, [&]<typename Cell>(std::type_identity<Cell>) {
-            if constexpr (std::same_as<Cell, string>) {
-                if (reader.read_raw<std::uint8_t>() == 0) {
-                    key.emplace_back(std::monostate{});
-                    return;
-                }
-                const auto &value = reader.peek<ScalarValue<string>>();
-                key.emplace_back(ScalarValue<string>{value.view()});
-                reader.consume<ScalarValue<string>>();
-            } else if constexpr (std::same_as<Cell, i64> || std::same_as<Cell, symbol>) {
-                const auto value = read_cell<Cell>(reader);
-                key.push_back(value ? KeyValue{*value} : KeyValue{std::monostate{}});
-            } else {
-                throw std::invalid_argument{"frame key has an unsupported cell type"};
-            }
-        });
-    }
-}
-
-FrameChange read_change(util::buffer_reader &reader, const bg::Schema &schema,
-                        const NativeFrameLayout &layout, bg::details::TickHeader header) {
-    auto change = FrameChange{header.operation, reader.read_raw<row_id_t>(), {},
-                              std::vector<Cell>(schema.field_count())};
-    if (header.operation != bg::details::TickOperation::remove)
-        read_key(reader, layout, change.key);
-
-    if (header.operation == bg::details::TickOperation::add) {
-        for (auto index = std::size_t{}; index != schema.field_count(); ++index) {
-            if (std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
-                change.cells[index] = read_cell(reader, *layout.fields[index].cell_type);
-        }
-        return change;
-    }
-
-    if (header.operation != bg::details::TickOperation::tick)
-        return change;
-
-    const auto field_count = reader.read_raw<std::uint32_t>();
-    for (auto count = std::uint32_t{}; count != field_count; ++count) {
-        const auto index = reader.read_raw<std::uint32_t>();
-        change.cells[index] = read_cell(reader, *layout.fields[index].cell_type);
-    }
-    return change;
-}
-
 void discard_frame_tick(util::buffer_reader &reader) {
     const auto &schema = read_schema(reader);
+    static_cast<void>(reader.read_raw<std::uintptr_t>());
+    tick_codec::skip_changed_columns(reader);
     const auto &layout = native_frame_layout(schema);
     for (;;) {
         const auto header = bg::details::TickHeader::read(reader);
@@ -591,6 +502,8 @@ class FrameHistoryComparison final : public testing::TickLiteralComparisonState 
     bool compare(util::buffer_reader &reader, const TimeSeriesType &,
                  const literal::TimeSeriesLiteral &expected, std::size_t tick) override {
         const auto &schema = read_schema(reader);
+        static_cast<void>(reader.read_raw<std::uintptr_t>());
+        tick_codec::skip_changed_columns(reader);
         const auto &layout = native_frame_layout(schema);
         if (!layout.key_fields.empty())
             return compare_keyed_frame_payload(reader, schema, expected);
@@ -675,6 +588,7 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
   public:
     bool compare(util::buffer_reader &reader, const TimeSeriesType &,
                  const literal::TimeSeriesLiteral &expected, std::size_t tick) override {
+        static_cast<void>(reader.read_raw<std::uintptr_t>());
         const auto entries = expected.visit(
             [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
                 throw std::invalid_argument{"TSC expectation must contain named row changes"};
@@ -726,6 +640,7 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
 };
 
 template <cell_type T> void discard_column_tick(util::buffer_reader &reader) {
+    static_cast<void>(reader.read_raw<std::uintptr_t>());
     for (;;) {
         const auto header = bg::details::TickHeader::read(reader);
         if (header.operation == bg::details::TickOperation::end)
@@ -743,34 +658,53 @@ template <cell_type T> void discard_column_tick(util::buffer_reader &reader) {
 } // namespace
 
 void register_frame_series_tick_comparison(const TimeSeriesType &type) {
-    static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(
-        type, TimeSeriesTickOperations::for_discard(&discard_frame_tick)));
+    auto operations = TimeSeriesTickOperations::for_discard(&discard_frame_tick);
+    static_cast<void>(operations.set_write<TS_T>(
+        [](const In<TS_T> &input, ScalarBufferWriteContext &writer, allocator &memory) {
+            write_frame_tick(input.input_data(), writer, memory);
+        }));
+    static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(type, std::move(operations)));
     static_cast<void>(TimeSeriesDispatch<testing::TickLiteralComparison>::instance().add(
         type, testing::TickLiteralComparison{.create_state = [] {
                  return std::make_unique<FrameHistoryComparison>();
              }}));
 }
 
-void register_frame_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
-    auto operations = TimeSeriesTickOperations::for_write<TSF<SCHEMA>>(
-        [](const In<TSF<SCHEMA>> &input, ScalarBufferWriteContext &writer, allocator &memory) {
-            write_frame_tick(input, writer, memory);
+void register_frame_series_tick_replay(const TimeSeriesRuntimeType &runtime) {
+    auto replay_operations = TimeSeriesTickOperations::for_replay<Out<TS_T>>(
+        [](util::buffer_reader &reader, const Out<TS_T> &output) {
+            auto &state = output.output_state();
+            auto &storage = *static_cast<NativeFrameStorage *>(state.mutable_data());
+            storage.replay_copy_tick(reader, state.evaluation_time(), state.allocator());
+            state.publish();
         });
-    static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(runtime, std::move(operations)));
+    static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(runtime,
+                                                                                  std::move(replay_operations)));
 }
 
 template <typename T> void register_column_series_tick_writer(const TimeSeriesRuntimeType &runtime) {
     auto &dispatch = TimeSeriesDispatch<TimeSeriesTickOperations>::instance();
-    static_cast<void>(dispatch.add(runtime.type(), TimeSeriesTickOperations::for_discard(&discard_column_tick<T>)));
-    static_cast<void>(dispatch.add(
-        runtime, TimeSeriesTickOperations::for_write<TSC<T>>(
-                     [](const In<TSC<T>> &input, ScalarBufferWriteContext &writer, allocator &memory) {
-                         write_column_tick(input, writer, memory);
-                     })));
+    auto operations = TimeSeriesTickOperations::for_discard(&discard_column_tick<T>);
+    static_cast<void>(operations.template set_write<TSC<T>>(
+        [](const In<TSC<T>> &input, ScalarBufferWriteContext &writer, allocator &memory) {
+            write_column_tick(input, writer, memory);
+        }));
+    static_cast<void>(dispatch.add(runtime.type(), std::move(operations)));
     static_cast<void>(TimeSeriesDispatch<testing::TickLiteralComparison>::instance().add(
         runtime.type(), testing::TickLiteralComparison{.create_state = [] {
                            return std::make_unique<ColumnHistoryComparison<T>>();
                        }}));
+}
+
+template <typename T> void register_column_series_tick_replay(const TimeSeriesRuntimeType &runtime) {
+    auto operations = TimeSeriesTickOperations::for_replay<Out<TS_T>>(
+        [](util::buffer_reader &reader, const Out<TS_T> &output) {
+            auto &state = output.output_state();
+            auto &storage = *static_cast<NativeColumn<T> *>(state.mutable_data());
+            storage.replay_copy_tick(reader, state.evaluation_time(), state.allocator());
+            state.publish();
+        });
+    static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(runtime, std::move(operations)));
 }
 
 template BG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
@@ -778,5 +712,10 @@ template BG_FRAME_EXPORT void register_column_series_tick_writer<double>(const T
 template BG_FRAME_EXPORT void register_column_series_tick_writer<bool>(const TimeSeriesRuntimeType &runtime);
 template BG_FRAME_EXPORT void register_column_series_tick_writer<string>(const TimeSeriesRuntimeType &runtime);
 template BG_FRAME_EXPORT void register_column_series_tick_writer<symbol>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_replay<i64>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_replay<double>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_replay<bool>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_replay<string>(const TimeSeriesRuntimeType &runtime);
+template BG_FRAME_EXPORT void register_column_series_tick_replay<symbol>(const TimeSeriesRuntimeType &runtime);
 
 } // namespace bg::frame::details

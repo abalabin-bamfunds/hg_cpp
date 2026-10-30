@@ -355,6 +355,103 @@ TEST_CASE("with_columns infers its result schema in an enclosing graph template"
     CHECK(observations[1].doubled_prices == std::vector<std::optional<double>>{24.0});
 }
 
+TEST_CASE("sample holds a computed frame until an independent signal tick",
+          "[feature:frame][feature:with_columns][feature:sampling][series:tsf]") {
+    struct observation {
+        bool valid{};
+        bool modified{};
+        bool price_modified{};
+        bool computed_modified{};
+        std::vector<row_id_t> rows;
+        std::vector<std::optional<double>> prices;
+        std::vector<std::optional<double>> computed;
+        std::vector<row_id_t> changed;
+        std::vector<row_id_t> removed;
+    };
+    auto observations = std::vector<observation>{};
+    const auto observe = node([&](In<TSF<ResultRuntimeSchema>, optional> input, In<TS<i64>> cycle,
+                                  Out<TS<i64>> output) {
+        auto result = observation{.valid = input.valid(), .modified = input.modified()};
+        if (input.valid()) {
+            const auto price = input.column("price").input<double>();
+            const auto computed = input.column("computed").input<double>();
+            result.price_modified = price.modified();
+            result.computed_modified = computed.modified();
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                result.rows.push_back(id);
+                result.prices.push_back(price.cell(id));
+                result.computed.push_back(computed.cell(id));
+            });
+            input.for_each_changed([&](row_id_t id) { result.changed.push_back(id); });
+            input.for_each_removed([&](row_id_t id) { result.removed.push_back(id); });
+        }
+        observations.push_back(std::move(result));
+        output.set(*cycle);
+    });
+    const auto fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
+                                   SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
+    const auto &schema = anonymous_schema(fields, key_metadata<"id">());
+    const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
+    const auto graph = [&](wp<TSF<SCHEMA>> source, wp<TS<i64>> signal, wp<TS<i64>> cycle) {
+        const auto computed = frame::with_columns(source, "computed"_n = col("price") + 1.0);
+        const auto sampled = operators::sample(signal, computed);
+        return observe(sampled, cycle);
+    };
+
+    const auto result = run_graph(
+        graph,
+        input(series_type,
+              {{{{"id", i64{7}}, {"price", 10.0}}},
+               {literal::REMOVE({{"id", i64{7}}})},
+               {{{"id", i64{8}}, {"price", 20.0}}}, literal::SKIP,
+               {{{"id", i64{8}}, {"price", 21.0}}}}),
+        input<TS<i64>>({0, literal::SKIP, literal::SKIP, 3, literal::SKIP}),
+        input<TS<i64>>({0, 1, 2, 3, 4}));
+
+    REQUIRE(result.equals<i64>({0, 1, 2, 3, 4}));
+    REQUIRE(observations.size() == 5);
+    CHECK(observations[0].valid);
+    CHECK(observations[0].modified);
+    CHECK(observations[0].prices == std::vector<std::optional<double>>{10.0});
+    CHECK(observations[0].computed == std::vector<std::optional<double>>{11.0});
+    CHECK(observations[0].price_modified);
+    CHECK(observations[0].computed_modified);
+    CHECK(observations[0].changed.size() == 1);
+    CHECK(observations[1].valid);
+    CHECK_FALSE(observations[1].modified);
+    CHECK(observations[1].prices == std::vector<std::optional<double>>{10.0});
+    CHECK(observations[1].computed == std::vector<std::optional<double>>{11.0});
+    CHECK_FALSE(observations[1].price_modified);
+    CHECK_FALSE(observations[1].computed_modified);
+    CHECK(observations[1].changed.empty());
+    CHECK(observations[1].removed.empty());
+    CHECK(observations[2].valid);
+    CHECK_FALSE(observations[2].modified);
+    CHECK(observations[2].prices == std::vector<std::optional<double>>{10.0});
+    CHECK(observations[2].computed == std::vector<std::optional<double>>{11.0});
+    CHECK_FALSE(observations[2].price_modified);
+    CHECK_FALSE(observations[2].computed_modified);
+    CHECK(observations[2].changed.empty());
+    CHECK(observations[2].removed.empty());
+    CHECK(observations[3].valid);
+    CHECK(observations[3].modified);
+    CHECK(observations[3].prices == std::vector<std::optional<double>>{20.0});
+    CHECK(observations[3].computed == std::vector<std::optional<double>>{21.0});
+    CHECK(observations[3].price_modified);
+    CHECK(observations[3].computed_modified);
+    CHECK(observations[3].rows != observations[0].rows);
+    CHECK(observations[3].changed == observations[3].rows);
+    CHECK(observations[3].removed == observations[0].rows);
+    CHECK(observations[4].valid);
+    CHECK_FALSE(observations[4].modified);
+    CHECK(observations[4].prices == std::vector<std::optional<double>>{20.0});
+    CHECK(observations[4].computed == std::vector<std::optional<double>>{21.0});
+    CHECK_FALSE(observations[4].price_modified);
+    CHECK_FALSE(observations[4].computed_modified);
+    CHECK(observations[4].changed.empty());
+    CHECK(observations[4].removed.empty());
+}
+
 TEST_CASE("with_columns rejects duplicate assignment names and keyed field replacement",
           "[feature:frame][error:wiring]") {
     auto wiring = GraphWiring{};

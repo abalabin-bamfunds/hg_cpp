@@ -170,6 +170,10 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
 
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
+    }
+
     frame::details::ColumnInputDescriptor<T> extension_descriptor() const noexcept {
         if (!valid())
             return {};
@@ -213,6 +217,10 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const noexcept { return valid() ? cell_count() : 0; }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
+    }
 
     template <frame::cell_type Cell>
     auto input() const {
@@ -300,7 +308,23 @@ class Out<frame::TSC<T, Properties...>> {
     }
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename Input, auto... InputProperties>
+    void copy(const In<Input, InputProperties...> &input) const {
+        binding_->runtime_type().copy(input.input_data(), binding_.get());
+    }
+
+    template <typename Input, auto... InputProperties>
+    void copy_tick(const In<Input, InputProperties...> &input) const {
+        binding_->runtime_type().copy_tick(input.input_data(), binding_.get());
+    }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = frame::TSC<T, Properties...>;
 
@@ -388,7 +412,23 @@ class Out<frame::TSC<T, Properties...>> {
 
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename Input, auto... InputProperties>
+    void copy(const In<Input, InputProperties...> &input) const {
+        binding_->runtime_type().copy(input.input_data(), binding_.get());
+    }
+
+    template <typename Input, auto... InputProperties>
+    void copy_tick(const In<Input, InputProperties...> &input) const {
+        binding_->runtime_type().copy_tick(input.input_data(), binding_.get());
+    }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = frame::TSC<T, Properties...>;
 
@@ -449,7 +489,13 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
 
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = frame::TSC<T, Properties...>;
 
@@ -482,7 +528,13 @@ class Out<frame::TSC<T, Properties...>, frame::view> {
 
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = frame::TSC<T, Properties...>;
 
@@ -627,7 +679,13 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
 
     void invalidate() const { binding_->invalidate(); }
     bool valid() const noexcept { return binding_->valid(); }
+    EvaluationTime last_updated() const noexcept { return binding_->last_updated(); }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        auto output = details::output_factory::make<Out<TS_T>>(binding_.get());
+        return output.visit(std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = frame::TSC<T, Properties...>;
 

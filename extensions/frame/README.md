@@ -267,7 +267,7 @@ Include `<bg/frame/tsc.hpp>` for the typed views.
 | `In<TSC<i64>>` | BG validity/update queries, `size`, `contains`, `cell`, `row_domain` |
 | Current value | Zero-copy `value_view()`, `for_each_row`, `for_each_batch` |
 | Delta | `for_each_changed` combines additions and modifications; `for_each_removed` supplies IDs |
-| `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate`, `apply` |
+| `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate`, `apply`, `copy`, `copy_tick` |
 | `Out<TSC<i64>, frame::view>` | `bind(source)`, `invalidate` |
 | `Out<TSC<i64>, frame::computed<>>` | `bind(source)`, `for_each_added`, `set(id, value)`, `set_batch(ids, batch)`, `invalidate` |
 
@@ -307,6 +307,55 @@ cell with a false validity bit must not be read. Shared physical mappings use
 source blocks; distinct mappings gather only requested rows into bounded
 scratch batches. Complete-column arithmetic uses the shared selection contract
 described below.
+
+## Copying time series
+
+Native TSC and TSF outputs provide BG's `copy(input)` and `copy_tick(input)`
+operations. Both read native, borrowed, and computed inputs through their input
+interfaces. The destination owns independent cells.
+Row traversal follows the destination's physical storage order.
+
+`copy()` removes the destination's current rows and adds the source's complete
+current value with new destination row lifetimes. Use it for sampling, after
+skipped updates, or when explicitly switching inputs. Recycled source row IDs
+do not identify the rows that existed before a forwarding gap.
+
+Consecutive `copy_tick()` calls preserve destination row lifetimes while
+applying current additions, removals, and modified cells. A current input event
+initializes an invalid destination or a different source row domain from the
+complete current value. An unchanged input does not publish. Invalidation clears
+the destination and its source-to-destination row mapping.
+
+The caller must not modify the destination between consecutive `copy_tick()`
+calls. Use `copy()` to establish a new copying sequence after editing it.
+
+Frame copies accept the same schema or a schema derived from the destination's
+schema. A Derived input supplies only the destination's inherited fields;
+copied field types must match exactly.
+
+Copy operations require a native destination. Borrowed and computed outputs use
+their binding operations.
+
+Native outputs also support retained-tick replay through BG's tick operations.
+Replay and live `copy_tick()` share the destination's row mapping, allowing a
+buffering node to switch between them. Retained ticks own their cell values.
+
+## Formatting
+
+Include `<bg/scalar/format.hpp>` to format `Scalar<Column<T>>` and
+`Scalar<Frame<Schema>>` with fmt. Columns show nullable cells in traversal order;
+frames show the row count and named columns. Native and Arrow-backed scalars
+use the same formatting operation.
+
+Include `<bg/time_series/tick_format.hpp>` to format a current TSC or TSF tick:
+
+```cpp
+auto text = fmt::format("{}", bg::tick(input, context->evaluation_time()));
+```
+
+Ticks show internal row IDs, removals, and added or modified cells. Scalar
+formatting supplies cell quoting and escaping. Formatting a retained tick uses
+`bg::tick(type, reader)` and leaves the reader and its encoded values unchanged.
 
 ## Frame and column queries
 
@@ -565,7 +614,7 @@ Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
 | `In<TSF<Schema>>` | BG validity/update queries, `size`, `contains`, `cell<Index>`, `row_domain` |
 | Current value | Zero-copy `value_view()`, `for_each_row` |
 | Delta | `for_each_changed`, `for_each_removed`, `for_each_modified<Index>` |
-| `Out<TSF<Schema>>` | `schema`, `add`, `set`, `erase`, `clear`, `invalidate` |
+| `Out<TSF<Schema>>` | `schema`, `add`, `set`, `erase`, `clear`, `invalidate`, `copy`, `copy_tick` |
 | `Out<TSF<Schema>, frame::view>` | `schema`, `bind_projection(source, ordinals/names/columns<...>())`, `invalidate` |
 | Borrowed column assignments | `output.bind_columns(source, assigned_columns)` |
 | `Out<TSF<Schema>, frame::computed<"mid">>` | `schema`, `bind(source)`, `set<"mid">`, `set_batch<"mid">`, `invalidate` |

@@ -1,11 +1,80 @@
 # Frame foundation handoff
 
-Updated: 2026-10-29.
+Updated: 2026-10-30.
+
+## Active extension integration
+
+Uncommitted work on this lane adds native `copy`/`copy_tick`, typed time-series
+visitation, scalar formatting, and live/retained tick formatting. Native TSC
+and TSF retained replay use BG's existing operation registry and share live
+copying's output-owned row mapping. The separate BG erased-replay fix is
+included as `d4b0a205` (original commit `ce14d7c0`).
+
+The complete Release build with Arrow enabled passed using `j12`. All 12 frame
+CTest executables passed. Coverage includes all five cell types,
+null cells, nonempty zero-column frames, canceled row deltas, independent held
+values, and owning scalar values passed through `delay`. The held-frame sample
+uses an anonymous schema with borrowed and computed columns. A sampled string
+column retains a long string after its source replaces and removes that cell.
+The copy suite passed 14 cases and 155 assertions; formatting passed 4 cases and
+21 assertions; column assembly passed 27 cases and 248 assertions.
+Native output storage layouts have changed; other build directories require
+rebuilding every frame target before use.
+
+The owner approved inexpensive Derived-to-Base copying. Inherited field
+ordinals permit copying the Base prefix without a column mapping. BG's
+[copy contract](../../docs/development/design/node-api.md#output-parameters)
+already requires a compatible input value shape, including the time series
+family. No additional runtime family identification is required. Live copying
+now validates inheritance and the exact copied fields for distinct schemas;
+matching schemas skip those checks. Focused copy verification passed after
+adding declared/runtime inheritance and zero-field Base cases.
+
+The owner settled manual destination edits through the
+[copying contract](README.md#copying-time-series): the client must not modify
+the destination between consecutive delta copies. No additional mutation
+tracking or mixed-edit support is required.
+
+`TimeSeriesTickOperations::typed_replay<Out<TS_T>>` forwards the existing erased
+output directly to its callback. The isolated BG fix passed four Release
+provider replay tests with 26 assertions and is included on this lane. The
+matching BG Release build and installation passed. Frame regressions passed for
+long-string feedback, public `gate` transitions between retained replay and
+live copying on one destination, and multiple retained records replayed in one
+evaluation. The latter verifies that child modification flags accumulate.
+`git diff --check` passed. Main remains unchanged.
+
+Review also requires preserving publication after an addition/removal cancels
+the row delta. TSF retained records must preserve changed-column flags for
+that case; the codec now records those flags once per tick. String replay
+borrows encoded owners while BG's original reader owns their destruction.
+Replay registration belongs only to native destination runtimes; common writing
+and discard belong to the semantic type. Discard, comparison, and formatting
+skip changed-column ordinals without allocating a vector.
+
+The public reference-switch probe initializes two valid, unchanged TSF targets
+and selects A/B/A. Values change correctly (10/20/10) and the root publishes a
+tick, but switches report empty row changes and false child modification flags.
+The existing sampling implementation handles only built-in families. A BG
+provider sampling hook requires discussion before implementation.
+Queued literals also require a BG extension hook: the current queue codec
+explicitly rejects provider-defined time series. Retained replay does not add
+queue-literal serialization.
+
+The reference-switch diagnostic source and executable remain in the lane's
+ignored `build/frame-release/` directory. Run it from the lane root:
+
+```sh
+conda run --no-capture-output -n hg-build ./build/frame-release/reference_switch_probe
+```
+
+The reference probe reports values 10/20/10, root modification on each switch,
+and missing row changes and child modification flags after the first target.
 
 ## Development lanes
 
 Frame development continues in `.lanes/frame-with-columns` on
-`agent/frame-with-columns`. The lane is rebased onto main `dfe929f0` and includes
+`agent/frame-with-columns`. The lane is rebased onto main `4bc849f8` and includes
 the completed named-argument lifetime, named-argument type extraction,
 dictionary literal lifetime, and saved literal ownership changes. Its semantic
 and scalar runtime registration implementation matches main.
@@ -54,9 +123,10 @@ Verification after rebasing onto main `dfe929f0`:
   zero-field frames.
 - `git diff --check` passed.
 
-The next stage requires review of destination row identity for full copies
-and delta copies before implementing provider `copy` and `copy_tick`. See
-[copying and retained ticks](projection_library_proposal.md#copying-and-retained-ticks).
+The [active extension integration](#active-extension-integration) section records
+the current copy, replay, and formatting work. The
+[copying contract](projection_library_proposal.md#copying-and-retained-ticks)
+defines full-copy and delta-copy row lifetimes.
 
 ## Projection
 
@@ -230,11 +300,6 @@ Verification on `.lanes/frame-incremental-sum`:
 Builds are `build/incremental-sum-release-arrow-on` and
 `build/incremental-sum-debug-asan`. They use the matching Release and Debug BG
 installs under `.lanes/frame-field-access/build/arrow-sum/`.
-
-`operators::sample(signal, column)` currently fails with
-`time series runtime type does not support copying`. The sum change does not
-add TSC copying. Its stale-delta rebuild branch is implemented, but this public
-sampling path cannot exercise it until TSC copying is supported.
 
 ## Arrow text support
 

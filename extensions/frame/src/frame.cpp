@@ -2,8 +2,10 @@
 #include <bg/util/static_storage.hpp>
 #include <bg/frame/tsc.hpp>
 #include <bg/frame/literal.hpp>
+#include "format.hpp"
 #include <bg/type/type_registry.hpp>
 #include <bg/util/scope_exit.hpp>
+#include "tick_codec.hpp"
 
 #include <algorithm>
 #include <memory>
@@ -226,7 +228,211 @@ std::size_t combine_frame_key_hash(std::size_t result, std::size_t value) noexce
     return result ^ (value + constant + (result << 6) + (result >> 2));
 }
 
+class FrameCopySource {
+  public:
+    using Cell = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>,
+                              std::optional<std::string_view>, std::optional<symbol>>;
+    using Column = std::variant<ColumnSeriesView<bool>, ColumnSeriesView<i64>, ColumnSeriesView<double>,
+                                ColumnSeriesView<string>, ColumnSeriesView<symbol>>;
+
+    FrameCopySource(const FrameReadStorage &input, const details::NativeFrameLayout &layout)
+        : input_{input}, cells_(layout.fields.size()), values_(layout.fields.size()), patches_(layout.fields.size()) {
+        if (input.schema != layout.schema) {
+            if (!input.schema->derives_from(*layout.schema))
+                throw std::invalid_argument{"frame copy requires the same schema or a derived schema"};
+
+            const auto source_fields = input.schema->fields();
+            const auto destination_fields = layout.schema->fields();
+            for (auto index = std::size_t{}; index != destination_fields.size(); ++index) {
+                if (source_fields[index].name != destination_fields[index].name ||
+                    source_fields[index].type != destination_fields[index].type)
+                    throw std::invalid_argument{"frame copy requires matching inherited field types"};
+            }
+        }
+
+        columns_.reserve(layout.fields.size());
+        for (auto index = std::size_t{}; index != layout.fields.size(); ++index) {
+            const auto binding = input.column(index);
+            columns_.push_back(visit_cell_type(
+                *layout.fields[index].cell_type, [&]<typename Cell>(std::type_identity<Cell>) {
+                    auto column = std::optional<ColumnSeriesView<Cell>>{};
+                    binding.bind_column_series_view(binding.payload, std::addressof(column));
+                    return Column{*column};
+                }));
+        }
+    }
+
+    std::span<const void *const> row_values(row_id_t source_id) {
+        for (auto index = std::size_t{}; index != columns_.size(); ++index) {
+            cells_[index] = std::visit(
+                [source_id](const auto &column) -> Cell { return column.cell(source_id); }, columns_[index]);
+            values_[index] =
+                std::visit([](auto &value) -> const void * { return std::addressof(value); }, cells_[index]);
+        }
+        return values_;
+    }
+
+    std::span<const details::NativeFrameCellPatch> row_patches(row_id_t source_id) {
+        for (auto index = std::size_t{}; index != columns_.size(); ++index) {
+            const auto *modified = input_.modified_at(index);
+            if (modified == nullptr || !modified->contains(source_id)) {
+                patches_[index] = {};
+                continue;
+            }
+            cells_[index] = std::visit(
+                [source_id](const auto &column) -> Cell { return column.cell(source_id); }, columns_[index]);
+            const auto *value =
+                std::visit([](auto &cell) -> const void * { return std::addressof(cell); }, cells_[index]);
+            patches_[index] = {true, value};
+        }
+        return patches_;
+    }
+
+  private:
+    const FrameReadStorage &input_;
+    std::vector<Column> columns_;
+    std::vector<Cell> cells_;
+    std::vector<const void *> values_;
+    std::vector<details::NativeFrameCellPatch> patches_;
+};
+
 } // namespace
+
+bool NativeFrameStorage::copy_from(const FrameReadStorage &input, EvaluationTime time, allocator memory,
+                                   bool full_copy) {
+    if (!input.valid)
+        throw std::invalid_argument{"cannot copy an invalid frame input"};
+    if (!full_copy && input.change_time != input.last_updated)
+        return false;
+    auto source = FrameCopySource{input, *layout_};
+    if (full_copy) {
+        clear(time, memory);
+        publish_all_columns(time, memory);
+        copy_source_domain_ = input.rows.identity;
+        input.rows.each([&](row_id_t source_id) {
+            const auto destination_id = add(source.row_values(source_id), time, memory);
+            map_source_row(source_id, destination_id, memory);
+        });
+        return true;
+    }
+
+    reserve_changed_columns(memory);
+    begin_cycle(time, memory);
+
+    if (input.removed != nullptr) {
+        for (auto source_id : *input.removed) {
+            const auto *destination_id = copied_rows_.find(source_id);
+            if (destination_id == nullptr)
+                continue;
+            const auto output_id = *destination_id;
+            copied_rows_.erase(source_id, memory.memory_resource());
+            erase_for_copy(output_id, time, memory);
+        }
+    }
+    if (input.added != nullptr) {
+        for (auto source_id : *input.added) {
+            if (!input.rows.has(source_id) || copied_rows_.contains(source_id))
+                continue;
+            const auto destination_id = add(source.row_values(source_id), time, memory);
+            map_source_row(source_id, destination_id, memory);
+        }
+    }
+    if (input.changed != nullptr) {
+        for (auto source_id : *input.changed) {
+            if (!input.rows.has(source_id) || (input.added != nullptr && input.added->contains(source_id)))
+                continue;
+            const auto *destination_id = copied_rows_.find(source_id);
+            if (destination_id == nullptr)
+                throw std::logic_error{"frame copy row mapping is missing; a full copy is required"};
+            const auto patches = source.row_patches(source_id);
+            static_cast<void>(set(*destination_id, patches, time, memory));
+        }
+    }
+
+    for (auto index = std::size_t{}; index != layout_->fields.size(); ++index) {
+        if (!input.has_changed_column(index))
+            continue;
+        publish_column(index, time, memory);
+    }
+    return true;
+}
+
+void NativeFrameStorage::replay_copy_tick(util::buffer_reader &reader, EvaluationTime time, allocator memory) {
+    const auto &schema = details::tick_codec::read_schema(reader);
+    if (std::addressof(schema) != layout_->schema)
+        throw std::invalid_argument{"frame tick replay requires a matching schema"};
+    const auto source_domain = reinterpret_cast<const void *>(reader.read_raw<std::uintptr_t>());
+    const auto changed_columns = details::tick_codec::read_changed_columns(reader);
+
+    if (copy_source_domain_ != source_domain) {
+        clear(time, memory);
+        copy_source_domain_ = source_domain;
+    } else {
+        reserve_changed_columns(memory);
+        begin_cycle(time, memory);
+    }
+
+    const auto cell_value = [](const details::tick_codec::Cell &cell) -> const void * {
+        return std::visit(
+            [](const auto &value) -> const void * {
+                using Cell = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Cell, std::monostate>)
+                    throw std::invalid_argument{"frame add tick is missing a cell value"};
+                else
+                    return std::addressof(value);
+            },
+            cell);
+    };
+
+    for (;;) {
+        const auto header = bg::details::TickHeader::read(reader);
+        if (header.operation == bg::details::TickOperation::end)
+            break;
+        if (header.operation != bg::details::TickOperation::add &&
+            header.operation != bg::details::TickOperation::tick &&
+            header.operation != bg::details::TickOperation::remove)
+            throw std::invalid_argument{"invalid frame tick operation"};
+
+        auto change = details::tick_codec::read_change(reader, *layout_->schema, *layout_, header);
+        if (header.operation == bg::details::TickOperation::remove) {
+            const auto *destination_id = copied_rows_.find(change.id);
+            if (destination_id == nullptr)
+                continue;
+            const auto output_id = *destination_id;
+            copied_rows_.erase(change.id, memory.memory_resource());
+            erase_for_copy(output_id, time, memory);
+            continue;
+        }
+
+        if (header.operation == bg::details::TickOperation::add) {
+            if (copied_rows_.contains(change.id))
+                throw std::logic_error{"frame tick added an active row ID"};
+            auto values = std::vector<const void *>{};
+            values.reserve(change.cells.size());
+            for (const auto &cell : change.cells)
+                values.push_back(cell_value(cell));
+            const auto destination_id = add(values, time, memory);
+            map_source_row(change.id, destination_id, memory);
+            continue;
+        }
+
+        const auto *destination_id = copied_rows_.find(change.id);
+        if (destination_id == nullptr)
+            throw std::logic_error{"frame tick row mapping is missing; a full copy is required"};
+        auto patches = std::vector<details::NativeFrameCellPatch>(change.cells.size());
+        for (auto index = std::size_t{}; index != change.cells.size(); ++index) {
+            if (std::holds_alternative<std::monostate>(change.cells[index]))
+                continue;
+            patches[index] = {true, cell_value(change.cells[index])};
+        }
+        static_cast<void>(set(*destination_id, patches, time, memory));
+    }
+
+    for (const auto index : changed_columns)
+        publish_column(index, time, memory);
+    valid_ = true;
+    bind_column_storage();
+}
 
 const details::NativeFrameLayout &details::native_frame_layout(const SchemaType &schema) {
     auto &cache = frame_runtime_cache();
@@ -329,6 +535,7 @@ const FrameType &frame_type(const SchemaType &schema) {
     const auto &type = TypeRegistry::instance().get_or_create<FrameType, std::hash<const SchemaType *>>(
         std::addressof(schema), [&] { return std::make_unique<FrameType>(schema); });
     details::register_frame_literal_type(type);
+    details::register_frame_format_type(type);
     if (type.is_resolved()) {
         static_cast<void>(details::native_frame_layout(schema));
         static_cast<void>(frame_snapshot_runtime_type(type));
@@ -348,9 +555,10 @@ const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteePara
             });
         register_time_series_runtime_type(runtime);
         details::register_frame_series_tick_comparison(type);
-        details::register_frame_series_tick_writer(runtime);
+        details::register_frame_series_tick_replay(runtime);
         frame_series_scalar_runtime_type(static_cast<const FrameSeriesRuntimeType &>(runtime));
     }
+    details::register_frame_tick_format_type(type);
     return type;
 }
 

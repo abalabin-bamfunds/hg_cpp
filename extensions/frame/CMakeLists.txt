@@ -13,7 +13,7 @@ endif()
 
 add_library(bg_frame SHARED src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/comparison.cpp
                             src/expression.cpp src/frame.cpp src/literal.cpp src/logical.cpp src/reduction.cpp
-                            src/tick_capture.cpp src/with_columns.cpp src/collection.cpp)
+                            src/tick_capture.cpp src/with_columns.cpp src/collection.cpp src/format.cpp)
 add_library(bg::frame ALIAS bg_frame)
 
 target_compile_features(bg_frame PUBLIC cxx_std_23)
@@ -95,6 +95,14 @@ if(BUILD_TESTING)
     add_executable(bg_frame_collection_test tests/collection_test.cpp)
     target_link_libraries(bg_frame_collection_test PRIVATE bg::frame Catch2::Catch2WithMain)
     add_test(NAME bg_frame_collection_test COMMAND bg_frame_collection_test)
+
+    add_executable(bg_frame_copy_test tests/copy_test.cpp)
+    target_link_libraries(bg_frame_copy_test PRIVATE bg::frame Catch2::Catch2WithMain)
+    add_test(NAME bg_frame_copy_test COMMAND bg_frame_copy_test)
+
+    add_executable(bg_frame_format_test tests/format_test.cpp)
+    target_link_libraries(bg_frame_format_test PRIVATE bg::frame Catch2::Catch2WithMain)
+    add_test(NAME bg_frame_format_test COMMAND bg_frame_format_test)
 
     if(BG_FRAME_BUILD_ARROW)
         add_executable(bg_frame_arrow_test tests/arrow_test.cpp)

@@ -21,11 +21,18 @@ BG_FRAME_EXPORT void apply_series_literal(const literal::TimeSeriesLiteral &lite
 BG_FRAME_EXPORT void register_frame_series_literal_runtime(const TimeSeriesRuntimeType &runtime);
 BG_FRAME_EXPORT void register_column_series_literal_runtime(const TimeSeriesRuntimeType &runtime);
 BG_FRAME_EXPORT void register_frame_series_tick_comparison(const TimeSeriesType &type);
-BG_FRAME_EXPORT void register_frame_series_tick_writer(const TimeSeriesRuntimeType &runtime);
+BG_FRAME_EXPORT void register_frame_series_tick_replay(const TimeSeriesRuntimeType &runtime);
 template <typename T>
 BG_FRAME_EXPORT void register_column_series_tick_writer(const TimeSeriesRuntimeType &runtime);
+template <typename T>
+BG_FRAME_EXPORT void register_column_series_tick_replay(const TimeSeriesRuntimeType &runtime);
 extern template BG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
 extern template BG_FRAME_EXPORT void register_column_series_tick_writer<double>(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_replay<bool>(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_replay<i64>(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_replay<double>(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_replay<string>(const TimeSeriesRuntimeType &runtime);
+extern template BG_FRAME_EXPORT void register_column_series_tick_replay<symbol>(const TimeSeriesRuntimeType &runtime);
 } // namespace details
 
 } // namespace bg::frame

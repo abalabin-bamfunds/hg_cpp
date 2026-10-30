@@ -1,10 +1,12 @@
 #include <bg/frame/arrow.hpp>
+#include <bg/scalar/format.hpp>
 #include <bg/scalar/value.hpp>
 #include <bg/run_graph.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <arrow/api.h>
 #include <arrow/builder.h>
+#include <fmt/format.h>
 
 #include <array>
 #include <cstdint>
@@ -93,6 +95,7 @@ void require(bool condition, const char *message) {
 }
 
 std::shared_ptr<arrow::Array> int_array(std::initializer_list<std::optional<std::int64_t>> values);
+std::shared_ptr<arrow::Array> double_array(std::initializer_list<std::optional<double>> values);
 std::shared_ptr<arrow::Array> string_array(std::initializer_list<std::optional<std::string_view>> values);
 std::shared_ptr<arrow::Array> large_string_array(std::initializer_list<std::optional<std::string_view>> values);
 std::shared_ptr<arrow::Array> string_view_array(std::initializer_list<std::optional<std::string_view>> values);
@@ -119,6 +122,23 @@ void test_arrow_default_frame_runtime() {
     require(snapshots.size() == 1 && snapshots[0] &&
                 snapshots[0]->view().value().columns().bid.cell(0) == 12.5,
             "generic Frame scalar output failed after Arrow runtime initialization");
+}
+
+void test_arrow_frame_scalar_formatting() {
+    auto table = arrow::Table::Make(
+        arrow::schema({arrow::field("size", arrow::int64(), true), arrow::field("bid", arrow::float64(), true),
+                       arrow::field("ask", arrow::float64(), true)}),
+        std::vector<std::shared_ptr<arrow::ChunkedArray>>{
+            arrow::ChunkedArray::Make({int_array({1, 2})}, arrow::int64()).ValueOrDie(),
+            arrow::ChunkedArray::Make({double_array({10.5, std::nullopt})}, arrow::float64()).ValueOrDie(),
+            arrow::ChunkedArray::Make({double_array({11.5, 12.5})}, arrow::float64()).ValueOrDie()});
+    auto imported = from_arrow<Quotes>(table);
+    require(imported.ok(), "Arrow frame import failed before scalar formatting");
+
+    require(fmt::format("{}", imported.ValueUnsafe().view()) ==
+                "Frame(rows=2, columns={\"size\": [1, 2], \"bid\": [10.5, NULL_VALUE], "
+                "\"ask\": [11.5, 12.5]})",
+            "Arrow-backed Frame scalar formatting changed columns or nulls");
 }
 
 void test_arrow_string_column_import_export() {
@@ -1201,6 +1221,7 @@ int main() {
     test_arrow_first_column_runtime_registration();
     test_inferred_arrow_frame_import();
     test_arrow_default_frame_runtime();
+    test_arrow_frame_scalar_formatting();
     test_arrow_string_column_import_export();
     test_arrow_symbol_column_import_export();
     test_arrow_text_symbol_exact_runtime_literals();

@@ -1,7 +1,7 @@
 # Frame projection and standard library integration
 
-Status: projection and row-count queries are implemented. Later integration
-stages remain proposed.
+Status: projection and row-count queries are implemented. Copying, retained-tick
+replay, and formatting integration are in progress.
 
 ## Purpose
 
@@ -144,8 +144,8 @@ provides the two required runtime operations:
 
 - `copy_tick(input, output)` applies current-cycle additions, removals, and
   modified cells. It does not reconstruct omitted earlier updates.
-- `copy(input, output)` copies the complete current value and reconciles the
-  destination, including rows removed while forwarding was suspended.
+- `copy(input, output)` replaces the destination with the complete current
+  value, including changes made while forwarding was suspended.
 
 Destinations must retain their published cells independently of future source
 mutation. Binding borrowed columns is insufficient for sampling, closed gates,
@@ -154,7 +154,7 @@ input interfaces and write owned output storage. Reuse stored string handles
 where the existing storage API permits; do not require copying text bytes as
 part of the contract.
 
-### Row identity decision before implementation
+### Destination row identity
 
 A copy needs an explicit rule for destination row lifetimes and source-ID
 mapping. A source row ID is reusable after its removal cycle. For example:
@@ -166,11 +166,21 @@ skip:   reuse source row 0 for B
 sample: source row 0 contains B
 ```
 
-The second sample must not infer that A and B are the same row from the numeric
-ID alone. Key columns cannot supply the universal solution because frames can
-be unkeyed. Review the continuity rule and destination identity before
-implementing `copy`, replay, or operators that skip updates. The first
-implementation need not provide minimal deltas after a gap.
+Full `copy()` starts new destination row lifetimes for every current source
+row. It removes previous destination rows and copies the complete current
+value. The second sample therefore does not infer that A and B are the same
+row from the numeric ID alone.
+
+Consecutive `copy_tick()` calls preserve destination row lifetimes. The
+destination owns the source-to-destination row mapping. On a current input
+event, an uninitialized destination or a changed source row domain initializes
+from the complete current value. An unchanged input does not publish.
+Invalidation clears the mapping. A caller that suspends forwarding or switches
+inputs uses `copy()` before resuming delta copies. Runtime descriptors do not
+own this per-output state.
+
+Callers follow the destination mutation contract in
+[Copying time series](README.md#copying-time-series).
 
 Retained ticks already have frame write and discard handlers for test capture.
 Add replay through `TimeSeriesTickOperations`, sharing their encoding and
@@ -178,21 +188,55 @@ ownership. Replay needs a mapping from recorded row lifetimes to destination
 rows; it must handle numeric ID reuse in event order. Capture support alone
 does not establish `delay` support.
 
+Retained ticks record the source row-domain identity. Replay and live
+`copy_tick()` use the same destination mapping, including when a buffering node
+switches between the two operations. The identity is an opaque token for
+graph-local retention; readers do not dereference it. Replayed invalidation
+clears the mapping before a later source lifetime can reuse an address.
+
 ## BG extension points to review
+
+The scalar and time series integration audit covers these operation sets:
+
+| Operation set | Current support and remaining work |
+| --- | --- |
+| Scalar semantic types, storage traits, alternative runtime reads | Implemented for Column and Frame, including actual derived frame schemas. |
+| Scalar construction, assignment, ownership, equality | Implemented. Owning copies of mutable storage take snapshots; immutable snapshots can share owners. |
+| Scalar hashing | Explicitly unsupported. |
+| Scalar literals | Implemented for native and Arrow layouts. |
+| Scalar buffer storage | BG's generic owning `ScalarValue` encoding applies; a specialized encoding is optional. |
+| Scalar formatting | Implemented through `ScalarFormatOperations` for both scalar families and native/Arrow layouts. |
+| Time series declarations, runtime selection, output options | Implemented for native, view, and computed layouts. |
+| Publication, invalidation, validity, child access and notifications | Implemented; verify composition while adding copy support. |
+| Typed input/output visitation | Implemented by forwarding to BG's erased views. |
+| Time series copying | Implemented for matching schemas and inherited-prefix copying into Base destinations. |
+| Time series literals and captured expectation comparison | Implemented for both families. |
+| Retained ticks | Write, discard, and native replay are implemented. Public feedback and gate tests verify retention and replay/live transitions. |
+| Live and retained tick formatting | Implemented through `TimeSeriesTickFormatOperations`. |
+| Reference sampling | Public A/B/A switching reproduces missing row changes and child modifications; a BG provider interface is required. |
+| Queue literal serialization | BG's queue codec rejects provider-defined time series; supporting TSF/TSC requires a separate BG extension hook. |
 
 `SampledReferenceChange::create` currently constructs samples for built-in
 TSB, fixed TSL, TSS, and TSD types. It has no frame-provider sampling path.
 TSF's fixed columns do not by themselves describe row additions/removals for
 its TSC children.
 
-First produce a failing reference-switch case using public graph APIs. Then
-propose the smallest provider-facing BG change required to expose frame
-sampling correctly. Discuss that core change before implementation. Do not
-add frame-specific branches to BG or reproduce reference routing in bg-frame.
+The public reference-switch probe initializes two valid, unchanged TSF targets
+and selects A/B/A. Current values switch correctly and the root publishes a
+tick, but row changes are empty and child columns report no modifications.
+This prevents consumers from processing the switch incrementally.
+
+Discuss the provider-facing BG sampling interface before implementation. The
+frame extension must supply sampling through that interface.
 
 The existing runtime copy hooks and tick replay registrations already provide
 the entry points for copying and delay. Additional core facilities require a
 concrete missing operation.
+
+`TimeSeriesTickOperations::typed_replay<Out<TS_T>>` passes its existing erased
+output directly to the callback. BG commit `ce14d7c0`, included on the frame
+lane as `d4b0a205`, provides this behavior. Provider replay tests and the full
+frame suite pass against the matching BG build.
 
 ## Implementation order
 
@@ -201,11 +245,12 @@ concrete missing operation.
    columns use one projection node; computed selections use expression assembly.
 2. Implemented: standard row-count queries and generic validity/tick-count
    verification through public graph APIs, including anonymous schemas.
-3. Review the copying row-identity contract. Implement copy operations once in
-   the frame runtimes, then verify the standard tick-selection and timed nodes.
-4. Review and implement the required provider reference-sampling extension;
+3. Implemented: native copying with output-owned row mappings and Base-schema
+   copying; public sampling and tick-selection verification.
+4. Implemented: retained-tick replay and scalar/tick formatting through the
+   existing operation registries; public feedback and buffering verification.
+5. Review and implement the required provider reference-sampling extension;
    verify reference selection and nested graph boundaries.
-5. Add retained-tick replay and verify standard `delay`.
 6. Review deduplicated guarantees separately, then extend the reduction and
    operator library according to application needs.
 

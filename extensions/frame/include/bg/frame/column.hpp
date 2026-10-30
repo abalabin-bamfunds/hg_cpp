@@ -12,6 +12,7 @@
 #include <bg/type/type_map.hpp>
 #include <bg/type/time_series_type.hpp>
 #include <bg/util/compile_time_string.hpp>
+#include <bg/util/hash_dictionary.hpp>
 #include <bg/util/index.hpp>
 #include <bg/util/occupancy_index.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -37,6 +38,10 @@
 #include <utility>
 #include <variant>
 #include <vector>
+
+namespace bg::util {
+class buffer_reader;
+}
 
 namespace bg::frame {
 struct view_option {};
@@ -2219,6 +2224,49 @@ template <typename T> class NativeColumn {
     const util::occupancy_index &live_slots() const noexcept { return rows_.live_slots(); }
     const util::index<> &valid_cells() const noexcept { return cells_.valid_cells(); }
     EvaluationTime change_time() const noexcept { return rows_.change_time(); }
+    bool needs_full_copy(const ColumnSeriesView<T> &source, bool output_valid) const noexcept {
+        return !output_valid || copy_source_domain_ != source.row_domain();
+    }
+    void replay_copy_tick(util::buffer_reader &reader, EvaluationTime time, allocator memory);
+    bool copy_from(const ColumnSeriesView<T> &source, EvaluationTime time, allocator memory, bool full_copy) {
+        if (!full_copy && source.change_time() != time)
+            return false;
+        if (full_copy) {
+            clear(time, memory);
+            copy_source_domain_ = source.row_domain();
+            source.for_each_batch([&](const auto &batch) {
+                for (const auto source_id : batch.ids)
+                    map_source_row(source_id, add(source.cell(source_id), time, memory), memory);
+            });
+            return true;
+        }
+
+        if (rows_.reset_changes(time))
+            cells_.reset_changes();
+
+        for (auto source_id : source.removed()) {
+            const auto *destination_id = copied_rows_.find(source_id);
+            if (destination_id == nullptr)
+                continue;
+            const auto output_id = *destination_id;
+            copied_rows_.erase(source_id, memory.memory_resource());
+            erase_for_copy(output_id, time, memory);
+        }
+        for (auto source_id : source.added()) {
+            if (!source.contains(source_id) || copied_rows_.contains(source_id))
+                continue;
+            map_source_row(source_id, add(source.cell(source_id), time, memory), memory);
+        }
+        for (auto source_id : source.modified()) {
+            if (!source.contains(source_id) || source.added().contains(source_id))
+                continue;
+            const auto *destination_id = copied_rows_.find(source_id);
+            if (destination_id == nullptr)
+                throw std::logic_error{"column copy row mapping is missing; a full copy is required"};
+            set(*destination_id, source.cell(source_id), time, memory);
+        }
+        return true;
+    }
     ColumnSeriesView<T> series_view() const noexcept { return ColumnSeriesView<T>{cells_, rows_, scalar_}; }
     util::storage_block block_containing(row_id_t id) const noexcept { return cells_.block_containing(rows_, id); }
     row_id_t add(cell_type value, EvaluationTime time, allocator memory) {
@@ -2239,17 +2287,11 @@ template <typename T> class NativeColumn {
         return changed;
     }
     bool erase(row_id_t id, EvaluationTime time, allocator memory) {
-        if (rows_.reset_changes(time))
-            cells_.reset_changes();
-        if (!rows_.contains(id))
-            return false;
-        const auto slot = rows_.slot_of(id);
-        if (!rows_.erase(id, time, memory))
-            return false;
-        cells_.erase_slot(slot, id, memory);
-        return true;
+        return erase_for_copy(id, time, memory);
     }
     void clear(EvaluationTime time, allocator memory) {
+        copied_rows_.release(memory.memory_resource());
+        copy_source_domain_ = nullptr;
         if (rows_.reset_changes(time))
             cells_.reset_changes();
         auto slot_iterator = rows_.live_slots().begin();
@@ -2275,6 +2317,8 @@ template <typename T> class NativeColumn {
     void release(allocator memory) noexcept {
         cells_.release(memory);
         rows_.release(memory);
+        copied_rows_.release(memory.memory_resource());
+        copy_source_domain_ = nullptr;
         scalar_ = {};
     }
     template <typename Function> void for_each_batch(Function &&function) const {
@@ -2282,10 +2326,31 @@ template <typename T> class NativeColumn {
     }
 
   private:
+    bool erase_for_copy(row_id_t id, EvaluationTime time, allocator memory) {
+        if (rows_.reset_changes(time))
+            cells_.reset_changes();
+        if (!rows_.contains(id))
+            return false;
+        const auto slot = rows_.slot_of(id);
+        if (!rows_.erase(id, time, memory))
+            return false;
+        cells_.erase_slot(slot, id, memory);
+        scalar_ = ColumnStorage<T>{cells_, rows_};
+        return true;
+    }
+
+    void map_source_row(row_id_t source_id, row_id_t destination_id, allocator memory) {
+        const auto inserted = copied_rows_.try_emplace(source_id, memory.memory_resource(), destination_id).second;
+        assert(inserted);
+        static_cast<void>(inserted);
+    }
+
     friend class ColumnView<T>;
     NativeRows rows_;
     NativeColumnData<T> cells_;
     ColumnStorage<T> scalar_;
+    const void *copy_source_domain_{};
+    util::hash_dictionary<row_id_t, row_id_t> copied_rows_;
 };
 
 static_assert(util::byte_copy_initializable<NativeColumn<i64>>);
