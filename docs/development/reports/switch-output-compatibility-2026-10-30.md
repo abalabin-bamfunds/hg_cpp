@@ -1,10 +1,8 @@
 # Switch output compatibility verification
 
-The selected compatibility behavior is implemented in
-`agent/switch-output-compatibility`. Initial full-suite verification used root
-revision `467c66b3`; the subsequent crash investigation uses root `1b4a241c`.
-Full verification is not green: the original nested map/switch/`take`
-reproduction now reaches a wiring crash after passing output inference.
+The selected compatibility behavior and switch case ownership correction are
+implemented in `agent/switch-output-compatibility`, based on root revision
+`7857816e`. The ownership correction removes the confirmed use-after-free.
 
 ## Implemented behavior
 
@@ -14,12 +12,12 @@ common type when their flattened field names, count, and order match. The common
 type preserves the named declaration, inheritance, and metadata, and combines
 field guarantees.
 
-The production diff changes only `src/switch.cpp` and
+The compatibility change affects `src/switch.cpp` and
 `src/time_series/tsb/tsb_type.cpp`. Runtime code, node counts, and runtime storage
 are unchanged. See the
 [decision record](../decisions/0094-switch-output-reference-compatibility.md).
 
-## Verification
+## Verification before the ownership correction
 
 The Release build completed all configured targets, including Python, web, and
 benchmarks. After restoring the original increment graph in the reproduction,
@@ -41,12 +39,13 @@ binaries because the engine ABI has changed.
 Final logs are in `build/release/full-ctest-final-console.log`,
 `build/release/full-ctest-final.log`, and `build/release/full-ctest.xml`.
 
-## Remaining nested wiring failure
+## Confirmed nested wiring failure
 
 [`take keeps the initial map of branches across nested switch replacement`](../../../tests/library/tick_selection_test.cpp)
-preserves the original graph and expected output. It previously failed with
-`switch case output types are incompatible`. It now passes that check and
-receives SIGSEGV during wiring, before evaluation or output assertions.
+preserves the original graph and expected output. It initially failed with
+`switch case output types are incompatible`. The compatibility correction let
+it pass that check, then it received SIGSEGV during wiring, before evaluation
+or output assertions.
 
 GDB confirmed this call chain with the simpler increment node form:
 
@@ -75,13 +74,12 @@ build/release/tests/bg_library_tests \
 ```
 
 The diagnostic artifacts are `build/release/nested-take-backtrace.log` and
-`build/release/nested-take-callsite.log`. No wiring identity or lifetime fix is
-included.
+`build/release/nested-take-callsite.log`.
 
 ## Wiring ownership investigation
 
 After rebasing onto `1b4a241c` and rebuilding `bg_library_tests`, the original
-regression still receives SIGSEGV. A scalar-only graph also reproduces the crash:
+regression still received SIGSEGV. A scalar-only graph also reproduced the crash:
 
 ```cpp
 const auto increment = node([](i64 value) { return value + 1; });
@@ -107,32 +105,75 @@ The standalone source, binary, and evidence are retained in
 `build/release/switch_lifetime_probe-gdb.log`, and
 `build/release/switch_lifetime_probe-dtors.log`.
 
-The generic case adapter has an ownership gap:
+The generic case adapter had an ownership gap:
 
-1. `bound_switch_graph()` copies the case lambda, including its captured node,
+1. `bound_switch_graph()` copied the case lambda, including its captured node,
    into a `GraphTemplate`.
-2. `invoke_switch()` retains that wrapper only in its local `owned_graphs` vector.
-3. Wiring the branch stores a raw pointer to the captured node in `WiredNode`.
-4. Returning from `invoke_switch()` destroys the wrapper and captured node.
-   The branch `GraphWiring` survives and retains the pointer.
-5. A later structure snapshot or compilation dereferences the destroyed node.
+2. `invoke_switch()` retained that wrapper only in its local `owned_graphs` vector.
+3. Wiring the branch stored a raw pointer to the captured node in `WiredNode`.
+4. Returning from `invoke_switch()` destroyed the wrapper and captured node.
+   The branch `GraphWiring` survived and retained the pointer.
+5. A later structure snapshot or compilation dereferenced the destroyed node.
 
 The relevant code is
 [`switch_invoke.hpp`](../../../include/bg/switch/details/switch_invoke.hpp),
 [`WiredNode`](../../../include/bg/graph/wired_node.hpp), and
 [`SwitchBranchWiring`](../../../include/bg/switch/details/switch_node.hpp).
-The latter retains the wired branch without retaining the callable that owns
-the captured node templates. In the original nested test, the false inner case
-captures `empty_values` by value and has this ownership pattern.
+Before the correction, the latter retained the wired branch without retaining
+the callable that owns the captured node templates. In the original nested
+test, the false inner case captures `empty_values` by value and had this
+ownership pattern.
 
-The corrective ownership requirement is to retain the case callable and its
-captured node templates for the lifetime of the branch wiring. This affects
-wiring ownership; runtime evaluation and reference storage need no change.
-No correction is implemented in this investigation.
+## Ownership correction
+
+`case_()` creates shared ownership of its graph template or graph function.
+The generic case adapter retains that function without copying it again.
+`PreparedSwitchCase` passes ownership to `SwitchBranchWiring`, which destroys
+its wired graph before releasing the callable. This keeps captured node
+templates alive through structure comparison and compilation.
+
+The type-erased `SwitchCaseArgument` interface retains its borrowed lifetime
+contract. Runtime evaluation and reference storage are unchanged. See the
+[decision record](../decisions/0095-switch-case-template-lifetime.md).
+
+Two scalar regressions exercise captured node templates in a generic case
+function and a move-only explicit graph case. The original nested reproduction
+and its expected output are unchanged.
+
+## Verification of the ownership correction
+
+The Release build completed all configured targets, including Python, web, and
+benchmarks, with exit code zero. Both new lifetime regressions pass, including
+in the full CTest run. All 2,972 entries ran in 70.93 seconds: 2,970 passed,
+two failed, and none were skipped.
+
+The logs are `build/release/ownership-final-build.log`,
+`build/release/ownership-focused-switch-tests.log`, and
+`build/release/ownership-ctest.log`.
+
+## Remaining nested payload equality failure
+
+The original nested map/switch/`take` test now reaches evaluation and its output
+assertion without crashing. Its result contains exactly one valid event at the
+first tick and no events at the other five ticks. This matches the expected
+root tick schedule.
+
+The first tick prints three branch dictionaries with `direct` values
+`k00: 2` through `k04: 6`, matching the expected printed values. The nested
+literal equality check still returns false. Root scheduling is therefore
+excluded from this discrepancy; the remaining finding is an unresolved nested
+payload equality failure. The evidence does not distinguish a payload defect
+from a comparison defect.
+
+Temporary post-run diagnostics recorded the result in
+`build/release/ownership-metadata-test.log`. They were removed without changing
+the graph or its assertion. No additional runtime correction is included.
 
 ## Other full-suite failure
 
 `bg_web_python_tests` has seven failing pytest cases and two passing cases.
 Nanobind rejects BG native graph/service objects at the web extension boundary
-with `incompatible function arguments`. This matches the previously observed
-binding mismatch. No Python or web code is changed here.
+with `incompatible function arguments`. In the latest run,
+`_http_handler_input_is_dictionary()` rejects `bg._bg._PythonGraphDefinition`
+where it expects `bg::python::PythonGraphDefinition`. This matches the previously
+observed binding mismatch. No Python or web code is changed here.
