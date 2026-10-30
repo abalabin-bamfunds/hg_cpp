@@ -10,6 +10,7 @@
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
+#include <bg/time_series/tsb/tsb_runtime_type.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/time_series/tss/tss_runtime_type.hpp>
 #include <bg/time_series/tss/tss_storage.hpp>
@@ -208,6 +209,39 @@ template <template <typename, auto...> typename Field> struct NestedReferenceBun
     Field<TSL<TS<i64>, 1>> values;
 };
 
+template <template <typename, auto...> typename Field> struct CollectionIdentitySourceBundle {
+    Field<TS<test_scalar_provider::value>> direct;
+    Field<TS<i64>> adapted;
+};
+
+template <template <typename, auto...> typename Field> struct CollectionIdentityRequestedBundle {
+    Field<TS<test_scalar_provider::value>> direct;
+    Field<REF<TS<i64>>> adapted;
+};
+
+struct WideKeyDictionarySource {
+    using output_time_series_type = TSD<test_scalar_provider::value, TS<i64>>;
+
+    explicit WideKeyDictionarySource(const TimeSeriesRuntimeType &runtime_type) : runtime_type_{&runtime_type} {}
+
+    const Signature &signature() const {
+        static const auto signature = Signature{util::symbol{"wide_key_dictionary_source"}, {},
+                                                output_time_series_type::type()};
+        return signature;
+    }
+
+    const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) const noexcept {
+        return *runtime_type_;
+    }
+
+    static void start(NodeInvocation<> invocation) {
+        invocation.output<output_time_series_type>().apply({{test_scalar_provider::value{7}, 10}});
+    }
+
+  private:
+    const TimeSeriesRuntimeType *runtime_type_;
+};
+
 struct ReferenceObservation {
     bool valid;
     bool modified;
@@ -220,6 +254,115 @@ struct ReferenceObservation {
 };
 
 } // namespace
+
+TEST_CASE("TSD representation runtime types ignore source and requested layouts",
+          "[feature:reference][series:tsd][scalar:integer][binding:reference-to-value]"
+          "[representation:covariant]") {
+    using Key = test_scalar_provider::value;
+
+    const auto &provided_type = static_cast<const TimeSeriesDictionaryType &>(TSD<Key, REF<TS<Key>>>::type());
+    const auto &requested_type = static_cast<const TimeSeriesDictionaryType &>(TSD<Key, TS<Key>>::type());
+    const auto &reference_item = resolve_time_series_runtime_type(REF<TS<Key>>::type());
+    const auto &canonical_item = resolve_time_series_runtime_type(TS<Key>::type());
+    const auto &alternate_item = time_series_value_runtime_type(TS<Key>::type(),
+                                                                test_scalar_provider::canonicalizing_runtime_type());
+    const auto &canonical_key = cpp_scalar_runtime_type<Key>();
+    const auto &source_default_layout = details::time_series_dictionary_runtime_type(
+        provided_type, canonical_key, reference_item);
+    const auto &source_alternate_key_layout = details::time_series_dictionary_runtime_type(
+        provided_type, wide_provider_key_runtime(), reference_item);
+    const auto &requested_default_layout = details::time_series_dictionary_runtime_type(
+        requested_type, canonical_key, canonical_item);
+    const auto &requested_alternate_item_layout = details::time_series_dictionary_runtime_type(
+        requested_type, canonical_key, alternate_item);
+
+    const auto &first = static_cast<const details::TimeSeriesDictionaryRuntimeType &>(
+        details::ReferenceProvider::representation_runtime_type(source_default_layout, requested_default_layout));
+    const auto &alternate_source = static_cast<const details::TimeSeriesDictionaryRuntimeType &>(
+        details::ReferenceProvider::representation_runtime_type(source_alternate_key_layout, requested_default_layout));
+    const auto &alternate_request = static_cast<const details::TimeSeriesDictionaryRuntimeType &>(
+        details::ReferenceProvider::representation_runtime_type(source_default_layout,
+                                                                requested_alternate_item_layout));
+
+    CHECK(&first == &alternate_source);
+    CHECK(&first == &alternate_request);
+    CHECK(&first.key_runtime_type() == &canonical_key);
+    CHECK(&first.item_runtime_type() == &canonical_item);
+
+    const auto &requested_reference =
+        static_cast<const TimeSeriesReferenceType &>(REF<TS<Key>, TimeSeriesGuarantee::final>::type());
+    const auto &value_dictionary = details::time_series_dictionary_runtime_type(
+        requested_type, canonical_key, canonical_item);
+    const auto &reference_dictionary = details::time_series_dictionary_runtime_type(
+        static_cast<const TimeSeriesDictionaryType &>(TSD<Key, REF<TS<Key>>>::type()), canonical_key,
+        resolve_time_series_runtime_type(REF<TS<Key>>::type()));
+    const auto &routed = static_cast<const details::TimeSeriesDictionaryRuntimeType &>(
+        details::ReferenceProvider::representation_runtime_type(value_dictionary, reference_dictionary));
+    CHECK(&routed.item_runtime_type() == &details::routed_time_series_reference_runtime_type(requested_reference));
+}
+
+TEST_CASE("fixed collection representation plans ignore direct field layouts",
+          "[feature:reference][series:tsb][scalar:integer][binding:value-to-reference]"
+          "[representation:covariant]") {
+    using SourceBundle = TSB<CollectionIdentitySourceBundle>;
+    using RequestedBundle = TSB<CollectionIdentityRequestedBundle>;
+
+    const auto &source_type = static_cast<const TimeSeriesBundleType &>(SourceBundle::type());
+    const auto &requested_type = resolve_time_series_runtime_type(RequestedBundle::type());
+    const auto &canonical_direct = resolve_time_series_runtime_type(TS<test_scalar_provider::value>::type());
+    const auto &alternate_direct = time_series_value_runtime_type(
+        TS<test_scalar_provider::value>::type(), test_scalar_provider::canonicalizing_runtime_type());
+    const auto &adapted = resolve_time_series_runtime_type(TS<i64>::type());
+    const auto canonical_items = std::array<const TimeSeriesRuntimeType *, 2>{&canonical_direct, &adapted};
+    const auto alternate_items = std::array<const TimeSeriesRuntimeType *, 2>{&alternate_direct, &adapted};
+    const auto &canonical_source = details::time_series_bundle_runtime_type(source_type, canonical_items);
+    const auto &alternate_source = details::time_series_bundle_runtime_type(source_type, alternate_items);
+
+    const auto &first = details::ReferenceProvider::representation_runtime_type(canonical_source, requested_type);
+    const auto &alternate = details::ReferenceProvider::representation_runtime_type(alternate_source, requested_type);
+
+    CHECK(&first == &alternate);
+    CHECK(&first.item_runtime_type(0) == &canonical_direct);
+    const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(REF<TS<i64>>::type());
+    CHECK(&first.item_runtime_type(1) == &details::routed_time_series_reference_runtime_type(reference_type));
+}
+
+TEST_CASE("a TSD reference representation reads keys and items with their actual runtimes",
+          "[feature:reference][series:tsd][scalar:integer][binding:value-to-reference]"
+          "[representation:covariant]") {
+    using Key = test_scalar_provider::value;
+
+    const auto &source_type = static_cast<const TimeSeriesDictionaryType &>(TSD<Key, TS<i64>>::type());
+    const auto &source_item = resolve_time_series_runtime_type(TS<i64>::type());
+    const auto &source_runtime = details::time_series_dictionary_runtime_type(
+        source_type, wide_provider_key_runtime(), source_item);
+    const auto &reference_type =
+        static_cast<const TimeSeriesReferenceType &>(REF<TS<i64>, TimeSeriesGuarantee::final>::type());
+    auto observed_key_runtime = static_cast<const ScalarRuntimeType *>(nullptr);
+    auto observed_item_runtime = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+    auto observed_key = 0;
+
+    const auto observe = node([&](In<TSD<Key, REF<TS<i64>>>> input, Out<TS<i64>> output) {
+        const auto id = input.next_item_id(0);
+        const auto key = input.key_at(id);
+        const auto item = input.item_at(id);
+        observed_key_runtime = &key.runtime_type();
+        observed_item_runtime = &item.runtime_type();
+        observed_key = key.value().get();
+        const auto resolved_item = details::ResolvedTimeSeries::resolve(item.value());
+        const In<TS<i64>> value{resolved_item.last_updated, resolved_item.storage, *resolved_item.runtime_type};
+        output.set(static_cast<i64>(observed_key + *value));
+    });
+    const auto source = RuntimeSignatureNodeTemplate<WideKeyDictionarySource>{WideKeyDictionarySource{source_runtime}};
+    const auto graph = [&] { return observe(source()); };
+
+    const auto actual = run_graph(graph);
+
+    CHECK(actual.equals<i64>({17}));
+    CHECK(observed_key == 7);
+    CHECK(observed_key_runtime == &wide_provider_key_runtime());
+    CHECK(observed_item_runtime == &details::routed_time_series_reference_runtime_type(reference_type));
+}
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed target",
           "[evaluation][reference][feature:reference][series:value][scalar:integer]"

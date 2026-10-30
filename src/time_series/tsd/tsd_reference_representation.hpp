@@ -8,12 +8,9 @@ namespace bg::details {
 
 class TimeSeriesDictionaryRepresentation : public ReferenceRepresentation {
   public:
-    TimeSeriesDictionaryRepresentation(Reference base_reference, const TimeSeriesDictionaryType &type,
-                                       const TimeSeriesDictionaryRuntimeType &base_runtime_type,
-                                       const TimeSeriesRuntimeType &item_runtime_type);
+    TimeSeriesDictionaryRepresentation(Reference base_reference, const TimeSeriesDictionaryType &type);
 
     const TimeSeriesDictionaryRuntimeType &dictionary_runtime_type() const noexcept { return *runtime_type_; }
-    void refresh_runtime_type();
 
     virtual ResolvedTimeSeries base_time_series() const = 0;
     virtual TimeSeriesRuntimeType::ConstItem item(item_id_t id) const = 0;
@@ -32,13 +29,11 @@ class TimeSeriesDictionaryRepresentation : public ReferenceRepresentation {
                                         void *context, TimeSeriesRuntimeType::ModifiedItemFunction function) const = 0;
 
   private:
-    const TimeSeriesDictionaryType *type_;
-    const TimeSeriesRuntimeType *item_runtime_type_;
     const TimeSeriesDictionaryRuntimeType *runtime_type_;
 };
 
 const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_runtime_type(
-    const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key, const TimeSeriesRuntimeType &item);
+    const TimeSeriesDictionaryType &type);
 
 ReferenceRepresentation *make_tsd_item_reference_representation(
     ReferenceProvider &provider, Reference base_reference, const TimeSeriesDictionaryType &type,

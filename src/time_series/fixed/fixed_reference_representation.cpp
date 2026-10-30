@@ -820,12 +820,16 @@ const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntime
             const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(requested_item.type());
             fields.push_back({FieldMode::routed_reference, routed_count++,
                               &routed_time_series_reference_runtime_type(reference_type)});
-        } else if (provided_item.is_reference() && !requested_item.is_reference()) {
-            fields.push_back({FieldMode::dereferenced, dereferenced_count++, &requested_item});
+            continue;
+        }
+
+        const auto &requested_runtime_type = resolve_time_series_runtime_type(requested_item.type());
+        if (provided_item.is_reference() && !requested_item.is_reference()) {
+            fields.push_back({FieldMode::dereferenced, dereferenced_count++, &requested_runtime_type});
         } else if (ReferenceProvider::representation_required(provided_item, requested_item)) {
-            fields.push_back({FieldMode::adapted, adapted_count++, &requested_item});
+            fields.push_back({FieldMode::adapted, adapted_count++, &requested_runtime_type});
         } else {
-            fields.push_back({FieldMode::direct, 0, &provided_item});
+            fields.push_back({FieldMode::direct, 0, &requested_runtime_type});
         }
     }
 

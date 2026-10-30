@@ -2,6 +2,7 @@
 
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/time_series_reference_type.hpp>
 #include <bg/util/static_storage.hpp>
 
@@ -249,19 +250,11 @@ const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntime
                                                                item_guarantee);
         const auto &representation_type = time_series_dictionary_type(
             provided_type.key_type(), reference_type, *provided_type.guarantee().value());
-        const auto &routed_item_type = routed_time_series_reference_runtime_type(reference_type);
-        return time_series_dictionary_representation_runtime_type(representation_type, provided_tsd.key_runtime_type(),
-                                                                  routed_item_type);
+        return time_series_dictionary_representation_runtime_type(representation_type);
     }
-    if (provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
+    if (!requested_tsd.item_runtime_type().is_reference()) {
         const auto &requested_type = static_cast<const TimeSeriesDictionaryType &>(requested_tsd.type());
-        return time_series_dictionary_representation_runtime_type(requested_type, provided_tsd.key_runtime_type(),
-                                                                  requested_tsd.item_runtime_type());
-    }
-    if (!provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
-        return time_series_dictionary_representation_runtime_type(
-            static_cast<const TimeSeriesDictionaryType &>(requested_tsd.type()), provided_tsd.key_runtime_type(),
-            requested_tsd.item_runtime_type());
+        return time_series_dictionary_representation_runtime_type(requested_type);
     }
 
     throw std::invalid_argument{"the requested TSD representation is not implemented"};
@@ -298,33 +291,14 @@ const ReferenceRepresentationFactory factory{&representation_required, &represen
 } // namespace
 
 TimeSeriesDictionaryRepresentation::TimeSeriesDictionaryRepresentation(
-    Reference base_reference, const TimeSeriesDictionaryType &type,
-    const TimeSeriesDictionaryRuntimeType &base_runtime_type, const TimeSeriesRuntimeType &item_runtime_type)
-    : ReferenceRepresentation{base_reference}, type_{&type}, item_runtime_type_{&item_runtime_type},
-      runtime_type_{&time_series_dictionary_representation_runtime_type(
-          type, base_runtime_type.key_runtime_type(), item_runtime_type)} {}
-
-void TimeSeriesDictionaryRepresentation::refresh_runtime_type() {
-    const auto base = base_time_series();
-    if (base.runtime_type == nullptr) {
-        return;
-    }
-
-    const auto &base_runtime_type = static_cast<const TimeSeriesDictionaryRuntimeType &>(*base.runtime_type);
-    if (&base_runtime_type.key_runtime_type() == &runtime_type_->key_runtime_type()) {
-        return;
-    }
-
-    runtime_type_ = &time_series_dictionary_representation_runtime_type(
-        *type_, base_runtime_type.key_runtime_type(), *item_runtime_type_);
-}
+    Reference base_reference, const TimeSeriesDictionaryType &type)
+    : ReferenceRepresentation{base_reference},
+      runtime_type_{&time_series_dictionary_representation_runtime_type(type)} {}
 
 const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_runtime_type(
-    const TimeSeriesDictionaryType &type, const ScalarRuntimeType &key, const TimeSeriesRuntimeType &item) {
+    const TimeSeriesDictionaryType &type) {
     struct Entry {
         const TimeSeriesDictionaryType *type;
-        const ScalarRuntimeType *key;
-        const TimeSeriesRuntimeType *item;
         std::unique_ptr<TimeSeriesDictionaryRuntimeType> runtime_type;
     };
 
@@ -333,16 +307,18 @@ const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_run
 
     const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
-    const auto found = std::ranges::find_if(cache, [&](const auto &entry) {
-        return entry.type == &type && entry.key == &key && entry.item == &item;
-    });
+    const auto found = std::ranges::find_if(cache, [&](const auto &entry) { return entry.type == &type; });
     if (found != cache.end()) {
         return *found->runtime_type;
     }
 
-    auto runtime_type = std::make_unique<TimeSeriesDictionaryRepresentationRuntimeType>(type, key, item);
+    const auto *reference_type = type_cast<TimeSeriesReferenceType>(&type.value_type());
+    const auto &item = reference_type == nullptr ? resolve_time_series_runtime_type(type.value_type())
+                                                 : routed_time_series_reference_runtime_type(*reference_type);
+    auto runtime_type = std::make_unique<TimeSeriesDictionaryRepresentationRuntimeType>(
+        type, resolve_scalar_runtime_type(type.key_type(), {}), item);
     auto &result = *runtime_type;
-    cache.push_back({&type, &key, &item, std::move(runtime_type)});
+    cache.push_back({&type, std::move(runtime_type)});
     return result;
 }
 
