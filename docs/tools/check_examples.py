@@ -19,7 +19,11 @@ project = root / "build/doc-examples"
 project.mkdir(parents=True, exist_ok=True)
 examples = collect_examples(root)
 
+python_examples = 0
 for index, example in enumerate(examples):
+    if not example.python:
+        continue
+    python_examples += 1
     path = project / f"example_{index}.py"
     path.write_text(example.python + "\n")
     result = subprocess.run([sys.executable, str(path)], text=True, capture_output=True)
@@ -35,6 +39,18 @@ cmake = [
     "project(documentation_examples LANGUAGES CXX)",
     "find_package(bg CONFIG REQUIRED)",
 ]
+sources = dict.fromkeys(example.cmake_source for example in examples if example.cmake_source)
+if sources:
+    cmake.extend((
+        'set(BUILD_TESTING OFF CACHE BOOL "" FORCE)',
+        'if(NOT DEFINED BG_SOURCE_DIR)',
+        '    message(FATAL_ERROR "Set BG_SOURCE_DIR to the BG source tree")',
+        'endif()',
+    ))
+    cmake.extend(
+        f'add_subdirectory("${{BG_SOURCE_DIR}}/{source}" bg_extension_{index})'
+        for index, source in enumerate(sources)
+    )
 batches = []
 for start in range(0, len(examples), 8):
     batch = examples[start:start + 8]
@@ -62,18 +78,21 @@ for start in range(0, len(examples), 8):
     source_path = project / f"{target}.cpp"
     if not source_path.exists() or source_path.read_text() != source:
         source_path.write_text(source)
+    libraries = dict.fromkeys(library for example in batch for library in example.cpp_libraries)
     cmake.extend([f"add_executable({target} {target}.cpp)",
-                  f"target_link_libraries({target} PRIVATE bg::library)"])
+                  f"target_link_libraries({target} PRIVATE {' '.join(libraries)})"])
     batches.append((target, batch, start))
 
 (project / "CMakeLists.txt").write_text("\n".join(cmake) + "\n")
-print(f"Validated {len(examples)} Python examples; extracted {len(examples)} C++ examples.", flush=True)
+cpp_examples = sum(bool(example.cpp) for example in examples)
+print(f"Validated {python_examples} Python examples; extracted {cpp_examples} C++ examples.", flush=True)
 
 if args.cmake_prefix:
     build = project / "build"
     configure = [args.cmake, "-S", str(project), "-B", str(build),
                  "-DCMAKE_BUILD_TYPE=Debug", "-DCMAKE_CXX_FLAGS_DEBUG=-O0 -g0",
-                 f"-DCMAKE_PREFIX_PATH={args.cmake_prefix.resolve()}"]
+                 f"-DCMAKE_PREFIX_PATH={args.cmake_prefix.resolve()}",
+                 f"-DBG_SOURCE_DIR={root}"]
     if args.cpp_compiler:
         configure.append(f"-DCMAKE_CXX_COMPILER={args.cpp_compiler}")
     subprocess.run(configure, check=True)

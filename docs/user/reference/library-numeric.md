@@ -62,6 +62,80 @@ syntax for `i64`. The named operators are also available. The existing collectio
 overloads for `bit_and`, `bit_or`, and `bit_xor` operate on TSS and TSD values; see
 [set operations](library-collections.md#time-series-set-operations).
 
+Extract the low three bits of each integer:
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import bit_and
+
+@graph
+def low_bits(value: int) -> int:
+    return bit_and(value, 7)
+
+print(run_graph(low_bits, [9, 15, None, 16]))
+```
+
+Output:
+
+```text
+[1, 7, None, 0]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto low_bits(wp<TS<i64>> value) {
+    return bit_and(value, 7);
+}
+
+int main() {
+    std::cout << run_graph(low_bits, {9, 15, SKIP, 16}) << '\n';
+}
+```
+
+Output:
+
+```text
+[1, 7, None, 0]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
 ### convert
 
 `convert` requires an explicit full result time-series type:

@@ -6,7 +6,7 @@ downloads without importing BG or invoking a compiler.
 
 from dataclasses import dataclass
 from doctest import ELLIPSIS, OutputChecker
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import re
 import shutil
 from zipfile import ZIP_DEFLATED, ZipFile
@@ -32,6 +32,8 @@ class Example:
     cpp: str
     cpp_output: str
     cpp_ellipsis: bool
+    cpp_libraries: tuple[str, ...] = ("bg::library",)
+    cmake_source: str = ""
 
 
 def fences(source: str) -> list[Fence]:
@@ -123,13 +125,34 @@ def _slug(page: str, number: int) -> str:
     return f"{stem.replace('/', '-')}-{number:02d}"
 
 
+def _metadata(source: str, name: str) -> tuple[str, ...]:
+    matches = re.findall(r"^<!-- " + re.escape(name) + r":\s*(.*?)\s*-->$", source, re.M)
+    if len(matches) > 1:
+        raise ValueError(f"example metadata {name!r} must appear at most once per page")
+    return tuple(matches[0].split()) if matches else ()
+
+
+def _source_metadata(source: str) -> str:
+    matches = re.findall(r"^<!-- example-source:\s*(.*?)\s*-->$", source, re.M)
+    if len(matches) > 1:
+        raise ValueError("example metadata 'example-source' must appear at most once per page")
+    if not matches:
+        return ""
+
+    source_value = matches[0].strip()
+    source_path = PurePosixPath(source_value)
+    if not source_value or "\\" in source_value or source_path.is_absolute() or ".." in source_path.parts:
+        raise ValueError("example-source must be a nonempty path inside BG_SOURCE_DIR")
+    return source_path.as_posix()
+
+
 def collect_examples(root: Path) -> list[Example]:
     """Collect complete Python and C++ examples marked in published user documentation."""
     docs = root / "docs/user"
     examples = []
 
     pages = [docs / "index.md"]
-    for section in ("guide", "how-to", "reference"):
+    for section in ("guide", "how-to", "reference", "extensions"):
         pages.extend(sorted((docs / section).rglob("*.md")))
 
     for path in pages:
@@ -141,8 +164,13 @@ def collect_examples(root: Path) -> list[Example]:
             continue
 
         source = path.read_text()
-        if "<!-- runnable-example -->" not in source.splitlines():
+        lines = source.splitlines()
+        paired_marker = "<!-- runnable-example -->" in lines
+        cpp_only_marker = "<!-- runnable-example: cpp -->" in lines
+        if not paired_marker and not cpp_only_marker:
             continue
+        if paired_marker and cpp_only_marker:
+            raise ValueError(f"{relative_page}: use only one runnable-example marker")
 
         blocks = fences(source)
         paired = {language: [] for language in ("python", "cpp")}
@@ -154,26 +182,43 @@ def collect_examples(root: Path) -> list[Example]:
                 continue
             paired[block.language].append((block.code, *output))
 
-        if len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
+        if cpp_only_marker:
+            if paired["python"] or not paired["cpp"]:
+                raise ValueError(
+                    f"{relative_page}: a C++-only page requires runnable C++ examples and no runnable Python examples; "
+                    f"found {len(paired['python'])} and {len(paired['cpp'])}"
+                )
+        elif len(paired["python"]) != len(paired["cpp"]) or not paired["python"]:
             raise ValueError(
                 f"{relative_page}: expected the same nonzero number of paired Python and C++ examples; "
                 f"found {len(paired['python'])} and {len(paired['cpp'])}"
             )
 
+        libraries = _metadata(source, "example-libraries") or ("bg::library",)
+        cmake_source = _source_metadata(source)
         page = relative_page
         title = _title(source, path.stem.replace("-", " ").title())
-        for number, (python, cpp) in enumerate(zip(paired["python"], paired["cpp"]), start=1):
+        examples_for_page = (
+            [("", "", False, *cpp) for cpp in paired["cpp"]]
+            if cpp_only_marker
+            else [(*python, *cpp) for python, cpp in zip(paired["python"], paired["cpp"])]
+        )
+        for number, (python, python_output, python_ellipsis, cpp, cpp_output, cpp_ellipsis) in enumerate(
+            examples_for_page, start=1
+        ):
             examples.append(Example(
                 name=f"{page}:{number}",
                 slug=_slug(page, number),
                 page=page,
                 title=title,
-                python=python[0].strip(),
-                python_output=python[1],
-                python_ellipsis=python[2],
-                cpp=cpp[0].strip(),
-                cpp_output=cpp[1],
-                cpp_ellipsis=cpp[2],
+                python=python.strip(),
+                python_output=python_output,
+                python_ellipsis=python_ellipsis,
+                cpp=cpp.strip(),
+                cpp_output=cpp_output,
+                cpp_ellipsis=cpp_ellipsis,
+                cpp_libraries=libraries,
+                cmake_source=cmake_source,
             ))
 
     return examples
@@ -189,20 +234,29 @@ def write_downloads(examples: list[Example], docs: Path) -> None:
     downloads.mkdir(parents=True, exist_ok=True)
 
     for example in examples:
-        (downloads / f"{example.slug}.py").write_text(example.python.rstrip() + "\n")
+        if example.python:
+            (downloads / f"{example.slug}.py").write_text(example.python.rstrip() + "\n")
+        cmake = [
+            "cmake_minimum_required(VERSION 3.31)",
+            f"project({example.slug.replace('-', '_')} LANGUAGES CXX)",
+            "find_package(bg CONFIG REQUIRED)",
+        ]
+        if example.cmake_source:
+            cmake.extend((
+                'set(BUILD_TESTING OFF CACHE BOOL "" FORCE)',
+                'if(NOT DEFINED BG_SOURCE_DIR)',
+                '    message(FATAL_ERROR "Set BG_SOURCE_DIR to the BG source tree")',
+                'endif()',
+                f'add_subdirectory("${{BG_SOURCE_DIR}}/{example.cmake_source}" bg_extension)',
+            ))
+        cmake.extend((
+            "add_executable(example main.cpp)",
+            "target_link_libraries(example PRIVATE " + " ".join(example.cpp_libraries) + ")",
+            "",
+        ))
         with ZipFile(downloads / f"{example.slug}.zip", "w", ZIP_DEFLATED) as archive:
             archive.writestr("main.cpp", example.cpp.rstrip() + "\n")
-            archive.writestr(
-                "CMakeLists.txt",
-                "\n".join((
-                    "cmake_minimum_required(VERSION 3.31)",
-                    f"project({example.slug.replace('-', '_')} LANGUAGES CXX)",
-                    "find_package(bg CONFIG REQUIRED)",
-                    "add_executable(example main.cpp)",
-                    "target_link_libraries(example PRIVATE bg::library)",
-                    "",
-                )),
-            )
+            archive.writestr("CMakeLists.txt", "\n".join(cmake))
             archive.writestr(
                 "README.md",
                 "\n".join((
@@ -213,7 +267,8 @@ def write_downloads(examples: list[Example], docs: Path) -> None:
                     "This project requires an installed BG CMake package and CMake 3.31 or newer.",
                     "",
                     "```sh",
-                    "cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install",
+                    "cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install"
+                    + (" -DBG_SOURCE_DIR=/path/to/bg/source" if example.cmake_source else ""),
                     "cmake --build build --config Release",
                     "```",
                     "",
@@ -235,9 +290,12 @@ def write_downloads(examples: list[Example], docs: Path) -> None:
         if page_counts[example.page] > 1:
             label = f"{label}, example {page_examples[example.page]}"
         label = label.replace("|", "\\|")
+        python_download = (
+            f"{{download}}`Download <../_generated/publish/downloads/{example.slug}.py>`"
+            if example.python else "—"
+        )
         rows.append(
-            f"| [{label}](../{example.page}) "
-            f"| {{download}}`Download <../_generated/publish/downloads/{example.slug}.py>` "
+            f"| [{label}](../{example.page}) | {python_download} "
             f"| {{download}}`Project <../_generated/publish/downloads/{example.slug}.zip>` |"
         )
     (generated / "examples.md").write_text("\n".join(rows) + "\n")

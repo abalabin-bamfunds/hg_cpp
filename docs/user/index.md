@@ -136,6 +136,18 @@ Calculations implemented with ordinary Python or C++ values.
 
 Time series declarations, input views, state, and update controls.
 :::
+:::{grid-item-card} Library operators
+:link: reference/library-index
+:link-type: doc
+
+Selection, running calculations, timing, collections, and text.
+:::
+:::{grid-item-card} Extensions
+:link: extensions/index
+:link-type: doc
+
+HTTP services, WebSocket connections, nullable columns, and tables.
+:::
 ::::
 
 Examples assume basic knowledge of Python or C++. Language tabs retain the selected
@@ -207,6 +219,19 @@ how-to/examples
 how-to/temperature-monitor
 how-to/requested-summary
 how-to/per-sensor-totals
+```
+
+```{toctree}
+:caption: Extensions
+:hidden:
+
+extensions/index
+extensions/web
+extensions/web-auth
+extensions/websocket
+extensions/frame
+extensions/frame-expressions
+extensions/frame-nodes
 ```
 
 ```{toctree}

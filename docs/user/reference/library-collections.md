@@ -180,6 +180,167 @@ Use named calls in Python. Its `len()` and `in` syntax cannot return wiring poin
 Python uses `tuple[T, ...]` for scalar lists. Scalar set annotations are not currently
 exposed.
 
+Find the first matching position without changing list indices:
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import graph, run_graph
+from bg.operators import index_of
+
+@graph
+def position(values: tuple[int, ...], item: int) -> int:
+    return index_of(values, item)
+
+print(run_graph(position, [(10, 20, 10), None, (30, 20)], [10, 20, 10]))
+```
+
+Output:
+
+```text
+[0, 1, -1]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+
+auto position(wp<TS<List<i64>>> values, wp<TS<i64>> item) {
+    return index_of(values, item);
+}
+
+int main() {
+    std::cout << run_graph(position, {{10, 20, 10}, SKIP, {30, 20}}, {10, 20, 10}) << '\n';
+}
+```
+
+Output:
+
+```text
+[0, 1, -1]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+Count distinct current values, retaining a value until its last contributing key disappears:
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import INVALID, REMOVE, TS, TSD, TSS, graph, run_graph
+from bg.operators import len_, values_
+
+@graph
+def distinct_count(items: TSD[str, TS[int]]) -> int:
+    return len_(values_[TSS[int]](items))
+
+print(run_graph(distinct_count, [
+    {"a": 10, "b": 10},
+    {"b": 20},
+    {"a": 20},
+    {"b": INVALID},
+    {"a": REMOVE},
+]))
+```
+
+Output:
+
+```text
+[1, 2, 1, None, 0]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/library.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+
+using namespace bg;
+using namespace bg::operators;
+using namespace literal;
+using namespace bg::literals;
+
+auto distinct_count(wp<TSD<string, TS<i64>>> items) {
+    return len_(values_[type<TSS<i64>>](items));
+}
+
+int main() {
+    std::cout << run_graph(distinct_count, {
+        {{"a", 10}, {"b", 10}},
+        {{"b", 20}},
+        {{"a", 20}},
+        {{"b", INVALID}},
+        {{"a", REMOVE}},
+    }) << '\n';
+}
+```
+
+Output:
+
+```text
+[1, 2, 1, None, 0]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
 ## Time series set operations
 
 Two `TSS<K>` inputs support union (`bit_or`, `|`), intersection (`bit_and`, `&`),
