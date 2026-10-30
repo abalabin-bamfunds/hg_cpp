@@ -621,6 +621,62 @@ TEST_CASE("reduce combines mesh outputs as branches update and disappear",
     CHECK(actual.equals<i64>({12, 23, 4, 0}));
 }
 
+TEST_CASE("mesh reduces dictionary references returned by a map",
+          "[feature:mesh][feature:map][feature:reduce][feature:reference][series:tsd]"
+          "[shape:deeply-nested][transition:update][transition:removal][transition:addition]") {
+    const auto identity = graph("name"_n = "identity_dictionary_for_mesh",
+                                [](wp<TSD<i64, TS<i64>>> values) { return values; });
+
+    const auto sum_inner_values = graph("name"_n = "sum_mapped_inner_dictionary",
+                                        [](wp<TSD<i64, TS<i64>>> items) -> wp<TS<i64>> {
+                                            return wp<TS<i64>>{
+                                                reduce(sum_mesh_values, items, "default"_n = i64{0})};
+                                        });
+
+    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
+        const auto mapped = map(identity, values);
+        const auto totals = mesh(sum_inner_values, mapped);
+        return reduce(sum_mesh_values, totals, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, {{10, 1}, {20, 2}}}, {2, {{10, 4}}}},
+         {{1, {{10, 10}, {20, literal::REMOVE}}}, {2, {{10, 8}}}},
+         {{1, literal::REMOVE}, {2, {{10, 9}}}},
+         {{1, {{30, 5}}}, {2, {{10, 10}}}}});
+
+    CHECK(actual.equals<i64>({7, 18, 9, 15}));
+}
+
+TEST_CASE("mesh infers a reduction output while consuming mapped dictionary references",
+          "[.][repro][feature:mesh][feature:map][feature:reduce][feature:reference][series:tsd]"
+          "[shape:deeply-nested][transition:update][transition:removal][transition:addition]") {
+    const auto identity = graph("name"_n = "identity_dictionary_for_mesh",
+                                [](wp<TSD<i64, TS<i64>>> values) { return values; });
+
+    const auto sum_inner_values = graph("name"_n = "sum_mapped_inner_dictionary",
+                                        [](wp<TSD<i64, TS<i64>>> items) {
+                                            return reduce(sum_mesh_values, items, "default"_n = i64{0});
+                                        });
+
+    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
+        const auto mapped = map(identity, values);
+        const auto totals = mesh(sum_inner_values, mapped);
+        return reduce(sum_mesh_values, totals, "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, {{10, 1}, {20, 2}}}, {2, {{10, 4}}}},
+         {{1, {{10, 10}, {20, literal::REMOVE}}}, {2, {{10, 8}}}},
+         {{1, literal::REMOVE}, {2, {{10, 9}}}},
+         {{1, {{30, 5}}}, {2, {{10, 10}}}}});
+
+    INFO(actual);
+    CHECK(actual.equals<i64>({7, 18, 9, 15}));
+}
+
 TEST_CASE("mesh branches reduce nested dictionaries before using their dependencies",
           "[feature:mesh][feature:reduce][feature:nested-graph][series:tsd]"
           "[shape:deeply-nested][transition:update]") {

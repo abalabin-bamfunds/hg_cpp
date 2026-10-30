@@ -624,6 +624,26 @@ TEST_CASE("reduce accepts TSD values",
     CHECK(actual.equals({{{1, 2}, {2, 3}, {3, 7}}}));
 }
 
+TEST_CASE("reduce consumes dictionary references returned by a map",
+          "[feature:reduce][feature:map][feature:reference][series:tsd]"
+          "[shape:nested][transition:update][transition:removal][transition:addition]") {
+    const auto identity = graph("name"_n = "identity_value_for_reduce",
+                                [](wp<TS<i64>> value) { return value; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
+        return reduce(add_graph, map(identity, values), "default"_n = i64{0});
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {{{1, 1}, {2, 2}},
+         {{1, 3}, {2, literal::REMOVE}},
+         {{2, 4}, {3, 5}},
+         {{1, literal::REMOVE}, {2, literal::REMOVE}}});
+
+    CHECK(actual.equals<i64>({3, 3, 12, 5}));
+}
+
 TEST_CASE("reduce maps and combines nested dictionaries",
           "[feature:reduce][feature:map][series:tsd][shape:doubly-nested]") {
     const auto add = graph("name"_n = "add_defaulted_values",

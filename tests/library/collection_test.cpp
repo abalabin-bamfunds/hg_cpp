@@ -523,9 +523,11 @@ TEST_CASE("dictionary selection follows references returned by an identity map",
           "[transition:update][transition:addition][transition:removal]") {
     const auto identity = graph("name"_n = "identity_dictionary_item",
                                 [](wp<TS<i64>> value) { return value; });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
+
     const auto with_map = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> keys) {
         return copy(operators::getitem(map(identity, values), keys));
     };
@@ -543,6 +545,180 @@ TEST_CASE("dictionary selection follows references returned by an identity map",
                          {{2, literal::INVALID}}}));
     CHECK(direct.equals({{{1, 10}, {2, 20}}, {{1, 11}}, {{1, literal::REMOVE}, {3, 30}},
                          {{2, literal::INVALID}}}));
+}
+
+TEST_CASE("map can select its own changing key set",
+          "[feature:operator][feature:getitem][feature:map][series:tsd][series:reference]"
+          "[transition:update][transition:addition][transition:removal]") {
+    const auto identity = graph("name"_n = "identity_dictionary_item",
+                                [](wp<TS<i64>> value) { return value; });
+
+    const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto mapped = map(identity, values);
+        return materialize(operators::getitem(mapped, operators::keys_(mapped)));
+    };
+
+    CHECK(bg::run_graph(tested,
+                        {{{1, 10}, {2, 20}},
+                         {{1, 11}},
+                         {{2, literal::REMOVE}, {3, 30}},
+                         {{1, literal::REMOVE}},
+                         {{1, 40}}})
+              .equals({{{1, 10}, {2, 20}},
+                       {{1, 11}},
+                       {{2, literal::REMOVE}, {3, 30}},
+                       {{1, literal::REMOVE}},
+                       {{1, 40}}}));
+}
+
+TEST_CASE("map rebinds items when a switch replaces a direct dictionary with mapped references",
+          "[feature:map][feature:switch][feature:nested-graph][series:tsd][series:reference]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto update_rebound_value = graph(
+        "name"_n = "increment_rebound_value_after_update",
+        [](wp<TS<i64>> value, wp<TS<bool>> update) {
+            return operators::if_then_else(update, value + i64{1}, value);
+        });
+
+    const auto add_cycle = node([](i64 value, i64 cycle) { return value + cycle; });
+
+    const auto pass_values = graph("name"_n = "pass_dictionary_through_switch",
+                                   [](wp<TSD<i64, TS<i64>>> values, wp<TS<bool>>) { return values; });
+
+    const auto rebind_values = graph("name"_n = "map_rebound_dictionary_items",
+                                     [=](wp<TSD<i64, TS<i64>>> values, wp<TS<bool>> rebind) {
+                                         return map(update_rebound_value, values, rebind);
+                                     });
+
+    const auto initial_values = node([](Out<TSD<i64, TS<i64>>> output) {
+        output[1].set(1);
+        output[2].set(2);
+    });
+
+    const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto tested = [&](wp<TS<i64>> cycle) {
+        const auto selected = switch_(cycle > i64{0},
+                                     cases{case_(false, pass_values), case_(true, rebind_values)},
+                                     initial_values(), cycle > i64{1});
+        return materialize(map(add_cycle, selected, cycle));
+    };
+
+    CHECK(bg::run_graph(tested, {0, 1, 2, 3})
+              .equals({{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}, {{1, 4}, {2, 5}}, {{1, 5}, {2, 6}}}));
+}
+
+TEST_CASE("key-only map observes removal and re-addition through a retained mapped reference",
+          "[feature:map][feature:reference][feature:validity][series:tsd][series:tss]"
+          "[binding:reference-to-value][transition:update][transition:removal][transition:addition]") {
+    const auto increment = graph("name"_n = "increment_mapped_item",
+                                 [](wp<TS<i64>> value) { return value + i64{1}; });
+
+    const auto observe = graph("name"_n = "observe_mapped_item_validity",
+                               [](wp<TS<i64>> key, wp<TSD<i64, TS<i64>>> values) {
+                                   return operators::valid(operators::getitem(values, key));
+                               });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TSS<i64>> selected_keys) {
+        const auto mapped = map(increment, values);
+        return map(observe, selected_keys, pass_through(mapped), "__key_arg__"_n = 0)[i64{2}];
+    };
+
+    CHECK(bg::run_graph(tested,
+                        {{{1, 10}, {2, 20}}, {{1, 11}, {2, literal::REMOVE}}, {{1, 12}}, {{2, 22}}},
+                        {{2}, literal::SKIP, literal::SKIP, literal::SKIP})
+              .equals<bool>({true, false, std::nullopt, true}));
+}
+
+TEST_CASE("getitem validity follows a removed and re-added key after a source switch",
+          "[.][repro][feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
+          "[shape:doubly-nested][transition:update][transition:removal][transition:addition]") {
+    const auto tested = [](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second, wp<TSS<i64>> keys) {
+        const auto selected = operators::if_then_else(select_first, first, second);
+        const auto values = operators::getitem(selected, keys);
+        return operators::valid(operators::getitem(values, i64{1}));
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {true, literal::SKIP, false, true, literal::SKIP, literal::SKIP, false, literal::SKIP},
+        {{{1, 1}, {2, 2}}, {{1, 3}}, {{1, 4}}, {{1, literal::REMOVE}, {2, 5}},
+         {{3, 6}}, {{1, 7}}, literal::SKIP, literal::SKIP},
+        {{{1, 10}, {2, 20}}, {{1, 30}}, {{1, 40}}, {{1, literal::REMOVE}, {2, 50}},
+         {{3, 60}}, {{1, 70}}, literal::SKIP, {{1, 80}}},
+        {literal::SKIP, {1}, {2}, {literal::REMOVED(2)}, literal::SKIP,
+         literal::SKIP, literal::SKIP, literal::SKIP});
+
+    INFO(actual);
+    CHECK(actual.equals<bool>({false, true, std::nullopt, false, std::nullopt, true, std::nullopt, std::nullopt}));
+}
+
+TEST_CASE("getitem follows a changing key set across switched dictionary sources",
+          "[.][repro][feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
+          "[transition:update][transition:addition][transition:removal]") {
+    const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto tested = [&](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
+                           wp<TSD<i64, TS<i64>>> second, wp<TSS<i64>> keys) {
+        const auto selected = operators::if_then_else(select_first, first, second);
+        return materialize(operators::getitem(selected, keys));
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {true, literal::SKIP, false, true, literal::SKIP, literal::SKIP, false, literal::SKIP},
+        {{{1, 1}, {2, 2}}, {{1, 3}}, {{1, 4}}, {{1, literal::REMOVE}, {2, 5}},
+         {{3, 6}}, {{1, 7}}, literal::SKIP, literal::SKIP},
+        {{{1, 10}, {2, 20}}, {{1, 30}}, {{1, 40}}, {{1, literal::REMOVE}, {2, 50}},
+         {{3, 60}}, {{1, 70}}, literal::SKIP, {{1, 80}}},
+        {literal::SKIP, {1}, {2}, {literal::REMOVED(2)}, literal::SKIP,
+         literal::SKIP, literal::SKIP, literal::SKIP});
+
+    INFO(actual);
+    CHECK(actual.equals({literal::SKIP, {{1, 3}}, {{1, 40}, {2, 20}},
+                         {{1, literal::INVALID}, {2, literal::REMOVE}}, literal::SKIP,
+                         {{1, 7}}, {{1, 70}}, {{1, 80}}}));
+}
+
+TEST_CASE("getitem follows a changing key set through an identity map of switched sources",
+          "[.][repro][feature:getitem][feature:map][feature:switch][series:tsd][series:tss]"
+          "[series:reference][transition:update][transition:addition][transition:removal]") {
+    const auto identity = graph("name"_n = "identity_dictionary_item",
+                                [](wp<TS<i64>> value) { return value; });
+
+    const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto tested = [&](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
+                            wp<TSD<i64, TS<i64>>> second, wp<TSS<i64>> keys) {
+        const auto selected = operators::if_then_else(select_first, first, second);
+        return materialize(operators::getitem(map(identity, selected), keys));
+    };
+
+    const auto actual = bg::run_graph(
+        tested,
+        {true, literal::SKIP, false, true, literal::SKIP, literal::SKIP, false, literal::SKIP},
+        {{{1, 1}, {2, 2}}, {{1, 3}}, {{1, 4}}, {{1, literal::REMOVE}, {2, 5}},
+         {{3, 6}}, {{1, 7}}, literal::SKIP, literal::SKIP},
+        {{{1, 10}, {2, 20}}, {{1, 30}}, {{1, 40}}, {{1, literal::REMOVE}, {2, 50}},
+         {{3, 60}}, {{1, 70}}, literal::SKIP, {{1, 80}}},
+        {literal::SKIP, {1}, {2}, {literal::REMOVED(2)}, literal::SKIP,
+         literal::SKIP, literal::SKIP, literal::SKIP});
+
+    INFO(actual);
+    CHECK(actual.equals({literal::SKIP, {{1, 3}}, {{1, 40}, {2, 20}},
+                         {{1, literal::INVALID}, {2, literal::REMOVE}}, literal::SKIP,
+                         {{1, 7}}, {{1, 70}}, {{1, 80}}}));
 }
 
 TEST_CASE("keys_ projects an ordinary dictionary without adding a runtime node",
