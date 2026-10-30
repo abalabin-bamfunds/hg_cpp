@@ -151,7 +151,7 @@ The logs are `build/release/ownership-final-build.log`,
 `build/release/ownership-focused-switch-tests.log`, and
 `build/release/ownership-ctest.log`.
 
-## Remaining nested payload equality failure
+## Nested payload equality correction
 
 The original nested map/switch/`take` test now reaches evaluation and its output
 assertion without crashing. Its result contains exactly one valid event at the
@@ -160,7 +160,7 @@ root tick schedule.
 
 The first tick prints three branch dictionaries with `direct` values
 `k00: 2` through `k04: 6`, matching the expected printed values. The nested
-literal equality check returns false because the expected literal has an extra
+literal equality check returned false because the expected literal had an extra
 sequence around its three branch entries. `matches_dictionary()` treats each
 top-level element of a TSD tick as a key/value pair. The extra sequence makes
 the first element contain three fields, so `scalar_literal::pair()` throws
@@ -168,20 +168,18 @@ the first element contain three fields, so `scalar_literal::pair()` throws
 
 A probe using the exact original and corrected brace shapes confirmed the
 structure: the original first tick has one entry with three fields, while the
-corrected first tick has three entries with two fields each. The minimal test
-correction is to remove one brace pair around the first tick's branch entries.
-The committed test expectation remains unchanged.
+corrected first tick has three entries with two fields each. The test removes
+one brace pair around the first tick's branch entries. The graph, inputs, keys,
+values, and six expected tick positions remain unchanged.
 
-The focused test prints the expected payload and one-present/five-skipped
-schedule, then reports `false`. A standalone run using headers from
-`cbfa8cb6`, which match the existing Release core, reports
-`original=0, corrected=1, event_count=1`. An earlier probe used headers with a
-different virtual layout and crashed; that result was an ABI mismatch in the
-probe setup. No production code or committed test expectation changed.
+The corrected `tick_selection_test.cpp` translation unit passes all ten test
+cases and 36 assertions in a focused Catch runner. It was compiled with headers
+from `cbfa8cb6`, matching the existing Release core. An earlier standalone
+probe used headers with a different virtual layout and crashed; that was an ABI
+mismatch in the probe setup. No production, Python, or web code changed.
 
 Temporary post-run diagnostics recorded the result in
-`build/release/ownership-metadata-test.log`. They were removed without changing
-the graph or its assertion. No additional runtime correction is included.
+`build/release/ownership-metadata-test.log`. No runtime correction is included.
 
 ## Other full-suite failure
 
