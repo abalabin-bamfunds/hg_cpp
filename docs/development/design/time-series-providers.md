@@ -205,6 +205,48 @@ Node authors use `Out::apply()`; registration and `OutputState` are
 extension-facing APIs. Scalar literal construction has its own
 [operation record](scalar-api.md#literals).
 
+## Queue messages
+
+Providers register `TimeSeriesQueueOperations` from
+`<bg/time_series/queue_operations.hpp>` with
+`TimeSeriesDispatch<TimeSeriesQueueOperations>::instance()`.
+This is an extension-facing API. Graph authors use `Queue::write()`.
+
+Register `project`, `write`, `conflicts`, and `apply` for each supported
+exact output runtime. Register `discard` for its semantic time series type.
+Semantic registration does not enable queue writes to other runtime layouts.
+BG validates these registrations when it selects the queue output runtime.
+Batch queues reject provider-defined time series leaves.
+
+BG owns message framing, scheduling, invalidation, and traversal through
+built-in collections. Provider callbacks encode and process only their valid
+leaf payload:
+
+- `project(literal, projection)` validates the literal and advances the aligned
+  payload extent before reservation. It also runs during writing.
+- `write(literal, writer, allocator)` constructs an owning payload with the
+  projected layout. Each completed prefix must be discardable if writing fails.
+- `conflicts(item, now, incoming_valid, reader)` inspects borrowed output storage
+  and encoded values without mutation or destruction. Missing collection items
+  have null storage. An invalidation has no payload. Returning `false` for a
+  valid payload must advance past that complete payload. Returning `true` may
+  stop early; BG leaves the complete message pending.
+- `apply(reader, output)` consumes an accepted payload and publishes through
+  the output binding. It must consume and destroy or transfer the complete
+  payload even when it throws. BG discards later siblings after a failure.
+- `discard(reader)` advances past one payload and destroys its owning objects.
+  During failed-write cleanup, destroy completed objects before an incomplete
+  trailing field reports `std::out_of_range`.
+
+Standard mode calls `conflicts` before applying a message. Eliding mode applies
+messages in order without conflict inspection. Provider registrations must
+finish before concurrent producers start. The provider library must remain
+loaded while callbacks or encoded payloads remain in use.
+
+Queue payloads and retained tick records have separate registrations and may
+use different grammars. See [queue messages](time-series-types.md#queue-messages)
+for framing, admission, and failure behavior.
+
 ## Generic visitation
 
 Generic input/output visitors dispatch built-in structural families to their

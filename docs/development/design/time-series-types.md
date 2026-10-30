@@ -242,9 +242,11 @@ the frame. Call `discard(type, mode)` for frames that will not be applied;
 the mode selects the scalar payload type. Releasing the reader does
 not destroy unread payloads.
 
-Queue message serialization supports `TS`, fixed-size `TSL`, `TSB`, `TSS`, and
-`TSD` literals. It rejects references, sparse `TSL`, and provider-defined
-time-series types. Custom scalar encodings require a projection handler on the
+Queue message serialization supports `TS`, fixed-size `TSL`, `TSB`, `TSS`,
+`TSD`, and registered provider time series literals. It rejects references
+and sparse `TSL`. Providers register exact-runtime queue operations and semantic
+discard operations through the [provider queue contract](time-series-providers.md#queue-messages).
+Custom scalar encodings require a projection handler on the
 selected write registration and semantic read and discard handlers. Projection
 uses the [scalar buffer operation contract](scalar-api.md#optional-operations).
 Missing handlers fail before reservation.
