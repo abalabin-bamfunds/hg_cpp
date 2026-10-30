@@ -247,7 +247,8 @@ TEST_CASE("take keeps the initial map of branches across nested switch replaceme
           "[feature:reference][feature:lifecycle][series:tsd][series:tsb][series:reference]"
           "[binding:reference-to-value][schema:named][shape:deeply-nested]"
           "[transition:update][transition:removal][transition:addition]") {
-    const auto increment = node([](double value) { return value + 1.0; });
+    const auto increment = graph("name"_n = "increment_branch_values",
+                                 [](wp<TS<double>> value) { return value + 1.0; });
 
     const auto empty_values = node([](Out<TSD<string, TS<double>>>) {});
 
