@@ -186,7 +186,7 @@ TEST_CASE("invalidation callbacks run before invalidation publication",
         return output;
     };
 
-    const auto actual = testing::test_graph(tested, {4.0F, literal::INVALID});
+    const auto actual = bg::run_graph(tested, {4.0F, literal::INVALID});
 
     CHECK(actual.equals({4.0F, std::nullopt}));
     CHECK(invalidation_callback_state.callback_count == 1);

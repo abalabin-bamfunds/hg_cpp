@@ -20,5 +20,5 @@ separate scopes.
 Root aggregate `OutputState` is held directly on the invocation stack and
 borrowed by output fields. Item views continue to use invocation scratch.
 
-See [evaluation context callbacks](../evaluation.md#evaluation-context) for the
+See [evaluation context callbacks](../design/evaluation.md#evaluation-context) for the
 API contract and lifecycle.

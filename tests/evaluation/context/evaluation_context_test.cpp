@@ -3,7 +3,6 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
-#include <bg/testing/test_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -319,7 +318,7 @@ TEST_CASE("nested graph node invocations own independent callback scopes",
     const auto source = node<invocation_end_nested_source_definition>();
     const auto inner = graph("name"_n = "invocation_end_inner", [&](wp<TS<i64>> input) { return source(input); });
     const auto tested = [&](wp<TS<i64>> input, wp<TS<bool>> run) { return nested(inner, run, input); };
-    const auto actual = testing::test_graph(tested, {1, 2}, {true, true});
+    const auto actual = bg::run_graph(tested, {1, 2}, {true, true});
 
     CHECK(actual.equals<i64>({1, 2}));
     CHECK(invocation_end_state.callback_count == 2);
