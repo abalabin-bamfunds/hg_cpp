@@ -8,6 +8,9 @@
 #include <bg/testing/test_wiring.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsd/tsd_type.hpp>
+#include <bg/time_series/tsl/tsl.hpp>
+#include <bg/time_series/tsl/tsl_input.hpp>
+#include <bg/time_series/tsl/tsl_output.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -43,6 +46,80 @@ TEST_CASE("switch selects a case graph from its key",
     const auto actual = bg::run_graph(tested, {1, 2, 2, 1}, {3, 3, 4, 5});
 
     CHECK(actual.equals<i64>({13, 23, 24, 15}));
+}
+
+TEST_CASE("switch holds fixed list items across free and native branches",
+          "[feature:switch][feature:reference][series:fixed-tsl][representation:free]"
+          "[representation:native][transition:update]") {
+    const auto pack = node([](In<TS<i64>> first, In<TS<i64>> second,
+                              Out<TSL<TS<i64>, 2>> output) {
+        if (first.modified()) {
+            output[0].set(*first);
+        }
+        if (second.modified()) {
+            output[1].set(*second);
+        }
+    });
+
+    const auto native = graph("name"_n = "native_fixed_list",
+                              [&](wp<TS<i64>> first, wp<TS<i64>> second) { return pack(first, second); });
+
+    const auto free = graph("name"_n = "free_fixed_list",
+                            [](wp<TS<i64>> first, wp<TS<i64>> second) { return tsl(first, second); });
+
+    const auto sum = node([](In<TSL<TS<i64>, 2>> values) { return *values[0] + *values[1]; });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> first, wp<TS<i64>> second) {
+        const auto selected = switch_(key, cases{case_(true, free), case_(false, native)}, first, second);
+        return sum(selected);
+    };
+
+    CHECK(bg::run_graph(tested,
+                        {true, true, true, false, false, true},
+                        {1, 2, literal::SKIP, literal::SKIP, 3, literal::SKIP},
+                        {10, literal::SKIP, 20, literal::SKIP, literal::SKIP, 30})
+              .equals<i64>({11, 12, 22, 22, 23, 33}));
+}
+
+TEST_CASE("switch output reaches reference consumers across dictionary branch changes",
+          "[feature:switch][feature:reference][series:tsd][series:reference]"
+          "[binding:reference-to-reference][binding:reference-to-value][transition:update]") {
+    const auto reference_dictionary = node([](In<REF<TS<i64>>> value,
+                                              Out<TSD<i64, REF<TS<i64>>>> output) {
+        if (value.modified()) {
+            output[1].copy(value);
+        }
+    });
+
+    const auto value_dictionary = node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
+        if (value.modified()) {
+            output[1].set(*value);
+        }
+    });
+
+    const auto reference_branch = graph("name"_n = "reference_dictionary_branch",
+                                        [&](wp<TS<i64>> value) { return reference_dictionary(value); });
+
+    const auto value_branch = graph("name"_n = "value_dictionary_branch",
+                                    [&](wp<TS<i64>> value) { return value_dictionary(value); });
+
+    const auto forward = node([](In<REF<TSD<i64, REF<TS<i64>>>>> input,
+                                 Out<REF<TSD<i64, REF<TS<i64>>>>> output) { output.copy(input); });
+
+    const auto observe = node([](In<TSD<i64, TS<i64>>> input) {
+        return input.contains(1) ? *input[1] : i64{-1};
+    });
+
+    const auto tested = [&](wp<TS<bool>> select_reference, wp<TS<i64>> value) {
+        const auto selected = switch_(select_reference,
+                                      cases{case_(true, reference_branch), case_(false, value_branch)}, value);
+        return observe(forward(selected));
+    };
+
+    CHECK(bg::run_graph(tested,
+                        {true, literal::SKIP, false, literal::SKIP, true, literal::SKIP},
+                        {10, 20, literal::SKIP, 30, literal::SKIP, 40})
+              .equals<i64>({10, 20, 20, 30, 30, 40}));
 }
 
 struct StatefulCase {

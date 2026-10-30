@@ -332,7 +332,7 @@ graph compilation or evaluation.
 - guarantee compatibility, propagation, and enforcement; C++ variable minima,
   preservation of stronger guarantees, repeated-variable resolution, and overload ordering
 - recursive common types, independent root and item guarantees, reference targets,
-  schema identity and inheritance, and rejection of incompatible structures
+  schema identity and inheritance, named/unnamed bundle combinations, and rejection of incompatible structures
 - callable scalar-return guarantee inference across scalars, time series,
   references, passive inputs, optional values, explicit outputs, startup
   scheduling, equality support, and nested graph boundaries
@@ -546,7 +546,9 @@ graph compilation or evaluation.
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
 - reduction through compact and nested reducers, odd item counts, defaults, sparse updates, physical item-ID changes,
   and membership changes
-- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh
+- switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh;
+  common output inference across contained references and free/native collections, both branch orders,
+  downstream value/reference representations, and incompatible type rejection
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
 - service request sinks dispatching work to a background thread and returning queued replies during realtime execution
 

@@ -591,12 +591,16 @@ variable, it resolves to their weakest guarantee. A scalar contributes `const`.
 `TimeSeriesType::common_type()` combines resolved time series with matching
 structure. It selects the weakest guarantee at each corresponding time series,
 including collection items and reference targets. Reference guarantees and
-target guarantees combine independently. List sizes, dictionary key types, and
-bundle schema identities, bases, and field order must match. Scalar types must
-match exactly, and references combine only with references. The operation
-returns a canonical type, or null for unresolved or incompatible types. This
-lets one output represent alternative producers without discarding their shared
-time series structure.
+target guarantees combine independently. List sizes and dictionary key types
+must match. Two named or two unnamed bundle schemas must have matching
+declaration identities, bases, metadata, and field order. A named bundle can
+also combine with an unnamed bundle whose flattened fields have the same names
+and order. The result retains the named schema and combines corresponding field
+types. Scalar types must match exactly,
+and references combine only with references. The operation returns a canonical
+type, or null for unresolved or incompatible types. This lets one output
+represent alternative producers without discarding their shared time series
+structure.
 
 An omitted guarantee on a node or graph parameter accepts and preserves the
 source guarantee. Node output construction applies output defaults: an omitted

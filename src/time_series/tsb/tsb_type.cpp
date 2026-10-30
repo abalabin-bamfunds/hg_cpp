@@ -186,6 +186,39 @@ const TimeSeriesType *TimeSeriesBundleType::common_type(const TimeSeriesType &ot
 }
 
 const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Schema &right) {
+    if (left.named() != right.named()) {
+        const auto &named = left.named() ? left : right;
+        const auto &anonymous = left.named() ? right : left;
+        if (!std::ranges::equal(named.fields(), anonymous.fields(), {}, &SchemaField::name, &SchemaField::name)) {
+            return nullptr;
+        }
+
+        const auto common_named_schema = [&](auto &&self, const Schema &declaration) -> const Schema * {
+            const auto *common_base = declaration.base() == nullptr ? nullptr : self(self, *declaration.base());
+            if (declaration.base() != nullptr && common_base == nullptr) {
+                return nullptr;
+            }
+
+            auto fields = std::vector<SchemaField>{};
+            fields.reserve(declaration.direct_fields().size());
+            for (const auto &field : declaration.direct_fields()) {
+                const auto &free_field = *anonymous.find(field.name);
+                const auto &declared_type = static_cast<const TimeSeriesType &>(*field.type);
+                const auto &free_type = static_cast<const TimeSeriesType &>(*free_field.type);
+                const auto *common_field_type = declared_type.common_type(free_type);
+                if (common_field_type == nullptr) {
+                    return nullptr;
+                }
+                fields.push_back({field.name, common_field_type, field.optional});
+            }
+
+            return &bg::schema(declaration.name(), declaration.identity(), common_base, fields,
+                               declaration.direct_metadata());
+        };
+
+        return common_named_schema(common_named_schema, named);
+    }
+
     if (left.name() != right.name() || left.identity() != right.identity() ||
         left.direct_metadata() != right.direct_metadata() ||
         left.direct_fields().size() != right.direct_fields().size() ||

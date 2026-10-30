@@ -191,6 +191,70 @@ TEST_CASE("common named bundles retain their base and combine a narrowed inherit
     CHECK(bundle.item_type(1).guarantee().value() == TimeSeriesGuarantee::ordinary);
 }
 
+TEST_CASE("common named and free bundles retain the named declaration",
+          "[feature:type-system][series:tsb][schema:named][representation:free]"
+          "[guarantee:ordinary][guarantee:final][guarantee:const]") {
+    const auto base_metadata =
+        make_schema_metadata({schema_metadata_entry("extension.base", ScalarValue<i64>{1})});
+    const auto derived_metadata =
+        make_schema_metadata({schema_metadata_entry("extension.derived", ScalarValue<i64>{2})});
+    const auto base_identity = std::type_index{typeid(BundleTypeScope)};
+    const auto derived_identity = std::type_index{typeid(TestField<double>)};
+    const auto base_fields =
+        std::array{SchemaField{util::symbol{"count"}, &TS<i64, TimeSeriesGuarantee::final>::type()}};
+    const auto &base_schema =
+        bg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_fields, base_metadata);
+    const auto derived_fields =
+        std::array{SchemaField{util::symbol{"value"}, &TS<float, TimeSeriesGuarantee::final>::type()}};
+    const auto &derived_schema = bg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_schema,
+                                            derived_fields, derived_metadata);
+    const auto &named = time_series_bundle_type(derived_schema, TimeSeriesGuarantee::final);
+
+    const auto free_fields = std::array{
+        SchemaField{util::symbol{"count"}, &TS<i64, TimeSeriesGuarantee::const_>::type()},
+        SchemaField{util::symbol{"value"}, &TS<float>::type()},
+    };
+    const auto &free = time_series_bundle_type(anonymous_schema(free_fields), TimeSeriesGuarantee::ordinary);
+    const auto *common = named.common_type(free);
+
+    REQUIRE(common != nullptr);
+    CHECK(free.common_type(named) == common);
+    CHECK(common->accepts(named));
+    CHECK(common->accepts(free));
+
+    const auto &bundle = type_cast<TimeSeriesBundleType>(*common);
+    CHECK(bundle.guarantee().value() == TimeSeriesGuarantee::ordinary);
+    CHECK(bundle.schema().name().text() == "CommonDerived");
+    CHECK(bundle.schema().identity() == SchemaIdentity{derived_identity});
+    CHECK(bundle.schema().direct_metadata() == derived_metadata);
+    REQUIRE(bundle.schema().base() != nullptr);
+    CHECK(bundle.schema().base()->identity() == SchemaIdentity{base_identity});
+    CHECK(bundle.schema().base()->direct_metadata() == base_metadata);
+    CHECK(bundle.item_name(0).text() == "count");
+    CHECK(bundle.item_name(1).text() == "value");
+    CHECK(bundle.item_type(0).guarantee().value() == TimeSeriesGuarantee::final);
+    CHECK(bundle.item_type(1).guarantee().value() == TimeSeriesGuarantee::ordinary);
+
+    const auto reordered_fields = std::array{
+        SchemaField{util::symbol{"value"}, &TS<float>::type()},
+        SchemaField{util::symbol{"count"}, &TS<i64>::type()},
+    };
+    const auto &reordered = time_series_bundle_type(anonymous_schema(reordered_fields), TimeSeriesGuarantee::ordinary);
+    CHECK(named.common_type(reordered) == nullptr);
+
+    const auto incompatible_fields = std::array{
+        SchemaField{util::symbol{"count"}, &TS<float>::type()},
+        SchemaField{util::symbol{"value"}, &TS<float>::type()},
+    };
+    const auto &incompatible =
+        time_series_bundle_type(anonymous_schema(incompatible_fields), TimeSeriesGuarantee::ordinary);
+    CHECK(named.common_type(incompatible) == nullptr);
+
+    const auto missing_fields = std::array{SchemaField{util::symbol{"count"}, &TS<i64>::type()}};
+    const auto &missing = time_series_bundle_type(anonymous_schema(missing_fields), TimeSeriesGuarantee::ordinary);
+    CHECK(named.common_type(missing) == nullptr);
+}
+
 TEST_CASE("common bundles require matching schema and field structures",
           "[feature:type-system][series:tsb][schema:named]") {
     const auto identity = std::type_index{typeid(BundleTypeScope)};

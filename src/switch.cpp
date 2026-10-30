@@ -313,7 +313,7 @@ class SwitchGraphArgumentBuilder {
         const TimeSeriesType *target{};
         if (result) {
             structure_result = wiring->complete_pending_wiring(*result);
-            target = &structure_result->type().target_type();
+            target = &structure_result->type().target_type().reference_free_type();
         } else {
             (void)wiring->complete_pending_wiring();
         }

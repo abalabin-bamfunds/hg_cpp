@@ -5,6 +5,7 @@
 #include <bg/node.hpp>
 #include <bg/operators.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/switch.hpp>
 #include <bg/scalar/bundle/value.hpp>
 #include <bg/scalar/dict/scalar.hpp>
 #include <bg/scalar/list/scalar.hpp>
@@ -723,4 +724,75 @@ TEST_CASE("a free bundle rejects duplicate field names",
     CHECK_THROWS_AS(
         run_graph([&] { return sum(bundle("count"_n = count(), "count"_n = count(), "value"_n = value())); }),
         WiringError);
+}
+
+TEST_CASE("a switch accepts native and free bundle branches",
+          "[feature:switch][feature:reference][series:tsb][schema:named]"
+          "[representation:free][representation:native][shape:nested][transition:update]") {
+    const auto pass_through = graph("name"_n = "pass_free_bundle",
+                                    [](wp<TSB<DerivedBundle>> input) { return input; });
+
+    const auto pack = node([](i64 count, float value, Out<TSB<DerivedBundle>> output) {
+        output->count.set(count);
+        output->value.set(value);
+    });
+
+    const auto native = graph("name"_n = "pack_native_bundle",
+                              [&](wp<TSB<DerivedBundle>> input) { return pack(input->count, input->value); });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> count, wp<TS<float>> value) {
+        const auto fields = bundle("count"_n = count, "value"_n = value);
+        return switch_(key, cases{case_(true, pass_through), case_(false, native)}, fields);
+    };
+
+    const auto reversed = [&](wp<TS<bool>> key, wp<TS<i64>> count, wp<TS<float>> value) {
+        const auto fields = bundle("count"_n = count, "value"_n = value);
+        return switch_(key, cases{case_(false, native), case_(true, pass_through)}, fields);
+    };
+
+    CHECK(bg::run_graph(tested,
+                        {true, false, true, false},
+                        {1, literal::SKIP, literal::SKIP, 4},
+                        {0.5F, literal::SKIP, literal::SKIP, 3.5F})
+              .equals({{{"count", 1}, {"value", 0.5F}},
+                       {{"count", 1}, {"value", 0.5F}},
+                       {{"count", 1}, {"value", 0.5F}},
+                       {{"count", 4}, {"value", 3.5F}}}));
+    CHECK(bg::run_graph(reversed,
+                        {true, false, true, false},
+                        {1, literal::SKIP, literal::SKIP, 4},
+                        {0.5F, literal::SKIP, literal::SKIP, 3.5F})
+              .equals({{{"count", 1}, {"value", 0.5F}},
+                       {{"count", 1}, {"value", 0.5F}},
+                       {{"count", 1}, {"value", 0.5F}},
+                       {{"count", 4}, {"value", 3.5F}}}));
+}
+
+TEST_CASE("reselecting a rebuilt free bundle keeps unchanged field references",
+          "[feature:switch][feature:reference][feature:sampling][series:tsb][representation:free]"
+          "[shape:nested][binding:reference-to-reference][transition:update]") {
+    const auto pass_through = graph("name"_n = "pass_free_bundle",
+                                    [](wp<TSB<DerivedBundle>> input) { return input; });
+
+    const auto rebuild = graph("name"_n = "rebuild_free_bundle", [](wp<TSB<DerivedBundle>> input) {
+        return bundle("count"_n = input->count, "value"_n = input->value);
+    });
+
+    const auto count_value = node([](i64 count) { return count; });
+
+    const auto select_count = graph("name"_n = "select_free_bundle_count", [&](wp<TSB<DerivedBundle>> input) {
+        return count_value(input->count);
+    });
+
+    const auto tested = [&](wp<TS<bool>> key, wp<TS<i64>> count, wp<TS<float>> value) {
+        const auto fields = bundle("count"_n = count, "value"_n = value);
+        return select_count(switch_(key, cases{case_(true, pass_through), case_(false, rebuild)}, fields));
+    };
+
+    const auto actual = bg::run_graph(tested,
+                                      {true, false, true, false},
+                                      {10, literal::SKIP, literal::SKIP, 20},
+                                      {0.5F, 1.5F, 2.5F, 3.5F});
+
+    CHECK(actual.equals({10, std::nullopt, std::nullopt, 20}));
 }

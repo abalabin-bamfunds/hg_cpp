@@ -49,6 +49,14 @@ output switch publishes a reference to the active inner graph output. Its
 `DEFAULT` case may be outputless; selecting that case invalidates the switch
 output. A source case accepts no arguments. A sink switch produces no output.
 
+Output inference removes references recursively from each branch target, then
+computes their [common type](type-system.md#time-series-guarantees) `C`. The
+switch publishes `REF<C>`. For example, branches returning `TSD<K, REF<T>>` and
+`TSD<K, T>` produce `REF<TSD<K, T>>`. Consumers use the normal
+[reference representations](time-series-references.md#dynamic-representations)
+to request value or reference items. Free and bound collection storage does not
+change output compatibility.
+
 `switch_` is an operator. Its call preparation converts heterogeneous C++ case
 definitions before normal overload resolution.
 
