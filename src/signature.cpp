@@ -321,8 +321,14 @@ TypeMap Signature::match_arguments(std::span<const Type *const> arguments, const
 
     const auto mismatch = [&](std::size_t index, std::string message) -> void {
         const auto &parameter = parameters_[index];
-        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name, std::move(message), parameter.type,
-                                  arguments[index]};
+        auto expected = std::string{};
+        parameter.type->format_name(expected);
+        auto supplied = std::string{};
+        arguments[index]->format_name(supplied);
+        message += " in signature '" + std::string{name_.text()} + "' for parameter '" +
+                   std::string{parameter.name.text()} + "': expected " + expected + ", supplied " + supplied;
+        throw TypeResolutionError{TypeResolutionErrorCode::mismatch, parameter.name, std::move(message),
+                                  parameter.type, arguments[index]};
     };
 
     auto unresolved = std::vector<std::size_t>{};

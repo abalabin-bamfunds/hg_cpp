@@ -1,4 +1,5 @@
 #include <bg/graph.hpp>
+#include <bg/library.hpp>
 #include <bg/library/operators.hpp>
 #include <bg/map.hpp>
 #include <bg/map_argument.hpp>
@@ -35,11 +36,9 @@ struct ServerSource {
     State<ServerRuntime *> runtime_state;
     Out<TSB<details::ServerOutput>> output;
 
-    static constexpr bool uses_queue = true;
     static constexpr bool deduplicate_wiring = false;
 
-    void start(EvaluationContext *context) const {
-        auto output_queue = context->runtime_graph().make_queue(context->node_index());
+    void start(Queue output_queue) const {
         auto runtime = std::make_unique<ServerRuntime>(options.value(), std::move(output_queue));
         output->runtime.set(runtime.get());
         *runtime_state = runtime.release();
@@ -54,12 +53,11 @@ struct ServerMessagesSource {
     In<TS<Opaque<ServerRuntime *>>, passive> runtime;
     Out<TSD<i64, TSD<i64, TS<List<bytes>>>>> messages;
 
-    static constexpr bool uses_queue = true;
     static constexpr bool deduplicate_wiring = false;
     static constexpr auto queue_mode = QueueMode::batch;
 
-    void start(EvaluationContext *context) const {
-        runtime.value()->attach_websocket_queue(context->runtime_graph().make_queue(context->node_index()));
+    void start(Queue messages_queue) const {
+        runtime.value()->attach_websocket_queue(std::move(messages_queue));
     }
 };
 
@@ -629,20 +627,18 @@ wp<> details::wire_websocket_handler(std::string_view path, const WiringTemplate
             {"request"_n, "handler_response"_n, "decision"_n},
             [](wp<TSB<WebSocketServerRequest<bytes>::schema>>,
                wp<TSB<WebSocketResponse<bytes>::schema>> handler_response, wp<DECISION> decision) {
-                const auto handler_connect_response =
-                    operators::getattr(handler_response, util::symbol{"connect_response"});
+                const auto handler_connect_response = handler_response->connect_response;
                 const auto rejection = operators::getattr(decision, util::symbol{"rejection"});
                 const auto connect_response = operators::if_then_else(operators::valid(rejection), rejection,
                                                                        handler_connect_response);
-                const auto message = operators::getattr(handler_response, util::symbol{"message"});
+                const auto message = handler_response->message;
                 const auto identity = operators::getattr(decision, util::symbol{"identity"});
-                const auto handler_close = operators::getattr(handler_response, util::symbol{"close"});
+                const auto handler_close = handler_response->close;
                 auto memory = allocator{};
                 const auto policy_close = operators::const_(
                     bundle<WebSocketClose>(memory, "code"_n = i64{1008},
                                            "reason"_n = std::string{"Policy violation"}));
-                const auto revoked = operators::or_(operators::valid(rejection),
-                                                    operators::not_(operators::valid(identity)));
+                const auto revoked = operators::valid(rejection) || !operators::valid(identity);
                 const auto close = operators::if_then_else(revoked, policy_close, handler_close);
                 return bundle<WebSocketResponse<bytes>::schema>("connect_response"_n = connect_response,
                                                                  "message"_n = message, "close"_n = close);

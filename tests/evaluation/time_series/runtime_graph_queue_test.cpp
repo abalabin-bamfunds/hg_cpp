@@ -57,7 +57,194 @@ struct AggregateBatchQueueSource {
     void evaluate() const {}
 };
 
+struct AggregateInjectedQueueSource {
+    Out<TS<i64>> output;
+
+    static constexpr bool uses_queue = false;
+    inline static Queue queue;
+
+    void start(Queue injected) const { queue = std::move(injected); }
+};
+
+struct AggregateInjectedBatchQueueSource {
+    Out<TS<List<i64>>> output;
+
+    static constexpr bool uses_queue = false;
+    static constexpr auto queue_mode = QueueMode::batch;
+    inline static Queue queue;
+
+    void start(Queue injected) const { queue = std::move(injected); }
+};
+
+struct AggregateInjectedQueueContextSource {
+    Out<TS<i64>> output;
+
+    static constexpr bool uses_queue = false;
+    inline static Queue queue;
+    inline static std::size_t started_node{};
+
+    void start(Queue injected, EvaluationContext *context) const {
+        queue = std::move(injected);
+        started_node = context->node_index();
+    }
+};
+
+struct AggregateFailingInjectedQueueSource {
+    Out<TS<i64>> output;
+
+    inline static Queue queue;
+
+    void start(Queue injected) const {
+        queue = std::move(injected);
+        throw std::runtime_error{"aggregate queue start failure"};
+    }
+};
+
+struct AggregateManualQueueSource {
+    Out<TS<i64>> output;
+
+    static constexpr bool uses_queue = true;
+    inline static Queue queue;
+
+    void start(EvaluationContext *context) const {
+        queue = context->runtime_graph().make_queue(context->node_index());
+    }
+};
+
 } // namespace
+
+TEST_CASE("aggregate start receives a queue for its output even when queue use is disabled",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][definition:aggregate]") {
+    auto values = std::vector<i64>{};
+    const auto source = node<AggregateInjectedQueueSource>();
+    const auto sink = node([&](In<TS<i64>> input) { values.push_back(*input); });
+    auto wiring = GraphWiring{};
+    WiringPoint output;
+    {
+        auto context = WiringContext{wiring};
+        output = source();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = CompiledGraph{wiring};
+    CHECK(compiled.node(target).queue_mode() == QueueMode::standard);
+
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    AggregateInjectedQueueSource::queue = Queue{};
+    runtime.start(time(1));
+    REQUIRE(AggregateInjectedQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{42})));
+    runtime.evaluate(time(2));
+
+    CHECK(values == std::vector<i64>{42});
+    runtime.stop();
+    CHECK_FALSE(AggregateInjectedQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{43})));
+}
+
+TEST_CASE("aggregate injected queues preserve batch mode",
+          "[evaluation][feature:time-series-storage][series:value][scalar:list][scalar:i64][queue][batch]"
+          "[definition:aggregate]") {
+    auto values = std::vector<std::vector<i64>>{};
+    const auto source = node<AggregateInjectedBatchQueueSource>();
+    const auto sink = node([&](In<TS<List<i64>>> input) {
+        auto batch = std::vector<i64>{};
+        const auto list = input.value_view();
+        for (auto index = std::size_t{}; index < list.size(); ++index) {
+            batch.push_back(list[index].value());
+        }
+        values.push_back(std::move(batch));
+    });
+    auto wiring = GraphWiring{};
+    WiringPoint output;
+    {
+        auto context = WiringContext{wiring};
+        output = source();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = CompiledGraph{wiring};
+    CHECK(compiled.node(target).queue_mode() == QueueMode::batch);
+
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    AggregateInjectedBatchQueueSource::queue = Queue{};
+    runtime.start(time(1));
+    REQUIRE(AggregateInjectedBatchQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{10})));
+    REQUIRE(AggregateInjectedBatchQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{20})));
+    runtime.evaluate(time(2));
+
+    CHECK(values == std::vector<std::vector<i64>>{{10, 20}});
+    runtime.stop();
+    CHECK_FALSE(AggregateInjectedBatchQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{30})));
+}
+
+TEST_CASE("aggregate start can receive an injected queue and evaluation context",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][definition:aggregate]") {
+    const auto source = node<AggregateInjectedQueueContextSource>();
+    auto wiring = GraphWiring{};
+    WiringPoint output;
+    {
+        auto context = WiringContext{wiring};
+        output = source();
+    }
+    wiring.finalize();
+    const auto target = wiring.output_node_index(output);
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    AggregateInjectedQueueContextSource::queue = Queue{};
+    runtime.start(time(1));
+
+    CHECK(AggregateInjectedQueueContextSource::started_node == target);
+    CHECK(AggregateInjectedQueueContextSource::queue.is_open());
+    runtime.stop();
+}
+
+TEST_CASE("aggregate injected queue handles close when start fails",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][failure]"
+          "[definition:aggregate]") {
+    const auto source = node<AggregateFailingInjectedQueueSource>();
+    auto wiring = GraphWiring{};
+    {
+        auto context = WiringContext{wiring};
+        (void)source();
+    }
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    AggregateFailingInjectedQueueSource::queue = Queue{};
+
+    CHECK_THROWS_AS(runtime.start(time(1)), std::runtime_error);
+    CHECK_FALSE(AggregateFailingInjectedQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{1})));
+}
+
+TEST_CASE("aggregate start with an evaluation context can still create its queue manually",
+          "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue][definition:aggregate]") {
+    auto values = std::vector<i64>{};
+    const auto source = node<AggregateManualQueueSource>();
+    const auto sink = node([&](In<TS<i64>> input) { values.push_back(*input); });
+    auto wiring = GraphWiring{};
+    WiringPoint output;
+    {
+        auto context = WiringContext{wiring};
+        output = source();
+        sink(output);
+    }
+    wiring.finalize();
+    const auto compiled = CompiledGraph{wiring};
+    auto global_state = GlobalState{};
+    auto runtime = RuntimeGraph{compiled, global_state};
+    AggregateManualQueueSource::queue = Queue{};
+    runtime.start(time(1));
+    REQUIRE(AggregateManualQueueSource::queue.write(::literal::TimeSeriesLiteral(i64{7})));
+    runtime.evaluate(time(2));
+
+    CHECK(values == std::vector<i64>{7});
+    runtime.stop();
+}
 
 TEST_CASE("aggregate batch queues append messages into one list update",
           "[evaluation][feature:time-series-storage][definition:aggregate][queue][batch]") {

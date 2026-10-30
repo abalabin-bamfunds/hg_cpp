@@ -14,6 +14,8 @@
 #include <bg/python/object.hpp>
 #include <bg/python/schema.hpp>
 #include <bg/python/scalar_conversion.hpp>
+#include <bg/python/service.hpp>
+#include <bg/python/service_catalogue.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/service.hpp>
 #include <bg/service_feedback.hpp>
@@ -131,10 +133,46 @@ class PythonServiceDefinition {
   public:
     PythonServiceDefinition(std::unique_ptr<ServiceDefinition> service,
                             std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature)
-        : service_{std::move(service)}, signature_{std::move(signature)} {}
+        : owned_service_{std::move(service)}, service_{owned_service_.get()}, signature_{std::move(signature)} {}
 
     const ServiceDefinition &service() const noexcept { return *service_; }
     const PythonNodeDefinition::SignatureDefinition &signature() const noexcept { return *signature_; }
+
+    void bind_native_service(const ServiceDefinition &service) {
+        if (service_ == &service) return;
+        if (!owned_service_) {
+            throw std::invalid_argument{"a Python service declaration is already bound to a different native service"};
+        }
+
+        const auto same_family =
+            (dynamic_cast<const ReferenceService *>(service_) != nullptr &&
+             dynamic_cast<const ReferenceService *>(&service) != nullptr) ||
+            (dynamic_cast<const Service *>(service_) != nullptr && dynamic_cast<const Service *>(&service) != nullptr) ||
+            (dynamic_cast<const SubscriptionService *>(service_) != nullptr &&
+             dynamic_cast<const SubscriptionService *>(&service) != nullptr);
+        if (!same_family) {
+            throw std::invalid_argument{"a Python service declaration does not match the native service family"};
+        }
+
+        const auto &python_signature = signature_->signature;
+        const auto &native_signature = service.default_signature();
+        if (python_signature.parameter_count() != native_signature.parameter_count()) {
+            throw std::invalid_argument{"a Python service declaration does not match the native service signature"};
+        }
+        for (auto index = std::size_t{}; index < python_signature.parameter_count(); ++index) {
+            const auto &python_parameter = python_signature.parameter(index);
+            const auto &native_parameter = native_signature.parameter(index);
+            if (python_parameter.name != native_parameter.name || python_parameter.type != native_parameter.type) {
+                throw std::invalid_argument{"a Python service declaration does not match the native service signature"};
+            }
+        }
+        if (python_signature.output() != native_signature.output()) {
+            throw std::invalid_argument{"a Python service declaration does not match the native service signature"};
+        }
+
+        owned_service_.reset();
+        service_ = &service;
+    }
 
     nb::object wire(nb::sequence arguments) const {
         auto &wiring = WiringContext::current().wiring();
@@ -150,7 +188,7 @@ class PythonServiceDefinition {
     }
 
     void client_requests(nb::handle client_id, nb::sequence arguments) const {
-        auto *service = dynamic_cast<Service *>(service_.get());
+        auto *service = dynamic_cast<const Service *>(service_);
         if (service == nullptr) {
             throw std::invalid_argument{"split client wiring requires a request/reply service"};
         }
@@ -164,7 +202,7 @@ class PythonServiceDefinition {
     }
 
     nb::object client_replies(nb::handle client_id, nb::sequence arguments) const {
-        auto *service = dynamic_cast<Service *>(service_.get());
+        auto *service = dynamic_cast<const Service *>(service_);
         if (service == nullptr) {
             throw std::invalid_argument{"split client wiring requires a request/reply service"};
         }
@@ -254,7 +292,8 @@ class PythonServiceDefinition {
         return arguments;
     }
 
-    std::unique_ptr<ServiceDefinition> service_;
+    std::unique_ptr<ServiceDefinition> owned_service_;
+    const ServiceDefinition *service_;
     std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature_;
 };
 
@@ -374,6 +413,7 @@ class PythonServiceCatalogue {
         keep_alive_.emplace_back(service_owner);
     }
 
+    ServiceCatalogue &catalogue() noexcept { return catalogue_; }
     const ServiceCatalogue &catalogue() const noexcept { return catalogue_; }
 
   private:
@@ -740,6 +780,21 @@ nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixe
 }
 
 } // namespace
+
+ServiceCatalogue &service_catalogue(nb::handle catalogue) {
+    return nb::cast<PythonServiceCatalogue &>(catalogue).catalogue();
+}
+
+void export_service(nb::handle python_service, const ServiceDefinition &service) {
+    if (!nb::hasattr(python_service, "_native_definition")) {
+        throw std::invalid_argument{"native service registration requires a Python service declaration"};
+    }
+    const auto definition = nb::getattr(python_service, "_native_definition");
+    if (!nb::isinstance<PythonServiceDefinition>(definition)) {
+        throw std::invalid_argument{"native service registration requires a Python service declaration"};
+    }
+    nb::cast<PythonServiceDefinition &>(definition).bind_native_service(service);
+}
 
 void export_schema(nb::handle python_type, const Schema &time_series_schema, const Schema *scalar_schema) {
     if (!PyType_Check(python_type.ptr())) {

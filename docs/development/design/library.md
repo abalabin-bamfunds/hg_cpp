@@ -264,7 +264,10 @@ items. A const input becomes final because its first forwarding can be delayed.
 `gate(condition, value, buffer_length=max_i64)` retains each input tick while
 the condition is invalid or false. Opening replays the oldest retained tick
 immediately, then replays at most one tick per microsecond. New ticks join the
-end of the queue. Closing pauses replay without clearing the queue. Value
+end of the queue. A valid reset tick discards retained ticks and cancels the
+drain timer before handling a value tick in the same cycle. Reset preserves the
+output and does not change the condition state. Closing pauses replay without
+clearing the queue. Value
 invalidation is retained as an event; condition invalidation closes the gate
 and preserves its output and queue. An open gate with no queue forwards directly.
 The positive `buffer_length` limits retained events; overflow raises an error.

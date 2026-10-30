@@ -5,7 +5,17 @@ from datetime import timedelta
 
 import bg
 import pytest
-from bg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
+from bg_web import (
+    Auth,
+    BearerAuth,
+    ClientAuthRegex,
+    HttpClientRequest,
+    HttpResponse,
+    http_client,
+    http_client_impl,
+    register_client_auth,
+    register_client_transports,
+)
 
 
 def test_http_client_service_isolated_across_repeated_runtime_runs():
@@ -231,12 +241,12 @@ def test_http_client_returns_599_for_invalid_requests_and_transport_failures():
     assert all(status == 599 for status, _ in replies)
     bodies = [body.decode() for _, body in replies]
     assert any("scheme must be http or https" in body for body in bodies)
-    assert any("credentials" in body.lower() for body in bodies)
+    assert any("credentials" in body.lower() for body in bodies), bodies
     assert any("fragments are not supported" in body for body in bodies)
     assert any("HTTP header name is not a valid token" in body for body in bodies)
     assert any("controls request routing or framing" in body for body in bodies)
     assert any("without line breaks" in body for body in bodies)
-    assert any("HTTP request failed:" in body for body in bodies)
+    assert any("HTTP request failed:" in body for body in bodies), bodies
     assert "HTTP request timed out" in bodies
     assert "HTTP response body exceeds configured limit" in bodies
 
@@ -287,3 +297,62 @@ def test_http_client_graph_stop_discards_pending_request():
 
     assert request_started.is_set()
     assert replies == []
+
+
+def test_client_transports_and_auth_registration_integrate_with_python_services():
+    received_authorization = []
+    stop = bg.StopSource()
+
+    class Handler(BaseHTTPRequestHandler):
+        def do_GET(self):
+            authorization = self.headers.get("Authorization", "")
+            received_authorization.append(authorization)
+            status = 200 if authorization == "Bearer python-token" else 401
+            body = b"authorized" if status == 200 else b"unauthorized"
+            self.send_response(status)
+            self.end_headers()
+            self.wfile.write(body)
+
+        def log_message(self, format, *args):
+            pass
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    server_thread = Thread(target=server.serve_forever, daemon=True)
+    server_thread.start()
+
+    @bg.graph
+    def credentials(origin: bg.TS[str]) -> bg.TS[Auth]:
+        del origin
+        return bg.operators.const_(BearerAuth("python-token"))
+
+    @bg.compute_node
+    def describe(response: bg.TS[HttpResponse]) -> bg.TS[str]:
+        value = response.value
+        stop.request_stop()
+        return f"{value.status}:{bytes(value.body).decode()}"
+
+    @bg.graph
+    def application() -> bg.TS[str]:
+        origin = f"http://127.0.0.1:{server.server_port}"
+        register_client_auth("python-client-auth", ClientAuthRegex(r"http://127\.0\.0\.1:[0-9]+"), credentials)
+        request = bg.operators.const_(HttpClientRequest(f"{origin}/private"))
+        return describe(http_client(request))
+
+    catalogue = bg.ServiceCatalogue()
+    register_client_transports(catalogue, "python-client-auth", timeout=timedelta(seconds=2))
+    try:
+        replies = bg.run_graph(
+            application,
+            catalogue=catalogue,
+            engine=bg.EvaluationEngine.realtime,
+            run_time=timedelta(seconds=4),
+            stop_token=stop.get_token(),
+            capture_output=True,
+        )
+    finally:
+        server.shutdown()
+        server.server_close()
+        server_thread.join(2)
+
+    assert [value for _, value in replies.events] == ["200:authorized"]
+    assert received_authorization == ["Bearer python-token"]

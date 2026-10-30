@@ -1,6 +1,7 @@
 #pragma once
 
 #include <bg/evaluation_context.hpp>
+#include <bg/graph/runtime_graph.hpp>
 #include <bg/graph/details/variadic_wiring_operations.hpp>
 #include <bg/graph/wiring_parameter.hpp>
 #include <bg/graph/wiring_arguments.hpp>
@@ -10,6 +11,7 @@
 #include <bg/node/output.hpp>
 #include <bg/node/state.hpp>
 #include <bg/node/state_layout.hpp>
+#include <bg/queue_handle.hpp>
 #include <bg/scalar/cpp_runtime_type.hpp>
 #include <bg/time_series/ref/dynamic_reference_input.hpp>
 #include <bg/time_series/dynamic_value_input.hpp>
@@ -392,11 +394,18 @@ inline constexpr bool aggregate_node_evaluate_returns_bool = [] {
 }();
 
 template <typename Definition>
+inline constexpr bool aggregate_node_has_queue_start = requires(const Definition &definition, Queue queue) {
+    { definition.start(std::move(queue)) } -> std::same_as<void>;
+} || requires(const Definition &definition, Queue queue, EvaluationContext *context) {
+    { definition.start(std::move(queue), context) } -> std::same_as<void>;
+};
+
+template <typename Definition>
 inline constexpr bool aggregate_node_has_start = requires(const Definition &definition) {
     { definition.start() } -> std::same_as<void>;
 } || requires(const Definition &definition, EvaluationContext *context) {
     { definition.start(context) } -> std::same_as<void>;
-};
+} || aggregate_node_has_queue_start<Definition>;
 
 template <typename Definition>
 inline constexpr bool aggregate_node_has_stop = requires(const Definition &definition) {
@@ -464,6 +473,9 @@ template <typename Definition> struct aggregate_node_class<Definition, true> {
     using Index = std::make_index_sequence<util::aggregate_member_count<Definition>>;
 
   public:
+    static_assert(!aggregate_node_has_queue_start<Definition> || aggregate_node_has_output<Definition>(),
+                  "an aggregate node with start(Queue) requires an Out<> field");
+
     static constexpr bool value = supported_node_fields<Definition>(Index{}) &&
                                   output_field_count<Definition>(Index{}) <= 1 &&
                                   input_fields_use_reflected_names<Definition>(Index{}) &&
@@ -1107,7 +1119,13 @@ decltype(auto) invoke_aggregate_node(const CompiledNode &node, void *runtime_sto
     auto definition = Definition{make_runtime_field<Definition, Index>(
         node, storage, context, output_state.output_state(), invalidation)...};
 
-    if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {
+    if constexpr (std::invocable<decltype(Function), const Definition &, Queue, EvaluationContext *>) {
+        auto queue = context->runtime_graph().make_queue(context->node_index());
+        return std::invoke(Function, std::as_const(definition), std::move(queue), context);
+    } else if constexpr (std::invocable<decltype(Function), const Definition &, Queue>) {
+        auto queue = context->runtime_graph().make_queue(context->node_index());
+        return std::invoke(Function, std::as_const(definition), std::move(queue));
+    } else if constexpr (std::invocable<decltype(Function), const Definition &, EvaluationContext *>) {
         return std::invoke(Function, std::as_const(definition), context);
     } else {
         return std::invoke(Function, std::as_const(definition));

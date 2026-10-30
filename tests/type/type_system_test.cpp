@@ -340,6 +340,27 @@ TEST_CASE("signature resolution uses reference target types",
     CHECK(reference_input.resolve(arguments).parameters[0].type == &reference);
 }
 
+TEST_CASE("signature mismatches report the signature, parameter, expected type, and supplied type",
+          "[type_system][feature:type-system]") {
+    const auto signature = Signature{util::symbol{"consume"}, {{util::symbol{"value"}, &TS<i64>::type()}}};
+    const auto arguments = std::array<const Type *, 1>{&TS<string>::type()};
+
+    try {
+        static_cast<void>(signature.match_arguments(arguments));
+        FAIL("expected a signature argument mismatch");
+    } catch (const TypeResolutionError &error) {
+        CHECK(error.code() == TypeResolutionErrorCode::mismatch);
+        CHECK(error.subject().text() == "value");
+        CHECK(error.expected() == &TS<i64>::type());
+        CHECK(error.supplied() == &TS<string>::type());
+        const auto message = std::string{error.what()};
+        CHECK(message.contains("signature 'consume'"));
+        CHECK(message.contains("parameter 'value'"));
+        CHECK(message.contains("expected TS<i64>"));
+        CHECK(message.contains("supplied TS<string>"));
+    }
+}
+
 TEST_CASE("a resolved parameter constrains a generic argument",
           "[type_system][feature:type-system][declaration:generic]") {
     const auto signature = Signature{util::symbol{"fixed"}, {{util::symbol{"value"}, &TS<float>::type()}}};

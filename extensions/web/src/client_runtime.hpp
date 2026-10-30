@@ -2,9 +2,13 @@
 
 #include <bg/queue.hpp>
 #include <bg/scalar/bundle/type.hpp>
+#include <bg/scalar/bundle/value.hpp>
 #include <bg/web/http_client.hpp>
 
+#include <chrono>
 #include <memory>
+#include <optional>
+#include <string_view>
 
 namespace bg::web {
 
@@ -17,7 +21,12 @@ class ClientRuntime {
     ClientRuntime &operator=(const ClientRuntime &) = delete;
     ~ClientRuntime();
 
-    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request);
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
+                 std::optional<ScalarValue<Bundle<Auth>>> credentials = std::nullopt);
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
+                 std::optional<ScalarValue<Bundle<Auth>>> credentials,
+                 std::chrono::steady_clock::time_point deadline);
+    void fail(i64 client_id, i64 client_sequence, std::string_view message) noexcept;
     void cancel(i64 client_id, i64 client_sequence) noexcept;
 
   private:

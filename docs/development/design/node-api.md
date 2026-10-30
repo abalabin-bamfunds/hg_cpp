@@ -38,12 +38,18 @@ An aggregate node class:
 - uses `In<>` fields for time series inputs
 - uses plain C++ fields for scalar-or-time-series parameters and `Scalar<T>` for scalar-only parameters
 - can contain `State<T>` fields and at most one `Out<>` field
-- defines a `const evaluate()` that returns `void` or `bool`, or a `const start()` that returns `void`
+- defines a `const evaluate()` that returns `void` or `bool`, or a `const start()` that returns `void`; start can receive an
+  injected queue as described below
 - contains at most 32 fields
 
 The aggregate is a read-only view created for one invocation. `State<T>` and
 `Out<>` modify the runtime objects that they reference. Activity and validity
 are properties of each `In<>` type.
+
+An aggregate `start()` can take `Queue` by value, optionally followed by
+`EvaluationContext*`. The engine injects a queue for the node's `Out<>` field
+and enables queue processing. `queue_mode` still selects standard, eliding, or
+batch processing. The injected queue is not part of the graph signature.
 
 `evaluate()` returns `void` when evaluation always completes. It can return
 `bool` when evaluation can pause: `true` means complete and `false` means

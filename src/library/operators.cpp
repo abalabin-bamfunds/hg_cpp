@@ -61,7 +61,7 @@ decltype(sample) sample{"sample", {"signal", "value"}};
 decltype(dedup) dedup{"dedup", {"value"}};
 decltype(if_) if_{"if_", {"condition", "value"}};
 decltype(filter_) filter_{"filter_", {"condition", "value"}};
-decltype(gate) gate{"gate", {"condition", "value", "buffer_length"_n = std::numeric_limits<i64>::max()}};
+decltype(gate) gate{"gate", {"condition", "value", "buffer_length"_n = std::numeric_limits<i64>::max(), "reset"}};
 decltype(batch)
     batch{"batch", {"condition", "value", "delay", "buffer_length"_n = std::numeric_limits<i64>::max()}};
 decltype(merge) merge{"merge", {"values"}};

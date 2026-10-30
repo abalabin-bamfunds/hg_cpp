@@ -1,5 +1,6 @@
 #include "client_runtime.hpp"
 
+#include "client_credentials.hpp"
 #include "http_header.hpp"
 #include "runtime_logging.hpp"
 
@@ -43,18 +44,26 @@ using HeaderPair = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
 using namespace bg::literals;
 
+std::string lowercase(std::string_view value);
+
 struct Transfer {
-    Transfer(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request_value)
-        : client_id{client_id}, client_sequence{client_sequence}, request_value{std::move(request_value)} {}
+    Transfer(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request_value,
+             std::optional<ScalarValue<Bundle<Auth>>> auth_value,
+             std::chrono::steady_clock::time_point deadline)
+        : client_id{client_id}, client_sequence{client_sequence}, request_value{std::move(request_value)},
+          auth_value{std::move(auth_value)}, deadline{deadline} {}
 
     CURL *easy{};
     curl_slist *request_headers{};
     i64 client_id{};
     i64 client_sequence{};
     ScalarValue<Bundle<HttpClientRequest>> request_value;
+    std::optional<ScalarValue<Bundle<Auth>>> auth_value;
+    std::chrono::steady_clock::time_point deadline;
     std::string method;
     std::string url;
     HeaderValues request_headers_values;
+    bool request_has_authorization{};
     HeaderValues response_headers;
     BytesBuilder response_body;
     std::array<char, CURL_ERROR_SIZE> error_buffer{};
@@ -76,6 +85,20 @@ struct Transfer {
             request_headers_values.emplace_back(
                 std::string{scalar_cast<string>(header.template get<0>()).value()},
                 std::string{scalar_cast<string>(header.template get<1>()).value()});
+        }
+        request_has_authorization = std::ranges::any_of(request_headers_values, [](const auto &header) {
+            return lowercase(header.first) == "authorization";
+        });
+        if (auth_value && details::client_auth_method(auth_value->view()) == details::ClientAuthMethod::headers) {
+            const auto auth = scalar_cast<Bundle<HeaderAuth>>(auth_value->view());
+            const auto headers = scalar_cast<List<HeaderPair>>(auth[0]);
+            request_headers_values.reserve(request_headers_values.size() + headers.size());
+            for (auto index = std::size_t{}; index < headers.size(); ++index) {
+                const auto header = headers[index];
+                request_headers_values.emplace_back(
+                    std::string{scalar_cast<string>(header.template get<0>()).value()},
+                    std::string{scalar_cast<string>(header.template get<1>()).value()});
+            }
         }
     }
 
@@ -118,6 +141,8 @@ struct Transfer {
             auto line = std::string_view{data, length};
             if (line.starts_with("HTTP/")) {
                 transfer.response_headers.clear();
+                transfer.response_body = BytesBuilder{};
+                transfer.response_too_large = false;
                 return length;
             }
             while (!line.empty() && (line.back() == '\r' || line.back() == '\n')) line.remove_suffix(1);
@@ -142,10 +167,13 @@ struct Transfer {
 };
 
 struct Command {
-    enum class Kind { request, cancel } kind;
+    enum class Operation { request, fail, cancel } operation;
     i64 client_id;
     i64 client_sequence;
     std::optional<ScalarValue<Bundle<HttpClientRequest>>> request;
+    std::optional<ScalarValue<Bundle<Auth>>> credentials;
+    std::chrono::steady_clock::time_point deadline;
+    std::string error;
 };
 
 struct CurlGlobal {
@@ -223,6 +251,55 @@ std::optional<std::string> Transfer::validate() const {
             return std::string{"HTTP header controls request routing or framing"};
         }
     }
+    if (!auth_value) return std::nullopt;
+
+    const auto auth = scalar_cast<Bundle<Auth>>(auth_value->view());
+    const auto auth_method = details::client_auth_method(auth);
+    if (auth_method == details::ClientAuthMethod::unsupported) {
+        return std::string{"HTTP authentication schema is not supported"};
+    }
+    if (auth_method == details::ClientAuthMethod::anonymous) return std::nullopt;
+
+    if (auth_method == details::ClientAuthMethod::negotiate) {
+        if (request_has_authorization) {
+            return std::string{"HTTP request Authorization header conflicts with credentials"};
+        }
+        return std::nullopt;
+    }
+    if (auth_method == details::ClientAuthMethod::basic || auth_method == details::ClientAuthMethod::digest ||
+        auth_method == details::ClientAuthMethod::ntlm) {
+        const auto username = scalar_cast<string>(auth[0]).value();
+        const auto password = scalar_cast<string>(auth[1]).value();
+        if (details::contains_nul(username) || details::contains_nul(password)) {
+            return std::string{"HTTP credentials contain a NUL byte"};
+        }
+        if (auth_method == details::ClientAuthMethod::basic && username.find(':') != std::string_view::npos) {
+            return std::string{"HTTP Basic username cannot contain a colon"};
+        }
+        if (request_has_authorization) {
+            return std::string{"HTTP request Authorization header conflicts with credentials"};
+        }
+        return std::nullopt;
+    }
+    if (auth_method == details::ClientAuthMethod::bearer) {
+        const auto token = scalar_cast<string>(scalar_cast<Bundle<BearerAuth>>(auth)[0]).value();
+        if (details::contains_nul(token) || !details::valid_bearer_token(token)) {
+            return std::string{"HTTP bearer credentials are invalid"};
+        }
+        if (request_has_authorization) {
+            return std::string{"HTTP request Authorization header conflicts with credentials"};
+        }
+        return std::nullopt;
+    }
+    const auto headers = scalar_cast<List<HeaderPair>>(scalar_cast<Bundle<HeaderAuth>>(auth)[0]);
+    auto authorization_count = std::size_t{};
+    for (auto index = std::size_t{}; index < headers.size(); ++index) {
+        const auto header = headers[index];
+        authorization_count += lowercase(scalar_cast<string>(header.template get<0>()).value()) == "authorization";
+    }
+    if (authorization_count > 1 || (authorization_count != 0 && request_has_authorization)) {
+        return std::string{"HTTP credentials contain conflicting Authorization headers"};
+    }
     return std::nullopt;
 }
 
@@ -278,7 +355,15 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
     set_easy_option(easy, CURLOPT_FOLLOWLOCATION, 0L);
     set_easy_option(easy, CURLOPT_HTTP_VERSION, static_cast<long>(CURL_HTTP_VERSION_1_1));
     set_easy_option(easy, CURLOPT_NOSIGNAL, 1L);
-    set_easy_option(easy, CURLOPT_TIMEOUT_MS, static_cast<long>(options.timeout.count()));
+    const auto remaining = deadline - std::chrono::steady_clock::now();
+    if (remaining <= std::chrono::steady_clock::duration::zero()) {
+        return std::string{"HTTP request timed out before transport startup"};
+    }
+    const auto timeout = std::chrono::ceil<std::chrono::milliseconds>(remaining).count();
+    if (timeout <= 0 || timeout > std::numeric_limits<long>::max()) {
+        return std::string{"HTTP request deadline exceeds libcurl's timeout limit"};
+    }
+    set_easy_option(easy, CURLOPT_TIMEOUT_MS, static_cast<long>(timeout));
     set_easy_option(easy, CURLOPT_SSL_VERIFYPEER, 1L);
     set_easy_option(easy, CURLOPT_SSL_VERIFYHOST, 2L);
     set_easy_option(easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
@@ -289,6 +374,30 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
     set_easy_option(easy, CURLOPT_HEADERFUNCTION, &Transfer::receive_headers);
     set_easy_option(easy, CURLOPT_HEADERDATA, this);
     set_easy_option(easy, CURLOPT_ERRORBUFFER, error_buffer.data());
+    if (auth_value) {
+        const auto auth = scalar_cast<Bundle<Auth>>(auth_value->view());
+        const auto auth_method = details::client_auth_method(auth);
+        if (auth_method == details::ClientAuthMethod::negotiate) {
+            set_easy_option(easy, CURLOPT_HTTPAUTH, CURLAUTH_NEGOTIATE);
+            // libcurl's empty credentials activate Negotiate with platform credentials.
+            set_easy_option(easy, CURLOPT_USERPWD, ":");
+        } else if (auth_method == details::ClientAuthMethod::basic ||
+                   auth_method == details::ClientAuthMethod::digest ||
+                   auth_method == details::ClientAuthMethod::ntlm) {
+            const auto curl_auth = auth_method == details::ClientAuthMethod::basic    ? CURLAUTH_BASIC
+                                   : auth_method == details::ClientAuthMethod::digest ? CURLAUTH_DIGEST
+                                                                             : CURLAUTH_NTLM;
+            const auto username = std::string{scalar_cast<string>(auth[0]).value()};
+            const auto password = std::string{scalar_cast<string>(auth[1]).value()};
+            set_easy_option(easy, CURLOPT_HTTPAUTH, curl_auth);
+            set_easy_option(easy, CURLOPT_USERNAME, username.c_str());
+            set_easy_option(easy, CURLOPT_PASSWORD, password.c_str());
+        } else if (auth_method == details::ClientAuthMethod::bearer) {
+            const auto token = std::string{scalar_cast<string>(auth[0]).value()};
+            set_easy_option(easy, CURLOPT_HTTPAUTH, CURLAUTH_BEARER);
+            set_easy_option(easy, CURLOPT_XOAUTH2_BEARER, token.c_str());
+        }
+    }
     const auto body = scalar_cast<bytes>(request_value.view()[3]).value();
     if (!body.empty() || method == "POST" || method == "PUT" || method == "PATCH") {
         const auto *body_data = body.empty() ? empty_body : reinterpret_cast<const char *>(body.data());
@@ -319,18 +428,39 @@ class ClientImplementation final {
         stop();
     }
 
-    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request) {
-        enqueue(Command{.kind = Command::Kind::request,
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
+                 std::optional<ScalarValue<Bundle<Auth>>> credentials) {
+        this->request(client_id, client_sequence, std::move(request), std::move(credentials),
+                      std::chrono::steady_clock::now() + options_.timeout);
+    }
+
+    void request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> request,
+                 std::optional<ScalarValue<Bundle<Auth>>> credentials,
+                 std::chrono::steady_clock::time_point deadline) {
+        enqueue(Command{.operation = Command::Operation::request,
                         .client_id = client_id,
                         .client_sequence = client_sequence,
-                        .request = std::move(request)});
+                        .request = std::move(request),
+                        .credentials = std::move(credentials),
+                        .deadline = deadline});
     }
 
     void cancel(i64 client_id, i64 client_sequence) noexcept {
         try {
-            enqueue(Command{.kind = Command::Kind::cancel,
+            enqueue(Command{.operation = Command::Operation::cancel,
                             .client_id = client_id,
                             .client_sequence = client_sequence});
+        } catch (...) {
+            record_failure(std::current_exception());
+        }
+    }
+
+    void fail(i64 client_id, i64 client_sequence, std::string_view message) noexcept {
+        try {
+            enqueue(Command{.operation = Command::Operation::fail,
+                            .client_id = client_id,
+                            .client_sequence = client_sequence,
+                            .error = std::string{message}});
         } catch (...) {
             record_failure(std::current_exception());
         }
@@ -414,6 +544,11 @@ class ClientImplementation final {
                 process_completions();
                 if (stop_requested_.load(std::memory_order_acquire)) break;
                 if (!multi_) continue;
+                {
+                    // curl_multi_perform can consume a wakeup posted after process_commands.
+                    const auto lock = std::lock_guard{commands_mutex_};
+                    if (!commands_.empty()) continue;
+                }
                 auto descriptors = 0;
                 result = curl_multi_poll(multi_.get(), nullptr, 0, 1000, &descriptors);
                 if (result != CURLM_OK) {
@@ -460,7 +595,11 @@ class ClientImplementation final {
         }
         for (auto &command : pending) {
             const auto client_id = command.client_id;
-            const auto is_request = command.kind == Command::Kind::request;
+            const auto is_request = command.operation == Command::Operation::request;
+            const auto is_failure = command.operation == Command::Operation::fail;
+            if (is_request || is_failure) {
+                current_sequences_.insert_or_assign(client_id, command.client_sequence);
+            }
             if (is_request && !multi_) {
                 record_failure("libcurl transport is recovering; request was not started");
                 write_error(client_id, "HTTP transport is unavailable");
@@ -469,6 +608,8 @@ class ClientImplementation final {
             try {
                 if (is_request) {
                     start_request(std::move(command));
+                } else if (is_failure) {
+                    write_error(client_id, command.error);
                 } else {
                     cancel_requests(command.client_id, command.client_sequence);
                 }
@@ -480,8 +621,13 @@ class ClientImplementation final {
     }
 
     void start_request(Command command) {
+        if (std::chrono::steady_clock::now() >= command.deadline) {
+            write_error(command.client_id, "HTTP request timed out before transport startup");
+            return;
+        }
         auto transfer = std::make_unique<Transfer>(command.client_id, command.client_sequence,
-                                                   std::move(*command.request));
+                                                   std::move(*command.request), std::move(command.credentials),
+                                                   command.deadline);
         transfer->read_request();
         if (const auto error = transfer->validate()) {
             record_failure(*error);
@@ -497,6 +643,10 @@ class ClientImplementation final {
         if (const auto error = transfer->configure(options_)) {
             record_failure(*error);
             write_error(command.client_id, *error);
+            return;
+        }
+        if (std::chrono::steady_clock::now() >= transfer->deadline) {
+            write_error(command.client_id, "HTTP request timed out before transport startup");
             return;
         }
 
@@ -526,6 +676,13 @@ class ClientImplementation final {
                 ++iterator;
             }
         }
+        const auto current = current_sequences_.find(client_id);
+        if (current == current_sequences_.end() || current->second != client_sequence) return;
+        current_sequences_.erase(current);
+        write_removed(client_id);
+    }
+
+    void write_removed(i64 client_id) noexcept {
         try {
             const auto accepted = output_.write(literal::TimeSeriesLiteral{
                 {util::symbol{"replies"}, {{client_id, literal::REMOVE}}}});
@@ -547,6 +704,8 @@ class ClientImplementation final {
             const auto found = transfers_.find(easy);
             if (found == transfers_.end()) continue;
             const auto client_id = found->second->client_id;
+            const auto client_sequence = found->second->client_sequence;
+            const auto expired = std::chrono::steady_clock::now() >= found->second->deadline;
             const auto remove_result = curl_multi_remove_handle(multi_.get(), easy);
             if (remove_result != CURLM_OK) {
                 recover_multi(curl_multi_strerror(remove_result));
@@ -555,7 +714,14 @@ class ClientImplementation final {
             auto transfer = std::move(found->second);
             transfers_.erase(found);
 
+            const auto current = current_sequences_.find(client_id);
+            if (current == current_sequences_.end() || current->second != client_sequence) continue;
+
             try {
+                if (expired) {
+                    write_error(client_id, "HTTP request timed out");
+                    continue;
+                }
                 if (transfer->callback_failed) {
                     record_failure("libcurl response callback failed");
                     write_error(client_id, "HTTP response could not be collected");
@@ -643,6 +809,7 @@ class ClientImplementation final {
     std::condition_variable commands_changed_;
     std::vector<Command> commands_;
     std::unordered_map<CURL *, std::unique_ptr<Transfer>> transfers_;
+    std::unordered_map<i64, i64> current_sequences_;
     std::atomic<bool> stop_requested_{};
 };
 
@@ -651,8 +818,19 @@ ClientRuntime::ClientRuntime(HttpClientOptions options, Queue output)
 
 ClientRuntime::~ClientRuntime() = default;
 
-void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value) {
-    implementation_->request(client_id, client_sequence, std::move(value));
+void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value,
+                            std::optional<ScalarValue<Bundle<Auth>>> credentials) {
+    implementation_->request(client_id, client_sequence, std::move(value), std::move(credentials));
+}
+
+void ClientRuntime::request(i64 client_id, i64 client_sequence, ScalarValue<Bundle<HttpClientRequest>> value,
+                            std::optional<ScalarValue<Bundle<Auth>>> credentials,
+                            std::chrono::steady_clock::time_point deadline) {
+    implementation_->request(client_id, client_sequence, std::move(value), std::move(credentials), deadline);
+}
+
+void ClientRuntime::fail(i64 client_id, i64 client_sequence, std::string_view message) noexcept {
+    implementation_->fail(client_id, client_sequence, message);
 }
 
 void ClientRuntime::cancel(i64 client_id, i64 client_sequence) noexcept {

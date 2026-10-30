@@ -8,6 +8,7 @@
 #include <bg/python/object.hpp>
 #include <bg/python/schema.hpp>
 #include <bg/python/scalar_conversion.hpp>
+#include <bg/python/service.hpp>
 #include <bg/python/wiring_point.hpp>
 #include <bg/graph/runtime_graph.hpp>
 #include <bg/scalar/builtins.hpp>
@@ -20,6 +21,7 @@
 #include <bg/time_series/tsl/tsl.hpp>
 #include <bg/type/schema.hpp>
 #include <bg/type/scalar_type.hpp>
+#include <bg/service.hpp>
 #include <bg/util/scope_exit.hpp>
 
 #include <nanobind/nanobind.h>
@@ -67,6 +69,11 @@ const bg::Schema &conflicting_native_time_series_schema() {
     return bg::schema(bg::util::symbol{"native.Other"},
                       bg::SchemaIdentity{std::type_index{typeid(ConflictingNativeSchemaIdentity)}}, nullptr, fields);
 }
+
+const auto native_python_service =
+    bg::service<auto(bg::TS<bg::i64> value) -> bg::TS<bg::i64>>{"native_python_service", {"value"}};
+const auto alternate_native_python_service =
+    bg::service<auto(bg::TS<bg::i64> value) -> bg::TS<bg::i64>>{"alternate_native_python_service", {"value"}};
 
 std::array<std::atomic<int>, 4> native_node_lifecycle{};
 std::array<std::atomic<std::uint64_t>, 2> native_interruption_lifecycle{};
@@ -370,6 +377,12 @@ NB_MODULE(_bg_test_extension, module) {
     });
     module.def("export_conflicting_tsb_schema", [](nanobind::handle python_type) {
         bg::python::export_schema(python_type, conflicting_native_time_series_schema());
+    });
+    module.def("export_native_service", [](nanobind::handle python_service) {
+        bg::python::export_service(python_service, native_python_service);
+    });
+    module.def("export_alternate_native_service", [](nanobind::handle python_service) {
+        bg::python::export_service(python_service, alternate_native_python_service);
     });
     bg::python::export_operator(module, "const_", bg::operators::const_);
     bg::python::export_operator(module, "discard", discard_operator());

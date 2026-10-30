@@ -277,6 +277,61 @@ configure the timeout and response body limit. One implementation owns one
 transport thread shared by its service clients, with separate runtime state
 for each graph run.
 
+## Client authentication
+
+Client authentication values use the `Auth` schema hierarchy. `AnonymousAuth`
+is empty. `BasicAuth`, `DigestAuth`, and `NtlmAuth` contain `username` and
+`password`; `NegotiateAuth` is empty and uses the platform's default
+credentials. `BearerAuth` contains `token`; `HeaderAuth` contains ordered
+`headers`. Python exports constructors with these field names, and a `TS[Auth]`
+input preserves the concrete derived class.
+
+HTTP handles all seven derived schemas. WebSocket handles `AnonymousAuth`,
+`BasicAuth`, `BearerAuth`, and `HeaderAuth`; other schemas return status 599
+before the handshake. HTTP Negotiate requires a libcurl build with GSSAPI or
+Windows SSPI support. It uses the current user's credentials; obtaining and
+renewing Kerberos tickets remains the application's responsibility.
+
+`register_client_transports(catalogue, scope)` installs clients with a shared
+authentication scope: HTTP and WebSocket in C++, HTTP in Python. Existing service
+calls keep their signatures. Use this installation instead of installing their
+standalone implementations in that catalogue.
+The C++ registration functions are declared in `<bg/web/client_auth.hpp>`.
+
+Call `register_client_auth(scope, origin, credential_graph, ambient...)` anywhere
+in graph code. The credential graph receives the normalized origin as its first
+input and the supplied ambient arguments after it. It returns `TS[Auth]` or a
+supported derived schema. One graph instance serves each demanded origin,
+shared by clients using that origin. Registrations can use different credential
+graphs and ambient inputs without collecting them at transport installation.
+
+A credential graph can call `http_client` to retrieve tokens. That request must
+be independently authenticatable; it cannot require the token being obtained.
+
+Exact origins accept `http`, `https`, `ws`, and `wss`. Normalization lowercases
+the scheme and host and removes the default port. An absent path and `/` both
+identify the origin; other paths, query strings, fragments, and user information
+are rejected. Scheme distinctions remain: `http://example.com` and
+`ws://example.com` are different origins. `ClientAuthRegex{pattern}` in C++
+selects a full-origin ECMAScript regular expression. Invalid registrations fail
+while wiring.
+
+An exact registration takes precedence over regex registrations. Multiple
+matching registrations at the winning precedence produce a local 599 response.
+An unmatched origin uses anonymous access. A matched origin with invalid
+credentials waits for a valid value within the request's timeout. The timeout
+includes credential waiting and transport command queue delay. While a client
+waits, a new HTTP request replaces its pending request and starts a new timeout.
+Only the latest pending request is submitted when credentials become available.
+Client removal cancels its pending request and releases its origin demand.
+
+A WebSocket connect tick replaces the previous connection immediately and
+discards messages buffered for that connection. Messages for the new connection
+wait with its credentials. A close request cancels that wait and discards its
+buffered messages. The handshake timeout includes credential waiting and
+transport command queue delay. Credential changes after connection submission
+do not reconnect it or pause messages on the established connection.
+
 ## WebSocket client
 
 `websocket_client` connects to a binary `ws://` endpoint. Its request is
@@ -288,7 +343,10 @@ that receives them.
 Message ticks send complete binary messages. For an open connection, a message
 and close request in one update sends the message before the close frame. A
 close request during the handshake cancels the attempt and discards any message
-from that update.
+from that update. A connect tick replaces the previous connection immediately;
+messages buffered while its credentials were pending are discarded. Credential
+changes after the graph submits the handshake do not pause messages or reconnect
+the established connection.
 
 The reply is `TSB<BinaryWebSocketClientReply>`. `connect_response` contains the
 handshake status, headers, and body. A successful handshake reports status 101

@@ -98,7 +98,7 @@ extern BG_LIBRARY_EXPORT operator_<auto(SIGNAL, TS_T) -> TS_T> sample;
 extern BG_LIBRARY_EXPORT operator_<auto(TS_T) -> TS_T> dedup;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TSB<if_result>> if_;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T) -> TS_T> filter_;
-extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T, i64) -> TS_T> gate;
+extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS_T, i64, Union<"reset", SIGNAL>) -> TS_T> gate;
 extern BG_LIBRARY_EXPORT operator_<auto(TS<bool>, TS<SCALAR>, timedelta_t, i64) -> TS<List<SCALAR>>> batch;
 extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> TS_T> merge;
 extern BG_LIBRARY_EXPORT operator_<auto(TSL<TS_T, SIZE>) -> REF<TS_T>> race;

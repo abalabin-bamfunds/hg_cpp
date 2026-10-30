@@ -184,11 +184,11 @@ const auto echo_handler = node([](In<TS<Bundle<HttpServerRequest>>> request,
 });
 
 const auto websocket_echo_handler = graph([](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
-    const auto message = operators::emit(operators::getattr(request, util::symbol{"messages"}));
+    const auto message = operators::emit(request->messages);
     const std::array finished_message_bytes{std::byte{0x7f}};
     const auto finished_message = operators::const_(ScalarValue<bytes>{
         std::span<const std::byte>{finished_message_bytes}});
-    const auto finished = operators::eq(message, finished_message);
+    const auto finished = message == finished_message;
     auto memory = allocator{};
     const auto close = operators::const_(
         bundle<WebSocketClose>(memory, "code"_n = i64{1000}, "reason"_n = "finished"));

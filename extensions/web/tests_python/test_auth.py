@@ -1,6 +1,17 @@
 import bg
 import pytest
-from bg_web import AuthDecision, HttpResponse
+from bg_web import (
+    AnonymousAuth,
+    Auth,
+    AuthDecision,
+    BasicAuth,
+    BearerAuth,
+    DigestAuth,
+    HeaderAuth,
+    HttpResponse,
+    NegotiateAuth,
+    NtlmAuth,
+)
 
 
 @bg.schema
@@ -40,3 +51,44 @@ def test_auth_decision_schema_construction_and_native_conversion():
 
     assert bg.run_graph(accepted_graph, capture_output=True) == ["alice"]
     assert bg.run_graph(rejected_graph, capture_output=True) == ["rejected:401:denied"]
+
+
+def test_client_auth_schemas_keep_the_derived_type_through_a_base_input():
+    values = [
+        AnonymousAuth(),
+        BasicAuth("alice", "secret"),
+        DigestAuth("bob", "secret"),
+        NegotiateAuth(),
+        NtlmAuth("dave", "secret"),
+        BearerAuth("token-value"),
+        HeaderAuth([("X-Token", "header-value")]),
+    ]
+    types = [type(value) for value in values]
+    expected_fields = {
+        AnonymousAuth: {},
+        BasicAuth: {"username": "alice", "password": "secret"},
+        DigestAuth: {"username": "bob", "password": "secret"},
+        NegotiateAuth: {},
+        NtlmAuth: {"username": "dave", "password": "secret"},
+        BearerAuth: {"token": "token-value"},
+        HeaderAuth: {"headers": (("X-Token", "header-value"),)},
+    }
+
+    @bg.compute_node
+    def describe(value: bg.TS[Auth]) -> bg.TS[str]:
+        observed = value.value
+        assert any(type(observed) is schema for schema in types)
+        for field, expected in expected_fields[type(observed)].items():
+            assert getattr(observed, field) == expected
+        return type(observed).__name__
+
+    @bg.queue
+    def auth_values(writer: bg.Queue = None) -> bg.TS[Auth]:
+        for value in values:
+            assert writer.write(value)
+
+    @bg.graph
+    def graph() -> bg.TS[str]:
+        return describe(auth_values())
+
+    assert bg.run_graph(graph, capture_output=True) == [schema.__name__ for schema in types]
