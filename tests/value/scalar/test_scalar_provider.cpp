@@ -21,6 +21,7 @@ class ExternalScalarType final : public bg::ScalarType {
     bool is_resolved() const noexcept override { return true; }
     const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
     bool supports_equality() const noexcept override { return true; }
+    bool supports_hash() const noexcept override { return true; }
 };
 
 class AlternativeRuntimeType final : public bg::ScalarRuntimeType {

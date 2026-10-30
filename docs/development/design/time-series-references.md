@@ -221,6 +221,11 @@ A TSL or TSB target switch samples corresponding items by position or field.
 Collection samples apply sampling recursively to contained collections. Each
 sampled item reports the sampling time and the validity transition between its
 pre-cycle and current views without changing either source's state.
+Each sample uses a runtime type selected by its semantic time-series type;
+previous and current source runtime types remain attached to the sample and
+interpret their respective storage. Set and dictionary key access returns the
+runtime type that describes the returned key data, which can differ from the
+sample's declared key runtime type.
 One reference notification shares a sample among subscribers with the same old
 and new references, resolved previous target state, and requested representation.
 The sample materializes change data on its first query. Inputs retain it until

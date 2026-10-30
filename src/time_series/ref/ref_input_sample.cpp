@@ -26,28 +26,29 @@ ResolvedTimeSeries ReferenceInputSampleStorage::previous() const noexcept {
 }
 
 SampledReferenceChange SampledReferenceChange::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                                       const TimeSeriesType &type,
                                                        EvaluationTime evaluation_time, allocator &memory) {
-    const auto *runtime_type = current.runtime_type != nullptr ? current.runtime_type : previous.runtime_type;
-    if (runtime_type == nullptr) {
+    if (previous.runtime_type == nullptr && current.runtime_type == nullptr) {
         return {};
     }
 
-    const auto *list_type = type_cast<TimeSeriesListType>(&runtime_type->type());
+    const auto *list_type = type_cast<TimeSeriesListType>(&type);
     if ((list_type != nullptr && list_type->item_count() != std::dynamic_extent) ||
-        type_cast<TimeSeriesBundleType>(&runtime_type->type()) != nullptr) {
-        return SampledReferenceChange{SampledFixedCollection::create(previous, current, evaluation_time, memory)};
+        type_cast<TimeSeriesBundleType>(&type) != nullptr) {
+        return SampledReferenceChange{SampledFixedCollection::create(type, previous, current, evaluation_time, memory)};
     }
 
     if (!previous.valid() && !current.valid()) {
         return {};
     }
 
-    if (type_cast<TimeSeriesSetType>(&runtime_type->type()) != nullptr) {
-        return SampledReferenceChange{SampledSet::create(previous, current, evaluation_time, memory)};
+    if (const auto *set_type = type_cast<TimeSeriesSetType>(&type); set_type != nullptr) {
+        return SampledReferenceChange{SampledSet::create(*set_type, previous, current, evaluation_time, memory)};
     }
 
-    if (type_cast<TimeSeriesDictionaryType>(&runtime_type->type()) != nullptr) {
-        return SampledReferenceChange{SampledDictionary::create(previous, current, evaluation_time, memory)};
+    if (const auto *dictionary_type = type_cast<TimeSeriesDictionaryType>(&type); dictionary_type != nullptr) {
+        return SampledReferenceChange{
+            SampledDictionary::create(*dictionary_type, previous, current, evaluation_time, memory)};
     }
 
     return {};
@@ -100,7 +101,7 @@ SampledReferenceChange ReferenceInputSampleLookup::get(Reference previous_refere
         return existing->sample;
     }
 
-    auto sample = SampledReferenceChange::create(previous, current, evaluation_time, *memory_);
+    auto sample = SampledReferenceChange::create(previous, current, runtime_type.type(), evaluation_time, *memory_);
     if (!sample) {
         return {};
     }

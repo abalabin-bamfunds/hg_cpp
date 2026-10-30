@@ -4,6 +4,8 @@
 #include <bg/allocator.hpp>
 #include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <bg/scalar/runtime_type.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
 #include <bg/type/time_series_dict_type.hpp>
 #include <bg/util/static_storage.hpp>
 #include <bg/util/scope_exit.hpp>
@@ -22,11 +24,11 @@ namespace bg::details {
 
 class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeType {
   public:
-    explicit SampledDictionaryRuntimeType(const TimeSeriesDictionaryRuntimeType &shape)
-        : TimeSeriesDictionaryRuntimeType{static_cast<const TimeSeriesDictionaryType &>(shape.type()),
-                                          shape.key_runtime_type(), shape.item_runtime_type(), 0, 1, false, false,
+    explicit SampledDictionaryRuntimeType(const TimeSeriesDictionaryType &type)
+        : TimeSeriesDictionaryRuntimeType{type, resolve_scalar_runtime_type(type.key_type(), {}),
+                                          resolve_time_series_runtime_type(type.value_type()), 0, 1, false, false,
                                           false} {}
-    static const SampledDictionaryRuntimeType &for_shape(const TimeSeriesDictionaryRuntimeType &shape);
+    static const SampledDictionaryRuntimeType &for_type(const TimeSeriesDictionaryType &type);
 
     RetainedDictionaryKey retain_key(void *, const ScalarData &, allocator &) const override;
     void release_key(void *, item_id_t, allocator &) const noexcept override;
@@ -35,6 +37,7 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
     item_id_t find_item(const void *value, const ScalarData &key) const override;
     item_id_t find_removed(const TimeSeriesState &, const void *, const ScalarData &) const override;
     const void *key(const void *value, item_id_t id) const noexcept override;
+    ScalarData key_data(const void *value, item_id_t id) const noexcept override;
     void for_each_added(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     void for_each_removed(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
     void for_each_removed_physical_id(const TimeSeriesState &, const void *, void *, ItemIdFunction) const override;
@@ -67,9 +70,9 @@ class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeTyp
 
 constexpr auto previous_item_flag = item_id_t{1} << 31;
 
-SampledDictionary::SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
+SampledDictionary::SampledDictionary(const TimeSeriesDictionaryType &type, ResolvedTimeSeries previous,
                                      ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory)
-    : runtime_type{&SampledDictionaryRuntimeType::for_shape(shape)},
+    : runtime_type{&SampledDictionaryRuntimeType::for_type(type)},
       previous{previous}, current{current}, children{&memory.memory_resource()},
       item_id_remappings{&memory.memory_resource()}, memory{memory} {
     sampled_last_updated = TimeSeriesState::from_validity_transition(
@@ -107,27 +110,32 @@ ResolvedTimeSeries SampledDictionary::key_set(Target target) const {
     return {item.last_updated, item.value, &item.runtime_type};
 }
 
-const SampledDictionaryRuntimeType &SampledDictionaryRuntimeType::for_shape(
-    const TimeSeriesDictionaryRuntimeType &shape) {
+const SampledDictionaryRuntimeType &SampledDictionaryRuntimeType::for_type(const TimeSeriesDictionaryType &type) {
     struct Entry {
-        const TimeSeriesDictionaryRuntimeType *shape;
+        const TimeSeriesDictionaryType *type;
         std::unique_ptr<SampledDictionaryRuntimeType> runtime_type;
     };
 
     static auto mutex = util::static_storage<std::mutex>{};
     static auto entries = util::static_storage<std::vector<Entry>>{};
 
-    const auto lock = std::lock_guard{mutex.get()};
     auto &cache = entries.get();
-    const auto existing = std::ranges::find(cache, &shape, &Entry::shape);
+    {
+        const auto lock = std::lock_guard{mutex.get()};
+        const auto existing = std::ranges::find(cache, &type, &Entry::type);
+        if (existing != cache.end()) {
+            return *existing->runtime_type;
+        }
+    }
+
+    auto runtime_type = std::make_unique<SampledDictionaryRuntimeType>(type);
+    const auto lock = std::lock_guard{mutex.get()};
+    const auto existing = std::ranges::find(cache, &type, &Entry::type);
     if (existing != cache.end()) {
         return *existing->runtime_type;
     }
-
-    auto runtime_type = std::make_unique<SampledDictionaryRuntimeType>(shape);
-    const auto &result = *runtime_type;
-    cache.push_back({&shape, std::move(runtime_type)});
-    return result;
+    cache.push_back({&type, std::move(runtime_type)});
+    return *cache.back().runtime_type;
 }
 
 void SampledDictionary::append_child(item_id_t current_id, item_id_t previous_id,
@@ -143,6 +151,7 @@ void SampledDictionary::append_child(item_id_t current_id, item_id_t previous_id
                                                               &current_item->runtime_type};
     auto sample_memory = memory;
     auto sample = SampledReferenceChange::create(previous_time_series, current_time_series,
+                                                 runtime_type->item_runtime_type().type(),
                                                  sampled_last_updated.time(), sample_memory);
     if (sample) {
         auto release = util::scope_exit{[&]() noexcept { sample.release(); }};
@@ -178,8 +187,9 @@ void SampledDictionary::populate_changes() const {
     const auto *previous_type = dictionary_runtime_type(previous);
     const auto *current_type = dictionary_runtime_type(current);
     auto sample_memory = memory;
-    key_set_sample = SampledSet::create(key_set(Target::previous), key_set(Target::current),
-                                        sampled_last_updated.time(), sample_memory);
+    key_set_sample = SampledSet::create(
+        static_cast<const TimeSeriesSetType &>(runtime_type->key_set_runtime_type().type()), key_set(Target::previous),
+        key_set(Target::current), sampled_last_updated.time(), sample_memory);
 
     if (current.valid()) {
         struct CurrentCallback {
@@ -190,8 +200,7 @@ void SampledDictionary::populate_changes() const {
         current_type->for_each_item_id(current.storage, &callback, [](void *value, item_id_t id) {
             auto &callback = *static_cast<CurrentCallback *>(value);
             const auto &sample = *callback.sample;
-            const auto key = ScalarData{callback.current_type->key_runtime_type(),
-                                        callback.current_type->key(sample.current.storage, id)};
+            const auto key = callback.current_type->key_data(sample.current.storage, id);
             const auto current_item = callback.current_type->item(sample.current.storage, id);
             const auto previous_id = sample.previous.valid()
                                          ? callback.previous_type->find_item(sample.previous.storage, key)
@@ -230,8 +239,7 @@ void SampledDictionary::populate_changes() const {
         previous_type->for_each_item_id(previous.storage, &callback, [](void *value, item_id_t id) {
             auto &callback = *static_cast<PreviousCallback *>(value);
             const auto &sample = *callback.sample;
-            const auto key = ScalarData{callback.previous_type->key_runtime_type(),
-                                        callback.previous_type->key(sample.previous.storage, id)};
+            const auto key = callback.previous_type->key_data(sample.previous.storage, id);
             if (sample.current.valid() && callback.current_type->find_item(sample.current.storage, key) !=
                                               util::occupancy_index::npos) {
                 return;
@@ -249,17 +257,10 @@ void SampledDictionary::populate_changes() const {
     rollback.release();
 }
 
-SampledDictionary *SampledDictionary::create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                              EvaluationTime evaluation_time, allocator &memory) {
-    const auto *runtime_type = current.runtime_type != nullptr ? current.runtime_type : previous.runtime_type;
-    if (runtime_type == nullptr || type_cast<TimeSeriesDictionaryType>(&runtime_type->type()) == nullptr) {
-        return nullptr;
-    }
-
-    const auto *previous_type = dictionary_runtime_type(previous);
-    const auto *current_type = dictionary_runtime_type(current);
-    const auto &shape = current_type != nullptr ? *current_type : *previous_type;
-    return memory.new_object<SampledDictionary>(shape, previous, current, evaluation_time, memory);
+SampledDictionary *SampledDictionary::create(const TimeSeriesDictionaryType &type, ResolvedTimeSeries previous,
+                                              ResolvedTimeSeries current, EvaluationTime evaluation_time,
+                                              allocator &memory) {
+    return memory.new_object<SampledDictionary>(type, previous, current, evaluation_time, memory);
 }
 
 TimeSeriesRuntimeType::ItemLayout SampledDictionaryRuntimeType::item_layout(item_id_t) const {
@@ -357,6 +358,14 @@ const void *SampledDictionaryRuntimeType::key(const void *value, item_id_t id) c
         return dictionary_runtime_type(sample.previous)->key(sample.previous.storage, id & ~previous_item_flag);
     }
     return dictionary_runtime_type(sample.current)->key(sample.current.storage, id);
+}
+
+ScalarData SampledDictionaryRuntimeType::key_data(const void *value, item_id_t id) const noexcept {
+    const auto &sample = *static_cast<const SampledDictionary *>(value);
+    if ((id & previous_item_flag) != 0) {
+        return dictionary_runtime_type(sample.previous)->key_data(sample.previous.storage, id & ~previous_item_flag);
+    }
+    return dictionary_runtime_type(sample.current)->key_data(sample.current.storage, id);
 }
 
 void SampledDictionaryRuntimeType::for_each_added(const TimeSeriesState &, const void *value, void *context,
@@ -490,7 +499,7 @@ bool SampledDictionaryRuntimeType::item_was_valid(const TimeSeriesState &, const
         if (current_type == nullptr || sample.current.storage == nullptr) {
             return false;
         }
-        const auto key = ScalarData{current_type->key_runtime_type(), current_type->key(sample.current.storage, id)};
+        const auto key = current_type->key_data(sample.current.storage, id);
         previous_id = previous_type->find_item(sample.previous.storage, key);
         if (previous_id == util::occupancy_index::npos) {
             return false;

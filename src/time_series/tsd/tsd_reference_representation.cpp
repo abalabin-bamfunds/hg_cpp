@@ -54,6 +54,13 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         return base.storage == nullptr ? nullptr : base_runtime_type(base).key(base.storage, id);
     }
 
+    ScalarData key_data(const void *value, item_id_t id) const noexcept override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? ScalarData{key_runtime_type(), nullptr}
+                                       : base_runtime_type(base).key_data(base.storage, id);
+    }
+
     void for_each_added(const TimeSeriesState &last_updated, const void *value, void *context,
                         ItemIdFunction function) const override {
         const auto &view = representation(value);

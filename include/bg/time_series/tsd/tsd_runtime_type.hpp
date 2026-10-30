@@ -99,6 +99,12 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return static_cast<const time_series_dict_storage *>(value)->key_storage().value.key(id, key_layout_);
     }
 
+    // The returned runtime type describes the key bytes. For sampled dictionaries, it may differ from
+    // key_runtime_type().
+    virtual ScalarData key_data(const void *value, item_id_t id) const noexcept {
+        return {key_runtime_type(), key(value, id)};
+    }
+
     virtual void for_each_added(const TimeSeriesState &last_updated, const void *value, void *context,
                                 ItemIdFunction function) const {
         const auto &storage = *static_cast<const time_series_dict_storage *>(value);

@@ -5,20 +5,28 @@
 #include <bg/nested.hpp>
 #include <bg/node.hpp>
 #include <bg/run_graph.hpp>
+#include <bg/time_series/ref/ref_input_sample.hpp>
 #include <bg/time_series/ref/ref_provider.hpp>
 #include <bg/time_series/ref/ref_storage.hpp>
 #include <bg/time_series/tsb/tsb.hpp>
 #include <bg/time_series/tsb/tsb_input.hpp>
 #include <bg/time_series/tsl/tsl.hpp>
+#include <bg/time_series/tss/tss_runtime_type.hpp>
+#include <bg/time_series/tss/tss_storage.hpp>
 #include <bg/time_series/tsd/tsd_input.hpp>
 #include <bg/time_series/tsd/tsd_output.hpp>
+#include <bg/time_series/tsd/tsd_runtime_type.hpp>
+#include <bg/time_series/tsd/tsd_storage.hpp>
+#include <bg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
+#include "../../value/scalar/test_scalar_provider.hpp"
 
 #include <array>
 #include <chrono>
+#include <cstdint>
 #include <new>
 #include <optional>
 #include <ranges>
@@ -29,6 +37,55 @@ using namespace bg;
 namespace {
 
 using namespace bg::literals;
+
+struct alignas(64) WideProviderKeyStorage {
+    int number{};
+    std::array<std::byte, 64> padding{};
+};
+
+class WideProviderKeyRuntime final : public ScalarRuntimeType {
+  public:
+    WideProviderKeyRuntime()
+        : ScalarRuntimeType{cpp_scalar_type<test_scalar_provider::value>(), sizeof(WideProviderKeyStorage),
+                            alignof(WideProviderKeyStorage), false, false, true} {}
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<WideProviderKeyStorage *>(destination));
+    }
+
+    void copy_construct(void *destination, const void *source, allocator &) const override {
+        std::construct_at(static_cast<WideProviderKeyStorage *>(destination),
+                          *static_cast<const WideProviderKeyStorage *>(source));
+    }
+
+    std::size_t hash(const void *) const override { return 0; }
+
+    void destroy(void *value, allocator &) const noexcept override {
+        std::destroy_at(static_cast<WideProviderKeyStorage *>(value));
+    }
+
+  private:
+    void do_construct_from_input(void *destination, const details::ScalarData &source, allocator &) const override {
+        std::construct_at(static_cast<WideProviderKeyStorage *>(destination),
+                          WideProviderKeyStorage{
+                              .number = details::scalar_data_value<test_scalar_provider::value>(source).get()});
+    }
+
+    void do_assign_from_input(void *destination, const details::ScalarData &source) const override {
+        static_cast<WideProviderKeyStorage *>(destination)->number =
+            details::scalar_data_value<test_scalar_provider::value>(source).get();
+    }
+
+    bool equals_same_type(const void *stored, const details::ScalarData &other) const override {
+        return static_cast<const WideProviderKeyStorage *>(stored)->number ==
+               details::scalar_data_value<test_scalar_provider::value>(other).get();
+    }
+};
+
+const ScalarRuntimeType &wide_provider_key_runtime() {
+    static const auto runtime = util::static_storage<WideProviderKeyRuntime>{};
+    return runtime.get();
+}
 
 inline constexpr auto G = guarantee_variable<"G">;
 
@@ -302,7 +359,7 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
     CHECK(actual.equals<double>({4.0, 4.0, 4.0, 4.0}));
 }
 
-TEST_CASE("a dereferenced list keeps the target runtime type when only guarantees differ",
+TEST_CASE("a dereferenced list uses the requested runtime type when guarantees differ",
           "[evaluation][reference][tsl][feature:reference][series:fixed-tsl][guarantee:ordinary]"
           "[guarantee:final][binding:reference-to-value]") {
     const auto first = node(
@@ -333,7 +390,9 @@ TEST_CASE("a dereferenced list keeps the target runtime type when only guarantee
     const auto actual = bg::run_graph(graph);
 
     CHECK(actual.equals<i64>({3}));
-    CHECK(received_type == target_type);
+    const auto &target_list_type = dynamic_cast<const TimeSeriesListType &>(*target_type);
+    CHECK(target_list_type.item_type().guarantee().value() == TimeSeriesGuarantee::final);
+    CHECK(received_type == &TSL<TS<i64>, 2>::type());
 }
 
 TEST_CASE("a materialized free TSL samples retargeted ordinary references",
@@ -1730,8 +1789,9 @@ TEST_CASE("a reference input switches from direct to adapted and back to direct 
     CHECK_FALSE(reference_item_observations[2].became_valid);
     CHECK_FALSE(reference_item_observations[2].became_invalid);
     CHECK(reference_item_observations[2].last_updated == expected_reference_item_time(2));
-    CHECK(observations[0].runtime_type != observations[1].runtime_type);
-    CHECK(observations[1].runtime_type != observations[2].runtime_type);
+    CHECK(observations[0].runtime_type == observations[1].runtime_type);
+    CHECK(observations[1].runtime_type == observations[2].runtime_type);
+    CHECK(&observations[1].runtime_type->type() == &TSL<TS<i64>, 1>::type());
     for (auto index = std::size_t{}; index < observations.size(); ++index) {
         const auto expected_time = start_time + std::chrono::microseconds{index};
         const auto observed_time = observations[index].last_updated.time_since_epoch().count();
@@ -2322,13 +2382,6 @@ struct pair_reference_selector_definition {
     void evaluate() const { *condition == 0 ? output.copy(owned) : output.copy(free); }
 };
 
-struct pair_sum_definition {
-    In<TSL<TS<i64>, 2>> input;
-    Out<TS<i64>> output;
-
-    void evaluate() const { output.set(*input[0] + *input[1]); }
-};
-
 struct nested_reference_list_selector {
     In<TS<i64>> condition;
     In<REF<TS<i64>>, passive, optional> left;
@@ -2383,7 +2436,11 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
 
     const auto select = node<pair_reference_selector_definition>();
 
-    const auto sum = node<pair_sum_definition>();
+    auto runtime_types = std::vector<const TimeSeriesRuntimeType *>{};
+    const auto sum = node([&](In<TSL<TS<i64>, 2>> input, Out<TS<i64>> output) {
+        runtime_types.push_back(&input.runtime_type());
+        output.set(*input[0] + *input[1]);
+    });
 
     const auto graph = [&](wp<TS<i64>> condition, wp<TS<i64>> first_owned,
                            wp<TS<i64>> second_owned, wp<TS<i64>> first_free_item,
@@ -2402,6 +2459,133 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
         bg::run_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
 
     CHECK(result.equals({3, 60, 11}));
+    REQUIRE(runtime_types.size() == 3);
+    CHECK(runtime_types[0] == runtime_types[1]);
+    CHECK(runtime_types[1] == runtime_types[2]);
+}
+
+TEST_CASE("sampled set changes preserve keys from each source runtime layout",
+          "[evaluation][reference][sampling][tss][feature:reference][scalar:integer]") {
+    using Key = test_scalar_provider::value;
+    using KeyStorage = test_scalar_provider::storage;
+    using WideStorage = WideProviderKeyStorage;
+
+    const auto &semantic_type = static_cast<const TimeSeriesSetType &>(TSS<Key>::type());
+    const auto &previous_key_runtime = cpp_scalar_runtime_type<Key>();
+    const auto &current_key_runtime = wide_provider_key_runtime();
+    const auto &previous_runtime = static_cast<const details::TimeSeriesSetRuntimeType &>(
+        details::time_series_set_runtime_type(semantic_type, previous_key_runtime));
+    const auto &current_runtime = static_cast<const details::TimeSeriesSetRuntimeType &>(
+        details::time_series_set_runtime_type(semantic_type, current_key_runtime));
+    const auto previous_layout =
+        util::runtime_item_layout{previous_key_runtime.size(), previous_key_runtime.alignment()};
+    const auto current_layout =
+        util::runtime_item_layout{current_key_runtime.size(), current_key_runtime.alignment()};
+
+    auto memory = allocator{};
+    auto previous_storage = details::time_series_set_storage{};
+    auto current_storage = details::time_series_set_storage{};
+    const auto previous_one = KeyStorage{1};
+    const auto previous_two = KeyStorage{2};
+    const auto current_two = WideStorage{.number = 2};
+    const auto current_three = WideStorage{.number = 3};
+    const auto insert_previous = [&](const KeyStorage &key) {
+        const auto data = details::ScalarData{previous_key_runtime, &key};
+        (void)previous_storage.insert(data, previous_key_runtime, previous_layout, memory,
+                                      [](std::uint32_t) noexcept {}, [](std::uint32_t) noexcept {});
+    };
+    const auto insert_current = [&](const WideStorage &key) {
+        const auto data = details::ScalarData{current_key_runtime, &key};
+        (void)current_storage.insert(data, current_key_runtime, current_layout, memory,
+                                     [](std::uint32_t) noexcept {}, [](std::uint32_t) noexcept {});
+    };
+    insert_previous(previous_one);
+    insert_previous(previous_two);
+    insert_current(current_two);
+    insert_current(current_three);
+
+    const auto previous_time = MIN_DT + std::chrono::microseconds{1};
+    const auto current_time = previous_time + std::chrono::microseconds{1};
+    auto sample_memory = allocator{};
+    auto sample = details::SampledReferenceChange{};
+    const auto cleanup = util::scope_exit{[&]() noexcept {
+        if (sample) {
+            sample.release();
+        }
+        previous_storage.release(previous_key_runtime, previous_layout, memory, [](std::uint32_t) noexcept {});
+        current_storage.release(current_key_runtime, current_layout, memory, [](std::uint32_t) noexcept {});
+    }};
+    sample = details::SampledReferenceChange::create(
+        {TimeSeriesState{previous_time}, &previous_storage, &previous_runtime},
+        {TimeSeriesState{current_time}, &current_storage, &current_runtime}, TSS<Key>::type(), current_time,
+        sample_memory);
+    REQUIRE(sample);
+    const auto input = sample.input();
+    const auto &sampled_runtime = static_cast<const details::TimeSeriesSetRuntimeType &>(input.runtime_type);
+    CHECK(&sampled_runtime.key_runtime_type() == &previous_key_runtime);
+    CHECK(&sampled_runtime.key_runtime_type() != &current_key_runtime);
+
+    const auto removed_id = sampled_runtime.set_next_item_id(input.last_updated, input.value,
+                                                              details::TimeSeriesSetRuntimeType::Range::removed, 0);
+    REQUIRE(removed_id != util::occupancy_index::npos);
+    const auto removed_key = sampled_runtime.set_key_data(input.value, removed_id);
+    CHECK(&removed_key.runtime_type() == &previous_key_runtime);
+    CHECK(details::scalar_data_value<Key>(removed_key).get() == 1);
+    CHECK(sampled_runtime.set_next_item_id(input.last_updated, input.value,
+                                           details::TimeSeriesSetRuntimeType::Range::removed, removed_id + 1) ==
+          util::occupancy_index::npos);
+
+    const auto added_id = sampled_runtime.set_next_item_id(input.last_updated, input.value,
+                                                            details::TimeSeriesSetRuntimeType::Range::added, 0);
+    REQUIRE(added_id != util::occupancy_index::npos);
+    const auto added_key = sampled_runtime.set_key_data(input.value, added_id);
+    CHECK(&added_key.runtime_type() == &current_key_runtime);
+    CHECK(details::scalar_data_value<Key>(added_key).get() == 3);
+    CHECK(sampled_runtime.set_next_item_id(input.last_updated, input.value,
+                                           details::TimeSeriesSetRuntimeType::Range::added, added_id + 1) ==
+          util::occupancy_index::npos);
+}
+
+TEST_CASE("sampled set and dictionary descriptors stay stable through repeated sampling",
+          "[evaluation][reference][sampling][tss][tsd][feature:reference]") {
+    auto memory = allocator{};
+    const auto verify_stable_descriptor = [&](const TimeSeriesRuntimeType &runtime_type, const void *storage) {
+        const auto initial_time = MIN_DT + std::chrono::microseconds{1};
+        const auto initial = details::ResolvedTimeSeries{TimeSeriesState{initial_time}, storage, &runtime_type};
+        auto previous = initial;
+        auto samples = std::vector<details::SampledReferenceChange>{};
+        const auto release_samples = util::scope_exit{[&]() noexcept {
+            for (const auto sample : std::views::reverse(samples)) {
+                sample.release();
+            }
+        }};
+        auto *descriptor = static_cast<const TimeSeriesRuntimeType *>(nullptr);
+
+        for (auto index = 0; index < 16; ++index) {
+            const auto evaluation_time = initial_time + std::chrono::microseconds{index + 1};
+            const auto sample = details::SampledReferenceChange::create(previous, initial, runtime_type.type(),
+                                                                         evaluation_time, memory);
+            if (!sample) {
+                CHECK(sample);
+                return;
+            }
+            samples.push_back(sample);
+            const auto input = sample.input();
+            if (descriptor == nullptr) {
+                descriptor = &input.runtime_type;
+            } else {
+                CHECK(&input.runtime_type == descriptor);
+            }
+            previous = {input.last_updated, input.value, &input.runtime_type};
+        }
+        CHECK(samples.size() == 16);
+    };
+
+    auto set_storage = details::time_series_set_storage{};
+    verify_stable_descriptor(cpp_time_series_runtime_type<TSS<i64>>(), &set_storage);
+
+    auto dictionary_storage = details::time_series_dict_storage{};
+    verify_stable_descriptor(cpp_time_series_runtime_type<TSD<i64, TS<i64>>>(), &dictionary_storage);
 }
 
 TEST_CASE("a reference stored in a fixed collection item updates its consumer",
@@ -2455,9 +2639,11 @@ TEST_CASE("nested fixed collection adaptation propagates a reference item retarg
     const auto condition = node<sampled_condition_source>();
     const auto select = node<nested_reference_list_selector>();
     auto observations = std::vector<ReferenceObservation>{};
+    auto runtime_types = std::vector<std::pair<const TimeSeriesRuntimeType *, const TimeSeriesRuntimeType *>>{};
     auto evaluations = 0;
     const auto observe = node([&](In<TSL<TSL<TS<i64>, 1>, 1>> input, Out<TS<i64>> output) {
         ++evaluations;
+        runtime_types.emplace_back(&input.runtime_type(), &input[0].runtime_type());
         const auto item = input[0][0];
         observations.push_back({item.valid(), item.modified(), item.became_valid(), item.became_invalid(),
                                 item.valid() ? *item : i64{}, item.last_updated()});
@@ -2483,6 +2669,8 @@ TEST_CASE("nested fixed collection adaptation propagates a reference item retarg
     CHECK(observations[1].modified);
     CHECK(observations[1].value == 20);
     CHECK(observations[1].last_updated == start_time + std::chrono::microseconds{1});
+    REQUIRE(runtime_types.size() == 2);
+    CHECK(runtime_types[0] == runtime_types[1]);
 }
 
 TEST_CASE("nested fixed collection adaptation propagates reference item validity",

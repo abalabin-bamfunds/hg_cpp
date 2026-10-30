@@ -24,12 +24,13 @@ struct SampledDictionary {
         item_id_t new_id;
     };
 
-    SampledDictionary(const TimeSeriesDictionaryRuntimeType &shape, ResolvedTimeSeries previous,
+    SampledDictionary(const TimeSeriesDictionaryType &type, ResolvedTimeSeries previous,
                       ResolvedTimeSeries current, EvaluationTime evaluation_time, allocator &memory);
     ~SampledDictionary();
 
-    static SampledDictionary *create(ResolvedTimeSeries previous, ResolvedTimeSeries current,
-                                      EvaluationTime evaluation_time, allocator &memory);
+    static SampledDictionary *create(const TimeSeriesDictionaryType &type, ResolvedTimeSeries previous,
+                                     ResolvedTimeSeries current, EvaluationTime evaluation_time,
+                                     allocator &memory);
     ResolvedTimeSeries key_set(Target target) const;
     void retain() noexcept { ++reference_count; }
     void release() noexcept;
