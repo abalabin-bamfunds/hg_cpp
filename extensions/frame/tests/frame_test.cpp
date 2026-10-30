@@ -4234,7 +4234,7 @@ void test_tsf_literal_updates() {
                         {literal::REMOVE({{"id", i64{1}}}), {{"id", i64{1}}, {"price", 12.0}}},
                         {literal::REMOVE({{"id", i64{99}}})}, literal::SKIP, literal::INVALID,
                         literal::TimeSeriesLiteral{}}),
-        bg::input(cpp_time_series_runtime_type<TS<i64>>(),
+        bg::input(TS<i64>::type(),
                        {i64{0}, i64{1}, i64{2}, i64{3}, i64{4}, i64{5}, i64{6}, i64{7}, i64{8}, i64{9},
                         i64{10}}));
 
@@ -4301,10 +4301,10 @@ void test_tsf_literal_uses_actual_derived_schema() {
     const auto &derived_runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
     const auto result = bg::run_graph(
         graph,
-        bg::input(derived_runtime,
+        bg::input(derived_runtime.type(),
                        {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}},
                         {{{"id", i64{5}}, {"price", 11.0}}}}),
-        bg::input(cpp_time_series_runtime_type<TS<i64>>(), {i64{0}, i64{1}, i64{2}}));
+        bg::input(TS<i64>::type(), {i64{0}, i64{1}, i64{2}}));
 
     require(result.size() == 3 && observed_prices == std::vector<std::optional<double>>{10.0, 11.0} &&
                 observed_bids == std::vector<std::optional<double>>{20.0, 20.0},
@@ -4327,7 +4327,7 @@ void test_tsf_literal_unkeyed_append_and_typed_output() {
     const auto graph = [&](wp<TSF<Quotes>> input) { return observe(input); };
     const auto &runtime = frame_time_series_runtime_type<Quotes>(TSF<Quotes>::type());
     const auto result = bg::run_graph(
-        graph, bg::input(runtime, {{{{"bid", 10.5}}}, {{{"ask", 12.5}}}}));
+        graph, bg::input(runtime.type(), {{{{"bid", 10.5}}}, {{{"ask", 12.5}}}}));
     require(result.size() == 2 && sizes == std::vector<std::size_t>{1, 2} &&
                 row_ids == std::vector<std::vector<row_id_t>>{{0}, {0, 1}},
             "unkeyed TSF literal did not append rows with consecutive row ids");
@@ -4374,7 +4374,7 @@ void test_tsf_literal_anonymous_composite_key() {
     const auto graph = [&](wp<TSF<SCHEMA>> input) { return observe(input); };
     const auto result = bg::run_graph(
         graph,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"sequence", i64{2}}, {"value", 10.0}}},
                         {{{"id", i64{1}}, {"sequence", i64{2}}, {"value", 11.0}}},
@@ -4401,7 +4401,7 @@ void test_tsf_literal_rejections() {
     const auto rejects = [&](const TimeSeriesRuntimeType &runtime,
                              std::initializer_list<literal::TimeSeriesLiteral> ticks) {
         try {
-            static_cast<void>(bg::run_graph(graph, bg::input(runtime, ticks)));
+            static_cast<void>(bg::run_graph(graph, bg::input(runtime.type(), ticks)));
         } catch (const std::invalid_argument &) {
             return true;
         }
@@ -4424,7 +4424,7 @@ void test_tsf_literal_rejections() {
     try {
         static_cast<void>(bg::run_graph(
             unkeyed_graph,
-            bg::input(unkeyed_runtime, {{literal::REMOVE({{"id", i64{1}}})}})));
+            bg::input(unkeyed_runtime.type(), {{literal::REMOVE({{"id", i64{1}}})}})));
     } catch (const std::invalid_argument &) {
         unkeyed_remove_rejected = true;
     }
@@ -4439,7 +4439,7 @@ void test_keyed_tsf_delta_capture() {
     const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}},
                          {{"id", i64{2}}, {"sequence", i64{1}}, {"price", 20.0}, {"value", i64{5}}}},
@@ -4499,7 +4499,7 @@ void test_text_keyed_tsf_delta_capture() {
     const auto &runtime = frame_time_series_runtime_type<TextKeyedRows>(TSF<TextKeyedRows>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}}, {"description", embedded_value}}},
                         {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}},
@@ -4565,7 +4565,7 @@ void test_frame_view_tick_capture() {
     };
     const auto keyed = bg::run_graph(
         keyed_graph,
-        bg::input(keyed_runtime,
+        bg::input(keyed_runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{7}}, {"price", 10.0}}},
                         {{{"id", i64{7}}, {"price", 11.0}}},
@@ -5339,7 +5339,7 @@ void test_tsf_capture_reference_base_output_with_derived_runtime() {
     const auto graph = [&](wp<TSF<KeyedQuotesBase>> input) { return forward(input); };
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
     const auto result = bg::run_graph(
-        graph, bg::input(runtime, {literal::TimeSeriesLiteral{},
+        graph, bg::input(runtime.type(), {literal::TimeSeriesLiteral{},
                                         {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}));
     require(result.equals({{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
             "reference-to-value capture lost Derived TSF fields under a Base reference declaration");
@@ -5353,7 +5353,7 @@ void test_keyed_tsf_capture_uses_actual_derived_schema() {
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}}}));
     require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}}}),
@@ -5369,7 +5369,7 @@ void test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output() 
         TSF<KeyedQuotesDerivedFromUnkeyed>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{5}}, {"price", 10.0}, {"bid", 9.0}}}}));
     require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 9.0}}}}),
@@ -5389,7 +5389,7 @@ void test_keyed_tsf_capture_uses_runtime_schema() {
     const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
     const auto identity = [](wp<TSF<SCHEMA>> input) { return input; };
     const auto result = bg::run_graph(
-        identity, bg::input(runtime, {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}}}}));
+        identity, bg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}}}}));
     require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}}}}),
             "keyed TSF capture did not parse its runtime-defined schema");
 }
@@ -5402,7 +5402,7 @@ void test_keyed_tsf_capture_supports_null_composite_keys() {
     const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", NULL_VALUE}, {"sequence", i64{4}}, {"price", 20.0}, {"value", i64{8}}}},
                         {literal::REMOVE({{"id", NULL_VALUE}, {"sequence", i64{4}}})}}));
@@ -5420,7 +5420,7 @@ void test_keyed_tsf_capture_invalidates_and_revalidates_without_old_deltas() {
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotes>(TSF<KeyedQuotes>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {{{{"id", i64{1}}, {"price", 10.0}}}, literal::INVALID, literal::TimeSeriesLiteral{}}));
     require(result.equals({{{{"id", i64{1}}, {"price", 10.0}}}, literal::INVALID, literal::TimeSeriesLiteral{}}),
             "keyed TSF capture leaked old row changes into an empty revalidated frame");
@@ -5434,7 +5434,7 @@ void test_keyed_tsf_capture_rejects_missing_actual_patch_fields() {
     const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
     const auto result = bg::run_graph(
         identity,
-        bg::input(runtime,
+        bg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
                         {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}, {"value", i64{5}}}}}));
@@ -6289,9 +6289,9 @@ void test_keyed_tsf_projection_rejects_invalid_source_before_invalidation() {
         TSF<OtherKeyedQuotesDerivedFromUnkeyed>::type());
     const auto result = bg::run_graph(
         graph,
-        bg::input(matching_runtime,
+        bg::input(matching_runtime.type(),
                        {{{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}, literal::SKIP}),
-        bg::input(mismatched_runtime, {literal::INVALID, literal::INVALID}),
+        bg::input(mismatched_runtime.type(), {literal::INVALID, literal::INVALID}),
         bg::input<TS<i64>>({0, 1}));
 
     require(invalid_source_rejected && observations.size() == 2 && observations[0].valid &&
@@ -7530,7 +7530,7 @@ void test_runtime_schema_filter_uses_nullable_boolean_field() {
     const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
     const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
     const auto result = bg::run_graph(
-        graph, bg::input(runtime, {{{{"keep", true}}, {{"keep", NULL_VALUE}}, {{"keep", false}},
+        graph, bg::input(runtime.type(), {{{{"keep", true}}, {{"keep", NULL_VALUE}}, {{"keep", false}},
                                          {{"keep", true}}}}));
 
     require(result.equals<i64>({2}) && selected_rows == std::vector<row_id_t>{0, 3},

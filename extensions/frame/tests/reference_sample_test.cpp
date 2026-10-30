@@ -117,8 +117,8 @@ TEST_CASE("TSF reference switch samples actual derived fields and shared column 
     const auto &runtime = frame_time_series_runtime_type<SampleFrameDerived>(TSF<SampleFrameDerived>::type());
     static_cast<void>(run_graph(
         graph, std::array{true, true, true, true, true}, std::array{false, false, true, false, false},
-        bg::input(runtime, {literal::TimeSeriesLiteral{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
-        bg::input(runtime, {literal::TimeSeriesLiteral{}, {{{"id", i64{8}}, {"price", 11.0}, {"bid", 21.0}}}}),
+        bg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
+        bg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{8}}, {"price", 11.0}, {"bid", 21.0}}}}),
         std::array<i64, 5>{0, 1, 2, 3, 4}));
 
     REQUIRE(observations.size() == 5);
@@ -336,8 +336,8 @@ TEST_CASE("anonymous TSF reference samples retain schema through copy",
         return observe(selected, copy(selected), cycle);
     };
 
-    const auto first = bg::input(runtime, {{{{"value", 10.5}, {"count", i64{7}}}}, literal::SKIP});
-    const auto second = bg::input(runtime, {{{{"value", 20.5}, {"count", i64{8}}}}, literal::SKIP});
+    const auto first = bg::input(runtime.type(), {{{{"value", 10.5}, {"count", i64{7}}}}, literal::SKIP});
+    const auto second = bg::input(runtime.type(), {{{{"value", 20.5}, {"count", i64{8}}}}, literal::SKIP});
     static_cast<void>(run_graph(graph, std::array{false, true}, first, second, std::array<i64, 2>{0, 1}));
 
     REQUIRE(observations.size() == 2);

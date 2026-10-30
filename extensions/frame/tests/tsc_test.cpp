@@ -434,14 +434,14 @@ void test_tsc_literal_inputs() {
         output.set(*tick);
     });
     const auto double_graph = [&](wp<TSC<double>> input, wp<TS<i64>> tick) { return observe_double(input, tick); };
-    const auto &double_runtime = column_time_series_runtime_type<double>(TSC<double>::type());
+    const auto &double_series_type = TSC<double>::type();
     const auto explicit_result = bg::run_graph(
-        double_graph, bg::input(double_runtime, {{1.25, NULL_VALUE}, {2.5}}),
+        double_graph, bg::input(double_series_type, {{1.25, NULL_VALUE}, {2.5}}),
         bg::input<TS<i64>>({0, 1}));
     require(explicit_result.equals({0, 1}) &&
                 explicit_values == std::vector<std::vector<std::optional<double>>>{{1.25, std::nullopt},
                                                                                    {1.25, std::nullopt, 2.5}},
-            "explicit TSC runtime did not apply double and null literals");
+            "explicit TSC semantic type did not apply double and null literals");
 }
 
 void test_tsc_literal_output_apply() {

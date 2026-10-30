@@ -510,7 +510,7 @@ TEST_CASE("TSF copy_tick copies runtime-schema inheritance into a declared Base"
     });
     const auto graph = [&](wp<TSF<CopyBaseFrame>> input) { return observe(copy(input)); };
     const auto result = run_graph(
-        graph, bg::input(runtime, {literal::TimeSeriesLiteral{},
+        graph, bg::input(runtime.type(), {literal::TimeSeriesLiteral{},
                                    {{{"id", i64{7}}, {"value", i64{70}}, {"extra", i64{700}}}}}));
 
     CHECK(result.equals<i64>({0, 1}));

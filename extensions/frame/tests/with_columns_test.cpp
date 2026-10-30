@@ -525,7 +525,7 @@ TEST_CASE("with_columns accepts span assignments with an anonymous source schema
 
     const auto result = run_graph(
         graph,
-        input(runtime, {literal::SKIP, {{{"price", 10.0}}}, {{{"price", 20.0}}}}),
+        input(runtime.type(), {literal::SKIP, {{{"price", 10.0}}}, {{{"price", 20.0}}}}),
         input<TS<i64>>({0, 1, 2}));
 
     REQUIRE(result.equals<i64>({0, 1, 2}));
@@ -692,7 +692,7 @@ TEST_CASE("with_columns adds named assignments to an anonymous source schema",
 
     const auto result = run_graph(
         graph,
-        input(runtime, {literal::SKIP, {{{"base", i64{5}}}}, {{{"base", i64{7}}}}, literal::SKIP}),
+        input(runtime.type(), {literal::SKIP, {{{"base", i64{5}}}}, {{{"base", i64{7}}}}, literal::SKIP}),
         input<TS<double>>({2.5, literal::SKIP, literal::SKIP, 3.5}), input<TS<i64>>({0, 1, 2, 3}));
 
     REQUIRE(result.equals<i64>({0, 1, 2, 3}));

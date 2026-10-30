@@ -293,7 +293,7 @@ TEST_CASE("generic TSF view borrows text and retains keyed fields", "[feature:fr
     };
     const auto &runtime = frame_time_series_runtime_type<KeyedTextQuotes>(TSF<KeyedTextQuotes>::type());
     const auto result = run_graph(
-        graph, input(runtime, {literal::TimeSeriesLiteral{},
+        graph, input(runtime.type(), {literal::TimeSeriesLiteral{},
                                {{{"id", std::string_view{"row-1"}}, {"venue", symbol{"XNYS"}},
                                  {"description", std::string_view{"borrowed"}},
                                  {"text", std::string_view{"replaced"}}}}}));
