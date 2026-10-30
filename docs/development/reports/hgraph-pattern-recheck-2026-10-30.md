@@ -26,7 +26,7 @@ composition or provide validity observations.
 
 | Upstream pattern | BG case | Current result |
 | --- | --- | --- |
-| 0.5 `test_tsl_ref_flipping` | `a reference can select among free fixed lists and become invalid` | Pass. The rebuilt-list reselection case remains a separate failure on the previously recorded baseline. |
+| 0.5 `test_tsl_ref_flipping` | `a reference can select among free fixed lists and become invalid` | Pass; BG asserts explicit invalidation where upstream uses `None`. |
 | 0.5 `test_reduce_map` | `reduce maps and combines nested dictionaries` | Pass. |
 | 0.8 `test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | `reduce maps a projected bundle of nested dictionaries` | Pass. |
 | 0.8 `test_map_preserves_typed_keyed_bundle_reference_and_materialization` | `map preserves keyed bundle references and materializes a distinct schema` | Pass. |
