@@ -1,0 +1,64 @@
+sample case=no_poll index=0 ns_per_cycle=0.57664 checksum=13000260755477885912
+sample case=no_poll index=1 ns_per_cycle=0.555619 checksum=13000260755477885912
+sample case=no_poll index=2 ns_per_cycle=0.555598 checksum=13000260755477885912
+sample case=no_poll index=3 ns_per_cycle=0.555599 checksum=13000260755477885912
+sample case=no_poll index=4 ns_per_cycle=0.556379 checksum=13000260755477885912
+sample case=no_poll index=5 ns_per_cycle=0.555598 checksum=13000260755477885912
+sample case=no_poll index=6 ns_per_cycle=0.57279 checksum=13000260755477885912
+case=no_poll samples=7 median_ns_per_cycle=0.555619 min_ns_per_cycle=0.555598 max_ns_per_cycle=0.57664 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=0 ns_per_cycle=26.05 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=1 ns_per_cycle=26.0193 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=2 ns_per_cycle=26.0697 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=3 ns_per_cycle=25.9546 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=4 ns_per_cycle=25.9988 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=5 ns_per_cycle=26.2559 checksum=13000260755477885912
+sample case=steady_clock_each_cycle index=6 ns_per_cycle=25.9505 checksum=13000260755477885912
+case=steady_clock_each_cycle samples=7 median_ns_per_cycle=26.0193 min_ns_per_cycle=25.9505 max_ns_per_cycle=26.2559 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=0 ns_per_cycle=26.0222 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=1 ns_per_cycle=26.0071 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=2 ns_per_cycle=26.0958 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=3 ns_per_cycle=25.9501 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=4 ns_per_cycle=26.068 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=5 ns_per_cycle=25.9724 checksum=13000260755477885912
+sample case=periodic_runner_each_cycle index=6 ns_per_cycle=26.0096 checksum=13000260755477885912
+case=periodic_runner_each_cycle samples=7 median_ns_per_cycle=26.0096 min_ns_per_cycle=25.9501 max_ns_per_cycle=26.0958 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=0 ns_per_cycle=3.56104 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=1 ns_per_cycle=3.40534 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=2 ns_per_cycle=3.41901 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=3 ns_per_cycle=3.43249 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=4 ns_per_cycle=3.41289 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=5 ns_per_cycle=3.42135 checksum=13000260755477885912
+sample case=steady_clock_stride_8 index=6 ns_per_cycle=3.42777 checksum=13000260755477885912
+case=steady_clock_stride_8 samples=7 median_ns_per_cycle=3.42135 min_ns_per_cycle=3.40534 max_ns_per_cycle=3.56104 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=0 ns_per_cycle=1.10258 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=1 ns_per_cycle=1.12174 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=2 ns_per_cycle=1.13675 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=3 ns_per_cycle=1.1033 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=4 ns_per_cycle=1.10252 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=5 ns_per_cycle=1.11651 checksum=13000260755477885912
+sample case=steady_clock_stride_32 index=6 ns_per_cycle=1.14813 checksum=13000260755477885912
+case=steady_clock_stride_32 samples=7 median_ns_per_cycle=1.11651 min_ns_per_cycle=1.10252 max_ns_per_cycle=1.14813 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=0 ns_per_cycle=0.834223 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=1 ns_per_cycle=0.852564 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=2 ns_per_cycle=0.825522 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=3 ns_per_cycle=0.842673 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=4 ns_per_cycle=0.833393 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=5 ns_per_cycle=0.850774 checksum=13000260755477885912
+sample case=steady_clock_stride_64 index=6 ns_per_cycle=0.843754 checksum=13000260755477885912
+case=steady_clock_stride_64 samples=7 median_ns_per_cycle=0.842673 min_ns_per_cycle=0.825522 max_ns_per_cycle=0.852564 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=0 ns_per_cycle=0.569739 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=1 ns_per_cycle=0.555709 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=2 ns_per_cycle=0.573019 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=3 ns_per_cycle=0.556439 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=4 ns_per_cycle=0.555659 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=5 ns_per_cycle=0.555658 checksum=13000260755477885912
+sample case=adaptive_500us_poll index=6 ns_per_cycle=0.57214 checksum=13000260755477885912
+case=adaptive_500us_poll samples=7 median_ns_per_cycle=0.556439 min_ns_per_cycle=0.555658 max_ns_per_cycle=0.573019 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=0 ns_per_cycle=5.58291 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=1 ns_per_cycle=5.7796 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=2 ns_per_cycle=5.5741 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=3 ns_per_cycle=5.60615 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=4 ns_per_cycle=5.94057 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=5 ns_per_cycle=5.88766 checksum=13000260755477885912
+sample case=clock_monotonic_coarse_each_cycle index=6 ns_per_cycle=5.59665 checksum=13000260755477885912
+case=clock_monotonic_coarse_each_cycle samples=7 median_ns_per_cycle=5.60615 min_ns_per_cycle=5.5741 max_ns_per_cycle=5.94057 checksum=13000260755477885912

@@ -1,0 +1,115 @@
+benchmark,workload,layout_or_method,metric,before_median_ms,before_min_process_median_ms,before_max_process_median_ms,after_median_ms,after_min_process_median_ms,after_max_process_median_ms,speedup
+expression,payload-only update,clustered holes,source_mutation_median_ms,0.056513,0.056513,0.056563,0.056743,0.055953,0.114975,0.9959466365895353
+expression,payload-only update,clustered holes,steady_cycle_median_ms,0.075614,0.075613,0.075664,0.075254,0.074463,0.153338,1.0047837988678343
+expression,payload-only update,scattered holes,source_mutation_median_ms,0.058043,0.057993,0.058063,0.056333,0.056313,0.056833,1.0303552092024213
+expression,payload-only update,scattered holes,steady_cycle_median_ms,0.077644,0.077534,0.077735,0.075123,0.075084,0.075874,1.0335582977250644
+expression,predicate update preserving membership,clustered holes,source_mutation_median_ms,0.058833,0.058723,0.061763,0.056143,0.056083,0.056333,1.0479133640881322
+expression,predicate update preserving membership,clustered holes,steady_cycle_median_ms,0.142787,0.142558,0.146098,0.136097,0.136067,0.136757,1.049156116593312
+expression,predicate update preserving membership,scattered holes,source_mutation_median_ms,0.056843,0.056723,0.060163,0.056273,0.056253,0.056283,1.0101291916194268
+expression,predicate update preserving membership,scattered holes,steady_cycle_median_ms,0.153747,0.153328,0.157438,0.148558,0.148368,0.148568,1.0349291185934113
+expression,predicate update changing membership,clustered holes,source_mutation_median_ms,0.057333,0.056853,0.060433,0.056763,0.056513,0.059433,1.0100417525500767
+expression,predicate update changing membership,clustered holes,steady_cycle_median_ms,0.968821,0.96861,0.978081,0.479645,0.476975,0.483015,2.0198709462206423
+expression,predicate update changing membership,scattered holes,source_mutation_median_ms,0.058293,0.056923,0.060953,0.056723,0.056693,0.057223,1.0276783668000633
+expression,predicate update changing membership,scattered holes,steady_cycle_median_ms,0.996412,0.988682,0.999642,0.595941,0.589161,0.596051,1.6719977313190397
+expression,threshold update preserving membership,clustered holes,source_mutation_median_ms,3e-05,2e-05,3e-05,2.9e-05,2e-05,3e-05,1.0344827586206897
+expression,threshold update preserving membership,clustered holes,steady_cycle_median_ms,5.330437,5.290985,5.333006,0.97228,0.96856,0.986492,5.48240938824207
+expression,threshold update preserving membership,scattered holes,source_mutation_median_ms,2.9e-05,2.9e-05,3e-05,2.9e-05,2e-05,3e-05,1.0
+expression,threshold update preserving membership,scattered holes,steady_cycle_median_ms,6.3671,6.299266,6.371651,2.143131,2.13034,2.146511,2.9709336480131174
+expression,threshold update changing membership,clustered holes,source_mutation_median_ms,3e-05,2.9e-05,3e-05,3e-05,2e-05,3e-05,1.0
+expression,threshold update changing membership,clustered holes,steady_cycle_median_ms,5.637072,5.555988,5.669034,1.786853,1.698808,1.902338,3.1547485999128075
+expression,threshold update changing membership,scattered holes,source_mutation_median_ms,2e-05,2e-05,3e-05,3e-05,3e-05,3e-05,0.6666666666666667
+expression,threshold update changing membership,scattered holes,steady_cycle_median_ms,6.743149,6.618063,6.756111,3.137533,2.88206,3.149663,2.149188231645691
+expression,row add/remove,clustered holes,source_mutation_median_ms,0.383739,0.38287,0.38453,0.37953,0.376269,0.38338,1.0110900324085053
+expression,row add/remove,clustered holes,steady_cycle_median_ms,1.325609,1.311088,1.329279,0.846154,0.841654,0.847313,1.5666285333402667
+expression,row add/remove,scattered holes,source_mutation_median_ms,0.443673,0.438943,0.447193,0.430633,0.429732,0.431742,1.0302810049392406
+expression,row add/remove,scattered holes,steady_cycle_median_ms,1.486406,1.484027,1.490367,1.081946,1.080116,1.091457,1.3738264201725408
+arrow,"50% clustered selection, clustered deletion",native batch sum,source_mutation_median_ms,0.018151,0.017671,0.018161,0.016971,0.016871,0.017031,1.069530375346179
+arrow,"50% clustered selection, clustered deletion",native batch sum,graph_cycle_median_ms,1.33177,1.30735,1.3941,0.481695,0.481224,0.482265,2.764757782414183
+arrow,"50% clustered selection, clustered deletion",native batch sum,consumer_sum_median_ms,0.412632,0.412461,0.412672,0.097555,0.097474,0.097735,4.229737071395623
+arrow,"50% clustered selection, clustered deletion",native batch sum,plain_arrow_sum_prebuilt_array_median_ms,0.00664,0.00648,0.00679,0.006591,0.00653,0.00674,1.0074343802154453
+arrow,"50% clustered selection, clustered deletion",native batch sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.021681,0.021441,0.024301,0.022671,0.021261,0.022972,0.9563318777292575
+arrow,"50% clustered selection, clustered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.017932,0.017721,0.017991,0.017161,0.017161,0.017211,1.0449274517801994
+arrow,"50% clustered selection, clustered deletion",borrowed Arrow + sum,graph_cycle_median_ms,1.41163,1.40913,1.41249,0.56004,0.558589,0.562309,2.5205878151560603
+arrow,"50% clustered selection, clustered deletion",borrowed Arrow + sum,consumer_sum_median_ms,0.517827,0.515866,0.518987,0.172149,0.172139,0.173159,3.008016311451127
+arrow,"50% clustered selection, clustered deletion",borrowed Arrow + sum,plain_arrow_sum_prebuilt_array_median_ms,0.00684,0.00645,0.007001,0.006681,0.006571,0.008431,1.0237988325101033
+arrow,"50% clustered selection, clustered deletion",borrowed Arrow + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.021881,0.021641,0.026112,0.021651,0.021201,0.026631,1.010623065909196
+arrow,"50% clustered selection, clustered deletion",dense gather + sum,source_mutation_median_ms,0.018091,0.017921,0.018091,0.016831,0.016731,0.016851,1.0748618620402828
+arrow,"50% clustered selection, clustered deletion",dense gather + sum,graph_cycle_median_ms,1.53936,1.53907,1.54043,0.745999,0.744849,0.748989,2.063488020761422
+arrow,"50% clustered selection, clustered deletion",dense gather + sum,consumer_sum_median_ms,0.647754,0.646054,0.651864,0.357799,0.353619,0.365069,1.810385160383344
+arrow,"50% clustered selection, clustered deletion",dense gather + sum,plain_arrow_sum_prebuilt_array_median_ms,0.00699,0.006461,0.009521,0.00653,0.006451,0.006741,1.0704441041347625
+arrow,"50% clustered selection, clustered deletion",dense gather + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.021461,0.02131,0.041222,0.021501,0.021391,0.021531,0.9981396214129576
+arrow,"50% scattered selection, clustered deletion",native batch sum,source_mutation_median_ms,0.014441,0.01432,0.015031,0.014451,0.014401,0.014581,0.9993080063663414
+arrow,"50% scattered selection, clustered deletion",native batch sum,graph_cycle_median_ms,1.93252,1.92862,1.94199,1.05372,1.04109,1.05705,1.8339976464335876
+arrow,"50% scattered selection, clustered deletion",native batch sum,consumer_sum_median_ms,0.96984,0.967,0.98282,0.673546,0.672945,0.673695,1.4399016548238726
+arrow,"50% scattered selection, clustered deletion",native batch sum,plain_arrow_sum_prebuilt_array_median_ms,0.007091,0.00663,0.00774,0.006971,0.006561,0.009181,1.0172141730024387
+arrow,"50% scattered selection, clustered deletion",native batch sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.022121,0.021661,0.024421,0.023172,0.022961,0.024331,0.9546435353012255
+arrow,"50% scattered selection, clustered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.023851,0.023141,0.024762,0.023661,0.022201,0.023721,1.0080300917121001
+arrow,"50% scattered selection, clustered deletion",borrowed Arrow + sum,graph_cycle_median_ms,17.494,17.3083,17.9959,16.1913,15.8708,16.2254,1.0804567885222311
+arrow,"50% scattered selection, clustered deletion",borrowed Arrow + sum,consumer_sum_median_ms,16.5458,16.3811,17.0377,15.7472,15.447,15.8021,1.050713777687462
+arrow,"50% scattered selection, clustered deletion",borrowed Arrow + sum,plain_arrow_sum_prebuilt_array_median_ms,0.0068,0.0066,0.00823,0.00694,0.00651,0.007541,0.9798270893371758
+arrow,"50% scattered selection, clustered deletion",borrowed Arrow + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.023232,0.021191,0.029071,0.022701,0.021161,0.027692,1.023391040042289
+arrow,"50% scattered selection, clustered deletion",dense gather + sum,source_mutation_median_ms,0.01389,0.013721,0.014111,0.013991,0.013891,0.014281,0.9927810735472804
+arrow,"50% scattered selection, clustered deletion",dense gather + sum,graph_cycle_median_ms,2.11321,2.11085,2.14587,1.4385,1.42863,1.47032,1.4690371915189435
+arrow,"50% scattered selection, clustered deletion",dense gather + sum,consumer_sum_median_ms,1.21634,1.21119,1.23002,1.05801,1.05553,1.07666,1.1496488691033167
+arrow,"50% scattered selection, clustered deletion",dense gather + sum,plain_arrow_sum_prebuilt_array_median_ms,0.006701,0.006521,0.00759,0.00678,0.00658,0.00699,0.9883480825958704
+arrow,"50% scattered selection, clustered deletion",dense gather + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.022002,0.021581,0.027912,0.023071,0.021471,0.023931,0.9536647739586493
+arrow,"50% clustered selection, scattered deletion",native batch sum,source_mutation_median_ms,0.019941,0.019451,0.020051,0.019861,0.019431,0.020481,1.0040279945622073
+arrow,"50% clustered selection, scattered deletion",native batch sum,graph_cycle_median_ms,1.34584,1.33562,1.34815,0.57662,0.57448,0.609532,2.334015469459956
+arrow,"50% clustered selection, scattered deletion",native batch sum,consumer_sum_median_ms,0.439943,0.439283,0.440252,0.167178,0.165178,0.167239,2.631584299369534
+arrow,"50% clustered selection, scattered deletion",native batch sum,plain_arrow_sum_prebuilt_array_median_ms,0.00692,0.006651,0.00729,0.00715,0.006761,0.01159,0.9678321678321679
+arrow,"50% clustered selection, scattered deletion",native batch sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.022642,0.021531,0.024511,0.028011,0.023421,0.034162,0.8083253007746956
+arrow,"50% clustered selection, scattered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.020141,0.019721,0.020151,0.019791,0.019191,0.019842,1.0176848062250519
+arrow,"50% clustered selection, scattered deletion",borrowed Arrow + sum,graph_cycle_median_ms,1.57094,1.55017,1.5813,0.757449,0.744038,0.75885,2.0739878196419825
+arrow,"50% clustered selection, scattered deletion",borrowed Arrow + sum,consumer_sum_median_ms,0.632172,0.628332,0.632793,0.341297,0.332257,0.342378,1.8522635710246498
+arrow,"50% clustered selection, scattered deletion",borrowed Arrow + sum,plain_arrow_sum_prebuilt_array_median_ms,0.00679,0.00658,0.007451,0.0068,0.0067,0.007001,0.9985294117647059
+arrow,"50% clustered selection, scattered deletion",borrowed Arrow + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.022151,0.02199,0.025911,0.022371,0.021901,0.025982,0.9901658397031873
+arrow,"50% clustered selection, scattered deletion",dense gather + sum,source_mutation_median_ms,0.019371,0.019361,0.020821,0.021481,0.021001,0.022542,0.9017736604441133
+arrow,"50% clustered selection, scattered deletion",dense gather + sum,graph_cycle_median_ms,1.47996,1.44874,1.50138,0.742158,0.735138,0.756049,1.9941306298658776
+arrow,"50% clustered selection, scattered deletion",dense gather + sum,consumer_sum_median_ms,0.561599,0.557909,0.566769,0.329927,0.328967,0.330937,1.7021916969511435
+arrow,"50% clustered selection, scattered deletion",dense gather + sum,plain_arrow_sum_prebuilt_array_median_ms,0.00685,0.00653,0.009631,0.006821,0.00666,0.006851,1.004251576015247
+arrow,"50% clustered selection, scattered deletion",dense gather + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.022252,0.021801,0.036452,0.022011,0.021411,0.022701,1.010949070919086
+arrow,"50% scattered selection, scattered deletion",native batch sum,source_mutation_median_ms,0.017751,0.01735,0.033652,0.01697,0.016881,0.01743,1.0460223924572776
+arrow,"50% scattered selection, scattered deletion",native batch sum,graph_cycle_median_ms,1.88537,1.88391,3.13083,1.07295,1.06749,1.10177,1.757183466144741
+arrow,"50% scattered selection, scattered deletion",native batch sum,consumer_sum_median_ms,0.97084,0.96979,1.5351,0.676506,0.674295,0.703907,1.4350796593082693
+arrow,"50% scattered selection, scattered deletion",native batch sum,plain_arrow_sum_prebuilt_array_median_ms,0.00688,0.0066,0.00738,0.00702,0.00698,0.00709,0.98005698005698
+arrow,"50% scattered selection, scattered deletion",native batch sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.020611,0.020191,0.021691,0.022701,0.022581,0.028591,0.9079335712083169
+arrow,"50% scattered selection, scattered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.060603,0.058872,0.060873,0.059084,0.057823,0.059863,1.0257091598402275
+arrow,"50% scattered selection, scattered deletion",borrowed Arrow + sum,graph_cycle_median_ms,17.8143,17.3397,17.9794,16.5956,16.5661,17.8693,1.0734351273831617
+arrow,"50% scattered selection, scattered deletion",borrowed Arrow + sum,consumer_sum_median_ms,16.8211,16.3424,16.9247,16.0844,16.0829,17.3856,1.0458021436920248
+arrow,"50% scattered selection, scattered deletion",borrowed Arrow + sum,plain_arrow_sum_prebuilt_array_median_ms,0.006641,0.00659,0.00688,0.00663,0.006561,0.006971,1.001659125188537
+arrow,"50% scattered selection, scattered deletion",borrowed Arrow + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.024012,0.021772,0.024251,0.023971,0.022772,0.024512,1.0017104000667474
+arrow,"50% scattered selection, scattered deletion",dense gather + sum,source_mutation_median_ms,0.018101,0.017691,0.018371,0.017041,0.016811,0.017151,1.062202922363711
+arrow,"50% scattered selection, scattered deletion",dense gather + sum,graph_cycle_median_ms,2.13777,2.12584,2.1683,1.46203,1.46074,1.46489,1.4621929782562604
+arrow,"50% scattered selection, scattered deletion",dense gather + sum,consumer_sum_median_ms,1.22309,1.20968,1.23868,1.06095,1.05781,1.06961,1.1528252980819076
+arrow,"50% scattered selection, scattered deletion",dense gather + sum,plain_arrow_sum_prebuilt_array_median_ms,0.007141,0.006481,0.007231,0.00664,0.00654,0.00681,1.0754518072289156
+arrow,"50% scattered selection, scattered deletion",dense gather + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.023771,0.022061,0.026041,0.022081,0.021941,0.024422,1.0765363887505095
+arrow,"100% selection, no deletion",native batch sum,source_mutation_median_ms,0.00564,0.00563,0.00582,0.005651,0.0056,0.00569,0.9980534418686958
+arrow,"100% selection, no deletion",native batch sum,graph_cycle_median_ms,0.810891,0.810332,0.813583,0.098855,0.098655,0.098954,8.20283243133883
+arrow,"100% selection, no deletion",native batch sum,consumer_sum_median_ms,0.796192,0.795231,0.798202,0.085004,0.084864,0.085035,9.366523928285728
+arrow,"100% selection, no deletion",native batch sum,plain_arrow_sum_prebuilt_array_median_ms,0.018281,0.016791,0.019081,0.018321,0.01696,0.025881,0.997816713061514
+arrow,"100% selection, no deletion",native batch sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.053833,0.052523,0.065503,0.053042,0.048143,0.057913,1.014912710682101
+arrow,"100% selection, no deletion",borrowed Arrow + sum,source_mutation_median_ms,0.00589,0.005851,0.00636,0.00593,0.00586,0.00615,0.9932546374367622
+arrow,"100% selection, no deletion",borrowed Arrow + sum,graph_cycle_median_ms,1.01065,1.00537,1.0641,0.234002,0.233412,0.235312,4.3189801796565845
+arrow,"100% selection, no deletion",borrowed Arrow + sum,consumer_sum_median_ms,0.991721,0.988691,1.04277,0.219241,0.218821,0.220442,4.523428555790203
+arrow,"100% selection, no deletion",borrowed Arrow + sum,plain_arrow_sum_prebuilt_array_median_ms,0.018371,0.01722,0.018791,0.017551,0.017431,0.018521,1.0467209845592842
+arrow,"100% selection, no deletion",borrowed Arrow + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.052372,0.049813,0.063693,0.050093,0.048443,0.051743,1.0454953785958119
+arrow,"100% selection, no deletion",dense gather + sum,source_mutation_median_ms,0.00584,0.005741,0.00613,0.00716,0.00667,0.00726,0.8156424581005587
+arrow,"100% selection, no deletion",dense gather + sum,graph_cycle_median_ms,1.0576,1.04442,1.09753,0.681905,0.679445,0.692855,1.5509491791378567
+arrow,"100% selection, no deletion",dense gather + sum,consumer_sum_median_ms,1.03582,1.02958,1.07972,0.663904,0.655764,0.669304,1.56019544994457
+arrow,"100% selection, no deletion",dense gather + sum,plain_arrow_sum_prebuilt_array_median_ms,0.018861,0.016991,0.018971,0.017971,0.017291,0.017991,1.049524233487285
+arrow,"100% selection, no deletion",dense gather + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.053292,0.051833,0.054033,0.050892,0.048923,0.052063,1.047158688988446
+arrow,10% scattered selection and deletion,native batch sum,source_mutation_median_ms,0.066733,0.066154,0.067584,0.068494,0.067663,0.068663,0.9742897188074868
+arrow,10% scattered selection and deletion,native batch sum,graph_cycle_median_ms,0.891697,0.882376,0.927898,0.482055,0.474005,0.483335,1.8497827011440602
+arrow,10% scattered selection and deletion,native batch sum,consumer_sum_median_ms,0.18743,0.184419,0.19038,0.130787,0.129226,0.130897,1.4330935031769214
+arrow,10% scattered selection and deletion,native batch sum,plain_arrow_sum_prebuilt_array_median_ms,0.00262,0.00262,0.00263,0.00269,0.00264,0.00273,0.9739776951672862
+arrow,10% scattered selection and deletion,native batch sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.004751,0.00474,0.00487,0.00474,0.00466,0.0048,1.0023206751054852
+arrow,10% scattered selection and deletion,borrowed Arrow + sum,source_mutation_median_ms,0.075784,0.072964,0.076844,0.075754,0.075403,0.079234,1.0003960186920824
+arrow,10% scattered selection and deletion,borrowed Arrow + sum,graph_cycle_median_ms,3.66974,3.64784,4.07192,3.18044,3.17101,3.22551,1.1538466375721599
+arrow,10% scattered selection and deletion,borrowed Arrow + sum,consumer_sum_median_ms,2.97427,2.95639,3.24006,2.82834,2.78833,2.84033,1.051595635602509
+arrow,10% scattered selection and deletion,borrowed Arrow + sum,plain_arrow_sum_prebuilt_array_median_ms,0.002641,0.00262,0.002731,0.00265,0.00264,0.00267,0.9966037735849057
+arrow,10% scattered selection and deletion,borrowed Arrow + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.004821,0.0047,0.004881,0.00468,0.0046,0.0049,1.030128205128205
+arrow,10% scattered selection and deletion,dense gather + sum,source_mutation_median_ms,0.066043,0.065973,0.067054,0.068363,0.067834,0.068963,0.9660635138890922
+arrow,10% scattered selection and deletion,dense gather + sum,graph_cycle_median_ms,0.946059,0.924828,0.952979,0.551728,0.549948,0.554658,1.7147199344604587
+arrow,10% scattered selection and deletion,dense gather + sum,consumer_sum_median_ms,0.233992,0.232902,0.236593,0.207611,0.204921,0.208781,1.1270693749367808
+arrow,10% scattered selection and deletion,dense gather + sum,plain_arrow_sum_prebuilt_array_median_ms,0.002651,0.00263,0.00273,0.002661,0.00266,0.002661,0.9962420142803458
+arrow,10% scattered selection and deletion,dense gather + sum,plain_arrow_build_sum_destroy_preexisting_vector_median_ms,0.00481,0.004731,0.004831,0.00479,0.00476,0.00486,1.0041753653444676

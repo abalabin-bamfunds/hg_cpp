@@ -1,0 +1,17 @@
+Range-relocation compaction run
+
+Frame source revision: d8dbd8c33bc594e33e9e1f3e4ffa996a7956d243
+Utility relocation base: cc12d38c
+Benchmark binary SHA-256:
+3b2a36aaebbaecf33d23e3639fb7171faa427bd55612bf3e1dd05b2df3826329
+Installed libbg_library.so SHA-256:
+c0e449f7110496186a69ad63ff7e1db87e46574823ad9d89097b92d8f90287ec
+CSV SHA-256:
+0ff7da85d4c5b76f7014af70aa3544000b869c6779777664d2580f7259d94539
+
+Configuration: Release, GCC 14.3.0, Arrow 24.0.0, Arrow ON, benchmarks ON.
+Machine: Linux 6.12.68, AMD EPYC 7R13 virtual machine.
+Command:
+`LD_LIBRARY_PATH=build/compaction-optimisation/bg-release-install/lib:build/compaction-optimisation/bg-release-install/lib64 build/compaction-optimisation/frame-release/bg_frame_compaction_benchmark`
+
+Benchmark checksum: `345655889045100`.

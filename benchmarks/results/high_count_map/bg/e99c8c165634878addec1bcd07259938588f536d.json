@@ -1,0 +1,127 @@
+{
+  "schema_version": 1,
+  "benchmark": "portable_high_count_map",
+  "engine": "bg",
+  "runtime": "native-cpp",
+  "source_commit": "e99c8c165634878addec1bcd07259938588f536d",
+  "profile": "250k",
+  "value_type": "int64_nonnegative",
+  "environment": {
+    "platform": "Linux 6.12.68-92.122.amzn2023.x86_64",
+    "machine": "x86_64",
+    "processor": "AMD EPYC 7R13 Processor",
+    "logical_cpu_count": 48,
+    "cpu_affinity": [47],
+    "compiler": "GCC 14.3.0",
+    "build_type": "Release"
+  },
+  "topology": {
+    "flat_items": 80000,
+    "parents": 10000,
+    "children_per_parent": 8,
+    "active_inner_graphs": 250000
+  },
+  "workload": {
+    "cycles": 10000,
+    "flat_updates_per_cycle": 250,
+    "child_updates_per_cycle": 250,
+    "flat_lifecycle_count": 250,
+    "parent_lifecycle_count": 25,
+    "child_lifecycle_count": 100,
+    "lifecycle_period": 100,
+    "broadcast_period": 1000
+  },
+  "timing": {
+    "workload_generation_ns": 188060996,
+    "wiring_ns": 622726,
+    "runtime_factory_ns": 3700,
+    "runtime_start_ns": 45871,
+    "population_ns": 874786705,
+    "measured_cycles_ns": 14878012769,
+    "wall_run_ns": 14879058306,
+    "final_stop_ns": 36153434
+  },
+  "throughput": {
+    "cycles_per_second": 672.133,
+    "output_events_per_second": 450665.025
+  },
+  "latency": {
+    "ordinary": {
+      "count": 9590,
+      "total_ns": 11061902164.000,
+      "mean_ns": 1153483.020,
+      "median_ns": 1144560.000,
+      "p95_ns": 1247468.950,
+      "p99_ns": 1311110.500,
+      "max_ns": 1881040.000
+    },
+    "flat_parent_removal": {
+      "count": 100,
+      "total_ns": 153605537.000,
+      "mean_ns": 1536055.370,
+      "median_ns": 1541311.000,
+      "p95_ns": 1675912.500,
+      "p99_ns": 1692259.020,
+      "max_ns": 1740276.000
+    },
+    "flat_parent_restoration_cleanup": {
+      "count": 100,
+      "total_ns": 604042791.000,
+      "mean_ns": 6040427.910,
+      "median_ns": 6023571.000,
+      "p95_ns": 6476521.100,
+      "p99_ns": 6599347.600,
+      "max_ns": 6602476.000
+    },
+    "child_removal": {
+      "count": 100,
+      "total_ns": 144193719.000,
+      "mean_ns": 1441937.190,
+      "median_ns": 1443563.000,
+      "p95_ns": 1535975.500,
+      "p99_ns": 1580681.410,
+      "max_ns": 1601413.000
+    },
+    "child_restoration_cleanup": {
+      "count": 100,
+      "total_ns": 835218427.000,
+      "mean_ns": 8352184.270,
+      "median_ns": 8314871.500,
+      "p95_ns": 9227968.050,
+      "p99_ns": 9478172.680,
+      "max_ns": 9731680.000
+    },
+    "broadcast": {
+      "count": 10,
+      "total_ns": 2079050131.000,
+      "mean_ns": 207905013.100,
+      "median_ns": 209108116.000,
+      "p95_ns": 213151126.800,
+      "p99_ns": 213215190.960,
+      "max_ns": 213231207.000
+    }
+  },
+  "output": {
+    "actual": {
+      "count": 6705000,
+      "sum": 18255748205643653813,
+      "xor": 10077992542007829525
+    },
+    "expected": {
+      "count": 6705000,
+      "sum": 18255748205643653813,
+      "xor": 10077992542007829525
+    },
+    "valid": true
+  },
+  "memory": {
+    "baseline_rss_bytes": 108683264,
+    "after_wiring_rss_bytes": 109207552,
+    "empty_runtime_rss_bytes": 109211648,
+    "populated_rss_bytes": 354299904,
+    "peak_rss_bytes": 358596608,
+    "after_stop_rss_bytes": 358596608,
+    "populated_rss_delta_bytes": 245088256,
+    "bytes_per_active_inner_graph": 980.353
+  }
+}

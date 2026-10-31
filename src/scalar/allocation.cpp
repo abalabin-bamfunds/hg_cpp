@@ -1,0 +1,88 @@
+#include <bg/scalar/details/allocation_context.hpp>
+#include <bg/scalar/details/allocation_pool.hpp>
+#include <bg/util/static_storage.hpp>
+
+#include "../thread_local_pointer.hpp"
+
+#include <cassert>
+#include <mutex>
+#include <stdexcept>
+#include <unordered_map>
+
+namespace bg::details {
+namespace {
+
+util::thread_local_pointer &current_owner() {
+    static auto value = util::static_storage<util::thread_local_pointer>{};
+
+    return value.get();
+}
+
+#ifndef NDEBUG
+std::mutex allocations_mutex;
+std::unordered_map<const void *, ScalarAllocationOwner> allocations;
+#endif
+
+} // namespace
+
+ScalarAllocationContext::ScalarAllocationContext(allocator memory, ScalarAllocationPool &scalar_allocation_pool,
+                                                 const void *graph, std::size_t node_index) noexcept
+    : owner_{memory, &scalar_allocation_pool, graph, node_index},
+      previous_{static_cast<ScalarAllocationOwner *>(current_owner().get())} {
+    current_owner().set(&owner_);
+}
+
+ScalarAllocationContext::~ScalarAllocationContext() {
+    assert(current_scalar_allocation_owner() == &owner_);
+    current_owner().set(previous_);
+}
+
+const ScalarAllocationOwner *current_scalar_allocation_owner() noexcept {
+    return static_cast<const ScalarAllocationOwner *>(current_owner().get());
+}
+
+allocator &current_scalar_allocator() {
+    const auto *owner = current_scalar_allocation_owner();
+    if (owner == nullptr) {
+        throw std::logic_error{"scalar mutation requires an allocation context"};
+    }
+
+    return const_cast<allocator &>(owner->memory);
+}
+
+ScalarAllocationPool *current_scalar_allocation_pool() noexcept {
+    const auto *owner = current_scalar_allocation_owner();
+    return owner == nullptr ? nullptr : owner->scalar_allocation_pool;
+}
+
+void record_context_scalar_allocation(const void *value) {
+#ifndef NDEBUG
+    const auto *owner = current_scalar_allocation_owner();
+    assert(owner != nullptr);
+
+    const auto lock = std::scoped_lock{allocations_mutex};
+    const auto inserted = allocations.emplace(value, *owner).second;
+    assert(inserted);
+#else
+    (void)value;
+#endif
+}
+
+void check_context_scalar_deallocation(const void *value) {
+#ifndef NDEBUG
+    const auto *owner = current_scalar_allocation_owner();
+    assert(owner != nullptr);
+
+    const auto lock = std::scoped_lock{allocations_mutex};
+    const auto allocation = allocations.find(value);
+    assert(allocation != allocations.end());
+    assert(&allocation->second.memory.memory_resource() == &owner->memory.memory_resource());
+    assert(allocation->second.graph == owner->graph);
+    assert(allocation->second.node_index == owner->node_index);
+    allocations.erase(allocation);
+#else
+    (void)value;
+#endif
+}
+
+} // namespace bg::details

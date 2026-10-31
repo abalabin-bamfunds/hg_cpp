@@ -1,0 +1,86 @@
+name: Test installed platform wheel
+
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      artifact:
+        required: true
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+jobs:
+  test:
+    name: Test ${{ inputs.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ inputs.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.12", "3.13", "3.14"]
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install archive audit dependency
+        run: >-
+          python -m pip install --only-binary=:all: "packaging==26.3"
+      - name: Configure MSVC for SDK consumers
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          name: ${{ inputs.artifact }}
+          path: dist
+      - name: Audit wheel contents
+        run: python tools/audit_distribution.py dist
+      - name: Create isolated installed-wheel environment
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          python -m venv "$RUNNER_TEMP/bg-wheel-test"
+          "$RUNNER_TEMP/bg-wheel-test/bin/python" -m pip install --upgrade --only-binary=:all: \
+            "pytest>=8,<9" "nanobind==3.1.0" "cmake>=3.31" "ninja==1.13.0"
+          "$RUNNER_TEMP/bg-wheel-test/bin/python" -m pip install --no-deps dist/*.whl
+          echo "BG_TEST_PYTHON=$RUNNER_TEMP/bg-wheel-test/bin/python" >> "$GITHUB_ENV"
+          echo "BG_PYTHON_PACKAGE_DIR=$($RUNNER_TEMP/bg-wheel-test/bin/python -c 'import bg; print(bg.__path__[0])')" >> "$GITHUB_ENV"
+          echo "CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
+      - name: Create isolated Windows installed-wheel environment
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          python -m venv "$env:RUNNER_TEMP/bg-wheel-test"
+          $python = "$env:RUNNER_TEMP/bg-wheel-test/Scripts/python.exe"
+          & $python -m pip install --upgrade --only-binary=:all: `
+            "pytest>=8,<9" "nanobind==3.1.0" "cmake>=3.31" "ninja==1.13.0"
+          $wheels = @(Get-ChildItem dist -Filter *.whl)
+          if ($wheels.Count -ne 1) { throw "Expected one wheel, found $($wheels.Count)" }
+          & $python -m pip install --no-deps $wheels[0].FullName
+          "BG_TEST_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Append
+          $package = & $python -c "import bg; print(bg.__path__[0])"
+          "BG_PYTHON_PACKAGE_DIR=$package" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Build and test installed SDK consumers on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: '"$BG_TEST_PYTHON" tools/test_installed_sdk.py'
+      - name: Build and test installed SDK consumers on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& $env:BG_TEST_PYTHON tools/test_installed_sdk.py'
+      - name: Run full Python suite against installed wheel
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          "$BG_TEST_PYTHON" -I -m pytest -q "$GITHUB_WORKSPACE/bindings/python/tests"
+      - name: Run full Python suite against installed wheel on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& $env:BG_TEST_PYTHON -I -m pytest -q "$env:GITHUB_WORKSPACE/bindings/python/tests"'

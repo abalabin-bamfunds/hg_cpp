@@ -1,0 +1,38 @@
+#pragma once
+
+#include <bg/type/guarantee_parameter.hpp>
+#include <bg/type/scalar_type.hpp>
+#include <bg/type/time_series_type.hpp>
+
+namespace bg {
+
+class TimeSeriesValueType : public TimeSeriesType {
+  public:
+    VISITOR_SUPPORT()
+
+    void format_name(std::string &result) const override;
+    const ScalarType &value_type() const noexcept { return *value_type_; }
+    [[nodiscard]] const TimeSeriesType &with_guarantee(TimeSeriesGuarantee guarantee) const override;
+
+  protected:
+    TimeSeriesValueType(const ScalarType &value_type, GuaranteeParameter guarantee)
+        : TimeSeriesType(guarantee), value_type_(&value_type) {}
+
+    [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
+
+  private:
+    const ScalarType *value_type_;
+};
+
+const TimeSeriesValueType &time_series_value_type(const ScalarType &value_type, TimeSeriesGuarantee guarantee);
+
+class GenericTimeSeriesValueType final : public TimeSeriesValueType {
+  public:
+    GenericTimeSeriesValueType(const ScalarType &value_type, GuaranteeParameter guarantee)
+        : TimeSeriesValueType(value_type, guarantee) {}
+
+    bool is_resolved() const noexcept override { return false; }
+    [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
+};
+
+} // namespace bg

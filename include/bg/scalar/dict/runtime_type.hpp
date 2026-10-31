@@ -1,0 +1,128 @@
+#pragma once
+
+#include <bg/scalar/construction.hpp>
+#include <bg/scalar/runtime_type.hpp>
+
+#include <cassert>
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <span>
+
+namespace bg {
+
+class ScalarDictRuntimeType : public ScalarRuntimeType {
+  protected:
+    ScalarDictRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
+                          bool requires_finalization, bool supports_byte_copy_initialization) noexcept
+        : ScalarRuntimeType{
+              type, size, alignment, uses_variable_memory, requires_finalization, supports_byte_copy_initialization} {}
+
+    ScalarDictRuntimeType(const ScalarType &type, std::size_t size, std::size_t alignment, bool uses_variable_memory,
+                          bool requires_finalization, bool supports_byte_copy_initialization,
+                          const ScalarRuntimeType &key, const ScalarRuntimeType &mapped) noexcept
+        : ScalarDictRuntimeType{type, size, alignment, uses_variable_memory, requires_finalization,
+                                supports_byte_copy_initialization} {
+        initialize_runtime_types(key, mapped);
+    }
+
+  public:
+    struct Item {
+        const ScalarRuntimeType &runtime_type;
+        void *data;
+    };
+
+    struct ConstItem {
+        const ScalarRuntimeType &runtime_type;
+        const void *data;
+    };
+
+    struct Entry {
+        ConstItem key;
+        ConstItem value;
+    };
+
+    struct BatchEntry {
+        // These pointers use key_runtime_type() and mapped_runtime_type(), respectively.
+        const void *key;
+        const void *mapped;
+    };
+
+    class Cursor {
+      public:
+        virtual ~Cursor() = default;
+        // Returns zero at the end. The caller must provide a non-empty buffer.
+        [[nodiscard]] virtual std::size_t next_batch(std::span<BatchEntry> buffer) = 0;
+    };
+
+    using EntryFunction = void (*)(void *, Entry);
+
+    bool accepts_input(const ScalarRuntimeType &source) const noexcept override;
+
+    const ScalarRuntimeType &key_runtime_type() const noexcept {
+        assert(key_ != nullptr);
+        return *key_;
+    }
+    const ScalarRuntimeType &mapped_runtime_type() const noexcept {
+        assert(mapped_ != nullptr);
+        return *mapped_;
+    }
+    void initialize_runtime_types(const ScalarRuntimeType &key, const ScalarRuntimeType &mapped) noexcept {
+        assert(key_ == nullptr);
+        assert(mapped_ == nullptr);
+        key_ = &key;
+        mapped_ = &mapped;
+    }
+    virtual std::size_t item_count(const void *storage) const noexcept = 0;
+    virtual bool contains(const void *storage, const details::ScalarData &key) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    bool contains(const void *storage, const Key &key) const {
+        return contains(storage, details::scalar_data(key));
+    }
+    virtual ConstItem at(const void *storage, const details::ScalarData &key) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    ConstItem at(const void *storage, const Key &key) const {
+        return at(storage, details::scalar_data(key));
+    }
+    virtual Item at(void *storage, const details::ScalarData &key) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    Item at(void *storage, const Key &key) const {
+        return at(storage, details::scalar_data(key));
+    }
+    virtual void for_each(const void *storage, void *context, EntryFunction function) const = 0;
+    [[nodiscard]] virtual std::optional<ConstItem> find(const void *storage,
+                                                        const details::ScalarData &key) const = 0;
+    // The cursor borrows storage. Keep the dictionary alive and unchanged until the cursor is destroyed.
+    [[nodiscard]] virtual std::unique_ptr<Cursor> make_cursor(const void *storage) const = 0;
+
+    virtual void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
+                                  allocator &memory) const = 0;
+    template <typename Key, typename Value>
+        requires requires(const Key &key, const Value &value) {
+            details::scalar_data(key);
+            details::scalar_data(value);
+        }
+    void insert_or_assign(void *storage, const Key &key, const Value &value, allocator &memory) const {
+        insert_or_assign(storage, details::scalar_data(key), details::scalar_data(value), memory);
+    }
+    // Constructs the key in its final slot before hashing and duplicate lookup. On a duplicate, destroys the
+    // candidate key and returns false without invoking mapped construction. On failure, preserves existing entries.
+    [[nodiscard]] virtual bool try_emplace_with(void *storage, allocator &memory, ScalarConstruction key,
+                                                ScalarConstruction mapped) const = 0;
+    [[nodiscard]] virtual bool erase(void *storage, const details::ScalarData &key, allocator &memory) const = 0;
+    template <typename Key>
+        requires requires(const Key &key) { details::scalar_data(key); }
+    [[nodiscard]] bool erase(void *storage, const Key &key, allocator &memory) const {
+        return erase(storage, details::scalar_data(key), memory);
+    }
+    virtual void clear(void *storage, allocator &memory) const noexcept = 0;
+
+  private:
+    const ScalarRuntimeType *key_{};
+    const ScalarRuntimeType *mapped_{};
+};
+
+} // namespace bg

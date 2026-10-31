@@ -1,0 +1,5 @@
+Sphinx==8.2.3
+furo==2025.12.19
+myst-parser==4.0.1
+sphinxcontrib-mermaid==2.1.1
+sphinx-design==0.7.0

@@ -1,0 +1,139 @@
+#pragma once
+
+#include <bg/allocator.hpp>
+#include <bg/time_series/time_series_runtime_type.hpp>
+#include <bg/time_series/ref/ref_input_storage.hpp>
+#include <bg/time_series/ref/ref_storage.hpp>
+#include <bg/util/adaptive_set.hpp>
+
+#include <cassert>
+#include <cstdint>
+#include <functional>
+#include <memory_resource>
+
+namespace bg::details {
+
+class ReferenceSample {
+  public:
+    // A runtime-type factory returns one owned reference. The sample can borrow source storage through the receiving
+    // cycle; BG releases retained samples during next-cycle cleanup or graph shutdown.
+    virtual void retain() noexcept = 0;
+    virtual void release() noexcept = 0;
+    virtual TimeSeriesRuntimeType::ConstItem input() const noexcept = 0;
+    virtual ResolvedTimeSeries previous() const noexcept = 0;
+
+  protected:
+    virtual ~ReferenceSample() = default;
+};
+
+class SampledReferenceChange {
+  public:
+    SampledReferenceChange() = default;
+    explicit SampledReferenceChange(ReferenceSample *sample) noexcept : sample_{sample} {}
+
+    explicit operator bool() const noexcept { return sample_ != nullptr; }
+    static SampledReferenceChange create(const TimeSeriesRuntimeType &requested_runtime_type,
+                                         ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                                         EvaluationTime evaluation_time, allocator &memory);
+    void retain() const noexcept;
+    void release() const noexcept;
+    TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    ResolvedTimeSeries previous() const noexcept;
+
+  private:
+    ReferenceSample *sample_{};
+};
+
+static_assert(sizeof(SampledReferenceChange) == sizeof(void *));
+
+class ReferenceInputSampleLookup {
+  public:
+    explicit ReferenceInputSampleLookup(allocator &memory) : memory_{&memory} {}
+
+    ~ReferenceInputSampleLookup();
+
+    SampledReferenceChange get(Reference previous_reference, Reference current_reference,
+                               ResolvedTimeSeries previous, ResolvedTimeSeries current,
+                               const TimeSeriesRuntimeType &runtime_type, EvaluationTime evaluation_time);
+    void clear() noexcept;
+
+  private:
+    struct Entry {
+        Reference previous_reference;
+        Reference current_reference;
+        const TimeSeriesRuntimeType *runtime_type;
+        TimeSeriesState previous_last_updated;
+        const void *previous_storage;
+        const TimeSeriesRuntimeType *previous_runtime_type;
+        SampledReferenceChange sample;
+    };
+
+    struct EntryHash {
+        std::size_t operator()(const Entry &entry) const noexcept {
+            const auto combine = [](std::size_t seed, std::size_t value) {
+                return seed ^ (value + std::size_t{0x9e3779b9} + (seed << 6) + (seed >> 2));
+            };
+            auto result = std::hash<std::uintptr_t>{}(entry.previous_reference.raw());
+            result = combine(result, std::hash<std::uintptr_t>{}(entry.current_reference.raw()));
+            result = combine(result, std::hash<const TimeSeriesRuntimeType *>{}(entry.runtime_type));
+            const auto previous_time = entry.previous_last_updated.time().time_since_epoch().count();
+            result = combine(result, std::hash<std::int64_t>{}(previous_time));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.valid()));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.became_valid()));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.became_invalid()));
+            result = combine(result, std::hash<bool>{}(entry.previous_last_updated.never_valid()));
+            result = combine(result, std::hash<const void *>{}(entry.previous_storage));
+            result = combine(result, std::hash<const TimeSeriesRuntimeType *>{}(entry.previous_runtime_type));
+            return result;
+        }
+    };
+
+    struct EntryEqual {
+        bool operator()(const Entry &left, const Entry &right) const noexcept {
+            const auto same_previous_state =
+                left.previous_last_updated.time() == right.previous_last_updated.time() &&
+                left.previous_last_updated.valid() == right.previous_last_updated.valid() &&
+                left.previous_last_updated.became_valid() == right.previous_last_updated.became_valid() &&
+                left.previous_last_updated.became_invalid() == right.previous_last_updated.became_invalid() &&
+                left.previous_last_updated.never_valid() == right.previous_last_updated.never_valid();
+            return left.previous_reference == right.previous_reference &&
+                   left.current_reference == right.current_reference && left.runtime_type == right.runtime_type &&
+                   same_previous_state &&
+                   left.previous_storage == right.previous_storage &&
+                   left.previous_runtime_type == right.previous_runtime_type;
+        }
+    };
+
+    allocator *memory_;
+    util::adaptive_set<Entry, 16, EntryHash, EntryEqual> entries_;
+};
+
+struct ReferenceInputSampleStorage {
+    TimeSeriesRuntimeType::ConstItem input() const noexcept;
+    ResolvedTimeSeries previous() const noexcept;
+    void set(SampledReferenceChange sample) noexcept {
+        assert(sample);
+        assert(empty());
+        sample.retain();
+        sample_ = sample;
+    }
+    SampledReferenceChange sample() const noexcept { return sample_; }
+    void clear() noexcept {
+        const auto previous = sample_;
+        sample_ = {};
+        previous.release();
+    }
+    bool empty() const noexcept { return !sample_; }
+    static constexpr std::size_t offset_for(std::size_t input_offset, bool dynamic_activity) noexcept {
+        const auto after_input = input_offset + sizeof(ReferenceInputStorage) +
+                                 (dynamic_activity ? sizeof(bool) : std::size_t{});
+        return (after_input + alignof(ReferenceInputSampleStorage) - 1) &
+               ~(alignof(ReferenceInputSampleStorage) - 1);
+    }
+  private:
+    SampledReferenceChange sample_;
+};
+
+static_assert(sizeof(ReferenceInputSampleStorage) == sizeof(void *));
+
+} // namespace bg::details

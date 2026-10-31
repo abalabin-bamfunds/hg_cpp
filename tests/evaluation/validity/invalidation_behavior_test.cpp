@@ -1,0 +1,273 @@
+#include <bg/graph.hpp>
+#include <bg/graph/compiled_graph.hpp>
+#include <bg/graph/graph_wiring.hpp>
+#include <bg/graph/runtime_graph.hpp>
+#include <bg/graph/wiring_context.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
+#include <optional>
+#include <stdexcept>
+
+using namespace bg;
+
+TEST_CASE("required-input invalidation invalidates a node output",
+          "[evaluation][invalidation][feature:invalidation][shape:single-node][validity:required]"
+          "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]"
+          "[definition:function]") {
+    const auto copy = node([](float input) { return input; });
+
+    const auto actual = bg::run_graph(copy, {4.0F, literal::INVALID, 6.0F});
+
+    CHECK(actual.equals({4.0F, literal::INVALID, 6.0F}));
+}
+
+TEST_CASE("required-input invalidation propagates through a graph",
+          "[evaluation][invalidation][feature:invalidation][shape:chain][validity:required]"
+          "[transition:invalidation][transition:revalidation][series:value][scalar:floating-point]") {
+    auto copy_evaluations = 0;
+
+    const auto copy = node([&](float input) {
+        ++copy_evaluations;
+        return input;
+    });
+
+    const auto consume = node([](float input) { return input; });
+
+    const auto graph_template = bg::graph([&](wp<TS<float>> input) {
+        return consume(copy(input));
+    });
+
+    const auto actual = bg::run_graph(graph_template, {4.0F, literal::INVALID, 6.0F});
+
+    CHECK(actual.equals({4.0F, literal::INVALID, 6.0F}));
+    CHECK(copy_evaluations == 2);
+}
+
+namespace {
+
+struct fallback_definition {
+    State<int> invalidation_count;
+    float input;
+    Out<TS<float>> output;
+
+    void evaluate() const {
+        ++evaluation_count;
+        output.set(input);
+    }
+
+    void on_invalidation() const {
+        ++*invalidation_count;
+        output.set(-static_cast<float>(*invalidation_count));
+    }
+
+    inline static int evaluation_count{};
+};
+
+} // namespace
+
+TEST_CASE("required-input invalidation is applied once while the input remains invalid",
+          "[evaluation][invalidation][feature:invalidation][validity:required][transition:invalidation]"
+          "[series:value][scalar:floating-point]") {
+    const auto fallback = node<fallback_definition>();
+
+    fallback_definition::evaluation_count = 0;
+    auto source_evaluations = 0;
+
+    const auto counted_source = node([&](bool valid, Out<TS<float>> output) {
+        ++source_evaluations;
+        if (valid) {
+            output.set(4.0F);
+        } else {
+            output.invalidate();
+        }
+    });
+
+    const auto repeated_graph = [&](wp<TS<bool>> valid) { return fallback(counted_source(valid)); };
+
+    const auto actual = bg::run_graph(repeated_graph, {true, false, false});
+
+    CHECK(actual.equals({4.0F, -1.0F, std::nullopt}));
+    CHECK(source_evaluations == 3);
+    CHECK(fallback_definition::evaluation_count == 1);
+}
+
+namespace {
+
+struct hold_definition {
+    static constexpr auto on_invalidation = preserve_output;
+
+    float input;
+    Out<TS<float>> output;
+
+    void evaluate() const { output.set(input); }
+};
+
+} // namespace
+
+TEST_CASE("a node can preserve its output when a required input becomes invalid",
+          "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
+          "[scalar:floating-point]") {
+    const auto hold = node<hold_definition>();
+
+    const auto observe = node([](std::optional<float> input,
+                                 i64,
+                                 Out<TS<float>> output) {
+        if (input) {
+            output.set(*input);
+        } else {
+            output.invalidate();
+        }
+    });
+
+    auto downstream_evaluations = 0;
+
+    const auto downstream = node([&](float) { ++downstream_evaluations; });
+
+    const auto graph = [&](wp<TS<float>> input, wp<TS<i64>> tick) {
+        const auto held = hold(input);
+        downstream(held);
+        return observe(held, tick);
+    };
+
+    const auto actual = bg::run_graph(graph, {4.0F, literal::INVALID}, {0, 1});
+
+    CHECK(actual.equals({4.0F, 4.0F}));
+    CHECK(downstream_evaluations == 1);
+}
+
+namespace {
+
+struct invocation_end_invalidation_state {
+    extension::InvocationEndRegistration registration;
+    int callback_count{};
+};
+
+invocation_end_invalidation_state invalidation_callback_state;
+
+void count_invalidation_callback(void *receiver, EvaluationContext &) {
+    ++static_cast<invocation_end_invalidation_state *>(receiver)->callback_count;
+}
+
+struct invocation_end_invalidation_definition {
+    In<TS<float>> input;
+    Out<TS<float>> output;
+
+    void evaluate() const { output.set(input.value()); }
+
+    void on_invalidation(EvaluationContext *context) const {
+        output.invalidate();
+        context->add_invocation_end_callback(invalidation_callback_state.registration, &invalidation_callback_state,
+                                             count_invalidation_callback);
+    }
+};
+
+struct invocation_end_invalidation_observer_definition {
+    In<TS<float>> input;
+
+    void evaluate() const {}
+    void on_invalidation() const { CHECK(invalidation_callback_state.callback_count == 1); }
+};
+
+} // namespace
+
+TEST_CASE("invalidation callbacks run before invalidation publication",
+          "[evaluation][invalidation][invocation_end_callback][feature:evaluation-context]") {
+    invalidation_callback_state.callback_count = 0;
+
+    const auto invalidator = node<invocation_end_invalidation_definition>();
+    const auto observer = node<invocation_end_invalidation_observer_definition>();
+    const auto tested = [&](wp<TS<float>> input) {
+        const auto output = invalidator(input);
+        (void)observer(output);
+        return output;
+    };
+
+    const auto actual = bg::run_graph(tested, {4.0F, literal::INVALID});
+
+    CHECK(actual.equals({4.0F, std::nullopt}));
+    CHECK(invalidation_callback_state.callback_count == 1);
+    invalidation_callback_state.registration.cancel();
+}
+
+TEST_CASE("a node can produce an output when a required input becomes invalid",
+          "[evaluation][invalidation][feature:invalidation][validity:required][series:value]"
+          "[scalar:floating-point]") {
+    const auto fallback = node<fallback_definition>();
+
+    const auto graph = [&](wp<TS<float>> input) { return fallback(input); };
+
+    fallback_definition::evaluation_count = 0;
+
+    const auto actual = bg::run_graph(graph, {4.0F, literal::INVALID});
+
+    CHECK(actual.equals({4.0F, -1.0F}));
+    CHECK(fallback_definition::evaluation_count == 1);
+}
+
+namespace {
+
+struct switchable_definition {
+    Out<TS<float>> output;
+
+    void evaluate() const {
+        if (publish) {
+            output.set(4.0F);
+        } else {
+            output.invalidate();
+        }
+    }
+
+    inline static bool publish{true};
+};
+
+struct throwing_invalidation_definition {
+    In<TS<float>> input;
+
+    void evaluate() const {}
+    void on_invalidation() const { throw std::runtime_error{"invalidation failure"}; }
+    void stop() const noexcept { ++stop_count; }
+
+    inline static int stop_count{};
+};
+
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
+}
+
+} // namespace
+
+TEST_CASE("an invalidation failure stops the runtime graph",
+          "[evaluation][invalidation][lifecycle][feature:invalidation][transition:invalidation]"
+          "[transition:stop][series:value][scalar:floating-point]") {
+    const auto switchable = node<switchable_definition>();
+
+    const auto throwing_invalidation = node<throwing_invalidation_definition>();
+
+    GraphWiring wiring;
+
+    {
+        WiringContext context{wiring};
+        throwing_invalidation(switchable());
+    }
+
+    wiring.finalize();
+    const CompiledGraph compiled{wiring};
+    auto runtime_global_state = GlobalState{};
+    RuntimeGraph runtime{compiled, runtime_global_state};
+    switchable_definition::publish = true;
+    throwing_invalidation_definition::stop_count = 0;
+
+    runtime.start(time(1));
+    runtime.schedule(0);
+    runtime.evaluate(time(1));
+
+    switchable_definition::publish = false;
+    runtime.schedule(0);
+    CHECK_THROWS_AS(runtime.evaluate(time(2)), std::runtime_error);
+    CHECK(throwing_invalidation_definition::stop_count == 1);
+    CHECK_THROWS_AS(runtime.evaluate(time(3)), std::logic_error);
+}
