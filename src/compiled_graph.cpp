@@ -970,11 +970,11 @@ void plan_runtime_storage(CompilationPlan &plan) {
         requirement.value_offset = packed_offset(storage.add<Reference>().offset, "runtime storage reaches 1 GiB");
     }
 
-    const auto add_item_samples = [&](this const auto &self, std::span<ItemSubscriptionPlan> items) -> void {
+    const auto add_item_samples = [&](const auto &self, std::span<ItemSubscriptionPlan> items) -> void {
         for (auto &item : items) {
             item.sampled_last_updated_offset =
                 packed_offset(storage.add<TimeSeriesState>().offset, "runtime storage reaches 1 GiB");
-            self(item.items);
+            self(self, item.items);
         }
     };
 
@@ -984,7 +984,7 @@ void plan_runtime_storage(CompilationPlan &plan) {
         }
         auto &node_plan = plan.node_plans[i];
         node_plan.output = add_output_layout(storage, plan.nodes[i], node_plan, plan.outputs, plan.node_plans, plan);
-        add_item_samples(node_plan.item_subscriptions);
+        add_item_samples(add_item_samples, node_plan.item_subscriptions);
 
         for (auto &input : node_plan.time_series_inputs) {
             if (input.default_value) {
@@ -1874,17 +1874,17 @@ class CompiledGraphBuilder {
             output.runtime_type->construct_initial_value(runtime_storage.data() + output.value_offset);
         }
 
-        const auto initialize_item_samples = [&](this const auto &self,
+        const auto initialize_item_samples = [&](const auto &self,
                                                  std::span<const ItemSubscriptionPlan> items) -> void {
             for (const auto &item : items) {
                 std::construct_at(
                     reinterpret_cast<TimeSeriesState *>(runtime_storage.data() + item.sampled_last_updated_offset));
-                self(item.items);
+                self(self, item.items);
             }
         };
         for (const auto node_index : plan.wired_node_indices) {
             const auto &node = plan.node_plans[node_index];
-            initialize_item_samples(node.item_subscriptions);
+            initialize_item_samples(initialize_item_samples, node.item_subscriptions);
             for (const auto &reference : node.time_series_inputs) {
                 if (!reference.dereferences_reference) {
                     continue;

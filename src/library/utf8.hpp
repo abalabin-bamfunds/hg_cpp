@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string_view>
 
@@ -23,12 +24,22 @@ class Utf8View {
     explicit Utf8View(std::string_view text) : text_{text} {
         auto byte_index = std::size_t{};
         while (byte_index < text.size()) {
-            auto code_point = UChar32{};
-            U8_NEXT(text.data(), byte_index, text.size(), code_point);
-            if (code_point < 0) {
-                throw std::invalid_argument{"string contains malformed UTF-8"};
+            const auto remaining = text.size() - byte_index;
+            const auto chunk_size =
+                std::min(remaining, static_cast<std::size_t>(std::numeric_limits<std::int32_t>::max()));
+            // Leave room for a four-byte code point at the end of each non-final chunk.
+            const auto chunk_end = remaining > chunk_size ? chunk_size - 3 : chunk_size;
+            auto chunk_index = std::int32_t{};
+
+            while (static_cast<std::size_t>(chunk_index) < chunk_end) {
+                auto code_point = UChar32{};
+                U8_NEXT(text.data() + byte_index, chunk_index, static_cast<std::int32_t>(chunk_size), code_point);
+                if (code_point < 0) {
+                    throw std::invalid_argument{"string contains malformed UTF-8"};
+                }
+                ++length_;
             }
-            ++length_;
+            byte_index += static_cast<std::size_t>(chunk_index);
         }
     }
 

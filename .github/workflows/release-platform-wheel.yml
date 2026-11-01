@@ -80,7 +80,9 @@ jobs:
         shell: pwsh
         run: |
           "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
-          "CMAKE_ARGS=-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake -DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release" |
+          "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+          "CMAKE_ARGS=-DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release" |
             Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Configure macOS CMake arguments
         if: runner.os == 'macOS'
