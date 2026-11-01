@@ -50,7 +50,7 @@ template <typename T> struct scalar_storage_traits<List<T>> {
         std::construct_at(destination);
         auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
         for (const auto &item : value) {
-            destination->items.emplace_back_with(memory.memory_resource(), [&](auto *stored) {
+            destination->items.emplace_back_with(memory.memory_resource(), [&](typename ItemTraits::stored_type *stored) {
                 if constexpr (requires { ItemTraits::construct(stored, item, memory); }) {
                     ItemTraits::construct(stored, item, memory);
                 } else {

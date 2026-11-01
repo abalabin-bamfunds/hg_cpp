@@ -18,8 +18,6 @@ template <typename Target> class SignatureWiringTemplate final : public WiringTe
     SignatureWiringTemplate(Target target, Signature signature)
         : target_{std::move(target)}, signature_{std::move(signature)} {}
 
-    using WiringTemplate::operator();
-
     template <typename... Arguments>
         requires(graph_code_argument<Arguments> && ...) &&
                 requires(const Target &target, Arguments &&...arguments) {
@@ -53,6 +51,39 @@ template <typename Target> class SignatureWiringTemplate final : public WiringTe
             return output;
         }
     }
+
+    template <typename... Arguments>
+        requires(graph_code_argument<Arguments> && ...) &&
+                (!requires(const Target &target, Arguments &&...arguments) {
+                    target(std::forward<Arguments>(arguments)...);
+                })
+    auto operator()(Arguments &&...arguments) const & {
+        return WiringTemplate::operator()(std::forward<Arguments>(arguments)...);
+    }
+
+    template <typename... Arguments>
+        requires(graph_code_argument<Arguments> && ...) &&
+                (!requires(const Target &target, const TypeMap &type_map, Arguments &&...arguments) {
+                    target(type_map, std::forward<Arguments>(arguments)...);
+                })
+    auto operator()(const TypeMap &type_map, Arguments &&...arguments) const & {
+        return WiringTemplate::operator()(type_map, std::forward<Arguments>(arguments)...);
+    }
+
+    auto operator()(std::span<const WiringPoint> arguments) const & {
+        return WiringTemplate::operator()(arguments);
+    }
+    auto operator()(std::span<const WiringArgument> arguments) const & {
+        return WiringTemplate::operator()(arguments);
+    }
+    auto operator()(const TypeMap &type_map, std::span<const WiringPoint> arguments) const & {
+        return WiringTemplate::operator()(type_map, arguments);
+    }
+    auto operator()(const TypeMap &type_map, std::span<const WiringArgument> arguments) const & {
+        return WiringTemplate::operator()(type_map, arguments);
+    }
+
+    template <typename... Arguments> void operator()(Arguments &&...) const && = delete;
 
     const Signature &default_signature() const override { return signature_; }
     bool allows_output_inference() const noexcept override { return target_.allows_output_inference(); }

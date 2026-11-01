@@ -59,7 +59,7 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
             (void)destination->items.try_emplace_with(
                 key, memory.memory_resource(), [&](auto *stored) { KeyTraits::construct(stored, key, memory); },
                 [&](auto *stored) noexcept { KeyTraits::destroy(stored, memory); },
-                [&](auto *stored) {
+                [&](typename ValueTraits::stored_type *stored) {
                     if constexpr (requires { ValueTraits::construct(stored, item, memory); }) {
                         ValueTraits::construct(stored, item, memory);
                     } else {

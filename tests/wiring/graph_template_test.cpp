@@ -526,7 +526,7 @@ TEST_CASE("callable graph requirements can demand scalar-dependent resolvers",
 TEST_CASE("a graph signature resolves a time series variable declaration",
           "[graph_template][type_system][feature:wiring]") {
     using T = TimeSeriesVariable<"T">;
-    constexpr auto G = guarantee_variable<"G">;
+    static constexpr auto G = guarantee_variable<"G">;
 
     const auto identity = graph("name"_n = "generic_time_series_identity",
                                     [](wp<T::with<G>> input) -> wp<T::with<G>> { return input; });

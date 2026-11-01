@@ -49,6 +49,9 @@ set_target_properties(
 )
 target_compile_features(hg_python PUBLIC cxx_std_23)
 target_compile_definitions(hg_python PRIVATE HG_PYTHON_BUILDING PUBLIC NB_SHARED Py_LIMITED_API=0x030C0000)
+if(APPLE)
+    target_compile_options(hg_python INTERFACE -fvisibility=default)
+endif()
 target_include_directories(
     hg_python
     PUBLIC

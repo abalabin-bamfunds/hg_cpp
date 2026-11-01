@@ -382,7 +382,7 @@ TEST_CASE("a reader reads a contiguous buffer", "[coverage-exempt]") {
 }
 
 TEST_CASE("typed access skips reservation alignment padding", "[coverage-exempt]") {
-    struct alignas(16) value {
+    struct alignas(std::max_align_t) value {
         explicit value(std::uint64_t data) : data{data} {}
         std::uint64_t data;
     };
@@ -482,7 +482,7 @@ TEST_CASE("typed reads and skips destroy nontrivial values", "[coverage-exempt]"
 }
 
 TEST_CASE("aligned typed reservations roll over single-writer and concurrent blocks", "[coverage-exempt]") {
-    struct alignas(16) value {
+    struct alignas(std::max_align_t) value {
         explicit value(std::uint64_t data) : data{data} {}
         std::uint64_t data;
     };

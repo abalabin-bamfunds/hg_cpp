@@ -19,6 +19,7 @@
 
 #include <cstddef>
 #include <deque>
+#include <memory>
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
@@ -280,9 +281,10 @@ struct log_overloads {
             if (!hg::logging::enabled(level)) {
                 return;
             }
-            auto record = capture_record(pattern, positional, named, context->evaluation_time());
+            auto record = std::make_shared<log_detail::LogRecord>(
+                capture_record(pattern, positional, named, context->evaluation_time()));
             hg::logging::details::submit(level, [record = std::move(record)] {
-                return log_detail::format_record(record);
+                return log_detail::format_record(*record);
             });
         }
     };
@@ -313,10 +315,10 @@ struct log_overloads {
                 return;
             }
 
-            auto record = LogRecord{.pattern = "{}", .arguments = {}};
-            record.arguments.emplace_back(std::string{}, capture_tick(value, context->evaluation_time()));
+            auto record = std::make_shared<LogRecord>(LogRecord{.pattern = "{}", .arguments = {}});
+            record->arguments.emplace_back(std::string{}, capture_tick(value, context->evaluation_time()));
             hg::logging::details::submit(level, [record = std::move(record)] {
-                return log_detail::format_record(record);
+                return log_detail::format_record(*record);
             });
         }
     };

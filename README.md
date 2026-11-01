@@ -38,8 +38,14 @@ cmake --build --preset dev
 ctest --test-dir build/dev --output-on-failure
 ```
 
-The project requires CMake 3.31 or newer, Ninja, Catch2 3, and a C++23 compiler.
+The project requires CMake 3.31 or newer, Ninja, Catch2 3, fmt, ICU, and a C++23 compiler.
 CMake downloads pinned `ddvisitor`, `tpack`, and Quill releases during configuration.
+
+On macOS, when using Homebrew dependencies, provide their prefixes to CMake:
+
+```sh
+cmake --preset dev -DCMAKE_PREFIX_PATH="$(brew --prefix icu4c);$(brew --prefix fmt)"
+```
 
 After installation, CMake consumers can use
 `find_package(hg CONFIG REQUIRED)` and link to `hg::hg`.

@@ -6,6 +6,7 @@
 
 #include <concepts>
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <tuple>
@@ -63,10 +64,10 @@ template <Level VALUE, typename... Args> void log(fmt::format_string<Args...> pa
 
     auto format = std::string{pattern.get().data(), pattern.get().size()};
     using Arguments = std::tuple<decltype(snapshot_argument(std::forward<Args>(args)))...>;
-    auto arguments = Arguments{snapshot_argument(std::forward<Args>(args))...};
+    auto arguments = std::make_shared<Arguments>(snapshot_argument(std::forward<Args>(args))...);
     submit(VALUE, [format = std::move(format), arguments = std::move(arguments)]() mutable {
         return std::apply(
-            [&format](auto &...values) { return fmt::format(fmt::runtime(format), values...); }, arguments);
+            [&format](auto &...values) { return fmt::format(fmt::runtime(format), values...); }, *arguments);
     });
 }
 

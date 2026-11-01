@@ -88,6 +88,11 @@ class In<Variable, Properties...>
 static_assert(sizeof(In<TS_T>) == 3 * sizeof(void *));
 static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 
+namespace details {
+template <typename... Functions>
+decltype(auto) visit_time_series_input(const TimeSeriesInputData &data, Functions &&...functions);
+}
+
 } // namespace hg
 
 #include <hg/time_series/ref/ref_input.hpp>
@@ -128,39 +133,41 @@ auto In<Variable, Properties...>::visit(Visitor &&visitor, Arguments &&...argume
     auto dispatch = ddv::make_visitable_visitor<TimeSeriesInputTypes>(
         std::forward_as_tuple(std::forward<Arguments>(arguments)...), std::forward<Visitor>(visitor));
     auto &types = static_cast<TimeSeriesInputTypes &>(dispatch);
+    auto visit_input = [&]<typename Input>() {
+        auto input = Input{data_};
+        types.visit(&input);
+    };
     runtime_type().type().visit(
         [&](const TimeSeriesValueType *) {
-            auto input = In<TS<SCALAR>>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<TS<SCALAR>>>();
         },
         [&](const TimeSeriesListType *) {
-            auto input = In<TSL<TS_T, SIZE>>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<TSL<TS_T, SIZE>>>();
         },
         [&](const TimeSeriesBundleType *) {
-            auto input = In<TSB<SCHEMA>>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<TSB<SCHEMA>>>();
         },
         [&](const TimeSeriesSetType *) {
-            auto input = In<TSS<SCALAR>>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<TSS<SCALAR>>>();
         },
         [&](const TimeSeriesDictionaryType *) {
-            auto input = In<TSD<SCALAR, TS_T>>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<TSD<SCALAR, TS_T>>>();
         },
         [&](const TimeSeriesReferenceType *) {
-            auto input = In<REF<TS_T>>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<REF<TS_T>>>();
         },
         [&] {
-            auto input = In<TS_T>{data_};
-            types.visit(&input);
+            visit_input.template operator()<In<TS_T>>();
         });
 
     if constexpr (!decltype(dispatch)::is_result_void) {
         return *dispatch;
     }
+}
+
+template <typename... Functions>
+decltype(auto) details::visit_time_series_input(const TimeSeriesInputData &data, Functions &&...functions) {
+    return In<TS_T>{data}.visit(std::forward<Functions>(functions)...);
 }
 
 } // namespace hg

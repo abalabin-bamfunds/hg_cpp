@@ -2019,7 +2019,7 @@ TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
         return unbind(collection, trigger);
     };
 
-    CHECK(hg::run_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
+    CHECK(hg::run_graph(graph, ticks({{{0, 10}}, {{0, 20}}}), ticks({0, 1})).equals({true, false}));
 }
 
 namespace {

@@ -8,6 +8,7 @@ if(NOT Catch2_FOUND)
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(Catch2)
+    target_compile_features(Catch2 PUBLIC cxx_std_23)
     list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
 endif()
 

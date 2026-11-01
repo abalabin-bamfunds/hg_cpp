@@ -48,7 +48,9 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...>
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return details::visit_time_series_input(data_, std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = TS<Variable, TimeSeriesProperties...>;
     using value_type = Variable;

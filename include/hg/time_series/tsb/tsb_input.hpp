@@ -84,7 +84,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
             [](void *context, item_id_t id) { (*static_cast<std::remove_reference_t<Function> *>(context))(id); });
     }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return details::visit_time_series_input(data_, std::forward<Functions>(functions)...);
+    }
 
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;
@@ -145,7 +147,9 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return details::visit_time_series_input(data_, std::forward<Functions>(functions)...);
+    }
 
     using time_series_type = TSB<Schema, TimeSeriesProperties...>;
 

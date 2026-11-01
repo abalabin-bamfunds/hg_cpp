@@ -285,13 +285,14 @@ TEST_CASE("partition leaf updates reach consumers without evaluating the transfo
           "[feature:operator][feature:reference][feature:profiling][series:tsd][feature:collection-change]"
           "[shape:multiple][transition:first-tick][transition:update]") {
     auto observations = std::vector<i64>{};
-    const auto observe = node([&](In<TSD<string, TSD<i64, TS<i64>>>> groups) {
+    auto observe = node([&](In<TSD<string, TSD<i64, TS<i64>>>> groups) {
         auto total = i64{};
         groups.for_each_value([&](const auto &group) {
             group.for_each_value([&](const auto &value) { total += *value; });
         });
         observations.push_back(total);
     });
+    observe.set_name(util::symbol{"partition_observer"});
     const auto values_source = node<partition_values_source>();
     const auto partitions_source = node<partition_labels_source>();
 
@@ -324,7 +325,7 @@ TEST_CASE("partition leaf updates reach consumers without evaluating the transfo
         if (wiring_path.name.text() == "partition") {
             ++partition_evaluations;
         }
-        if (wiring_path.name.text().empty()) {
+        if (wiring_path.name.text() == "partition_observer") {
             ++observed_node_evaluations;
         }
     }
