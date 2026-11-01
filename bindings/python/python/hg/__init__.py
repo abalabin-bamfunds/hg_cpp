@@ -401,8 +401,8 @@ def schema(cls: type) -> type:
     if base is not None and "_native_time_series_schema" not in base.__dict__:
         raise TypeError("a schema subclass requires a schema class base")
 
-    direct_annotations = cls.__dict__.get("__annotations__", {})
     try:
+        direct_annotations = inspect.get_annotations(cls)
         resolved_annotations = get_type_hints(cls, include_extras=True, localns={cls.__name__: cls})
     except NameError as error:
         raise TypeError("schema field annotations must resolve during schema declaration") from error
