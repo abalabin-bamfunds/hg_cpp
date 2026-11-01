@@ -15,6 +15,7 @@ test = ["pytest>=8"]
 cmake.define.HG_BUILD_PYTHON = "ON"
 cmake.define.HG_BUNDLE_FMT = "ON"
 cmake.define.BUILD_TESTING = "OFF"
+cmake.define.CMAKE_INSTALL_LIBDIR = "lib"
 wheel.packages = ["bindings/python/python/hg"]
 wheel.py-api = "cp312"
 sdist.include = [

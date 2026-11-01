@@ -39,6 +39,7 @@ ctest --test-dir build/dev --output-on-failure
 ```
 
 The project requires CMake 3.31 or newer, Ninja, Catch2 3, fmt, ICU, and a C++23 compiler.
+GCC builds require GCC 14 or newer.
 CMake downloads pinned `ddvisitor`, `tpack`, and Quill releases during configuration.
 
 On macOS, when using Homebrew dependencies, provide their prefixes to CMake:

@@ -56,8 +56,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          $vcpkgRoot = $env:VCPKG_ROOT
-          if (-not $vcpkgRoot) { $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT }
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = $env:VCPKG_ROOT }
           if (-not $vcpkgRoot -or -not (Test-Path "$vcpkgRoot/vcpkg.exe")) {
             throw "Could not locate the runner's vcpkg installation"
           }
@@ -67,6 +67,10 @@ jobs:
         shell: pwsh
         run: |
           & "$env:VCPKG_ROOT/vcpkg.exe" install icu --triplet x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg failed to install ICU (exit $LASTEXITCODE)" }
+          if (-not (Test-Path "$env:VCPKG_ROOT/installed/x64-windows/include/unicode/utypes.h")) {
+            throw "vcpkg did not install ICU headers for x64-windows"
+          }
           python -m pip install --upgrade --only-binary=:all: `
             "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" `
             "cmake>=3.31" "ninja==1.13.0" "abi3audit==0.0.26" `

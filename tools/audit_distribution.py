@@ -73,20 +73,13 @@ def audit_wheel(path: Path, platform: str | None) -> None:
         if missing:
             raise ValueError("wheel is missing required files: " + ", ".join(sorted(missing)))
 
-        cmake_roots = ("lib/cmake/hg", "lib64/cmake/hg")
-        if not any(
-            all(
-                f"{root}/{name}" in paths
-                for name in ("hgConfig.cmake", "hgConfigVersion.cmake", "hgTargets.cmake")
-            )
-            for root in cmake_roots
+        if not all(
+            f"lib/cmake/hg/{name}" in paths
+            for name in ("hgConfig.cmake", "hgConfigVersion.cmake", "hgTargets.cmake")
         ):
-            raise ValueError("wheel is missing the HG CMake package under lib or lib64")
+            raise ValueError("wheel is missing the HG CMake package under lib")
 
-        if not any(
-            f"{root}/cmake/ddvisitor/ddvisitor-config.cmake" in paths
-            for root in ("lib", "lib64")
-        ):
+        if "lib/cmake/ddvisitor/ddvisitor-config.cmake" not in paths:
             raise ValueError("wheel is missing the ddvisitor CMake dependency")
 
         if not any(name.startswith("hg/_hg") and name.endswith((".so", ".pyd")) for name in paths):
