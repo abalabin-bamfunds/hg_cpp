@@ -311,8 +311,16 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
 
     mutable details::TimeSeriesInputData data_;
     details::ReferenceBinding binding_{};
-    [[no_unique_address]] std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData, EmptyDynamicBinding>
-        dynamic_;
+#if defined(_MSC_VER)
+    // MSVC ignores the standard attribute for ABI compatibility.
+    [[msvc::no_unique_address]]
+#else
+    [[no_unique_address]]
+#endif
+    std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData, EmptyDynamicBinding> dynamic_;
 };
+
+static_assert(sizeof(In<REF<TS<int>>>) == 5 * sizeof(void *));
+static_assert(sizeof(In<REF<TS<int>>, dynamic_activity>) == 6 * sizeof(void *));
 
 } // namespace hg

@@ -190,8 +190,13 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
     };
 
     mutable details::TimeSeriesInputData data_;
-    [[no_unique_address]] std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData,
-                                             EmptyDynamicBinding> dynamic_;
+#if defined(_MSC_VER)
+    // MSVC ignores the standard attribute for ABI compatibility.
+    [[msvc::no_unique_address]]
+#else
+    [[no_unique_address]]
+#endif
+    std::conditional_t<ParsedProperties::dynamic_binding, DynamicBindingData, EmptyDynamicBinding> dynamic_;
 };
 
 static_assert(sizeof(In<TS<int>>) == 3 * sizeof(void *));
