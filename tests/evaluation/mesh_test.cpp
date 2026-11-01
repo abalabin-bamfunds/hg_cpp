@@ -1,13 +1,13 @@
-#include <bg/map.hpp>
-#include <bg/mesh.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/reduce.hpp>
-#include <bg/switch.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
+#include <hg/map.hpp>
+#include <hg/mesh.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/reduce.hpp>
+#include <hg/switch.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -19,8 +19,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 const auto add_mesh_dependency = node([](i64 value, std::optional<i64> dependency) {
     return value + dependency.value_or(0);
@@ -37,9 +37,9 @@ TEST_CASE("mesh evaluates a dependency branch before the branch that depends on 
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 10}, {1, 1}}, {{2, 30}, {1, 3}}}, {{{2, 1}}, {{2, 1}}});
+    const auto actual = hg::run_graph(tested, {{{2, 10}, {1, 1}}, {{2, 30}, {1, 3}}}, {{{2, 1}}, {{2, 1}}});
 
-    CHECK(actual.equals<bg::i64>({11, 33}));
+    CHECK(actual.equals<hg::i64>({11, 33}));
 }
 
 const auto observe_mesh_dependency =
@@ -118,7 +118,7 @@ TEST_CASE("mesh resumes a dependency node after its dependency completes",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 20}, {1, 10}}}, {{{2, 1}}});
+    const auto actual = hg::run_graph(tested, {{{2, 20}, {1, 10}}}, {{{2, 1}}});
 
     CHECK(actual.equals<i64>({3}));
     CHECK(events == std::vector{21, 12, 22});
@@ -137,7 +137,7 @@ TEST_CASE("mesh creates a branch for a requested missing key",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 1}}});
+    const auto actual = hg::run_graph(tested, {{{2, 1}}});
 
     CHECK(actual.equals<i64>({1}));
 }
@@ -153,10 +153,10 @@ TEST_CASE("mesh follows a time-series dependency key",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 10}, {3, 100}}, {{1, 2}, {2, 20}, {3, 200}}},
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 10}, {3, 100}}, {{1, 2}, {2, 20}, {3, 200}}},
                                             {{{2, 1}}, {{2, 3}}});
 
-    CHECK(actual.equals<bg::i64>({11, 220}));
+    CHECK(actual.equals<hg::i64>({11, 220}));
 }
 
 TEST_CASE("mesh invalidates a dependency when the dependency branch output becomes invalid",
@@ -170,10 +170,10 @@ TEST_CASE("mesh invalidates a dependency when the dependency branch output becom
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 10}}, {{1, literal::REMOVE}, {2, 20}}},
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 10}}, {{1, literal::REMOVE}, {2, 20}}},
                                             {{{2, 1}}, {{2, 1}}});
 
-    CHECK(actual.equals<bg::i64>({11, 20}));
+    CHECK(actual.equals<hg::i64>({11, 20}));
 }
 
 TEST_CASE("mesh retains a dependency-only branch until its last dependent is removed",
@@ -190,7 +190,7 @@ TEST_CASE("mesh retains a dependency-only branch until its last dependent is rem
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 7}}, {{2, literal::REMOVE}}, {{2, 9}}},
+    const auto actual = hg::run_graph(tested, {{{2, 7}}, {{2, literal::REMOVE}}, {{2, 9}}},
                                             {{{2, 1}}, {{2, literal::REMOVE}}, {{2, 1}}});
 
     CHECK(actual.equals<i64>({1, std::nullopt, 1}));
@@ -210,7 +210,7 @@ TEST_CASE("mesh destroys removed dependent branches and their dependency branche
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 7}}, {{2, literal::REMOVE}}, {{2, literal::REMOVE}}},
+    const auto actual = hg::run_graph(tested, {{{2, 7}}, {{2, literal::REMOVE}}, {{2, literal::REMOVE}}},
                                             {{{2, 1}}, {{2, literal::REMOVE}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals<i64>({1, std::nullopt, std::nullopt}));
@@ -230,7 +230,7 @@ TEST_CASE("mesh destroys a removed dependency while its dependent remains",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 7}}, {{2, 8}}, {{2, 9}}},
+    const auto actual = hg::run_graph(tested, {{{2, 7}}, {{2, 8}}, {{2, 9}}},
                                             {{{2, 1}}, {{2, literal::REMOVE}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals<i64>({2, std::nullopt, std::nullopt}));
@@ -250,7 +250,7 @@ TEST_CASE("mesh transfers a dependency after its previous dependent releases it"
         return result[i64{3}];
     };
 
-    const auto actual = bg::run_graph(tested,
+    const auto actual = hg::run_graph(tested,
                                             {{{2, 20}, {3, 30}}, {{2, 20}, {3, 30}}, {{2, 20}, {3, 30}}},
                                             {{{2, 1}}, {{2, literal::REMOVE}, {3, 1}}, {{3, 1}}});
 
@@ -267,8 +267,8 @@ TEST_CASE("mesh rejects self and multi-branch dependency cycles",
         return result[i64{1}];
     };
 
-    CHECK_THROWS_AS(bg::run_graph(tested, {{{2, 1}}}, {{{1, 1}}}), std::runtime_error);
-    CHECK_THROWS_AS(bg::run_graph(tested, {{{2, 1}}}, {{{1, 2}, {2, 1}}}), std::runtime_error);
+    CHECK_THROWS_AS(hg::run_graph(tested, {{{2, 1}}}, {{{1, 1}}}), std::runtime_error);
+    CHECK_THROWS_AS(hg::run_graph(tested, {{{2, 1}}}, {{{1, 2}, {2, 1}}}), std::runtime_error);
 }
 
 TEST_CASE("mesh evaluates a shared dependency once",
@@ -297,10 +297,10 @@ TEST_CASE("mesh evaluates a shared dependency once",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 0}, {2, 0}, {3, 0}, {4, 0}}},
+    const auto actual = hg::run_graph(tested, {{{1, 0}, {2, 0}, {3, 0}, {4, 0}}},
                                             {{{1, 2}, {2, 4}, {3, 4}}}, {{{1, 3}}});
 
-    CHECK(actual.equals<bg::i64>({14}));
+    CHECK(actual.equals<hg::i64>({14}));
     CHECK(evaluation_counts[4] == 1);
 }
 
@@ -325,9 +325,9 @@ TEST_CASE("mesh does not reevaluate a clean dependency branch",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 10}}, {{2, 20}}}, {{{2, 1}}, {{2, 1}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 10}}, {{2, 20}}}, {{{2, 1}}, {{2, 1}}});
 
-    CHECK(actual.equals<bg::i64>({11, 21}));
+    CHECK(actual.equals<hg::i64>({11, 21}));
     CHECK(evaluation_counts[1] == 1);
     CHECK(evaluation_counts[2] == 2);
 }
@@ -354,9 +354,9 @@ TEST_CASE("mesh runs inside map", "[feature:mesh][feature:map][feature:nested-gr
         return outer[i64{5}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{5, 1}}, {{5, 3}}});
+    const auto actual = hg::run_graph(tested, {{{5, 1}}, {{5, 3}}});
 
-    CHECK(actual.equals<bg::i64>({11, 33}));
+    CHECK(actual.equals<hg::i64>({11, 33}));
 }
 
 TEST_CASE("map runs inside mesh", "[feature:mesh][feature:map][feature:nested-graph][feature:operator][series:tsd]"
@@ -374,9 +374,9 @@ TEST_CASE("map runs inside mesh", "[feature:mesh][feature:map][feature:nested-gr
         return outer[i64{5}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{5, 1}}, {{5, 3}}});
+    const auto actual = hg::run_graph(tested, {{{5, 1}}, {{5, 3}}});
 
-    CHECK(actual.equals<bg::i64>({2, 4}));
+    CHECK(actual.equals<hg::i64>({2, 4}));
 }
 
 TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
@@ -408,7 +408,7 @@ TEST_CASE("a named outer mesh is selected through an inner mesh and switch",
         return outer[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 20}, {1, 2}}, {{2, 30}, {1, 3}}});
+    const auto actual = hg::run_graph(tested, {{{2, 20}, {1, 2}}, {{2, 30}, {1, 3}}});
 
     CHECK(actual.equals<i64>({22, 33}));
 }
@@ -454,7 +454,7 @@ TEST_CASE("a mesh dependency follows switch output replacement",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {1, 2, 2, 1},
+    const auto actual = hg::run_graph(tested, {1, 2, 2, 1},
                                             {{{2, 10}, {1, 1}}, {{2, 20}, {1, 2}},
                                              {{2, 30}, {1, 3}}, {{2, 40}, {1, 4}}});
 
@@ -498,10 +498,10 @@ TEST_CASE("runtime map instances keep independent outer mesh dependencies",
         return outer[i64{3}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 10}, {3, 100}},
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 10}, {3, 100}},
                                                      {{1, 2}, {2, 20}, {3, 200}}});
 
-    CHECK(actual.equals<bg::i64>({210, 420}));
+    CHECK(actual.equals<hg::i64>({210, 420}));
 }
 
 TEST_CASE("a map removes and recreates branches after pending mesh dependencies",
@@ -543,11 +543,11 @@ TEST_CASE("a map removes and recreates branches after pending mesh dependencies"
         return outer[i64{3}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 1}, {2, 10}, {3, 100}}, {{1, 2}, {2, 20}, {3, 200}}, {{1, 3}, {2, 30}, {3, 300}}},
         {true, false, true});
 
-    CHECK(actual.equals<bg::i64>({10, std::nullopt, 30}));
+    CHECK(actual.equals<hg::i64>({10, std::nullopt, 30}));
 }
 
 TEST_CASE("a mesh dependency branch reports timed work through its owner",
@@ -563,7 +563,7 @@ TEST_CASE("a mesh dependency branch reports timed work through its owner",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{2, 10}, {1, 1}}}, {{{2, 1}}});
+    const auto actual = hg::run_graph(tested, {{{2, 10}, {1, 1}}}, {{{2, 1}}});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 11}));
 }
@@ -578,7 +578,7 @@ TEST_CASE("mesh supports source and sink graphs",
     const auto source_test = [](wp<TSS<i64>> keys) {
         return mesh([](auto key) { return key; }, keys)[i64{7}];
     };
-    const auto source_result = bg::run_graph(source_test, {{7}, {literal::REMOVED(7)}, {7}});
+    const auto source_result = hg::run_graph(source_test, {{7}, {literal::REMOVED(7)}, {7}});
 
     CHECK(source_result.equals<i64>({7, std::nullopt, 7}));
 
@@ -586,9 +586,9 @@ TEST_CASE("mesh supports source and sink graphs",
         mesh([&](auto item) { sink(item); }, values);
         return values[i64{5}];
     };
-    const auto sink_result = bg::run_graph(sink_test, {{{5, 1}}, {{5, 2}}});
+    const auto sink_result = hg::run_graph(sink_test, {{{5, 1}}, {{5, 2}}});
 
-    CHECK(sink_result.equals<bg::i64>({1, 2}));
+    CHECK(sink_result.equals<hg::i64>({1, 2}));
     CHECK(recorded_values == std::vector<i64>{1, 2});
 }
 
@@ -612,7 +612,7 @@ TEST_CASE("reduce combines mesh outputs as branches update and disappear",
         return reduce(sum_mesh_values, result, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, 1}, {2, 10}}, {{1, 3}, {2, 20}}, {{2, literal::REMOVE}, {1, 4}},
          {{1, literal::REMOVE}}},
@@ -635,7 +635,7 @@ TEST_CASE("mesh branches reduce nested dictionaries before using their dependenc
         return reduce(sum_mesh_values, result, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{10, 1}, {20, 2}}}, {2, {{10, 4}}}},
          {{1, {{10, 10}}}}},
@@ -663,7 +663,7 @@ TEST_CASE("mapped meshes reduce independently and rebuild after a parent returns
         return reduce(sum_mesh_values, totals, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{1, 1}, {2, 10}}}, {2, {{1, 3}, {2, 20}}}},
          {{1, {{1, 5}}}, {2, {{2, 30}}}},
@@ -697,7 +697,7 @@ TEST_CASE("switch-selected mesh branches feed a reduction",
         return reduce(sum_mesh_values, result, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 1}, {2, 10}}, {{1, 3}, {2, 20}}}, {{{2, 1}}});
 
     CHECK(actual.equals<i64>({32, 46}));
@@ -728,7 +728,7 @@ TEST_CASE("a reduction observes mesh dependencies after switch outputs change",
         return reduce(sum_mesh_values, result, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {1, 2}, {{{1, 1}, {2, 10}}, {{2, 20}}}, {{{2, 1}}});
 
     CHECK(actual.equals<i64>({42, 82}));

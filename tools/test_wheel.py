@@ -18,22 +18,22 @@ from importlib.metadata import distribution
 import os
 from pathlib import Path
 from sysconfig import get_paths
-import bg
+import hg
 
-package_dir = Path(bg.__file__).resolve().parent
+package_dir = Path(hg.__file__).resolve().parent
 assert package_dir.is_relative_to(Path(get_paths()["purelib"]).resolve())
-assert distribution(os.environ["BG_DISTRIBUTION_NAME"]).version == os.environ["BG_DISTRIBUTION_VERSION"]
+assert distribution(os.environ["HG_DISTRIBUTION_NAME"]).version == os.environ["HG_DISTRIBUTION_VERSION"]
 
-@bg.node
+@hg.node
 def increment(value: int) -> int:
     return value + 1
 
-@bg.graph
+@hg.graph
 def graph(value: int) -> int:
     return increment(value)
 
-assert bg.test_graph(graph, [1, 4, None, 7]) == [2, 5, None, 8]
-print(f"Imported bg from {package_dir}; graph smoke passed")
+assert hg.test_graph(graph, [1, 4, None, 7]) == [2, 5, None, 8]
+print(f"Imported hg from {package_dir}; graph smoke passed")
 '''
 
 
@@ -51,7 +51,7 @@ def main() -> None:
     environment_variables["PIP_CONFIG_FILE"] = os.devnull
     environment_variables["PIP_DISABLE_PIP_VERSION_CHECK"] = "1"
 
-    with tempfile.TemporaryDirectory(prefix="bg-wheel-smoke-") as temporary_directory:
+    with tempfile.TemporaryDirectory(prefix="hg-wheel-smoke-") as temporary_directory:
         temporary_path = Path(temporary_directory)
         environment = temporary_path / "venv"
         venv.EnvBuilder(with_pip=True).create(environment)
@@ -72,8 +72,8 @@ def main() -> None:
         )
         smoke_file = temporary_path / "smoke.py"
         smoke_file.write_text(SMOKE_TEST, encoding="utf-8")
-        environment_variables["BG_DISTRIBUTION_NAME"] = project["name"]
-        environment_variables["BG_DISTRIBUTION_VERSION"] = project["version"]
+        environment_variables["HG_DISTRIBUTION_NAME"] = project["name"]
+        environment_variables["HG_DISTRIBUTION_VERSION"] = project["version"]
         subprocess.run(
             [str(python), "-I", str(smoke_file)],
             cwd=temporary_path,

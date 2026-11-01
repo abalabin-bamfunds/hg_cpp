@@ -1,16 +1,16 @@
-#include <bg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
 
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <algorithm>
 #include <memory>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTupleScalarType final : public TupleScalarType {
@@ -96,4 +96,4 @@ const TupleScalarType &tuple_scalar_type(std::span<const ScalarType *const> item
     return registered;
 }
 
-} // namespace bg
+} // namespace hg

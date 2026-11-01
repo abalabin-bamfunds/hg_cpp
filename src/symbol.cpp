@@ -1,11 +1,11 @@
-#include <bg/util/symbol.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/util/symbol.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <mutex>
 #include <unordered_set>
 
-namespace bg::util {
+namespace hg::util {
 namespace {
 
 class symbol_table {
@@ -36,4 +36,4 @@ const std::string *symbol::intern(std::string_view text) {
     return symbols().intern(text);
 }
 
-} // namespace bg::util
+} // namespace hg::util

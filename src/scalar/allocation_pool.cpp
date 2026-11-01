@@ -1,10 +1,10 @@
-#include <bg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
 
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <new>
 
-namespace bg::details {
+namespace hg::details {
 
 ScalarAllocationPool::ScalarAllocationPool(allocator upstream)
     : upstream_{upstream}, memory_{&upstream.memory_resource()} {}
@@ -34,4 +34,4 @@ void ScalarAllocationPool::release() noexcept {
     upstream.deallocate_bytes(this, sizeof(ScalarAllocationPool), alignof(ScalarAllocationPool));
 }
 
-} // namespace bg::details
+} // namespace hg::details

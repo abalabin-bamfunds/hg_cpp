@@ -1,9 +1,9 @@
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class FixedTupleRuntimeType final : public ScalarTupleRuntimeType {
@@ -418,4 +418,4 @@ void initialize_fixed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
 }
 
 } // namespace details
-} // namespace bg
+} // namespace hg

@@ -1,9 +1,9 @@
-#include <bg/evaluation_profiler.hpp>
+#include <hg/evaluation_profiler.hpp>
 
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/realtime_evaluation_engine.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/realtime_evaluation_engine.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 struct EvaluationProfiler::State {
     struct OuterHistory {
@@ -800,4 +800,4 @@ std::string EvaluationProfiler::report(std::size_t recent_outer_periods) const {
     return out.str();
 }
 
-} // namespace bg
+} // namespace hg

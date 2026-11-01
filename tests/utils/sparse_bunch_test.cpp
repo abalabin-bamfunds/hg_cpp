@@ -1,5 +1,5 @@
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -13,7 +13,7 @@
 #include <string>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("sparse bunches share one occupancy index", "[sparse_bunch][coverage-exempt]") {
     auto memory = counting_memory_resource{};

@@ -1,16 +1,16 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/switch.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/switch.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,8 +18,8 @@
 #include <optional>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -51,7 +51,7 @@ TEST_CASE("nothing blocks required inputs and leaves optional inputs invalid",
         return !missing.valid() && trigger;
     });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         [&](wp<TS<bool>> trigger) {
             return required(operators::nothing[type<TS<i64>>](), trigger);
         },
@@ -59,7 +59,7 @@ TEST_CASE("nothing blocks required inputs and leaves optional inputs invalid",
     CHECK(evaluations == 0);
     CHECK(actual.equals<bool>({std::nullopt, std::nullopt, std::nullopt}));
 
-    const auto optional_actual = bg::run_graph(
+    const auto optional_actual = hg::run_graph(
         [&](wp<TS<bool>> trigger) {
             return optional_input(operators::nothing[type<TS<i64>>](), trigger);
         },
@@ -70,7 +70,7 @@ TEST_CASE("nothing blocks required inputs and leaves optional inputs invalid",
 TEST_CASE("nothing supports dynamic activity and collection input inspection",
           "[evaluation][input_activity][feature:operator][guarantee:final][series:list]") {
     const auto dynamic = node<dynamic_nothing_input>();
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         [&](wp<TS<bool>> trigger) {
             return dynamic(operators::nothing[type<TS<i64>>](), trigger);
         },
@@ -80,7 +80,7 @@ TEST_CASE("nothing supports dynamic activity and collection input inspection",
     const auto inspect = node([](In<TSL<TS<i64>, 2>, optional> missing, bool trigger) {
         return !missing.valid() && missing.size() == 2 && trigger;
     });
-    const auto collection_actual = bg::run_graph(
+    const auto collection_actual = hg::run_graph(
         [&](wp<TS<bool>> trigger) {
             return inspect(operators::nothing[type<TSL<TS<i64>, 2>>](), trigger);
         },
@@ -99,7 +99,7 @@ TEST_CASE("nothing unwraps an explicit reference type and supplies a reference t
         return reference.valid() && static_cast<bool>(reference.value()) && !target.valid() && trigger;
     });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         [&](wp<TS<bool>> trigger) {
             const auto missing = operators::nothing[type<REF<TS<i64>>>]();
             CHECK(&missing.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
@@ -122,7 +122,7 @@ TEST_CASE("nothing crosses nested, map, and switch boundaries",
         return !missing.valid() && run;
     });
     const auto nested_graph = [&](wp<TS<bool>> run) { return inspect_nested(nested(inner, run), run); };
-    CHECK(bg::run_graph(nested_graph, {true, false}).equals({true, false}));
+    CHECK(hg::run_graph(nested_graph, {true, false}).equals({true, false}));
 
     const auto inspect = node([](In<TS<i64>, optional> missing, i64 value) { return !missing.valid() && value > 0; });
     const auto mapped = [&](wp<TSD<i64, TS<i64>>> values) {
@@ -130,7 +130,7 @@ TEST_CASE("nothing crosses nested, map, and switch boundaries",
         return map([&](auto value, auto missing_input) { return inspect(missing_input, value); }, values, missing)
             [i64{1}];
     };
-    CHECK(bg::run_graph(mapped, {{{1, 3}}}).equals({true}));
+    CHECK(hg::run_graph(mapped, {{{1, 3}}}).equals({true}));
 
     const auto switched = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
         const auto missing = operators::nothing[type<TS<i64>>]();
@@ -139,7 +139,7 @@ TEST_CASE("nothing crosses nested, map, and switch boundaries",
                       })},
                        value, missing);
     };
-    CHECK(bg::run_graph(switched, {1, 1}, {3, 4}).equals({true, true}));
+    CHECK(hg::run_graph(switched, {1, 1}, {3, 4}).equals({true, true}));
 }
 
 TEST_CASE("nothing remains invalid through descendant field and list selections",
@@ -158,8 +158,8 @@ TEST_CASE("nothing remains invalid through descendant field and list selections"
         return inspect(missing[0], trigger);
     };
 
-    CHECK(bg::run_graph(select_field, {true, false}).equals({true, false}));
-    CHECK(bg::run_graph(select_item, {true, false}).equals({true, false}));
+    CHECK(hg::run_graph(select_field, {true, false}).equals({true, false}));
+    CHECK(hg::run_graph(select_item, {true, false}).equals({true, false}));
 }
 
 TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
@@ -168,12 +168,12 @@ TEST_CASE("an active input schedules evaluation and a passive input supplies its
 
     const auto consume = node([](float sum) { return sum; });
 
-    const auto graph = bg::graph(
+    const auto graph = hg::graph(
         "name"_n = "combine_and_consume", [&](wp<TS<float>> trigger, wp<TS<float>> sampled) {
         return consume(combine(trigger, sampled));
     });
 
-    const auto actual = bg::run_graph(graph, {1.0F, literal::SKIP, 2.0F}, {10.0F, 20.0F, literal::SKIP});
+    const auto actual = hg::run_graph(graph, {1.0F, literal::SKIP, 2.0F}, {10.0F, 20.0F, literal::SKIP});
 
     CHECK(actual.equals({11.0F, literal::SKIP, 22.0F}));
 }
@@ -183,7 +183,7 @@ TEST_CASE("an active optional input schedules evaluation on invalidation and rev
           "[validity:optional][transition:invalidation][transition:revalidation]") {
     const auto observe = node([](In<TS<float>, optional> input) { return input.valid(); });
 
-    CHECK(bg::run_graph(observe, {1.0F, literal::INVALID, 1.0F}).equals({true, false, true}));
+    CHECK(hg::run_graph(observe, {1.0F, literal::INVALID, 1.0F}).equals({true, false, true}));
 }
 
 TEST_CASE("a passive optional input does not schedule evaluation",
@@ -191,7 +191,7 @@ TEST_CASE("a passive optional input does not schedule evaluation",
           "[validity:optional]") {
     const auto observe = node([](In<TS<float>, passive, optional> input, bool) { return input.valid(); });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         observe, {1.0F, literal::INVALID, literal::SKIP, 3.0F, literal::SKIP},
         {true, literal::SKIP, true, literal::SKIP, true});
 
@@ -205,11 +205,11 @@ TEST_CASE("a passive required input propagates invalidation without evaluation",
 
     const auto observe = node([](std::optional<float> input) { return input.value_or(-1.0F); });
 
-    const auto graph = bg::graph("name"_n = "observe_copy", [&](wp<TS<float>> input, wp<TS<bool>> pulse) {
+    const auto graph = hg::graph("name"_n = "observe_copy", [&](wp<TS<float>> input, wp<TS<bool>> pulse) {
         return observe(copy(input, pulse));
     });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {1.0F, literal::INVALID, 3.0F, literal::SKIP}, {true, literal::SKIP, literal::SKIP, true});
 
     CHECK(actual.equals({1.0F, -1.0F, literal::SKIP, 3.0F}));
@@ -236,7 +236,7 @@ TEST_CASE("a dynamic input can stop and resume its own scheduling",
     };
 
     const auto controlled = node<dynamically_controlled_input>();
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         controlled, {1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F},
         {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
 
@@ -262,7 +262,7 @@ TEST_CASE("a passive dynamic input starts passive",
     };
 
     const auto activate = node<initially_passive_dynamic_input>();
-    const auto actual = bg::run_graph(activate, {1.0F, literal::SKIP, 2.0F},
+    const auto actual = hg::run_graph(activate, {1.0F, literal::SKIP, 2.0F},
                                             {literal::SKIP, true, literal::SKIP});
 
     CHECK(actual.equals({literal::SKIP, 1, 2}));
@@ -281,7 +281,7 @@ TEST_CASE("a callable dynamic input controls only its own scheduling",
         return *input;
     });
 
-    const auto actual = bg::run_graph(gate, {1, 2, 3, 4, 5, 6},
+    const auto actual = hg::run_graph(gate, {1, 2, 3, 4, 5, 6},
                                             {1, literal::SKIP, 0, literal::SKIP, 1, literal::SKIP});
 
     CHECK(actual.equals({1, 2, 3, literal::SKIP, 5, 6}));
@@ -301,12 +301,12 @@ TEST_CASE("a dynamic input controls scheduling for a default binding",
         return *input;
     });
 
-    const auto graph = bg::graph(
+    const auto graph = hg::graph(
         "name"_n = "default_binding_activity", [&](wp<TS<i64>> input, wp<TS<i64>> control) {
         return gate(operators::default_(input, 7), control);
     });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {literal::INVALID, 1, 2, 3, 4, 5}, {1, literal::SKIP, 0, literal::SKIP, 1, literal::SKIP});
 
     CHECK(actual.equals({7, 1, 2, literal::SKIP, 4, 5}));
@@ -341,12 +341,12 @@ TEST_CASE("two dynamic inputs sharing one time series control scheduling indepen
 
     const auto control_activity = node<independently_controlled_inputs>();
 
-    const auto graph = bg::graph(
+    const auto graph = hg::graph(
         "name"_n = "independent_shared_input_activity", [&](wp<TS<float>> value, wp<TS<float>> control) {
         return control_activity(value, value, control);
     });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {1.0F, 2.0F, literal::SKIP, 3.0F, literal::SKIP, 4.0F},
         {0.0F, literal::SKIP, 2.0F, literal::SKIP, 1.0F, literal::SKIP});
 
@@ -374,7 +374,7 @@ TEST_CASE("a dynamically passive required input still propagates invalidation",
     };
 
     const auto copy = node<dynamic_required_copy>();
-    const auto actual = bg::run_graph(copy, {1.0F, literal::INVALID, 3.0F}, {0.0F, literal::SKIP, 1.0F});
+    const auto actual = hg::run_graph(copy, {1.0F, literal::INVALID, 3.0F}, {0.0F, literal::SKIP, 1.0F});
 
     CHECK(actual.equals({1, literal::INVALID, 2}));
 }
@@ -401,7 +401,7 @@ TEST_CASE("a dynamic optional input applies its current activity to validity cha
 
     const auto observe = node<dynamic_optional_observer>();
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         observe, {1.0F, literal::INVALID, 1.0F, literal::INVALID, literal::SKIP, 1.0F},
         {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
 
@@ -419,7 +419,7 @@ TEST_CASE("a dynamic input connected to a collection item controls its schedulin
 
     const auto graph = [&](wp<TSL<TS<i64>, 1>> input) { return gate(input[0]); };
 
-    CHECK(bg::run_graph(graph, {{{0, 1}}, {{0, 2}}}).equals<i64>({1, std::nullopt}));
+    CHECK(hg::run_graph(graph, {{{0, 1}}, {{0, 2}}}).equals<i64>({1, std::nullopt}));
 }
 
 namespace {

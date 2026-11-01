@@ -19,9 +19,9 @@ def main() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     distribution = metadata.distribution(project["name"])
     install_prefix = Path(distribution.locate_file("")).resolve()
-    package_dir = install_prefix / "bg"
+    package_dir = install_prefix / "hg"
 
-    with tempfile.TemporaryDirectory(prefix="bg-sdk-consumer-") as temporary_directory:
+    with tempfile.TemporaryDirectory(prefix="hg-sdk-consumer-") as temporary_directory:
         build_directory = Path(temporary_directory) / "build"
         subprocess.run(
             [
@@ -32,14 +32,14 @@ def main() -> None:
                 str(build_directory),
                 f"-DCMAKE_PREFIX_PATH={install_prefix}",
                 f"-DPython_EXECUTABLE={sys.executable}",
-                f"-DBG_TEST_PACKAGE_DIR={package_dir}",
+                f"-DHG_TEST_PACKAGE_DIR={package_dir}",
             ],
             check=True,
         )
         subprocess.run(["cmake", "--build", str(build_directory), "--parallel", "2"], check=True)
-        executable = build_directory / "bg_sdk_consumer"
+        executable = build_directory / "hg_sdk_consumer"
         if os.name == "nt":
-            executable = build_directory / "bg_sdk_consumer.exe"
+            executable = build_directory / "hg_sdk_consumer.exe"
         runtime_environment = os.environ.copy()
         if os.name == "nt":
             runtime_environment["PATH"] = os.pathsep.join(
@@ -50,13 +50,13 @@ def main() -> None:
             [
                 sys.executable,
                 "-c",
-                "import bg_sdk_python_consumer; assert bg_sdk_python_consumer.version()",
+                "import hg_sdk_python_consumer; assert hg_sdk_python_consumer.version()",
             ],
             cwd=build_directory,
             check=True,
             env=runtime_environment,
         )
-        print(f"Built and ran installed BG SDK consumers from {install_prefix}")
+        print(f"Built and ran installed HG SDK consumers from {install_prefix}")
 
 
 if __name__ == "__main__":

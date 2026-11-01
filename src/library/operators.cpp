@@ -1,12 +1,12 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
 
 #include <limits>
 
-namespace bg::operators {
-using namespace bg::literals;
+namespace hg::operators {
+using namespace hg::literals;
 
 decltype(add) add{"add", {"lhs", "rhs"}};
 decltype(sub) sub{"sub", {"lhs", "rhs"}};
@@ -142,4 +142,4 @@ const auto registered = [] {
 }();
 
 } // namespace
-} // namespace bg::operators
+} // namespace hg::operators

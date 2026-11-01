@@ -1,19 +1,19 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <algorithm>
 #include <cmath>
 #include <stdexcept>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"ANALYTICAL_G">;
 inline constexpr auto RESULT_G = guarantee_variable<"EWMA_RESULT_G">;
@@ -21,10 +21,10 @@ inline constexpr auto RESULT_G = guarantee_variable<"EWMA_RESULT_G">;
 struct analytical_overloads {
     // Difference from the previous input tick.
     overload<diff> diff_i64{graph([](wp<TS<i64>> value) -> wp<TS<i64>> {
-        return wp<TS<i64>>{bg::operators::sub(value, bg::operators::lag(value))};
+        return wp<TS<i64>>{hg::operators::sub(value, hg::operators::lag(value))};
     })};
     overload<diff> diff_double{graph([](wp<TS<double>> value) -> wp<TS<double>> {
-        return wp<TS<double>>{bg::operators::sub(value, bg::operators::lag(value))};
+        return wp<TS<double>>{hg::operators::sub(value, hg::operators::lag(value))};
     })};
 
     // Clip a value to scalar or time-series bounds.
@@ -110,4 +110,4 @@ void register_analytical_operators() {
     register_overloads<analytical_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

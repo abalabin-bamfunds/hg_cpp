@@ -1,4 +1,4 @@
-#include <bg/logging.hpp>
+#include <hg/logging.hpp>
 
 #include <quill/Backend.h>
 #include <quill/DeferredFormatCodec.h>
@@ -17,25 +17,25 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::logging::details {
+namespace hg::logging::details {
 
 struct DeferredMessage {
-    mutable std::move_only_function<std::string()> format;
+    mutable std::function<std::string()> format;
 };
 
 static_assert(std::is_nothrow_move_constructible_v<DeferredMessage>);
 static_assert(std::is_nothrow_destructible_v<DeferredMessage>);
 
-} // namespace bg::logging::details
+} // namespace hg::logging::details
 
 namespace quill {
 
-template <> struct Codec<bg::logging::details::DeferredMessage>
-    : DeferredFormatCodec<bg::logging::details::DeferredMessage> {};
+template <> struct Codec<hg::logging::details::DeferredMessage>
+    : DeferredFormatCodec<hg::logging::details::DeferredMessage> {};
 
 } // namespace quill
 
-template <> struct fmtquill::formatter<bg::logging::details::DeferredMessage> {
+template <> struct fmtquill::formatter<hg::logging::details::DeferredMessage> {
     constexpr auto parse(fmtquill::format_parse_context &context) {
         const auto it = context.begin();
         if (it != context.end() && *it != '}') {
@@ -44,13 +44,13 @@ template <> struct fmtquill::formatter<bg::logging::details::DeferredMessage> {
         return it;
     }
 
-    auto format(const bg::logging::details::DeferredMessage &value, fmtquill::format_context &context) const {
+    auto format(const hg::logging::details::DeferredMessage &value, fmtquill::format_context &context) const {
         const auto message = value.format();
         return fmtquill::format_to(context.out(), "{}", message);
     }
 };
 
-namespace bg::logging {
+namespace hg::logging {
 namespace {
 
 struct State {
@@ -81,7 +81,7 @@ quill::LogLevel to_quill(Level value) {
     case Level::off:
         return quill::LogLevel::None;
     }
-    throw std::invalid_argument{"unknown BG logging level"};
+    throw std::invalid_argument{"unknown HG logging level"};
 }
 
 std::string translate_pattern(std::string_view pattern) {
@@ -172,7 +172,7 @@ std::shared_ptr<quill::Sink> create_sink(const Config &config) {
 
     auto sink_config = quill::ConsoleSinkConfig{};
     sink_config.set_stream(config.std_err ? "stderr" : "stdout");
-    return quill::Frontend::create_or_get_sink<quill::ConsoleSink>("bg", sink_config);
+    return quill::Frontend::create_or_get_sink<quill::ConsoleSink>("hg", sink_config);
 }
 
 quill::PatternFormatterOptions pattern_options(const Config &config) {
@@ -188,14 +188,14 @@ quill::Logger *initialize_lazily() {
         return current.logger;
     }
     if (quill::Backend::is_running()) {
-        throw std::logic_error{"BG logging must be initialized before the logging backend starts"};
+        throw std::logic_error{"HG logging must be initialized before the logging backend starts"};
     }
-    if (quill::Frontend::get_logger("bg") != nullptr) {
-        throw std::logic_error{"the BG logger name is already in use"};
+    if (quill::Frontend::get_logger("hg") != nullptr) {
+        throw std::logic_error{"the HG logger name is already in use"};
     }
 
     auto config = Config{.level = current.level.load(std::memory_order_relaxed)};
-    auto *logger = quill::Frontend::create_logger("bg", create_sink(config), pattern_options(config));
+    auto *logger = quill::Frontend::create_logger("hg", create_sink(config), pattern_options(config));
     logger->set_log_level(to_quill(config.level));
     quill::Backend::start();
     current.logger = logger;
@@ -215,16 +215,16 @@ void initialize(Config config) {
     auto &current = state();
     const auto lock = std::scoped_lock{current.mutex};
     if (current.logger != nullptr) {
-        throw std::logic_error{"BG logging has already been initialized or used"};
+        throw std::logic_error{"HG logging has already been initialized or used"};
     }
     if (quill::Backend::is_running()) {
-        throw std::logic_error{"BG logging must be initialized before the logging backend starts"};
+        throw std::logic_error{"HG logging must be initialized before the logging backend starts"};
     }
-    if (quill::Frontend::get_logger("bg") != nullptr) {
-        throw std::logic_error{"the BG logger name is already in use"};
+    if (quill::Frontend::get_logger("hg") != nullptr) {
+        throw std::logic_error{"the HG logger name is already in use"};
     }
 
-    auto *created = quill::Frontend::create_logger("bg", create_sink(config), options);
+    auto *created = quill::Frontend::create_logger("hg", create_sink(config), options);
     created->set_log_level(quill_level);
     quill::Backend::start();
     current.level.store(config.level, std::memory_order_relaxed);
@@ -250,11 +250,11 @@ bool enabled(Level value) noexcept {
 
 void flush() { logger()->flush_log(); }
 
-void details::submit(Level value, std::move_only_function<std::string()> format) {
+void details::submit(Level value, std::function<std::string()> format) {
     if (!enabled(value)) {
         return;
     }
     QUILL_LOG_DYNAMIC(logger(), to_quill(value), "{}", details::DeferredMessage{std::move(format)});
 }
 
-} // namespace bg::logging
+} // namespace hg::logging

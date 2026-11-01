@@ -1,16 +1,16 @@
 #include "ref_item_notifications.hpp"
 
-#include <bg/allocator.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cassert>
 #include <ranges>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 ItemNotifications::DestinationItemGroup::DestinationItemGroup(allocator memory) : items{&memory.memory_resource()} {}
 
@@ -289,4 +289,4 @@ void ItemNotifications::notify(DestinationItem item, OutputChangeContext &contex
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

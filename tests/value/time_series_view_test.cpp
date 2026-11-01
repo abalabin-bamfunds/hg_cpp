@@ -1,11 +1,11 @@
-#include <bg/node/input.hpp>
-#include <bg/node/output.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/node/input.hpp>
+#include <hg/node/output.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +13,7 @@
 #include <cstdint>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 static_assert(std::is_trivially_copyable_v<In<TS_T>>);
 

@@ -1,18 +1,18 @@
-#include <bg/node.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
+#include <hg/node.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,7 +20,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {} // namespace
 
@@ -280,12 +280,12 @@ class ExtensionMatcherTimeSeriesType final : public TimeSeriesType {
     VISITOR_SUPPORT()
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
 
     inline static const TimeSeriesType *observed_type{};
 
   protected:
-    bool do_match(const bg::Type &supplied, TypeMap &) const override {
+    bool do_match(const hg::Type &supplied, TypeMap &) const override {
         observed_type = type_cast<TimeSeriesType>(&supplied);
         return observed_type != nullptr;
     }
@@ -798,7 +798,7 @@ namespace {
 class ReferenceContainingExtensionType final : public TimeSeriesType {
   public:
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
     void format_name(std::string &result) const override { result += "ReferenceContainingExtension"; }
     bool contains_reference() const override { return true; }
 };

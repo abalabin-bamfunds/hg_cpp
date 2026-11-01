@@ -1,19 +1,19 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/service.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/service.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -28,8 +28,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 using RESULT = TimeSeriesVariable<"RESULT">;
 

@@ -1,10 +1,10 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/string.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/string.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -14,7 +14,7 @@
 #include <optional>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -43,9 +43,9 @@ TEST_CASE("runtime storage uses the output scalar runtime_type", "[evaluation][s
         void evaluate() const { output.set(1.5); }
     };
 
-    const auto double_source = bg::node<double_source_definition>();
+    const auto double_source = hg::node<double_source_definition>();
 
-    const auto double_sink = bg::node<double_sink_definition>();
+    const auto double_sink = hg::node<double_sink_definition>();
     GraphWiring wiring;
 
     {
@@ -91,9 +91,9 @@ struct float_sink_definition {
 } // namespace
 
 TEST_CASE("a node without output uses no output storage", "[evaluation][storage][feature:graph-compilation]") {
-    const auto constant = bg::node<constant_definition>();
+    const auto constant = hg::node<constant_definition>();
 
-    const auto float_sink = bg::node<float_sink_definition>();
+    const auto float_sink = hg::node<float_sink_definition>();
     GraphWiring wiring;
 
     {
@@ -136,9 +136,9 @@ struct add_definition {
 } // namespace
 
 TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage][feature:graph-compilation]") {
-    const auto constant = bg::node<constant_definition>();
+    const auto constant = hg::node<constant_definition>();
 
-    const auto add = bg::node<add_definition>();
+    const auto add = hg::node<add_definition>();
     GraphWiring wiring;
 
     {
@@ -169,7 +169,7 @@ TEST_CASE("runtime graphs keep separate runtime storage", "[evaluation][storage]
 namespace {
 
 struct string_dictionary_source_definition {
-    Out<TSD<i64, TS<bg::string>>> output;
+    Out<TSD<i64, TS<hg::string>>> output;
 
     void start() const {
         for (auto key = i64{}; key != 16; ++key) {
@@ -183,7 +183,7 @@ struct string_dictionary_source_definition {
 
 TEST_CASE("a runtime graph releases dictionary time-series storage",
           "[evaluation][storage][tsd][series:tsd][feature:graph-compilation]") {
-    const auto source = bg::node<string_dictionary_source_definition>();
+    const auto source = hg::node<string_dictionary_source_definition>();
     auto wiring = GraphWiring{};
 
     {
@@ -195,8 +195,8 @@ TEST_CASE("a runtime graph releases dictionary time-series storage",
     const auto compiled = CompiledGraph{wiring};
     auto memory = counting_memory_resource{};
     {
-        auto runtime_global_state = GlobalState{bg::allocator{memory}};
-        auto runtime = RuntimeGraph{compiled, bg::allocator{memory}, runtime_global_state};
+        auto runtime_global_state = GlobalState{hg::allocator{memory}};
+        auto runtime = RuntimeGraph{compiled, hg::allocator{memory}, runtime_global_state};
         runtime.start(time(1));
         CHECK(memory.allocations() > 1);
     }
@@ -217,7 +217,7 @@ struct counter_state {
 };
 
 static_assert(!std::is_trivially_copyable_v<counter_state>);
-static_assert(bg::util::byte_copy_initializable<counter_state>);
+static_assert(hg::util::byte_copy_initializable<counter_state>);
 
 struct alignas(16) accumulated_state {
     int value{};
@@ -248,9 +248,9 @@ struct int_sink_definition {
 } // namespace
 
 TEST_CASE("scalar fields and state bind to their storage", "[evaluation][storage][feature:graph-compilation]") {
-    const auto stateful_scalar = bg::node<stateful_scalar_definition>();
+    const auto stateful_scalar = hg::node<stateful_scalar_definition>();
 
-    const auto int_sink = bg::node<int_sink_definition>();
+    const auto int_sink = hg::node<int_sink_definition>();
     GraphWiring wiring;
 
     {

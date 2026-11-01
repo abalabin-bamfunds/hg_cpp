@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_type.hpp>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesSetType : public TimeSeriesType {
   public:
@@ -34,4 +34,4 @@ class GenericTimeSeriesSetType final : public TimeSeriesSetType {
 
 const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeSeriesGuarantee guarantee);
 
-} // namespace bg
+} // namespace hg

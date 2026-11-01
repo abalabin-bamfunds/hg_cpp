@@ -1,11 +1,11 @@
-#include <bg/type/variable_registry.hpp>
+#include <hg/type/variable_registry.hpp>
 
 #include <algorithm>
 #include <cstddef>
 #include <new>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 VariableRegistry &VariableRegistry::instance() noexcept {
     alignas(VariableRegistry) static std::byte storage[sizeof(VariableRegistry)];
@@ -31,4 +31,4 @@ bool VariableRegistry::contains(const Variable &variable) const {
     return std::ranges::any_of(owned_variables_, [&](const auto &candidate) { return candidate.get() == &variable; });
 }
 
-} // namespace bg
+} // namespace hg

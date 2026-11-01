@@ -1,16 +1,16 @@
-#include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
 
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/ref/ref_output.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/ref/ref_output.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <unordered_map>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 namespace {
@@ -70,4 +70,4 @@ const TimeSeriesRuntimeType &details::routed_time_series_reference_runtime_type(
     return result;
 }
 
-} // namespace bg
+} // namespace hg

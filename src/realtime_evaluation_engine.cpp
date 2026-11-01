@@ -1,20 +1,20 @@
-#include <bg/realtime_evaluation_engine.hpp>
+#include <hg/realtime_evaluation_engine.hpp>
 
-#include <bg/details/evaluation_scratch.hpp>
-#include <bg/details/periodic_callback_runner.hpp>
-#include <bg/details/engine_wakeup.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/details/evaluation_scratch.hpp>
+#include <hg/details/periodic_callback_runner.hpp>
+#include <hg/details/engine_wakeup.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/wall_clock.hpp>
 
 #include <algorithm>
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 
 void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime start_time,
                                    std::stop_token stop_token,
@@ -167,4 +167,4 @@ void RealtimeEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime s
     close_queue.release();
 }
 
-} // namespace bg
+} // namespace hg

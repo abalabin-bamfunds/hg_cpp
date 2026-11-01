@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/type/size.hpp>
-#include <bg/type/time_series_guarantee.hpp>
-#include <bg/type/type.hpp>
-#include <bg/type/variable.hpp>
+#include <hg/type/size.hpp>
+#include <hg/type/time_series_guarantee.hpp>
+#include <hg/type/type.hpp>
+#include <hg/type/variable.hpp>
 
 #include <algorithm>
 #include <unordered_map>
@@ -11,7 +11,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 using TypeMapValue = std::variant<const Type *, TimeSeriesGuarantee, Size>;
 
@@ -140,4 +140,4 @@ class TypeMap {
     MissingMappingFunction missing_mapping_{};
 };
 
-} // namespace bg
+} // namespace hg

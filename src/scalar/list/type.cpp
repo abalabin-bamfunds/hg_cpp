@@ -1,15 +1,15 @@
-#include <bg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
 
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <memory>
 #include <unordered_map>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedListScalarType final : public ListScalarType {
@@ -65,4 +65,4 @@ const ListScalarType &list_scalar_type(const ScalarType &item_type) {
     return result;
 }
 
-} // namespace bg
+} // namespace hg

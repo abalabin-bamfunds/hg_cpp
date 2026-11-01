@@ -1,29 +1,29 @@
-#include <bg/details/evaluation_context.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/evaluation_profile.hpp>
+#include <hg/details/evaluation_context.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/evaluation_profile.hpp>
 
-#include <bg/allocator.hpp>
-#include <bg/details/evaluation_scratch.hpp>
-#include <bg/details/engine_wakeup.hpp>
-#include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/inherited_time_series_section.hpp>
-#include <bg/graph/details/node_scheduler.hpp>
-#include <bg/graph/details/service_binding_section.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/queue.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/output_state.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/sparse_bunch.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/details/evaluation_scratch.hpp>
+#include <hg/details/engine_wakeup.hpp>
+#include <hg/graph/compiled_node.hpp>
+#include <hg/graph/details/inherited_time_series_section.hpp>
+#include <hg/graph/details/node_scheduler.hpp>
+#include <hg/graph/details/service_binding_section.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/queue.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/output_state.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/sparse_bunch.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -36,7 +36,7 @@
 #include <string>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -2109,4 +2109,4 @@ const details::EvaluationContextSection *EvaluationContext::find_section(const v
 
 EvaluationContext::~EvaluationContext() = default;
 
-} // namespace bg
+} // namespace hg

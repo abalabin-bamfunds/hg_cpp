@@ -1,4 +1,4 @@
-#include <bg/util/hash_set.hpp>
+#include <hg/util/hash_set.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -9,7 +9,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

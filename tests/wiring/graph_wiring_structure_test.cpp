@@ -1,13 +1,13 @@
-#include <bg/graph.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/service.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/service.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,7 +15,7 @@
 
 namespace {
 
-using namespace bg;
+using namespace hg;
 
 struct boundary_node {
     static constexpr bool deduplicate_wiring = false;
@@ -172,7 +172,7 @@ details::GraphWiringStructure branch_structure(bool shared) {
 }
 
 details::GraphWiringStructure nested_structure() {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto add = node<add_node>();
 
@@ -193,7 +193,7 @@ details::GraphWiringStructure nested_structure() {
 }
 
 details::GraphWiringStructure context_structure(bool alternate_provider) {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto first_provider = node<boundary_node>();
 

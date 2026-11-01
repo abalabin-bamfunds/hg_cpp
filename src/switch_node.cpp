@@ -1,19 +1,19 @@
-#include <bg/switch/details/switch_node.hpp>
+#include <hg/switch/details/switch_node.hpp>
 
-#include <bg/allocator.hpp>
-#include <bg/details/evaluation_context.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/details/nested_graph_context.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/ref/ref_output.hpp>
-#include <bg/time_series/ts/ts_input.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/details/evaluation_context.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/nested_graph_context.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/ref/ref_output.hpp>
+#include <hg/time_series/ts/ts_input.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cstdint>
 #include <limits>
@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 static_assert(std::is_trivially_destructible_v<NestedGraphInput>);
@@ -456,4 +456,4 @@ std::unique_ptr<NodeTemplate> make_switch_node(SwitchNodeWiring wiring, const Re
         SwitchNodeDefinition{std::move(wiring), outer_signature});
 }
 
-} // namespace bg::details
+} // namespace hg::details

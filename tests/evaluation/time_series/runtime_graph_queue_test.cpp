@@ -1,27 +1,27 @@
-#include <bg/details/evaluation_scratch.hpp>
-#include <bg/details/engine_wakeup.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/queue.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/output_state.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/buffer.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/details/evaluation_scratch.hpp>
+#include <hg/details/engine_wakeup.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/queue.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/output_state.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/buffer.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -40,7 +40,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

@@ -1,8 +1,8 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,7 +10,7 @@
 #include <chrono>
 #include <stdexcept>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

@@ -1,17 +1,17 @@
-#include <bg/graph/graph_wiring.hpp>
+#include <hg/graph/graph_wiring.hpp>
 
-#include <bg/graph/context.hpp>
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
-#include <bg/graph/details/wiring_materialisation.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/wiring_materialisation.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -22,7 +22,7 @@
 #include <string>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace details {
 
 const Type *PreparedWiringCall::argument_type(std::size_t index, const WiringArgument &argument) const noexcept {
@@ -721,4 +721,4 @@ WiringPoint GraphWiring::expand_materialisation(WiringPoint point, const TimeSer
     return result;
 }
 
-} // namespace bg
+} // namespace hg

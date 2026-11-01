@@ -1,11 +1,11 @@
-#include <bg/scalar/literal_operations.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/literal_operations.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg {
+namespace hg {
 
 template <> ScalarDispatch<ScalarLiteralOperations> &ScalarDispatch<ScalarLiteralOperations>::instance() noexcept {
     static auto dispatch = util::static_storage<ScalarDispatch<ScalarLiteralOperations>>{};
     return dispatch.get();
 }
 
-} // namespace bg
+} // namespace hg

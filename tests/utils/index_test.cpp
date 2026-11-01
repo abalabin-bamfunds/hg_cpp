@@ -1,4 +1,4 @@
-#include <bg/util/index.hpp>
+#include <hg/util/index.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("an empty fixed-size index has no set positions", "[index][coverage-exempt]") {
     const auto index = util::index<0>{};

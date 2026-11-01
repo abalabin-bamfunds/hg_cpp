@@ -1,9 +1,9 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +13,7 @@
 #include <thread>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -62,9 +62,9 @@ struct int_sink_definition {
 
 TEST_CASE("a simulation evaluation engine runs until timed scheduling is empty",
           "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
-    const auto scheduled_source = bg::node<scheduled_source_definition>();
+    const auto scheduled_source = hg::node<scheduled_source_definition>();
 
-    const auto int_sink = bg::node<int_sink_definition>();
+    const auto int_sink = hg::node<int_sink_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -109,7 +109,7 @@ struct unordered_schedule_definition {
 
 TEST_CASE("timed scheduling orders requests by evaluation time",
           "[evaluation][simulation][feature:simulation][series:value][scalar:integer]") {
-    const auto unordered_schedule = bg::node<unordered_schedule_definition>();
+    const auto unordered_schedule = hg::node<unordered_schedule_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -129,9 +129,9 @@ TEST_CASE("timed scheduling orders requests by evaluation time",
 
 TEST_CASE("simulation periodic callback failure at termination stops a started graph",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
-    const auto scheduled_source = bg::node<scheduled_source_definition>();
+    const auto scheduled_source = hg::node<scheduled_source_definition>();
 
-    const auto int_sink = bg::node<int_sink_definition>();
+    const auto int_sink = hg::node<int_sink_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -195,7 +195,7 @@ struct periodic_callback_chain_definition {
 
 TEST_CASE("simulation polls periodic callbacks after eight completed cycles",
           "[evaluation][simulation][feature:simulation][feature:lifecycle][failure]") {
-    const auto source = bg::node<periodic_callback_chain_definition>();
+    const auto source = hg::node<periodic_callback_chain_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -229,7 +229,7 @@ TEST_CASE("simulation polls periodic callbacks after eight completed cycles",
 
 TEST_CASE("simulation validates an enabled periodic callback interval before starting",
           "[evaluation][simulation][feature:simulation][failure]") {
-    const auto scheduled_source = bg::node<scheduled_source_definition>();
+    const auto scheduled_source = hg::node<scheduled_source_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};

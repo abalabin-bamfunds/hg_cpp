@@ -1,12 +1,12 @@
-#include <bg/node/output.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
+#include <hg/node/output.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

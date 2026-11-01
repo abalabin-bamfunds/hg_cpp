@@ -1,18 +1,18 @@
 #include "test_hierarchical_scalar_provider.hpp"
 #include "test_shared_schema_provider.hpp"
 
-#include <bg/node/input_properties.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/type/opaque_scalar_type.hpp>
-#include <bg/type/schema_metadata_values.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/type/opaque_scalar_type.hpp>
+#include <hg/type/schema_metadata_values.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -24,7 +24,7 @@
 #include <string>
 #include <thread>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -34,9 +34,9 @@ static_assert(!std::same_as<InputValidity, Optionality>);
 static_assert(sizeof(InputValidity) == sizeof(std::uint8_t));
 static_assert(std::is_trivially_copyable_v<InputValidity>);
 static_assert(required == InputValidity::required);
-static_assert(bg::optional == InputValidity::optional);
+static_assert(hg::optional == InputValidity::optional);
 static_assert(InputValidity::required == required);
-static_assert(InputValidity::optional == bg::optional);
+static_assert(InputValidity::optional == hg::optional);
 static_assert(all_valid == InputValidity::all_valid);
 
 template <template <typename, auto...> typename Field> struct Equity : schema_extends<Instrument, Field> {
@@ -47,7 +47,7 @@ template <template <typename, auto...> typename Field> struct RequiredPrice : sc
     Field<double> price;
 };
 
-const ResolvedHierarchicalScalarType &resolved_hierarchical_scalar_type(const bg::Type &type) {
+const ResolvedHierarchicalScalarType &resolved_hierarchical_scalar_type(const hg::Type &type) {
     const auto &hierarchical = type_cast<HierarchicalScalarType>(type);
     if (!hierarchical.is_resolved()) {
         throw std::logic_error{"expected a resolved hierarchical scalar type"};
@@ -172,14 +172,14 @@ TEST_CASE("runtime schemas have canonical hierarchical scalar types",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:runtime]") {
     const auto runtime_fields = std::array{SchemaField{util::symbol{"value"}, &int64_type()}};
     const auto &runtime_schema =
-        bg::schema(util::symbol{"RuntimeRecord"}, new_runtime_schema_id(), nullptr, runtime_fields);
+        hg::schema(util::symbol{"RuntimeRecord"}, new_runtime_schema_id(), nullptr, runtime_fields);
     const auto &runtime_type = hierarchical_scalar_type(runtime_schema);
     CHECK(&hierarchical_scalar_type(runtime_schema) == &runtime_type);
     CHECK(runtime_type.accepts(runtime_type));
 
     const auto same_shape_fields = std::array{SchemaField{util::symbol{"value"}, &int64_type()}};
     const auto &same_shape = hierarchical_scalar_type(
-        bg::schema(util::symbol{"OtherRuntimeRecord"}, new_runtime_schema_id(), nullptr, same_shape_fields));
+        hg::schema(util::symbol{"OtherRuntimeRecord"}, new_runtime_schema_id(), nullptr, same_shape_fields));
     CHECK_FALSE(runtime_type.accepts(same_shape));
 }
 
@@ -197,10 +197,10 @@ TEST_CASE("runtime hierarchical schema compatibility follows nominal inheritance
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:runtime][binding:covariant]") {
     const auto base_fields = std::array{SchemaField{util::symbol{"symbol"}, &symbol_type()}};
     const auto &base_schema =
-        bg::schema(util::symbol{"RuntimeInstrument"}, new_runtime_schema_id(), nullptr, base_fields);
+        hg::schema(util::symbol{"RuntimeInstrument"}, new_runtime_schema_id(), nullptr, base_fields);
     const auto derived_fields = std::array{SchemaField{util::symbol{"lot_size"}, &int64_type()}};
     const auto &derived_schema =
-        bg::schema(util::symbol{"RuntimeEquity"}, new_runtime_schema_id(), &base_schema, derived_fields);
+        hg::schema(util::symbol{"RuntimeEquity"}, new_runtime_schema_id(), &base_schema, derived_fields);
 
     const auto &base_type = hierarchical_scalar_type(base_schema);
     const auto &derived_type = hierarchical_scalar_type(derived_schema);
@@ -226,8 +226,8 @@ TEST_CASE("a conflicting hierarchical scalar declaration in another translation 
 namespace {
 
 template <template <typename, auto...> typename Field> struct UnrelatedInstrument {
-    Field<bg::symbol> symbol;
-    Field<double, bg::optional> price;
+    Field<hg::symbol> symbol;
+    Field<double, hg::optional> price;
 };
 
 } // namespace
@@ -282,13 +282,13 @@ TEST_CASE("a generic bundle declaration captures and resolves its schema variabl
     auto type_map = TypeMap{};
 
     REQUIRE(generic.match(concrete, type_map));
-    CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
+    CHECK(std::get<const hg::Type *>(*type_map.find(schema_variable)) ==
           &type_cast<HierarchicalScalarType>(concrete).schema_type());
     CHECK(&generic.resolve(type_map) == &type_cast<HierarchicalScalarType>(concrete));
 
     const auto &unrelated = cpp_scalar_type<Bundle<UnrelatedInstrument>>();
     CHECK_FALSE(generic.match(unrelated, type_map));
-    CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
+    CHECK(std::get<const hg::Type *>(*type_map.find(schema_variable)) ==
           &type_cast<HierarchicalScalarType>(concrete).schema_type());
 }
 
@@ -302,7 +302,7 @@ TEST_CASE("a generic bundle declaration captures a named schema variable",
     CHECK_FALSE(generic.supports_value_covariance());
     REQUIRE(generic.match(concrete, type_map));
     CHECK(schema_variable.name().text() == "ENTITY");
-    CHECK(std::get<const bg::Type *>(*type_map.find(schema_variable)) ==
+    CHECK(std::get<const hg::Type *>(*type_map.find(schema_variable)) ==
           &type_cast<HierarchicalScalarType>(concrete).schema_type());
 }
 
@@ -324,8 +324,8 @@ TEST_CASE("hierarchical scalar covariance composes through scalar containers",
     using Base = Bundle<Instrument>;
     using Derived = Bundle<Equity>;
 
-    const auto &base_nested = cpp_scalar_type<List<Dict<bg::symbol, List<Base>>>>();
-    const auto &derived_nested = cpp_scalar_type<List<Dict<bg::symbol, List<Derived>>>>();
+    const auto &base_nested = cpp_scalar_type<List<Dict<hg::symbol, List<Base>>>>();
+    const auto &derived_nested = cpp_scalar_type<List<Dict<hg::symbol, List<Derived>>>>();
 
     CHECK(base_nested.accepts(derived_nested));
     CHECK_FALSE(derived_nested.accepts(base_nested));
@@ -367,7 +367,7 @@ template <template <typename, auto...> typename Field> struct InvalidPortfolio :
 };
 
 template <template <typename, auto...> typename Field> struct OptionalSymbol : schema_extends<Instrument, Field> {
-    Field<bg::symbol, bg::optional> symbol;
+    Field<hg::symbol, hg::optional> symbol;
 };
 
 } // namespace
@@ -382,7 +382,7 @@ TEST_CASE("a derived hierarchical scalar can narrow inherited fields",
     CHECK(portfolio.field(0).type == &cpp_scalar_type<List<Bundle<Equity>>>());
     using namespace literals;
     auto memory = allocator{};
-    const auto equity = bundle<Equity>(memory, "symbol"_n = bg::symbol{"ABC"}, "lot_size"_n = i64{100});
+    const auto equity = bundle<Equity>(memory, "symbol"_n = hg::symbol{"ABC"}, "lot_size"_n = i64{100});
     const auto instruments = ScalarValue<List<Bundle<Equity>>>{std::array{equity.view()}, memory};
     const auto derived_value = bundle<EquityPortfolio>(memory, instruments.view());
     const auto derived_view = Scalar<Bundle<EquityPortfolio>>::from(derived_value);
@@ -408,17 +408,17 @@ namespace {
 
 template <template <typename, auto...> typename Field> struct DirectNode {
     Field<i64> value;
-    Field<Bundle<DirectNode>, bg::optional> next;
+    Field<Bundle<DirectNode>, hg::optional> next;
 };
 
 template <template <typename, auto...> typename Field> struct MutualRight;
 
 template <template <typename, auto...> typename Field> struct MutualLeft {
-    Field<Bundle<MutualRight>, bg::optional> right;
+    Field<Bundle<MutualRight>, hg::optional> right;
 };
 
 template <template <typename, auto...> typename Field> struct MutualRight {
-    Field<Bundle<MutualLeft>, bg::optional> left;
+    Field<Bundle<MutualLeft>, hg::optional> left;
 };
 
 template <template <typename, auto...> typename Field> struct ListNode {
@@ -430,7 +430,7 @@ template <template <typename, auto...> typename Field> struct SetNode {
 };
 
 template <template <typename, auto...> typename Field> struct DictNode {
-    Field<Dict<bg::symbol, Bundle<DictNode>>> children;
+    Field<Dict<hg::symbol, Bundle<DictNode>>> children;
 };
 
 } // namespace
@@ -473,7 +473,7 @@ TEST_CASE("hierarchical scalar recursion composes through scalar collections",
 
     CHECK(&list.item_type() == &list_node);
     CHECK(&set.item_type() == &set_node);
-    CHECK(&dict.key_type() == &cpp_scalar_type<bg::symbol>());
+    CHECK(&dict.key_type() == &cpp_scalar_type<hg::symbol>());
     CHECK(&dict.mapped_type() == &dict_node);
     CHECK(list_node.supports_hash());
     CHECK(dict_node.supports_hash());
@@ -525,7 +525,7 @@ template <template <typename, auto...> typename Field> struct RecursiveInheritan
 template <template <typename, auto...> typename Field> struct RecursiveInheritanceDerived;
 
 template <template <typename, auto...> typename Field> struct RecursiveInheritanceBase {
-    Field<Bundle<RecursiveInheritanceDerived>, bg::optional> nested;
+    Field<Bundle<RecursiveInheritanceDerived>, hg::optional> nested;
     Field<Bundle<RecursiveSchemaParent>> item;
 };
 

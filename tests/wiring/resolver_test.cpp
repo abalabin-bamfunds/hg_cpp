@@ -1,21 +1,21 @@
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/scalar_variable.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/scalar_variable.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -28,11 +28,11 @@
 #include <variant>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 using RESOLVED_SCALAR = ScalarVariable<"RESOLVED_SCALAR">;
 using RESOLVED_NUMBER = ScalarVariable<"RESOLVED_NUMBER", int, float>;
@@ -262,7 +262,7 @@ TEST_CASE("candidate metadata demands state-only resolver mappings",
 
 TEST_CASE("a failed state-only resolver rejects its candidate before fallback selection",
           "[feature:operator][feature:wiring][definition:aggregate][declaration:generic]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     invalid_state_only_resolver_definition::resolver_calls = 0;
     auto fallback_selected = false;
@@ -361,7 +361,7 @@ TEST_CASE("a requirement error remains a callback error after catching a resolve
 
 TEST_CASE("an invalid resolver demanded by a requirement rejects its candidate",
           "[feature:operator][feature:wiring][definition:function][declaration:generic]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     auto resolver_calls = 0;
     auto fallback_selected = false;

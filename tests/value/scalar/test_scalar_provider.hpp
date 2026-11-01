@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/bundle/scalar.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/type/scalar_type.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/bundle/scalar.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/type/scalar_type.hpp>
 
 #include <array>
 #include <cstdint>
@@ -69,27 +69,27 @@ struct copy_only_runtime_storage {
 };
 
 template <template <typename, auto...> typename Field> struct bundle_provider_base {
-    Field<bg::i64> amount;
+    Field<hg::i64> amount;
 };
 
 template <template <typename, auto...> typename Field>
-struct bundle_provider_derived : bg::schema_extends<bundle_provider_base, Field> {
-    Field<bg::i64> extra;
+struct bundle_provider_derived : hg::schema_extends<bundle_provider_base, Field> {
+    Field<hg::i64> extra;
 };
 
-using bundle_provider_base_type = bg::Bundle<bundle_provider_base>;
-using bundle_provider_derived_type = bg::Bundle<bundle_provider_derived>;
+using bundle_provider_base_type = hg::Bundle<bundle_provider_base>;
+using bundle_provider_derived_type = hg::Bundle<bundle_provider_derived>;
 
 struct bundle_provider_view {
-    bg::Scalar<bundle_provider_base_type> value;
+    hg::Scalar<bundle_provider_base_type> value;
 };
 
 struct bundle_provider_value {};
 
-using generic_bundle_provider_type = bg::Bundle<bg::SCHEMA>;
+using generic_bundle_provider_type = hg::Bundle<hg::SCHEMA>;
 
 struct generic_bundle_provider_view {
-    bg::Scalar<generic_bundle_provider_type> value;
+    hg::Scalar<generic_bundle_provider_type> value;
 };
 
 struct generic_bundle_provider_value {};
@@ -99,15 +99,15 @@ inline value::operator value_view() const noexcept {
 }
 
 struct compound_value {
-    bg::i64 quantity;
+    hg::i64 quantity;
     double price;
 };
 
-const bg::ScalarType &semantic_type_from_provider() noexcept;
-const bg::ScalarRuntimeType &runtime_type_from_provider();
-const bg::ScalarRuntimeType &preserving_runtime_type();
-const bg::ScalarRuntimeType &canonicalizing_runtime_type();
-const bg::ScalarRuntimeType &immutable_snapshot_runtime_type();
+const hg::ScalarType &semantic_type_from_provider() noexcept;
+const hg::ScalarRuntimeType &runtime_type_from_provider();
+const hg::ScalarRuntimeType &preserving_runtime_type();
+const hg::ScalarRuntimeType &canonicalizing_runtime_type();
+const hg::ScalarRuntimeType &immutable_snapshot_runtime_type();
 int alternative_runtime_read_count();
 int trait_runtime_type_for_copy_call_count() noexcept;
 void record_trait_runtime_type_for_copy_call() noexcept;
@@ -118,15 +118,15 @@ int generic_runtime_type_call_count() noexcept;
 void record_generic_runtime_type_call() noexcept;
 int generic_trait_runtime_type_for_copy_call_count() noexcept;
 void record_generic_trait_runtime_type_for_copy_call() noexcept;
-const bg::ScalarType &compound_semantic_type_from_provider();
-const bg::ScalarType &layout_semantic_type_from_provider();
-const bg::ScalarRuntimeType &mismatched_layout_runtime_type();
-const bg::ScalarType &copy_only_semantic_type() noexcept;
-const bg::ScalarRuntimeType &preserving_copy_only_runtime_type();
+const hg::ScalarType &compound_semantic_type_from_provider();
+const hg::ScalarType &layout_semantic_type_from_provider();
+const hg::ScalarRuntimeType &mismatched_layout_runtime_type();
+const hg::ScalarType &copy_only_semantic_type() noexcept;
+const hg::ScalarRuntimeType &preserving_copy_only_runtime_type();
 
 } // namespace test_scalar_provider
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_type_traits<test_scalar_provider::value> {
     static const ScalarType &type() noexcept;
@@ -330,4 +330,4 @@ template <> struct scalar_storage_traits<test_scalar_provider::generic_bundle_pr
 
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<test_scalar_provider::value>();
 
-} // namespace bg
+} // namespace hg

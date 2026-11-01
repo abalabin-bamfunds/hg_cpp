@@ -1,8 +1,8 @@
-#include <bg/type/time_series_variable.hpp>
+#include <hg/type/time_series_variable.hpp>
 
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
-namespace bg {
+namespace hg {
 
 void GenericTimeSeriesVariableType::format_name(std::string &result) const {
     variable().format_name(result);
@@ -44,4 +44,4 @@ const Type &GenericTimeSeriesVariableType::resolve(const TypeMap &type_map) cons
     return time_series->with_guarantee(guarantee().resolve(type_map));
 }
 
-} // namespace bg
+} // namespace hg

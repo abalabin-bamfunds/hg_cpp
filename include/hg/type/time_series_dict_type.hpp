@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/type/fixed_item_time_series_type.hpp>
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/scalar_type.hpp>
+#include <hg/type/fixed_item_time_series_type.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/scalar_type.hpp>
 
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesDictionaryType : public FixedItemTimeSeriesType {
   public:
@@ -56,4 +56,4 @@ const TimeSeriesDictionaryType &time_series_dictionary_type(const ScalarType &ke
                                                             const TimeSeriesType &value_type,
                                                             TimeSeriesGuarantee guarantee);
 
-} // namespace bg
+} // namespace hg

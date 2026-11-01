@@ -1,17 +1,28 @@
-find_package(Catch2 3 REQUIRED)
+find_package(Catch2 3 QUIET)
+if(NOT Catch2_FOUND)
+    include(FetchContent)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG v3.11.0
+        GIT_SHALLOW TRUE
+    )
+    FetchContent_MakeAvailable(Catch2)
+    list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+endif()
 
 add_library(test_shared_schema_provider SHARED type/test_shared_schema_provider.cpp)
-target_link_libraries(test_shared_schema_provider PRIVATE bg::bg)
+target_link_libraries(test_shared_schema_provider PRIVATE hg::hg)
 target_include_directories(test_shared_schema_provider PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
 set_target_properties(test_shared_schema_provider PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 add_library(test_shared_literal_sentinel SHARED type/test_shared_literal_sentinel.cpp)
-target_link_libraries(test_shared_literal_sentinel PRIVATE bg::bg)
+target_link_libraries(test_shared_literal_sentinel PRIVATE hg::hg)
 target_include_directories(test_shared_literal_sentinel PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
 set_target_properties(test_shared_literal_sentinel PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
 add_executable(
-    bg_tests
+    hg_tests
     evaluation/context/evaluation_context_test.cpp
     evaluation/context/evaluation_scratch_test.cpp
     evaluation/context/context_time_series_test.cpp
@@ -179,17 +190,17 @@ add_executable(
     wiring/time_series_reference_wiring_test.cpp
     wiring/type_mapping_test.cpp
 )
-target_link_libraries(bg_tests PRIVATE bg::bg Catch2::Catch2WithMain test_shared_schema_provider
+target_link_libraries(hg_tests PRIVATE hg::hg Catch2::Catch2WithMain test_shared_schema_provider
                                       test_shared_literal_sentinel)
-target_compile_options(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
-target_compile_definitions(bg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
+target_compile_options(hg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
+target_compile_definitions(hg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
 
 if(WIN32)
     add_custom_command(
-        TARGET bg_tests POST_BUILD
+        TARGET hg_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:bg_tests>
-                $<TARGET_FILE_DIR:bg_tests>
+                $<TARGET_RUNTIME_DLLS:hg_tests>
+                $<TARGET_FILE_DIR:hg_tests>
         COMMAND_EXPAND_LISTS
     )
 endif()
@@ -202,10 +213,10 @@ file(GENERATE OUTPUT "${catch2_environment}"
      CONTENT "set(ENV{XDG_RUNTIME_DIR} [==[${CMAKE_CURRENT_BINARY_DIR}]==])\n")
 set_property(DIRECTORY APPEND PROPERTY TEST_INCLUDE_FILES "${catch2_environment}")
 
-catch_discover_tests(bg_tests DISCOVERY_MODE PRE_TEST)
+catch_discover_tests(hg_tests DISCOVERY_MODE PRE_TEST)
 
 add_executable(
-    bg_library_tests
+    hg_library_tests
     library/add_test.cpp
     library/analytical_test.cpp
     library/boolean_reduction_test.cpp
@@ -231,52 +242,52 @@ add_executable(
     library/tick_selection_test.cpp
     library/timed_test.cpp
     library/tsd_transform_test.cpp)
-target_link_libraries(bg_library_tests PRIVATE bg::library Catch2::Catch2WithMain)
-target_compile_options(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
-target_compile_definitions(bg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
+target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
+target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
+target_compile_definitions(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
 
 if(WIN32)
     add_custom_command(
-        TARGET bg_library_tests POST_BUILD
+        TARGET hg_library_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:bg_library_tests>
-                $<TARGET_FILE_DIR:bg_library_tests>
+                $<TARGET_RUNTIME_DLLS:hg_library_tests>
+                $<TARGET_FILE_DIR:hg_library_tests>
         COMMAND_EXPAND_LISTS
     )
 endif()
 
-catch_discover_tests(bg_library_tests DISCOVERY_MODE PRE_TEST)
+catch_discover_tests(hg_library_tests DISCOVERY_MODE PRE_TEST)
 
-# Each test case runs in a separate process because BG logging initialization is process-wide.
-add_executable(bg_logging_initialization_tests library/logging_initialization_test.cpp library/logging_api_test.cpp)
-target_link_libraries(bg_logging_initialization_tests PRIVATE bg::bg Catch2::Catch2WithMain)
+# Each test case runs in a separate process because HG logging initialization is process-wide.
+add_executable(hg_logging_initialization_tests library/logging_initialization_test.cpp library/logging_api_test.cpp)
+target_link_libraries(hg_logging_initialization_tests PRIVATE hg::hg Catch2::Catch2WithMain)
 if(WIN32)
     add_custom_command(
-        TARGET bg_logging_initialization_tests POST_BUILD
+        TARGET hg_logging_initialization_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:bg_logging_initialization_tests>
-                $<TARGET_FILE_DIR:bg_logging_initialization_tests>
+                $<TARGET_RUNTIME_DLLS:hg_logging_initialization_tests>
+                $<TARGET_FILE_DIR:hg_logging_initialization_tests>
         COMMAND_EXPAND_LISTS
     )
 endif()
-catch_discover_tests(bg_logging_initialization_tests DISCOVERY_MODE PRE_TEST)
+catch_discover_tests(hg_logging_initialization_tests DISCOVERY_MODE PRE_TEST)
 
 find_package(Python3 3.13 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
     add_custom_target(
         test-coverage-report
         COMMAND
-            "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py" "$<TARGET_FILE:bg_tests>"
+            "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py" "$<TARGET_FILE:hg_tests>"
             --dimensions "${PROJECT_SOURCE_DIR}/docs/development/testing.md"
             --output "${PROJECT_BINARY_DIR}/test-coverage.md"
             --check
         COMMAND
             "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py"
-            "$<TARGET_FILE:bg_library_tests>"
+            "$<TARGET_FILE:hg_library_tests>"
             --dimensions "${PROJECT_SOURCE_DIR}/docs/development/testing.md"
             --output "${PROJECT_BINARY_DIR}/library-test-coverage.md"
             --check
-        DEPENDS bg_tests bg_library_tests
+        DEPENDS hg_tests hg_library_tests
         VERBATIM
     )
 endif()

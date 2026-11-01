@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/util/details/bunch_blocks.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/details/bunch_blocks.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -16,7 +16,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 // Stores one typed column whose constructed positions are described externally.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
@@ -24,7 +24,7 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
   public:
     using size_type = std::uint32_t;
     using const_accessor = typename details::bunch_blocks<T, InitialElements>::const_accessor;
-    using storage_block = ::bg::util::storage_block;
+    using storage_block = ::hg::util::storage_block;
 
     sparse_bunch() = default;
 
@@ -165,4 +165,4 @@ template <typename T, std::uint32_t InitialElements = 8> class sparse_bunch {
     details::bunch_blocks<T, InitialElements> blocks_;
 };
 
-} // namespace bg::util
+} // namespace hg::util

@@ -1,11 +1,11 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/wall_clock.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

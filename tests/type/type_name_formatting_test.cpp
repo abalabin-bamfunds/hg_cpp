@@ -1,27 +1,27 @@
-#include <bg/graph/graph_argument.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/type/type_of.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/type/type_of.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <string>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -30,22 +30,22 @@ class FallbackScalarType final : public ScalarType {
     VISITOR_SUPPORT()
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
 };
 
-class FallbackType final : public bg::Type {
+class FallbackType final : public hg::Type {
   public:
     VISITOR_SUPPORT()
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
 };
 
 } // namespace
 
 TEST_CASE("semantic types append their formal names", "[feature:type-system]") {
     auto text = std::string{"prefix:"};
-    const bg::Type &scalar = float_type();
+    const hg::Type &scalar = float_type();
     scalar.format_name(text);
     CHECK(text == "prefix:float");
 
@@ -63,9 +63,9 @@ TEST_CASE("semantic types append their formal names", "[feature:type-system]") {
     CHECK(generic_type_text == "type");
 
     auto variable_text = std::string{};
-    static const auto variable = util::static_storage<TypeVariableType<bg::Type>>{util::symbol{"VALUE"}};
+    static const auto variable = util::static_storage<TypeVariableType<hg::Type>>{util::symbol{"VALUE"}};
     [[maybe_unused]] static const auto &variable_registration = TypeRegistry::register_static(variable.get());
-    const bg::Type &variable_type = variable.get();
+    const hg::Type &variable_type = variable.get();
     variable_type.format_name(variable_text);
     CHECK(variable_text == "VALUE");
 }
@@ -94,7 +94,7 @@ TEST_CASE("built-in composite types format their arguments and guarantees", "[fe
     CHECK(dictionary_text == "TSD<string, TS<float, const>, const>");
 
     const auto fields = std::array{SchemaField{util::symbol{"value"}, &value, false}};
-    const auto &schema = bg::schema(util::symbol{"Quote"}, std::monostate{}, nullptr, fields);
+    const auto &schema = hg::schema(util::symbol{"Quote"}, std::monostate{}, nullptr, fields);
     const auto &bundle = time_series_bundle_type(schema, TimeSeriesGuarantee::ordinary);
     auto bundle_text = std::string{};
     bundle.format_name(bundle_text);
@@ -123,7 +123,7 @@ class ExtensionScalarType final : public ScalarType {
     VISITOR_SUPPORT()
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
     void format_name(std::string &result) const override { result += "extension_scalar"; }
     bool supports_equality() const noexcept override { return true; }
     bool supports_hash() const noexcept override { return true; }
@@ -140,19 +140,19 @@ const ExtensionScalarType &extension_scalar_type() {
 TEST_CASE("extension types format through Type inside built-in composites",
           "[feature:type-system][declaration:runtime][scalar:generic][series:value]") {
     const auto &extension = extension_scalar_type();
-    const bg::Type &extension_type = extension;
+    const hg::Type &extension_type = extension;
     auto extension_text = std::string{};
     extension_type.format_name(extension_text);
     CHECK(extension_text == "extension_scalar");
 
     const auto &list = list_scalar_type(extension);
-    const bg::Type &list_type = list;
+    const hg::Type &list_type = list;
     auto list_text = std::string{};
     list_type.format_name(list_text);
     CHECK(list_text == "List<extension_scalar>");
 
     const auto &time_series = time_series_value_type(list, TimeSeriesGuarantee::ordinary);
-    const bg::Type &time_series_type = time_series;
+    const hg::Type &time_series_type = time_series;
     auto time_series_text = std::string{};
     time_series_type.format_name(time_series_text);
     CHECK(time_series_text == "TS<List<extension_scalar>>");

@@ -1,12 +1,12 @@
-#include <bg/type/type.hpp>
+#include <hg/type/type.hpp>
 
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_map.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/type_map.hpp>
 
 #include <optional>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 Type::~Type() = default;
 
@@ -74,4 +74,4 @@ bool Type::do_match(const Type &supplied, TypeMap &type_map,
     return do_match(supplied, type_map);
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,11 +1,11 @@
-#include <bg/library.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/library.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("rekey routes source time series and applies mapping changes before assignments",
           "[feature:operator][feature:reference][series:tsd][feature:collection-change][validity:optional]") {
@@ -26,10 +26,10 @@ TEST_CASE("rekey routes source time series and applies mapping changes before as
         return materialize(operators::rekey(source, new_keys));
     };
 
-    CHECK(bg::run_graph(rekey,
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}, {{1, 11}},
+    CHECK(hg::run_graph(rekey,
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}, {{1, 11}},
                                                       {{1, literal::REMOVE}}, {{1, 12}}}),
-                        bg::input<TSD<i64, TS<string>>>({{{1, "a"}, {2, "b"}}, {{1, "c"}}, {}, {}}))
+                        hg::input<TSD<i64, TS<string>>>({{{1, "a"}, {2, "b"}}, {{1, "c"}}, {}, {}}))
               .equals({{{"a", 10}, {"b", 20}}, {{"a", literal::REMOVE}, {"c", 11}},
                        {{"c", literal::REMOVE}}, {{"c", 12}}}));
 }
@@ -43,8 +43,8 @@ TEST_CASE("rekey processes removals before colliding updates and does not restor
         return materialize(operators::rekey(source, new_keys));
     };
 
-    CHECK(bg::run_graph(rekey, bg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}, {{2, literal::REMOVE}}}),
-                        bg::input<TSD<i64, TS<string>>>({{{1, "shared"}, {2, "shared"}}, {}}))
+    CHECK(hg::run_graph(rekey, hg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}, {{2, literal::REMOVE}}}),
+                        hg::input<TSD<i64, TS<string>>>({{{1, "shared"}, {2, "shared"}}, {}}))
               .equals({{{"shared", 20}}, {{"shared", literal::REMOVE}}}));
 }
 
@@ -57,7 +57,7 @@ TEST_CASE("rekey applies a mapping-only change without requiring a source tick",
         return materialize(operators::rekey(values, keys));
     };
 
-    CHECK(bg::run_graph(graph, {{{1, 10}}, {{1, 11}}, literal::SKIP},
+    CHECK(hg::run_graph(graph, {{{1, 10}}, {{1, 11}}, literal::SKIP},
                         {{{1, "first"}}, literal::SKIP, {{1, "second"}}})
               .equals({{{"first", 10}}, {{"first", 11}}, {{"first", literal::REMOVE}, {"second", 11}}}));
 }
@@ -70,7 +70,7 @@ TEST_CASE("partition applies a mapping-only change without requiring a source ti
         return materialize(operators::partition(values, partitions));
     };
 
-    CHECK(bg::run_graph(graph, {{{1, 10}}, {{1, 11}}, literal::SKIP},
+    CHECK(hg::run_graph(graph, {{{1, 10}}, {{1, 11}}, literal::SKIP},
                         {{{1, "odd"}}, literal::SKIP, {{1, "even"}}})
               .equals({{{"odd", {{1, 10}}}}, {{"odd", {{1, 11}}}},
                        {{"odd", literal::REMOVE}, {"even", {{1, 11}}}}}));
@@ -86,9 +86,9 @@ TEST_CASE("rekey publishes a valid empty collection and removes routes when a so
         return materialize(operators::rekey(source, new_keys));
     };
 
-    CHECK(bg::run_graph(rekey,
-                        bg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}}, {{1, literal::REMOVE}}}),
-                        bg::input<TSD<i64, TS<string>>>({{}, {{1, "a"}}, literal::SKIP}))
+    CHECK(hg::run_graph(rekey,
+                        hg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}}, {{1, literal::REMOVE}}}),
+                        hg::input<TSD<i64, TS<string>>>({{}, {{1, "a"}}, literal::SKIP}))
               .equals({{}, {{"a", 10}}, {{"a", literal::REMOVE}}}));
 }
 
@@ -116,11 +116,11 @@ TEST_CASE("rekey removes routes when the source or mapping reference is rebound 
                                             select_mapping(select_invalid_mapping, mapping, invalid_mapping())));
     };
 
-    CHECK(bg::run_graph(
-              graph, bg::input<TS<bool>>({false, true, false, false}),
-              bg::input<TS<bool>>({false, false, false, true}),
-              bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
-              bg::input<TSD<i64, TS<string>>>({{{1, "a"}}, literal::SKIP, literal::SKIP, literal::SKIP}))
+    CHECK(hg::run_graph(
+              graph, hg::input<TS<bool>>({false, true, false, false}),
+              hg::input<TS<bool>>({false, false, false, true}),
+              hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+              hg::input<TSD<i64, TS<string>>>({{{1, "a"}}, literal::SKIP, literal::SKIP, literal::SKIP}))
               .equals({{{"a", 10}}, {{"a", literal::REMOVE}}, {{"a", 10}}, {{"a", literal::REMOVE}}}));
 }
 
@@ -179,7 +179,7 @@ TEST_CASE("nested dictionary reference retains invalid child state while its tar
         observe(preserve_references(selected), tick);
     };
 
-    (void)bg::run_graph(graph, {0, 1, 2, 3});
+    (void)hg::run_graph(graph, {0, 1, 2, 3});
 
     REQUIRE(observations.size() == 4);
     CHECK(observations[0].outer_valid);
@@ -217,9 +217,9 @@ TEST_CASE("partition moves a source key by removing its old group before assignm
         return materialize_partition(operators::partition(values, partitions));
     };
 
-    CHECK(bg::run_graph(partition_graph,
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}, {{1, 11}}}),
-                        bg::input<TSD<i64, TS<string>>>({{{1, "odd"}, {2, "even"}}, {{1, "even"}}}))
+    CHECK(hg::run_graph(partition_graph,
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}, {2, 20}}, {{1, 11}}}),
+                        hg::input<TSD<i64, TS<string>>>({{{1, "odd"}, {2, "even"}}, {{1, "even"}}}))
               .equals({{{"odd", {{1, 10}}}, {"even", {{2, 20}}}},
                        {{"odd", literal::REMOVE}, {"even", {{1, 11}}}}}));
 }
@@ -232,8 +232,8 @@ TEST_CASE("partition keeps empty groups when remove_empty is false",
         return materialize(operators::partition(values, partitions, false));
     };
 
-    CHECK(bg::run_graph(graph, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}),
-                        bg::input<TSD<i64, TS<string>>>({{{1, "odd"}}, {{1, "even"}}}))
+    CHECK(hg::run_graph(graph, hg::input<TSD<i64, TS<i64>>>({{{1, 10}}}),
+                        hg::input<TSD<i64, TS<string>>>({{{1, "odd"}}, {{1, "even"}}}))
               .equals({{{"odd", {{1, 10}}}}, {{"odd", {{1, literal::REMOVE}}}, {"even", {{1, 10}}}}}));
 }
 
@@ -244,7 +244,7 @@ TEST_CASE("partition remove_empty is a scalar option",
         return operators::partition(values, partitions, remove_empty);
     };
 
-    CHECK_THROWS_AS(bg::run_graph(graph, {{{1, 10}}}, {{{1, "odd"}}}, {true}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(graph, {{{1, 10}}}, {{{1, "odd"}}}, {true}), WiringError);
 }
 
 struct partition_values_source {
@@ -343,8 +343,8 @@ TEST_CASE("partition follows source value ticks between key moves",
         return read_even(operators::partition(values, partitions));
     };
 
-    CHECK(bg::run_graph(graph, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, 11}}, {{1, 12}}}),
-                        bg::input<TSD<i64, TS<string>>>({{{1, "odd"}}, literal::SKIP, {{1, "even"}}}))
+    CHECK(hg::run_graph(graph, hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, 11}}, {{1, 12}}}),
+                        hg::input<TSD<i64, TS<string>>>({{{1, "odd"}}, literal::SKIP, {{1, "even"}}}))
               .equals<i64>({-1, -1, 12}));
 }
 
@@ -357,7 +357,7 @@ TEST_CASE("partition moves keys across groups before assigning into groups empti
         return materialize(operators::partition(values, partitions));
     };
 
-    CHECK(bg::run_graph(graph, {{{1, 10}, {2, 20}}, literal::SKIP},
+    CHECK(hg::run_graph(graph, {{{1, 10}, {2, 20}}, literal::SKIP},
                         {{{1, "odd"}, {2, "even"}}, {{1, "even"}, {2, "odd"}}})
               .equals({{{"odd", {{1, 10}}}, {"even", {{2, 20}}}},
                        {{"odd", {{1, literal::REMOVE}, {2, 20}}},
@@ -373,8 +373,8 @@ TEST_CASE("flip_keys transposes nested dictionaries and removes empty outer grou
         return materialize_flip_keys(operators::flip_keys(input));
     };
 
-    CHECK(bg::run_graph(flip_keys_graph,
-                        bg::input<TSD<i64, TSD<string, TS<i64>>>>({{{1, {{"a", 5}, {"b", 6}}},
+    CHECK(hg::run_graph(flip_keys_graph,
+                        hg::input<TSD<i64, TSD<string, TS<i64>>>>({{{1, {{"a", 5}, {"b", 6}}},
                                                                      {2, {{"b", 7}}}},
                                                                     {{1, {{"a", literal::REMOVE}}}}}))
               .equals({{{"a", {{1, 5}}}, {"b", {{1, 6}, {2, 7}}}}, {{"a", literal::REMOVE}}}));
@@ -388,7 +388,7 @@ TEST_CASE("flip_keys keeps empty groups when remove_empty is false",
         return materialize(operators::flip_keys(input, false));
     };
 
-    CHECK(bg::run_graph(graph, bg::input<TSD<i64, TSD<string, TS<i64>>>>({{{1, {{"a", 5}}}},
+    CHECK(hg::run_graph(graph, hg::input<TSD<i64, TSD<string, TS<i64>>>>({{{1, {{"a", 5}}}},
                                                                             {{1, {{"a", literal::REMOVE}}}}}))
               .equals({{{"a", {{1, 5}}}}, {{"a", {{1, literal::REMOVE}}}}}));
 }
@@ -403,8 +403,8 @@ TEST_CASE("collapse_keys and uncollapse_keys preserve nested collection deltas",
         return materialize_collapsed(operators::collapse_keys(input));
     };
 
-    CHECK(bg::run_graph(collapse_graph,
-                        bg::input<TSD<i64, TSD<string, TS<i64>>>>({{{1, {{"a", 5}, {"b", 6}}}},
+    CHECK(hg::run_graph(collapse_graph,
+                        hg::input<TSD<i64, TSD<string, TS<i64>>>>({{{1, {{"a", 5}, {"b", 6}}}},
                                                                    {{1, {{"a", literal::REMOVE}}}}}))
               .equals({{{{1, "a"}, 5}, {{1, "b"}, 6}}, {{{1, "a"}, literal::REMOVE}}}));
 
@@ -415,8 +415,8 @@ TEST_CASE("collapse_keys and uncollapse_keys preserve nested collection deltas",
         return materialize_uncollapsed(operators::uncollapse_keys(input));
     };
 
-    CHECK(bg::run_graph(uncollapse_graph,
-                        bg::input<TSD<Tuple<i64, string>, TS<i64>>>({{{{1, "a"}, 5}, {{1, "b"}, 6}},
+    CHECK(hg::run_graph(uncollapse_graph,
+                        hg::input<TSD<Tuple<i64, string>, TS<i64>>>({{{{1, "a"}, 5}, {{1, "b"}, 6}},
                                                                      {{{1, "a"}, literal::REMOVE}}}))
               .equals({{{1, {{"a", 5}, {"b", 6}}}}, {{1, {{"a", literal::REMOVE}}}}}));
 }
@@ -429,7 +429,7 @@ TEST_CASE("uncollapse_keys keeps empty groups when remove_empty is false",
         return materialize(operators::uncollapse_keys(input, false));
     };
 
-    CHECK(bg::run_graph(graph, bg::input<TSD<Tuple<i64, string>, TS<i64>>>({{{{1, "a"}, 5}},
+    CHECK(hg::run_graph(graph, hg::input<TSD<Tuple<i64, string>, TS<i64>>>({{{{1, "a"}, 5}},
                                                                               {{{1, "a"}, literal::REMOVE}}}))
               .equals({{{1, {{"a", 5}}}}, {{1, {{"a", literal::REMOVE}}}}}));
 }
@@ -443,8 +443,8 @@ TEST_CASE("unpartition flattens nested dictionary changes",
         return materialize(operators::unpartition(input));
     };
 
-    CHECK(bg::run_graph(graph,
-                        bg::input<TSD<string, TSD<i64, TS<i64>>>>({{{"odd", {{1, 10}}}, {"even", {{2, 20}}}},
+    CHECK(hg::run_graph(graph,
+                        hg::input<TSD<string, TSD<i64, TS<i64>>>>({{{"odd", {{1, 10}}}, {"even", {{2, 20}}}},
                                                                     {{"odd", {{1, literal::REMOVE}}}}}))
               .equals({{{1, 10}, {2, 20}}, {{1, literal::REMOVE}}}));
 }
@@ -459,8 +459,8 @@ TEST_CASE("unpartition applies removals before assignments across groups",
         return read_key(operators::unpartition(input));
     };
 
-    CHECK(bg::run_graph(graph,
-                        bg::input<TSD<string, TSD<i64, TS<i64>>>>({{{"B", {{2, 20}}}, {"A", {{1, 10}}}},
+    CHECK(hg::run_graph(graph,
+                        hg::input<TSD<string, TSD<i64, TS<i64>>>>({{{"B", {{2, 20}}}, {"A", {{1, 10}}}},
                                                                    {{"B", {{1, 11}}}, {"A", {{1, literal::REMOVE}}}},
                                                                    {{"B", {{1, 12}}}}}))
               .equals<i64>({10, 11, 12}));
@@ -505,7 +505,7 @@ TEST_CASE("unpartition refreshes a group when a referenced dictionary changes it
         return sum(operators::unpartition(selected));
     };
 
-    CHECK(bg::run_graph(graph, {false, true, literal::SKIP},
+    CHECK(hg::run_graph(graph, {false, true, literal::SKIP},
                         {{{"odd", {{1, 10}}}, {"even", {{2, 20}}}}, literal::SKIP, literal::SKIP},
                         {{{"even", {{2, 200}}}, {"odd", {{1, 100}}}}, literal::SKIP, {{"even", {{2, 201}}}}})
               .equals<i64>({30, 300, 301}));
@@ -569,12 +569,12 @@ TEST_CASE("flip_keys and collapse_keys refresh nested items when referenced dict
         return sum_collapsed(collapsed);
     };
 
-    CHECK(bg::run_graph(flip_graph, {false, true, literal::SKIP},
+    CHECK(hg::run_graph(flip_graph, {false, true, literal::SKIP},
                         {{{1, {{"a", 5}, {"b", 6}}}, {2, {{"b", 7}}}}, literal::SKIP, literal::SKIP},
                         {{{2, {{"b", 70}}}, {1, {{"b", 60}, {"a", 50}}}}, literal::SKIP,
                          {{1, {{"a", 51}}}}})
               .equals<i64>({18, 180, 181}));
-    CHECK(bg::run_graph(collapse_graph, {false, true, literal::SKIP},
+    CHECK(hg::run_graph(collapse_graph, {false, true, literal::SKIP},
                         {{{1, {{"a", 5}, {"b", 6}}}, {2, {{"b", 7}}}}, literal::SKIP, literal::SKIP},
                         {{{2, {{"b", 70}}}, {1, {{"b", 60}, {"a", 50}}}}, literal::SKIP,
                          {{1, {{"a", 51}}}}})
@@ -659,10 +659,10 @@ TEST_CASE("flip_keys and collapse_keys refresh an inner referenced dictionary af
         return sum_collapsed(collapsed);
     };
 
-    CHECK(bg::run_graph(flip_graph, {false, true, literal::SKIP}, {{{1, 5}, {2, 6}}, literal::SKIP, literal::SKIP},
+    CHECK(hg::run_graph(flip_graph, {false, true, literal::SKIP}, {{{1, 5}, {2, 6}}, literal::SKIP, literal::SKIP},
                         {{{2, 60}, {1, 50}}, literal::SKIP, {{2, 61}}})
               .equals<i64>({11, 110, 111}));
-    CHECK(bg::run_graph(collapse_graph, {false, true, literal::SKIP},
+    CHECK(hg::run_graph(collapse_graph, {false, true, literal::SKIP},
                         {{{1, 5}, {2, 6}}, literal::SKIP, literal::SKIP},
                         {{{2, 60}, {1, 50}}, literal::SKIP, {{2, 61}}})
               .equals<i64>({11, 110, 111}));
@@ -715,7 +715,7 @@ TEST_CASE("uncollapse_keys refreshes remapped items from a referenced dictionary
         return sum(uncollapsed);
     };
 
-    CHECK(bg::run_graph(graph, {false, true, literal::SKIP},
+    CHECK(hg::run_graph(graph, {false, true, literal::SKIP},
                         {{{{1, "a"}, 5}, {{2, "b"}, 6}}, literal::SKIP, literal::SKIP},
                         {{{{2, "b"}, 60}, {{1, "a"}, 50}}, literal::SKIP, {{{1, "a"}, 51}}})
               .equals<i64>({11, 110, 111}));
@@ -732,8 +732,8 @@ TEST_CASE("flip inverts unique values and removes a colliding destination with i
     });
     const auto graph = [&](wp<TSD<i64, TS<string>>> input) { return materialize(operators::flip(input)); };
 
-    CHECK(bg::run_graph(graph,
-                        bg::input<TSD<i64, TS<string>>>({{{1, "one"}, {2, "two"}},
+    CHECK(hg::run_graph(graph,
+                        hg::input<TSD<i64, TS<string>>>({{{1, "one"}, {2, "two"}},
                                                          {{1, "two"}},
                                                          {{1, literal::REMOVE}}}))
               .equals({{{"one", 1}, {"two", 2}},
@@ -748,8 +748,8 @@ TEST_CASE("flip reapplies an unchanged value after a colliding source is removed
     });
     const auto graph = [&](wp<TSD<i64, TS<string>>> input) { return materialize(operators::flip(input)); };
 
-    CHECK(bg::run_graph(graph,
-                        bg::input<TSD<i64, TS<string>>>({{{1, "same"}, {2, "same"}},
+    CHECK(hg::run_graph(graph,
+                        hg::input<TSD<i64, TS<string>>>({{{1, "same"}, {2, "same"}},
                                                          {{2, literal::REMOVE}, {1, "same"}}}))
               .equals({{{"same", 2}}, {{"same", 1}}}));
 }
@@ -762,7 +762,7 @@ TEST_CASE("flip removes and restores mappings when a source value becomes invali
     });
     const auto graph = [&](wp<TSD<i64, TS<string>>> input) { return materialize(operators::flip(input)); };
 
-    CHECK(bg::run_graph(graph, bg::input<TSD<i64, TS<string>>>({{{1, "one"}}, {{1, literal::INVALID}}, {{1, "one"}}}))
+    CHECK(hg::run_graph(graph, hg::input<TSD<i64, TS<string>>>({{{1, "one"}}, {{1, literal::INVALID}}, {{1, "one"}}}))
               .equals({{{"one", 1}}, {{"one", literal::REMOVE}}, {{"one", 1}}}));
 }
 
@@ -775,8 +775,8 @@ TEST_CASE("flip groups duplicate values into key sets and removes empty groups",
         return materialize(operators::flip(input, false));
     };
 
-    CHECK(bg::run_graph(graph,
-                        bg::input<TSD<i64, TS<string>>>({{{1, "shared"}, {2, "shared"}},
+    CHECK(hg::run_graph(graph,
+                        hg::input<TSD<i64, TS<string>>>({{{1, "shared"}, {2, "shared"}},
                                                          {{1, literal::REMOVE}},
                                                          {{2, literal::REMOVE}}}))
               .equals({{{"shared", {1, 2}}},
@@ -790,5 +790,5 @@ TEST_CASE("flip options are scalar booleans, not time series inputs",
         return operators::flip(values, unique);
     };
 
-    CHECK_THROWS_AS(bg::run_graph(graph, {{{1, "one"}}}, {true}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(graph, {{{1, "one"}}}, {true}), WiringError);
 }

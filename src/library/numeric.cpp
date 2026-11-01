@@ -1,10 +1,10 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <variant>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
 // Unsigned arithmetic followed by C++20 signed conversion defines modulo-2^64 wrapping.
@@ -267,7 +267,7 @@ struct transform_overloads {
 
     // Conversion.
     static RequirementResult result_matches(const WiringArguments &arguments) {
-        const auto *mapping = arguments.type_map().find(::bg::details::type_parameter<CONVERT_RESULT>());
+        const auto *mapping = arguments.type_map().find(::hg::details::type_parameter<CONVERT_RESULT>());
         const auto *target_mapping = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
         const auto *target = target_mapping == nullptr || *target_mapping == nullptr
                                  ? nullptr
@@ -365,4 +365,4 @@ void register_numeric_operators() {
     register_overloads<comparison_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

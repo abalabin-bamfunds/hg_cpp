@@ -1,31 +1,31 @@
-#include <bg/graph/compiled_graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
 
-#include <bg/evaluation_time.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/service_binding_section.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/time_series/ref/dynamic_reference_input.hpp>
-#include <bg/time_series/dynamic_value_input.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_notification.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/service_binding_section.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/time_series/ref/dynamic_reference_input.hpp>
+#include <hg/time_series/dynamic_value_input.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_notification.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -43,7 +43,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 void DefaultInputDescriptor::notify_value(OutputChangeContext &context, std::size_t node_index,
                                           std::size_t parameter_index, OutputChange change) {
@@ -2749,4 +2749,4 @@ CompiledGraph::~CompiledGraph() {
     fixed_allocator_.deallocate_bytes(fixed_storage_, fixed_storage_size(), fixed_storage_alignment());
 }
 
-} // namespace bg
+} // namespace hg

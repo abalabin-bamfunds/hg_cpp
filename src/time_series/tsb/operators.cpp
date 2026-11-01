@@ -1,25 +1,25 @@
-#include <bg/time_series/tsb/operators.hpp>
+#include <hg/time_series/tsb/operators.hpp>
 
-#include <bg/graph.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/time_series_variable.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/time_series_variable.hpp>
 
 #include <optional>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 using V = TimeSeriesVariable<"V">;
 template <template <typename, auto...> typename Field>
@@ -103,8 +103,8 @@ struct tsb_getattr {
 } // namespace
 
 void register_time_series_bundle_operators(Operator &getattr) {
-    getattr.overload(bg::node<tsb_reference_getattr>());
-    getattr.overload(bg::graph<tsb_getattr>());
+    getattr.overload(hg::node<tsb_reference_getattr>());
+    getattr.overload(hg::graph<tsb_getattr>());
 
     struct SelectedField {
         const SchemaField *field;
@@ -123,8 +123,8 @@ void register_time_series_bundle_operators(Operator &getattr) {
         return SelectedField{field, static_cast<std::size_t>(field - schema.fields().data())};
     };
 
-    getattr.overload(bg::graph<SELECTED_SCALAR>({"bundle"_n, "name"_n},
-        bg::resolve<SELECTED_SCALAR> = [selected_field](const WiringArguments &arguments) -> const ScalarType & {
+    getattr.overload(hg::graph<SELECTED_SCALAR>({"bundle"_n, "name"_n},
+        hg::resolve<SELECTED_SCALAR> = [selected_field](const WiringArguments &arguments) -> const ScalarType & {
             const auto name = scalar_cast<util::symbol>(arguments.scalar("name").value()).value();
             const auto selected = selected_field(arguments.resolved_type("bundle"), name);
             if (!selected) {
@@ -158,4 +158,4 @@ void register_time_series_bundle_operators(Operator &getattr) {
         }));
 }
 
-} // namespace bg::details
+} // namespace hg::details

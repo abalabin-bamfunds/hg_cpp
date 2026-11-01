@@ -1,9 +1,9 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/dict/runtime_type.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("resolved scalar dictionary storage supports mutation",
           "[value][scalar][dict][scalar:dict][storage][feature:scalar-storage]") {
@@ -24,7 +24,7 @@ TEST_CASE("resolved scalar dictionary storage supports mutation",
     const auto &type = dict_scalar_type(key_storage.type(), value_storage.type());
     const auto &dict = static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(dict.size(), dict.alignment());
     dict.construct_initial_value(storage);
 
@@ -56,7 +56,7 @@ TEST_CASE("resolved dictionary storage owns nested collection values",
     const auto &dict_type = dict_scalar_type(key_storage.type(), list_type);
     const auto &dict = static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(dict_type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(dict.size(), dict.alignment());
     dict.construct_initial_value(storage);
 
@@ -95,7 +95,7 @@ TEST_CASE("a scalar dictionary copies between composed and C++ storage",
     const auto source =
         ScalarValue<Dict>{std::vector<std::pair<i64, RuntimeDictValue>>{{1, {.first = 2, .second = 3}}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(composed.size(), composed.alignment());
     composed.construct_from_input(storage, source, allocator);
 
@@ -138,7 +138,7 @@ TEST_CASE("a scalar dictionary copies nested keys between composed and C++ stora
     const auto &composed =
         static_cast<const ScalarDictRuntimeType &>(resolve_scalar_runtime_type(dict_type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
 
     auto *inner_storage = allocator.allocate_bytes(inner.size(), inner.alignment());
     inner.construct_initial_value(inner_storage);

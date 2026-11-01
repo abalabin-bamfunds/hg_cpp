@@ -1,8 +1,8 @@
-#include <bg/node/details/aggregate_node_template_base.hpp>
+#include <hg/node/details/aggregate_node_template_base.hpp>
 
-#include <bg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_arguments.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 const Signature &AggregateNodeTemplateBase::default_signature() const {
     return *descriptor_->signature;
@@ -105,4 +105,4 @@ std::vector<const ScalarType *> AggregateNodeTemplateBase::resolve_state_types(c
     return descriptor_->resolve_state_types(type_map);
 }
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,19 +1,19 @@
-#include <bg/queue.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/bytes_builder.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/graph_run_input.hpp>
-#include <bg/time_series/output_state.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/queue.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/bytes_builder.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/graph_run_input.hpp>
+#include <hg/time_series/output_state.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -27,7 +27,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("bytes scalar values copy borrowed spans and retain shared storage",
           "[feature:scalar-api][feature:scalar-storage][scalar:bytes][storage:variable]") {
@@ -53,7 +53,7 @@ TEST_CASE("bytes scalar values copy borrowed spans and retain shared storage",
 
 TEST_CASE("bytes builder exposes writable capacity and transfers finished storage",
           "[feature:scalar-api][feature:scalar-storage][scalar:bytes][storage:variable]") {
-    auto allocator = bg::allocator{*std::pmr::new_delete_resource()};
+    auto allocator = hg::allocator{*std::pmr::new_delete_resource()};
     auto retained = ScalarValue<bytes>{std::span<const byte>{}};
     {
         auto builder = BytesBuilder{allocator, 2};
@@ -88,7 +88,7 @@ TEST_CASE("bytes builder exposes writable capacity and transfers finished storag
 
 TEST_CASE("bytes builder accepts empty values and rejects over-commit",
           "[feature:scalar-api][feature:scalar-storage][scalar:bytes][storage:variable]") {
-    auto allocator = bg::allocator{*std::pmr::new_delete_resource()};
+    auto allocator = hg::allocator{*std::pmr::new_delete_resource()};
     auto empty = std::move(BytesBuilder{allocator, 0}).finish();
     CHECK(empty.view().value().empty());
 
@@ -103,7 +103,7 @@ TEST_CASE("bytes builder accepts empty values and rejects over-commit",
 TEST_CASE("bytes retain their graph allocation owner after the graph releases it",
           "[feature:scalar-storage][scalar:bytes][storage:variable][transition:lifecycle]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     const auto graph = 1;
     auto *allocation_owner = details::ScalarAllocationPool::create(allocator);
     auto retained = std::optional<ScalarValue<bytes>>{};
@@ -175,8 +175,8 @@ TEST_CASE("a typed graph reads and returns byte payload literals",
     const auto first = std::array{byte{0x00}, byte{0x01}};
     const auto second = std::array{byte{0xfe}, byte{0xff}};
 
-    const auto result = bg::run_graph(
-        identity, bg::input<TS<bytes>>({std::span<const byte>{first}, std::span<const byte>{second}}));
+    const auto result = hg::run_graph(
+        identity, hg::input<TS<bytes>>({std::span<const byte>{first}, std::span<const byte>{second}}));
 
     REQUIRE(result.size() == 2);
     const auto first_value = result[0];
@@ -194,7 +194,7 @@ TEST_CASE("a plain span node parameter resolves to the bytes scalar",
 
     const auto echo = node([](std::span<const byte> value) { return value; });
     const auto payload = std::array{byte{0x00}, byte{0xff}};
-    const auto result = bg::run_graph(echo, bg::input<TS<bytes>>({std::span<const byte>{payload}}));
+    const auto result = hg::run_graph(echo, hg::input<TS<bytes>>({std::span<const byte>{payload}}));
 
     REQUIRE(result.size() == 1);
     const auto value = result[0];

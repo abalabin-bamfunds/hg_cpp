@@ -1,9 +1,9 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/string.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/string.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,7 +15,7 @@
 #include <string>
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -54,7 +54,7 @@ TEST_CASE("C++ scalar storage copies into graph-owned memory", "[scalar][feature
     std::pmr::unsynchronized_pool_resource graph_memory;
     const std::pmr::string source{"a scalar value long enough to require allocated storage", &source_memory};
     const ScalarRuntimeType &runtime_type = cpp_scalar_runtime_type<string>();
-    auto allocator = bg::allocator{graph_memory};
+    auto allocator = hg::allocator{graph_memory};
 
     void *storage = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
     const auto source_view = std::string_view{source};
@@ -99,7 +99,7 @@ TEST_CASE("scalar storage distinguishes variable memory from finalization",
     auto source = finalizable_value{};
     source.count = &finalization_count;
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     alignas(finalizable_value) std::byte storage[sizeof(finalizable_value)];
     opaque.construct_from_value(storage, &source, allocator);
     opaque.destroy(storage, allocator);
@@ -110,7 +110,7 @@ TEST_CASE("an opaque scalar runtime constructs a default value through its read 
           "[feature:scalar-storage][scalar:opaque][storage:fixed]") {
     const auto &runtime_type = cpp_scalar_runtime_type<Opaque<finalizable_value>>();
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     alignas(finalizable_value) std::byte storage[sizeof(finalizable_value)];
     auto finalization_count = 0;
 

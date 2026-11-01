@@ -1,11 +1,11 @@
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

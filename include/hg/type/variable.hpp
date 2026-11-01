@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/type/details/static_registry_entry.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/type/details/static_registry_entry.hpp>
+#include <hg/util/symbol.hpp>
 
-namespace bg {
+namespace hg {
 
 class Variable {
   public:
@@ -23,4 +23,4 @@ class Variable {
     mutable details::StaticRegistryEntry<Variable> registry_entry_;
 };
 
-} // namespace bg
+} // namespace hg

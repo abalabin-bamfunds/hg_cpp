@@ -1,7 +1,7 @@
-#include <bg/node/input.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/details/string_storage.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/node/input.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/details/string_storage.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,11 +11,11 @@
 #include <string_view>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 using FloatInput = In<TS<float>, "value"_n>;
 using UnnamedFloatInput = In<TS<float>>;

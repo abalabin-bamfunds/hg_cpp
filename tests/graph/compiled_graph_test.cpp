@@ -1,17 +1,17 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/operators.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
-#include <bg/time_series/ref/ref_notification.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/operators.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
+#include <hg/time_series/ref/ref_notification.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -26,7 +26,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -130,7 +130,7 @@ TEST_CASE("typed callable nodes omit runtime-signature metadata",
     const auto typed_identity = node([](In<TS<i64>>, Out<TS<i64>>) {});
 
     const auto runtime_identity = node(runtime_signature_identity_definition{});
-    const auto input_types = std::array<const bg::Type *, 1>{&TS<i64>::type()};
+    const auto input_types = std::array<const hg::Type *, 1>{&TS<i64>::type()};
     const auto typed_signature = typed_identity.signature().resolve(input_types);
     const auto runtime_signature = runtime_identity.signature().resolve(input_types);
 
@@ -357,7 +357,7 @@ TEST_CASE("all_valid metadata follows an empty runtime-type array at pointer ali
     const auto source = node<source_definition>();
 
     const auto gate = node<stateful_gate_definition>();
-    const auto gate_signature = gate.signature().resolve(std::array<const bg::Type *, 1>{&TS<i64>::type()});
+    const auto gate_signature = gate.signature().resolve(std::array<const hg::Type *, 1>{&TS<i64>::type()});
     CHECK_FALSE(gate.uses_time_series_input_runtime_type(gate_signature, 0));
     CHECK_FALSE(gate.uses_output_runtime_type());
 

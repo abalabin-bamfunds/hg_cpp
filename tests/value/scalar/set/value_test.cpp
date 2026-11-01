@@ -1,6 +1,6 @@
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/set/type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -71,7 +71,7 @@ TEST_CASE("a scalar set owns variable-size items",
 
 TEST_CASE("a scalar set owns and compares hierarchical items",
           "[value][scalar][set][scalar:set][scalar:hierarchical][feature:scalar-collection]") {
-    auto allocator = bg::allocator{};
+    auto allocator = hg::allocator{};
     const auto one = bundle<SetItem>(allocator, i64{1});
     const auto another_one = bundle<SetItem>(allocator, i64{1});
     const auto two = bundle<SetItem>(allocator, i64{2});

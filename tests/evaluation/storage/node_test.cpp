@@ -1,16 +1,16 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <chrono>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -41,11 +41,11 @@ TEST_CASE("a runtime node locates output and input data", "[evaluation][storage]
         void evaluate() const {}
     };
 
-    const auto source = bg::node<runtime_node_source>();
+    const auto source = hg::node<runtime_node_source>();
 
-    const auto reference = bg::node<runtime_node_reference>();
+    const auto reference = hg::node<runtime_node_reference>();
 
-    const auto sink = bg::node<runtime_node_sink>();
+    const auto sink = hg::node<runtime_node_sink>();
     auto wiring = GraphWiring{};
 
     auto direct_sink = NodeCallIdentity{};

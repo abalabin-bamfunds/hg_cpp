@@ -1,19 +1,19 @@
-#include <bg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
 
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTimeSeriesListType final : public TimeSeriesListType {
@@ -195,4 +195,4 @@ const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type,
     return type;
 }
 
-} // namespace bg
+} // namespace hg

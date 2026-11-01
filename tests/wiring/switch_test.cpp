@@ -1,13 +1,13 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/switch.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/switch.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -17,8 +17,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct switch_bundle {
     Field<TS<i64>> value;
@@ -117,7 +117,7 @@ TEST_CASE("switch preserves named arguments around an omitted case default",
                        "x"_n = operators::const_(i64{3}), "z"_n = operators::const_(i64{4}));
     };
 
-    CHECK(bg::run_graph(run).equals({423}));
+    CHECK(hg::run_graph(run).equals({423}));
 }
 
 TEST_CASE("switch runtime declarations preserve valid_items inputs",

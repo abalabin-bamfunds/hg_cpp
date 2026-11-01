@@ -1,38 +1,38 @@
-#include <bg/graph/service.hpp>
-#include <bg/service.hpp>
+#include <hg/graph/service.hpp>
+#include <hg/service.hpp>
 
-#include <bg/graph/details/nested_binding_identity.hpp>
-#include <bg/graph/details/node_scheduler.hpp>
-#include <bg/graph/details/service_binding_section.hpp>
-#include <bg/graph/details/multiservice_ports.hpp>
-#include <bg/graph/details/service_instance_registry.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/details/nested_binding_identity.hpp>
+#include <hg/graph/details/node_scheduler.hpp>
+#include <hg/graph/details/service_binding_section.hpp>
+#include <hg/graph/details/multiservice_ports.hpp>
+#include <hg/graph/details/service_instance_registry.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/time_series/tsb/tsb_output.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -45,7 +45,7 @@
 #include <string>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace details {
 
 class ServiceRequestBinding;
@@ -993,4 +993,4 @@ std::optional<WiringPoint> GraphWiring::require_service(const ServiceDefinition 
                                          *instance.signature.output);
 }
 
-} // namespace bg
+} // namespace hg

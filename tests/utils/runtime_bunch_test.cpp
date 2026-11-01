@@ -1,5 +1,5 @@
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/runtime_bunch.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/runtime_bunch.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

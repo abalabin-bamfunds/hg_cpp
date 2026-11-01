@@ -1,16 +1,16 @@
-#include <bg/time_series/size_variable.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/scalar/dict/type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/type_of.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/graph/graph_argument.hpp>
+#include <hg/time_series/size_variable.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/type_of.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/graph/graph_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,7 +18,7 @@
 #include <compare>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("an exact parameter is less generic than a type variable",
           "[feature:operator][feature:type-system][declaration:generic]") {
@@ -294,7 +294,7 @@ TEST_CASE("invariant dictionary keys do not become projected key variables",
     const auto repeated_key = Signature{util::symbol{"repeated_key"},
                                         {{util::symbol{"first"}, &TSD<KEY, TS<VALUE>>::type()},
                                          {util::symbol{"second"}, &TSD<KEY, TS<OTHER_VALUE>>::type()}}};
-    const auto supplied = std::array<const bg::Type *, 2>{&TSD<i64, TS<i64>>::type(), &TSD<i64, TS<i64>>::type()};
+    const auto supplied = std::array<const hg::Type *, 2>{&TSD<i64, TS<i64>>::type(), &TSD<i64, TS<i64>>::type()};
 
     CHECK(details::compare_parameter_specificity(unions, repeated_key, supplied, supplied, 2) ==
           std::partial_ordering::less);
@@ -311,7 +311,7 @@ TEST_CASE("ambiguous union narrowing falls back to declaration comparison",
     const auto union_signature = Signature{util::symbol{"union"}, {{util::symbol{"value"}, &DICTIONARY_UNION::type()}}};
     const auto generic_signature =
         Signature{util::symbol{"generic"}, {{util::symbol{"value"}, &cpp_scalar_type<Dict<KEY, VALUE>>()}}};
-    const auto supplied = std::array<const bg::Type *, 1>{&cpp_scalar_type<Dict<i64, double>>()};
+    const auto supplied = std::array<const hg::Type *, 1>{&cpp_scalar_type<Dict<i64, double>>()};
     auto type_map = TypeMap{};
     REQUIRE(T::type().match(int64_type(), type_map));
     REQUIRE(R::type().match(double_type(), type_map));
@@ -330,8 +330,8 @@ TEST_CASE("contextual specificity orders a concrete type, its union, and constra
     const auto promoted = Signature{util::symbol{"promoted"}, {{util::symbol{"value"}, &PROMOTED::type()}}};
     const auto equality = Signature{util::symbol{"equality"}, {{util::symbol{"value"}, &TS<EQUALITY_SCALAR>::type()}}};
     const auto scalar = Signature{util::symbol{"scalar"}, {{util::symbol{"value"}, &TS<SCALAR>::type()}}};
-    const auto supplied = std::array<const bg::Type *, 1>{&TS<i64>::type()};
-    const auto matches_supplied = [&](const bg::Type &pattern) {
+    const auto supplied = std::array<const hg::Type *, 1>{&TS<i64>::type()};
+    const auto matches_supplied = [&](const hg::Type &pattern) {
         auto mapping = TypeMap{};
         return pattern.match(*supplied[0], mapping);
     };
@@ -357,7 +357,7 @@ TEST_CASE("contextual specificity preserves partial overlap and conflicting alte
           "[feature:operator][feature:type-system][declaration:generic]") {
     using LEFT = Union<"LEFT", i64, float>;
     using RIGHT = Union<"RIGHT", float, double>;
-    using MIXED_LEFT = Union<"MIXED_LEFT", bg::SCALAR, i64>;
+    using MIXED_LEFT = Union<"MIXED_LEFT", hg::SCALAR, i64>;
     using EQUALITY_SCALAR = ScalarVariable<"EQUALITY_SCALAR", EqualityComparable>;
     using HASH_SCALAR = ScalarVariable<"HASH_SCALAR", Hashable>;
     using MIXED_RIGHT = Union<"MIXED_RIGHT", EQUALITY_SCALAR, HASH_SCALAR>;
@@ -366,8 +366,8 @@ TEST_CASE("contextual specificity preserves partial overlap and conflicting alte
     const auto right = Signature{util::symbol{"right"}, {{util::symbol{"value"}, &RIGHT::type()}}};
     const auto mixed_left = Signature{util::symbol{"mixed_left"}, {{util::symbol{"value"}, &MIXED_LEFT::type()}}};
     const auto mixed_right = Signature{util::symbol{"mixed_right"}, {{util::symbol{"value"}, &MIXED_RIGHT::type()}}};
-    const auto supplied_float = std::array<const bg::Type *, 1>{&float_type()};
-    const auto supplied_integer = std::array<const bg::Type *, 1>{&int64_type()};
+    const auto supplied_float = std::array<const hg::Type *, 1>{&float_type()};
+    const auto supplied_integer = std::array<const hg::Type *, 1>{&int64_type()};
     auto mixed_left_mapping = TypeMap{};
     auto mixed_right_mapping = TypeMap{};
     REQUIRE(MIXED_LEFT::type().match(*supplied_integer[0], mixed_left_mapping));
@@ -394,8 +394,8 @@ TEST_CASE("contextual narrowing retains repeated-variable relationships",
                   {{util::symbol{"first"}, &LEFT::type()}, {util::symbol{"second"}, &RIGHT::type()}}};
     const auto repeated = Signature{util::symbol{"repeated"},
                                     {{util::symbol{"first"}, &T::type()}, {util::symbol{"second"}, &T::type()}}};
-    const auto supplied = std::array<const bg::Type *, 2>{&int64_type(), &int64_type()};
-    const auto matches_supplied = [&](const bg::Type &pattern, const bg::Type &argument) {
+    const auto supplied = std::array<const hg::Type *, 2>{&int64_type(), &int64_type()};
+    const auto matches_supplied = [&](const hg::Type &pattern, const hg::Type &argument) {
         auto mapping = TypeMap{};
         return pattern.match(argument, mapping);
     };
@@ -423,8 +423,8 @@ TEST_CASE("contextual narrowing preserves nested repeated-variable relationships
                   {{util::symbol{"first"}, &LEFT::type()}, {util::symbol{"second"}, &RIGHT::type()}}};
     const auto repeated = Signature{
         util::symbol{"repeated"}, {{util::symbol{"first"}, &TS<T>::type()}, {util::symbol{"second"}, &TS<T>::type()}}};
-    const auto supplied = std::array<const bg::Type *, 2>{&TS<i64>::type(), &TS<i64>::type()};
-    const auto matches_supplied = [&](const bg::Type &pattern, const bg::Type &argument) {
+    const auto supplied = std::array<const hg::Type *, 2>{&TS<i64>::type(), &TS<i64>::type()};
+    const auto matches_supplied = [&](const hg::Type &pattern, const hg::Type &argument) {
         auto mapping = TypeMap{};
         return pattern.match(argument, mapping);
     };
@@ -448,10 +448,10 @@ TEST_CASE("nested type specificity is consistent across a declaration matrix",
     using SCALAR = ScalarVariable<"SCALAR">;
     using TIME_SERIES_CHOICE = Union<"TIME_SERIES_CHOICE", TS<i64>, TS<double>>;
 
-    const auto declarations = std::array<const bg::Type *, 6>{&TS<i64>::type(),    &TS<T>::type(),
+    const auto declarations = std::array<const hg::Type *, 6>{&TS<i64>::type(),    &TS<T>::type(),
                                                               &TS<R>::type(),      &TIME_SERIES_CHOICE::type(),
                                                               &TS<SCALAR>::type(), &TS_T::type()};
-    const auto supplied = std::array<const bg::Type *, 2>{&TS<i64>::type(), &TS<i64>::type()};
+    const auto supplied = std::array<const hg::Type *, 2>{&TS<i64>::type(), &TS<i64>::type()};
     auto signatures = std::vector<Signature>{};
     for (const auto *first : declarations) {
         for (const auto *second : declarations) {
@@ -498,15 +498,15 @@ TEST_CASE("nested type specificity is consistent across a declaration matrix",
 
 TEST_CASE("projected graph parameters ignore alternatives with different boundary shapes",
           "[feature:operator][feature:type-system][declaration:partially-generic][shape:nested]") {
-    const auto one_parameter = std::array<const bg::Type *, 1>{&TS<i64>::type()};
-    const auto two_parameters = std::array<const bg::Type *, 2>{&TS<i64>::type(), &TS<double>::type()};
+    const auto one_parameter = std::array<const hg::Type *, 1>{&TS<i64>::type()};
+    const auto two_parameters = std::array<const hg::Type *, 2>{&TS<i64>::type(), &TS<double>::type()};
     const auto &one_parameter_graph = graph_argument_type(one_parameter, &TS<i64>::type());
     const auto &two_parameter_graph = graph_argument_type(two_parameters, &TS<i64>::type());
     const auto graph_union =
-        TypeVariableType<bg::Type>{util::symbol{"GRAPH"}, {&one_parameter_graph, &two_parameter_graph}};
+        TypeVariableType<hg::Type>{util::symbol{"GRAPH"}, {&one_parameter_graph, &two_parameter_graph}};
     const auto generic = Signature{util::symbol{"generic"}, {{util::symbol{"function"}, &graph_union}}};
     const auto concrete = Signature{util::symbol{"concrete"}, {{util::symbol{"function"}, &one_parameter_graph}}};
-    const auto supplied = std::array<const bg::Type *, 1>{&one_parameter_graph};
+    const auto supplied = std::array<const hg::Type *, 1>{&one_parameter_graph};
 
     REQUIRE_NOTHROW(generic.resolve(supplied));
     CHECK(details::compare_parameter_specificity(concrete, generic, supplied, supplied, 1) ==

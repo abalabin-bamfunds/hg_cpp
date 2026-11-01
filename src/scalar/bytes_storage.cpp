@@ -1,9 +1,9 @@
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/details/bytes_storage.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/bytes_builder.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/details/bytes_storage.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/bytes_builder.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 namespace {
 
@@ -140,9 +140,9 @@ void BytesStorage::set_size(std::size_t size) {
     size_ = size;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 BytesBuilder::BytesBuilder() {
     auto memory = allocator{};
@@ -250,9 +250,9 @@ ScalarValue<bytes> BytesBuilder::finish() && {
     return result;
 }
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 CppScalarRuntimeType<bytes>::CppScalarRuntimeType() : Base{cpp_scalar_type<bytes>(), shared_handle_flag} {}
 
@@ -316,4 +316,4 @@ void CppScalarRuntimeType<bytes>::do_assign_from_input(void *destination, const 
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,11 +1,11 @@
-#include <bg/global_state.hpp>
+#include <hg/global_state.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a mutable scalar list appends and replaces items",
           "[value][scalar][list][scalar:list][mutable][feature:scalar-collection]") {

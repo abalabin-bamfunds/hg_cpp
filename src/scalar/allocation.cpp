@@ -1,6 +1,6 @@
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include "../thread_local_pointer.hpp"
 
@@ -9,7 +9,7 @@
 #include <stdexcept>
 #include <unordered_map>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 util::thread_local_pointer &current_owner() {
@@ -85,4 +85,4 @@ void check_context_scalar_deallocation(const void *value) {
 #endif
 }
 
-} // namespace bg::details
+} // namespace hg::details

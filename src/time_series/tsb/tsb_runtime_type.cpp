@@ -1,15 +1,15 @@
-#include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_free_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsb/tsb_output.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
 #include "../fixed/fixed_reference_representation.hpp"
-#include <bg/util/static_storage.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 const ReferenceRepresentationFactory *FreeTimeSeriesBundleRuntimeType::reference_representation_factory()
     const noexcept {
@@ -106,4 +106,4 @@ const TimeSeriesRuntimeType &free_time_series_bundle_runtime_type(const TimeSeri
     return *cache.back();
 }
 
-} // namespace bg::details
+} // namespace hg::details

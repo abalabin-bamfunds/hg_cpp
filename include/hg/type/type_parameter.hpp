@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/schema_variable_instance.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/type/type_variable.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/schema_variable_instance.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/type/type_variable.hpp>
 
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration>
 inline constexpr bool schema_type_parameter_declaration = [] {
@@ -61,4 +61,4 @@ template <typename... Declaration> struct type_parameterized_declaration {
     static constexpr auto has_valid_parameters = valid_parameters(std::make_index_sequence<count - 1>{});
 };
 
-} // namespace bg::details
+} // namespace hg::details

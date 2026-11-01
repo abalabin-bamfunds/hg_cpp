@@ -1,16 +1,16 @@
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_map.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/type_map.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <concepts>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("time series set annotations expose their item type", "[type_system][tss][series:tss][feature:type-system]") {
     using IntTimeSeriesSet = TSS<i64>;

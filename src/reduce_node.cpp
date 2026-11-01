@@ -1,26 +1,26 @@
-#include <bg/reduce/details/reduce_node.hpp>
+#include <hg/reduce/details/reduce_node.hpp>
 
-#include <bg/allocator.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/details/nested_graph_context.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/reduce/details/reduce_node_definition.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/tsd/tsd_key_subscription.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/ts/ts_output.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/nested_graph_context.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/reduce/details/reduce_node_definition.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/tsd/tsd_key_subscription.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/ts/ts_output.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <algorithm>
 #include <array>
@@ -35,7 +35,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 struct CompactReduceRuntime;
@@ -1095,4 +1095,4 @@ std::unique_ptr<NodeTemplate> make_compact_reduce_node(ReduceCompactGraphWiring 
         CompactReduceNodeTemplate{std::move(wiring), signature, dictionary_parameter, default_parameter});
 }
 
-} // namespace bg::details
+} // namespace hg::details

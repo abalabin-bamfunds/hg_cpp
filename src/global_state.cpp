@@ -1,8 +1,8 @@
-#include <bg/global_state.hpp>
+#include <hg/global_state.hpp>
 
-#include <bg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
 
-namespace bg {
+namespace hg {
 
 GlobalState::GlobalState() : GlobalState(allocator{}) {}
 
@@ -15,4 +15,4 @@ GlobalState::~GlobalState() {
     scalar_allocation_pool_->release();
 }
 
-} // namespace bg
+} // namespace hg

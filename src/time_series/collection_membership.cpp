@@ -1,14 +1,14 @@
-#include <bg/time_series/collection_membership.hpp>
+#include <hg/time_series/collection_membership.hpp>
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -17,7 +17,7 @@
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class CollectionMembershipSubscriptions;
@@ -497,4 +497,4 @@ DynamicValueBinding<bool> tsd_membership_binding(Reference collection, Scalar<> 
     return subscriptions.binding(collection, scalar_data(key), valid_items);
 }
 
-} // namespace bg::details
+} // namespace hg::details

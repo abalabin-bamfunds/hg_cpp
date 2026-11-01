@@ -1,11 +1,11 @@
-#include <bg/type/type_registry.hpp>
+#include <hg/type/type_registry.hpp>
 
 #include <algorithm>
 #include <cstddef>
 #include <new>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 TypeRegistry &TypeRegistry::instance() noexcept {
     alignas(TypeRegistry) static std::byte storage[sizeof(TypeRegistry)];
@@ -31,4 +31,4 @@ bool TypeRegistry::contains(const Type &type) const {
     return std::ranges::any_of(owned_types_, [&](const auto &candidate) { return candidate.get() == &type; });
 }
 
-} // namespace bg
+} // namespace hg

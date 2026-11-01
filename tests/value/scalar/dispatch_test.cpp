@@ -1,7 +1,7 @@
 #include "test_scalar_provider.hpp"
 
-#include <bg/scalar/dispatch.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/dispatch.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,7 +10,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

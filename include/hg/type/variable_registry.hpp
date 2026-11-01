@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/type/type.hpp>
-#include <bg/type/variable.hpp>
+#include <hg/export.hpp>
+#include <hg/type/type.hpp>
+#include <hg/type/variable.hpp>
 
 #include <concepts>
 #include <memory>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
-class BG_EXPORT VariableRegistry {
+class HG_EXPORT VariableRegistry {
   public:
     static VariableRegistry &instance() noexcept;
 
@@ -40,4 +40,4 @@ class BG_EXPORT VariableRegistry {
     std::vector<std::unique_ptr<Variable>> owned_variables_;
 };
 
-} // namespace bg
+} // namespace hg

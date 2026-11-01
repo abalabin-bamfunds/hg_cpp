@@ -1,17 +1,17 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/ts/ts_output.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/variable.hpp>
-#include <bg/type/schema_metadata_values.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/ts/ts_output.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/variable.hpp>
+#include <hg/type/schema_metadata_values.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -20,7 +20,7 @@
 #include <stdexcept>
 #include <typeindex>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -37,7 +37,7 @@ template <template <typename, auto...> typename Field> using DerivedBundleAlias 
 
 template <template <typename, auto...> typename Field> struct SharedBundle {
     Field<i64> count;
-    Field<double, bg::optional> value;
+    Field<double, hg::optional> value;
 };
 
 template <template <typename, auto...> typename Field> using SharedBundleAlias = SharedBundle<Field>;
@@ -55,7 +55,7 @@ template <template <typename, auto...> typename Field> using ScalarDerivedBundle
 
 template <template <typename, auto...> typename Field> struct OtherSharedBundle {
     Field<i64> count;
-    Field<double, bg::optional> value;
+    Field<double, hg::optional> value;
 };
 
 template <template <typename, auto...> typename Field> struct InvalidBundle {
@@ -119,7 +119,7 @@ TEST_CASE("TSB schema transformations preserve metadata and common types require
           "[feature:type-system][series:tsb][schema:named][guarantee:ordinary][guarantee:final]") {
     const auto metadata = make_schema_metadata({schema_metadata_entry("extension.owner", ScalarValue<i64>{7})});
     const auto reference_fields = std::array{SchemaField{util::symbol{"value"}, &REF<TS<i64>>::type()}};
-    const auto &reference_schema = bg::schema(util::symbol{"MetadataBundle"}, std::type_index{typeid(BundleTypeScope)},
+    const auto &reference_schema = hg::schema(util::symbol{"MetadataBundle"}, std::type_index{typeid(BundleTypeScope)},
                                               nullptr, reference_fields, metadata);
     const auto &source = time_series_bundle_type(reference_schema, TimeSeriesGuarantee::ordinary);
 
@@ -145,9 +145,9 @@ TEST_CASE("TSB schema transformations preserve metadata and common types require
     const auto different_metadata =
         make_schema_metadata({schema_metadata_entry("extension.owner", ScalarValue<i64>{8})});
     const auto identity = std::type_index{typeid(TestField<double>)};
-    const auto &different_left_schema = bg::schema(util::symbol{"MetadataBundle"}, identity, nullptr, fields, metadata);
+    const auto &different_left_schema = hg::schema(util::symbol{"MetadataBundle"}, identity, nullptr, fields, metadata);
     const auto &different_right_schema =
-        bg::schema(util::symbol{"MetadataBundle"}, identity, nullptr, fields, different_metadata);
+        hg::schema(util::symbol{"MetadataBundle"}, identity, nullptr, fields, different_metadata);
     const auto &different_left = time_series_bundle_type(different_left_schema, TimeSeriesGuarantee::ordinary);
     const auto &different_right = time_series_bundle_type(different_right_schema, TimeSeriesGuarantee::ordinary);
 
@@ -163,8 +163,8 @@ TEST_CASE("common named bundles retain their base and combine a narrowed inherit
         std::array{SchemaField{util::symbol{"value"}, &TS<i64, TimeSeriesGuarantee::final>::type()}};
     const auto base_right_fields =
         std::array{SchemaField{util::symbol{"value"}, &TS<i64, TimeSeriesGuarantee::ordinary>::type()}};
-    const auto &base_left = bg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_left_fields);
-    const auto &base_right = bg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_right_fields);
+    const auto &base_left = hg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_left_fields);
+    const auto &base_right = hg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_right_fields);
     const auto derived_left_fields = std::array{
         SchemaField{util::symbol{"value"}, &TS<i64, TimeSeriesGuarantee::const_>::type()},
         SchemaField{util::symbol{"extra"}, &TS<float, TimeSeriesGuarantee::final>::type()},
@@ -174,9 +174,9 @@ TEST_CASE("common named bundles retain their base and combine a narrowed inherit
         SchemaField{util::symbol{"extra"}, &TS<float, TimeSeriesGuarantee::ordinary>::type()},
     };
     const auto &derived_left =
-        bg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_left, derived_left_fields);
+        hg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_left, derived_left_fields);
     const auto &derived_right =
-        bg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_right, derived_right_fields);
+        hg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_right, derived_right_fields);
     const auto &left = time_series_bundle_type(derived_left, TimeSeriesGuarantee::final);
     const auto &right = time_series_bundle_type(derived_right, TimeSeriesGuarantee::ordinary);
     const auto *common = left.common_type(right);
@@ -203,10 +203,10 @@ TEST_CASE("common named and free bundles retain the named declaration",
     const auto base_fields =
         std::array{SchemaField{util::symbol{"count"}, &TS<i64, TimeSeriesGuarantee::final>::type()}};
     const auto &base_schema =
-        bg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_fields, base_metadata);
+        hg::schema(util::symbol{"CommonBase"}, base_identity, nullptr, base_fields, base_metadata);
     const auto derived_fields =
         std::array{SchemaField{util::symbol{"value"}, &TS<float, TimeSeriesGuarantee::final>::type()}};
-    const auto &derived_schema = bg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_schema,
+    const auto &derived_schema = hg::schema(util::symbol{"CommonDerived"}, derived_identity, &base_schema,
                                             derived_fields, derived_metadata);
     const auto &named = time_series_bundle_type(derived_schema, TimeSeriesGuarantee::final);
 
@@ -260,10 +260,10 @@ TEST_CASE("common bundles require matching schema and field structures",
     const auto identity = std::type_index{typeid(BundleTypeScope)};
     const auto value_field = std::array{SchemaField{util::symbol{"value"}, &TS<i64>::type()}};
     const auto other_field = std::array{SchemaField{util::symbol{"value"}, &TS<float>::type()}};
-    const auto &left_schema = bg::schema(util::symbol{"Common"}, identity, nullptr, value_field);
+    const auto &left_schema = hg::schema(util::symbol{"Common"}, identity, nullptr, value_field);
     const auto &other_identity =
-        bg::schema(util::symbol{"Common"}, std::type_index{typeid(TestField<double>)}, nullptr, value_field);
-    const auto &wrong_field = bg::schema(util::symbol{"Common"}, identity, nullptr, other_field);
+        hg::schema(util::symbol{"Common"}, std::type_index{typeid(TestField<double>)}, nullptr, value_field);
+    const auto &wrong_field = hg::schema(util::symbol{"Common"}, identity, nullptr, other_field);
     const auto &left = time_series_bundle_type(left_schema, TimeSeriesGuarantee::ordinary);
 
     CHECK(left.common_type(time_series_bundle_type(other_identity, TimeSeriesGuarantee::ordinary)) == nullptr);
@@ -406,7 +406,7 @@ TEST_CASE("bundle declarations remain generic when a field guarantee is unresolv
 
     const auto fields = std::array{SchemaField{util::symbol{"value"}, &TS<i64, TimeSeriesGuarantee::final>::type()}};
     const auto &schema =
-        bg::schema(util::symbol{"UnresolvedFieldBundle"},
+        hg::schema(util::symbol{"UnresolvedFieldBundle"},
                    std::type_index{typeid(UnresolvedFieldBundle<details::schema_identity_field>)}, nullptr, fields);
     const auto &concrete = time_series_bundle_type(schema, TimeSeriesGuarantee::ordinary);
 
@@ -501,7 +501,7 @@ TEST_CASE("a bundle schema variable participates in type resolution",
     const auto &variable = dynamic_cast<const Variable &>(parameter.schema_type());
     const auto *mapping = type_map.find(variable);
     REQUIRE(mapping != nullptr);
-    CHECK(std::get<const bg::Type *>(*mapping) == &argument.schema());
+    CHECK(std::get<const hg::Type *>(*mapping) == &argument.schema());
     CHECK(&parameter.resolve(type_map) == &argument);
 }
 

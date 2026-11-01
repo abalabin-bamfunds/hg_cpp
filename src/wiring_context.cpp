@@ -1,12 +1,12 @@
-#include <bg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_context.hpp>
 
-#include <bg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_error.hpp>
 
 #include "thread_local_pointer.hpp"
 
 #include <algorithm>
 
-namespace bg {
+namespace hg {
 namespace {
 
 util::thread_local_pointer &active_context() {
@@ -96,4 +96,4 @@ details::MultiservicePorts &WiringContext::multiservice_ports() const {
     return *multiservice_ports_;
 }
 
-} // namespace bg
+} // namespace hg

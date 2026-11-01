@@ -1,19 +1,19 @@
-#include <bg/type/signature.hpp>
+#include <hg/type/signature.hpp>
 
-#include <bg/graph/graph_argument.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/type/size_parameter.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/type/type_of.hpp>
-#include <bg/type/type_variable.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/type/size_parameter.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/type/type_of.hpp>
+#include <hg/type/type_variable.hpp>
 
 #include <algorithm>
 #include <compare>
@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace {
 
 using Order = std::partial_ordering;
@@ -888,4 +888,4 @@ std::partial_ordering details::compare_parameter_specificity(const Signature &le
     return combine(comparison.order, repeated_variable_order(comparison));
 }
 
-} // namespace bg
+} // namespace hg

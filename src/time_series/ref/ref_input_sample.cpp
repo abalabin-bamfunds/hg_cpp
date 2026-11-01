@@ -1,10 +1,10 @@
-#include <bg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
 
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cassert>
 
-namespace bg::details {
+namespace hg::details {
 
 TimeSeriesRuntimeType::ConstItem ReferenceInputSampleStorage::input() const noexcept {
     assert(sample());
@@ -90,4 +90,4 @@ void ReferenceInputSampleLookup::clear() noexcept {
     entries_.release(memory_->memory_resource());
 }
 
-} // namespace bg::details
+} // namespace hg::details

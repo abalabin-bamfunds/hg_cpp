@@ -1,9 +1,9 @@
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,8 +12,8 @@
 #include <stdexcept>
 #include <string>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -58,8 +58,8 @@ TEST_CASE("callable graph defaults promote scalar values to constant time series
         return with_default(operators::const_(i64{11}));
     };
 
-    CHECK(bg::run_graph(defaulted).equals<i64>({7}));
-    CHECK(bg::run_graph(supplied).equals({11}));
+    CHECK(hg::run_graph(defaulted).equals<i64>({7}));
+    CHECK(hg::run_graph(supplied).equals({11}));
 }
 
 TEST_CASE("callable node defaults promote scalar values to constant time series",
@@ -69,7 +69,7 @@ TEST_CASE("callable node defaults promote scalar values to constant time series"
     });
     const auto graph = [&] { return copy(); };
 
-    CHECK(bg::run_graph(graph).equals({8}));
+    CHECK(hg::run_graph(graph).equals({8}));
 }
 
 TEST_CASE("callable eval declarations support scalar defaults",
@@ -79,7 +79,7 @@ TEST_CASE("callable eval declarations support scalar defaults",
         eval = [](i64 value, Out<TS<i64>> output) { output.set(value); });
     const auto graph = [&] { return source(); };
 
-    CHECK(bg::run_graph(graph).equals({12}));
+    CHECK(hg::run_graph(graph).equals({12}));
 }
 
 TEST_CASE("run_graph literal inputs omit trailing defaulted node arguments",
@@ -88,18 +88,18 @@ TEST_CASE("run_graph literal inputs omit trailing defaulted node arguments",
         {"input"_n, "amount"_n = i64{1}},
         eval = [](In<TS<i64>> input, i64 amount, Out<TS<i64>> output) { output.set(*input + amount); });
 
-    CHECK(bg::run_graph(add, {1, 2}).equals<i64>({2, 3}));
+    CHECK(hg::run_graph(add, {1, 2}).equals<i64>({2, 3}));
 }
 
 TEST_CASE("aggregate node and graph defaults use reflected field names",
           "[feature:wiring][feature:wiring-defaults][series:value][definition:aggregate]") {
     const auto copy = node<defaulted_aggregate_node>();
-    const auto graph = bg::graph<defaulted_aggregate_graph>();
+    const auto graph = hg::graph<defaulted_aggregate_graph>();
     const auto defaulted_node = [&] { return copy(); };
     const auto defaulted_graph = [&] { return graph(); };
 
-    CHECK(bg::run_graph(defaulted_node).equals({8}));
-    CHECK(bg::run_graph(defaulted_graph).equals({6}));
+    CHECK(hg::run_graph(defaulted_node).equals({8}));
+    CHECK(hg::run_graph(defaulted_graph).equals({6}));
 }
 
 TEST_CASE("an explicitly absent optional scalar overrides a wiring default",
@@ -109,7 +109,7 @@ TEST_CASE("an explicitly absent optional scalar overrides a wiring default",
     });
     const auto explicit_absence = [&] { return with_default(std::optional<i64>{}); };
 
-    CHECK(bg::run_graph(explicit_absence).equals({2}));
+    CHECK(hg::run_graph(explicit_absence).equals({2}));
 }
 
 TEST_CASE("argument binding preserves names around an omitted time-series default",
@@ -130,7 +130,7 @@ TEST_CASE("argument binding preserves names around an omitted time-series defaul
         return wp<TS<i64>>{*result};
     };
 
-    CHECK(bg::run_graph(run).equals({423}));
+    CHECK(hg::run_graph(run).equals({423}));
 }
 
 TEST_CASE("operator defaults precede implementation defaults and remain cacheable",
@@ -152,7 +152,7 @@ TEST_CASE("operator defaults precede implementation defaults and remain cacheabl
         return first;
     };
 
-    CHECK(bg::run_graph(graph, {3}).equals({5}));
+    CHECK(hg::run_graph(graph, {3}).equals({5}));
     CHECK(requirement_calls == 1);
 }
 
@@ -163,7 +163,7 @@ TEST_CASE("generic graph defaults resolve their scalar type",
         {"value"_n = i64{7}}, [](wp<TS<VALUE>> value) { return value; });
     const auto defaulted = [&] { return identity(); };
 
-    CHECK(bg::run_graph(defaulted).equals<i64>({7}));
+    CHECK(hg::run_graph(defaulted).equals<i64>({7}));
 }
 
 TEST_CASE("callable node defaults own their values and participate in deduplication",
@@ -187,7 +187,7 @@ TEST_CASE("callable node defaults own their values and participate in deduplicat
         return combine(first, same_value);
     };
 
-    CHECK(bg::run_graph(graph).equals({34}));
+    CHECK(hg::run_graph(graph).equals({34}));
     CHECK(evaluations == 1);
 }
 
@@ -202,12 +202,12 @@ TEST_CASE("wiring default declarations validate names and parameter counts",
     CHECK_THROWS_AS((graph({std::string_view{}}, [](i64) {})), std::invalid_argument);
     CHECK_THROWS_AS((graph({"value"_n = i64{1}}, [](i64, i64) {})), std::invalid_argument);
     CHECK_THROWS_AS((graph({"other"_n = i64{1}}, [](wp<TS<i64>, "actual"_n>) {})), std::invalid_argument);
-    CHECK_THROWS_AS((bg::graph<unknown_default_aggregate_graph>()), std::invalid_argument);
+    CHECK_THROWS_AS((hg::graph<unknown_default_aggregate_graph>()), std::invalid_argument);
 }
 
 TEST_CASE("incompatible wiring defaults fail when the call uses them",
           "[feature:wiring][feature:wiring-defaults][series:value][definition:function]") {
     const auto invalid = graph({"value"_n = std::string{"bad"}}, [](wp<TS<i64>> value) { return value; });
 
-    CHECK_THROWS_AS(bg::run_graph([&] { return invalid(); }), TypeResolutionError);
+    CHECK_THROWS_AS(hg::run_graph([&] { return invalid(); }), TypeResolutionError);
 }

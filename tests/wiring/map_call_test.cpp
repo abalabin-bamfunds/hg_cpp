@@ -1,7 +1,7 @@
-#include <bg/graph.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/testing/test_wiring.hpp>
+#include <hg/graph.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/testing/test_wiring.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -14,8 +14,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("map callable traits normalize named dictionary, key-set, and pass-through arguments",
           "[feature:map][feature:wiring][series:tsd][series:tss]") {

@@ -1,14 +1,14 @@
-#include <bg/scalar/details/storage_traits.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/symbol.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/details/storage_traits.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/symbol.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 namespace {
 
 template <typename T>
@@ -163,4 +163,4 @@ const ScalarType &scalar_type_traits<const Type *>::type() noexcept {
     return registered_cpp_scalar_type<const Type *>();
 }
 
-} // namespace bg
+} // namespace hg

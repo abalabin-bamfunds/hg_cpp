@@ -1,7 +1,7 @@
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/time_series/output_state.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/time_series/output_state.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <thread>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a queue message reader advances no-op frames and discards typed payloads",
           "[evaluation][feature:time-series-storage][series:value][scalar:i64][queue]") {

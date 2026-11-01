@@ -1,17 +1,17 @@
 #include "registration.hpp"
 #include "string_format_helpers.hpp"
 
-#include <bg/evaluation_context.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/logging.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tick_format.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/logging.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tick_format.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <fmt/args.h>
 #include <fmt/chrono.h>
@@ -29,7 +29,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::operators::details::log_detail {
+namespace hg::operators::details::log_detail {
 
 struct SkippedTick {};
 
@@ -82,9 +82,9 @@ static_assert(std::is_nothrow_destructible_v<LogRecord>);
 
 std::string format_record(const LogRecord &record);
 
-} // namespace bg::operators::details::log_detail
+} // namespace hg::operators::details::log_detail
 
-template <> struct fmt::formatter<bg::operators::details::log_detail::SkippedTick> {
+template <> struct fmt::formatter<hg::operators::details::log_detail::SkippedTick> {
     constexpr auto parse(fmt::format_parse_context &context) {
         const auto it = context.begin();
         if (it != context.end() && *it != '}') {
@@ -93,15 +93,15 @@ template <> struct fmt::formatter<bg::operators::details::log_detail::SkippedTic
         return it;
     }
 
-    auto format(const bg::operators::details::log_detail::SkippedTick &, fmt::format_context &context) const {
+    auto format(const hg::operators::details::log_detail::SkippedTick &, fmt::format_context &context) const {
         return fmt::format_to(context.out(), "SKIP");
     }
 };
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 using log_detail::LogArgument;
 using log_detail::LogRecord;
 using log_detail::LogValue;
@@ -110,39 +110,39 @@ using log_detail::SkippedTick;
 
 allocator logging_allocator() noexcept { return allocator{*std::pmr::new_delete_resource()}; }
 
-bg::logging::Level parse_log_level(std::string_view value) {
+hg::logging::Level parse_log_level(std::string_view value) {
     if (value == "trace") {
-        return bg::logging::Level::trace;
+        return hg::logging::Level::trace;
     }
     if (value == "debug") {
-        return bg::logging::Level::debug;
+        return hg::logging::Level::debug;
     }
     if (value == "info") {
-        return bg::logging::Level::info;
+        return hg::logging::Level::info;
     }
     if (value == "warning") {
-        return bg::logging::Level::warning;
+        return hg::logging::Level::warning;
     }
     if (value == "error") {
-        return bg::logging::Level::error;
+        return hg::logging::Level::error;
     }
     if (value == "critical") {
-        return bg::logging::Level::critical;
+        return hg::logging::Level::critical;
     }
     if (value == "off") {
-        return bg::logging::Level::off;
+        return hg::logging::Level::off;
     }
     throw std::invalid_argument{"__level__ must be trace, debug, info, warning, error, critical, or off"};
 }
 
 template <auto... Properties>
-bg::logging::Level log_level(const In<TSB<FORMAT_NAMED>, Properties...> &named) {
+hg::logging::Level log_level(const In<TSB<FORMAT_NAMED>, Properties...> &named) {
     for (auto index = std::size_t{}; index < named.size(); ++index) {
         if (named.item_name(index).text() == "__level__") {
             return parse_log_level(named[index].template as<TS<string>>().value_view().value());
         }
     }
-    return bg::logging::Level::info;
+    return hg::logging::Level::info;
 }
 
 RequirementResult require_log_level(const WiringArguments &arguments) {
@@ -173,7 +173,7 @@ RetainedTick capture_tick(const In<Variable, Properties...> &input, EvaluationTi
     if (input.last_updated() == now && input.modified() && !input.valid()) {
         auto writer = util::buffer_writer{std::move(bytes)};
         auto context = ScalarBufferWriteContext{writer};
-        bg::details::TickHeader{bg::details::TickOperation::tick, false}.write(context);
+        hg::details::TickHeader{hg::details::TickOperation::tick, false}.write(context);
         writer.commit();
         return RetainedTick{input.runtime_type().type(), std::move(retained)};
     }
@@ -277,11 +277,11 @@ struct log_overloads {
 
         void evaluate(EvaluationContext *context) const {
             const auto level = log_level(named);
-            if (!bg::logging::enabled(level)) {
+            if (!hg::logging::enabled(level)) {
                 return;
             }
             auto record = capture_record(pattern, positional, named, context->evaluation_time());
-            bg::logging::details::submit(level, [record = std::move(record)] {
+            hg::logging::details::submit(level, [record = std::move(record)] {
                 return log_detail::format_record(record);
             });
         }
@@ -308,14 +308,14 @@ struct log_overloads {
 
         void evaluate(EvaluationContext *context) const {
             const auto level = log_level(named);
-            if (!bg::logging::enabled(level) || value.last_updated() != context->evaluation_time() ||
+            if (!hg::logging::enabled(level) || value.last_updated() != context->evaluation_time() ||
                 !value.modified()) {
                 return;
             }
 
             auto record = LogRecord{.pattern = "{}", .arguments = {}};
             record.arguments.emplace_back(std::string{}, capture_tick(value, context->evaluation_time()));
-            bg::logging::details::submit(level, [record = std::move(record)] {
+            hg::logging::details::submit(level, [record = std::move(record)] {
                 return log_detail::format_record(record);
             });
         }
@@ -326,23 +326,23 @@ struct log_overloads {
 };
 
 } // namespace
-} // namespace bg::operators::details
+} // namespace hg::operators::details
 
-namespace bg::operators::details::log_detail {
+namespace hg::operators::details::log_detail {
 
 std::string format_record(const LogRecord &record) {
     auto store = fmt::dynamic_format_arg_store<fmt::format_context>{};
     auto readers = std::deque<util::buffer_reader>{};
     for (const auto &argument : record.arguments) {
-        bg::operators::details::push_argument(store, argument, readers);
+        hg::operators::details::push_argument(store, argument, readers);
     }
     return fmt::vformat(fmt::string_view{record.pattern.data(), record.pattern.size()}, store);
 }
 
-} // namespace bg::operators::details::log_detail
+} // namespace hg::operators::details::log_detail
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 
 void register_log_operators() { register_overloads<log_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

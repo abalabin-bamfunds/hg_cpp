@@ -1,23 +1,23 @@
 #include "ref_node.hpp"
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
 #include <memory>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class ReferenceNodeTemplate final : public NodeTemplate {
@@ -213,4 +213,4 @@ WiringPoint forward_inherited_reference(WiringPoint source, const TimeSeriesRefe
     return *result;
 }
 
-} // namespace bg::details
+} // namespace hg::details

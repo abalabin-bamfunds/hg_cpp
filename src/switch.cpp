@@ -1,15 +1,15 @@
-#include <bg/switch.hpp>
+#include <hg/switch.hpp>
 
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/switch/details/default_switch_wiring.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/time_series_variable.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/switch/details/default_switch_wiring.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/time_series_variable.hpp>
 
 #include <algorithm>
 #include <ranges>
@@ -17,7 +17,7 @@
 #include <string>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 struct SelectedArgument {
@@ -453,9 +453,9 @@ std::optional<WiringPoint> DefaultSwitchWiring::wire() const {
     return call.output;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 operator_<auto(TS<SCALAR>, GRAPH_T, TSB<details::SWITCH_POSITIONAL>, TSB<details::SWITCH_NAMED>)->TS_T,
           details::switch_operator_implementation>
@@ -470,4 +470,4 @@ const auto register_default_switch_overloads = [] {
 }();
 
 } // namespace
-} // namespace bg
+} // namespace hg

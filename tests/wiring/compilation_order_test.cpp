@@ -1,9 +1,9 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -14,8 +14,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 struct OrderSource {
     i64 value;
@@ -52,20 +52,20 @@ TEST_CASE("compilation orders a node after every direct consumer of a wiring poi
     const auto identity = 0;
     const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
 
-    const auto source = node<OrderSource>([](bg::i64 value) { return value == 1 ? "collector" : "provider"; });
+    const auto source = node<OrderSource>([](hg::i64 value) { return value == 1 ? "collector" : "provider"; });
 
-    const auto consume_before = node<OrderConsumer>([](wp<TS<bg::i64>>) { return "client_before"; });
+    const auto consume_before = node<OrderConsumer>([](wp<TS<hg::i64>>) { return "client_before"; });
 
-    const auto consume_after = node<OrderConsumer>([](wp<TS<bg::i64>>) { return "client_after"; });
+    const auto consume_after = node<OrderConsumer>([](wp<TS<hg::i64>>) { return "client_after"; });
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
     const auto requirement =
-        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<bg::i64>::type());
+        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<hg::i64>::type());
     (void)consume_before(requirement);
     const auto collector = source(1);
     (void)consume_after(requirement);
     const auto provider = source(2);
-    wiring.provide_inherited_time_series(requirement_identity, TS<bg::i64>::type(), provider);
+    wiring.provide_inherited_time_series(requirement_identity, TS<hg::i64>::type(), provider);
 
     wiring.order_after_consumers(requirement, collector);
     wiring.order_after_consumers(requirement, collector);
@@ -97,16 +97,16 @@ TEST_CASE("ordering constraints include consumers wired after an inherited provi
     const auto identity = 0;
     const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
 
-    const auto source = node<OrderSource>([](bg::i64 value) { return value == 1 ? "collector" : "provider"; });
+    const auto source = node<OrderSource>([](hg::i64 value) { return value == 1 ? "collector" : "provider"; });
 
-    const auto consume = node<OrderConsumer>([](wp<TS<bg::i64>>) { return "client"; });
+    const auto consume = node<OrderConsumer>([](wp<TS<hg::i64>>) { return "client"; });
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
     const auto requirement =
-        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<bg::i64>::type());
+        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<hg::i64>::type());
     const auto collector = source(1);
     const auto provider = source(2);
-    wiring.provide_inherited_time_series(requirement_identity, TS<bg::i64>::type(), provider);
+    wiring.provide_inherited_time_series(requirement_identity, TS<hg::i64>::type(), provider);
     (void)consume(requirement);
     wiring.order_after_consumers(requirement, collector);
 
@@ -134,16 +134,16 @@ TEST_CASE("ordering constraints include consumers across nested graph boundaries
     const auto identity = 0;
     const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
 
-    const auto copy = node([](bg::i64 input) { return input; });
+    const auto copy = node([](hg::i64 input) { return input; });
 
     const auto inner = graph("name"_n = "service_client", [&] {
         auto &wiring = WiringContext::current().wiring();
         const auto requirement =
-            wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<bg::i64>::type());
+            wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<hg::i64>::type());
         return copy(requirement);
     });
 
-    const auto source = node<OrderSource>([](bg::i64 value) { return value == 1 ? "collector" : "provider"; });
+    const auto source = node<OrderSource>([](hg::i64 value) { return value == 1 ? "collector" : "provider"; });
 
     const auto run_source = node<RunSource>([](bool value) { return value ? "first_run" : "second_run"; });
     auto wiring = GraphWiring{};
@@ -154,9 +154,9 @@ TEST_CASE("ordering constraints include consumers across nested graph boundaries
     (void)nested(inner, first_run);
     (void)nested(inner, second_run);
     const auto requirement =
-        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<bg::i64>::type());
+        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<hg::i64>::type());
     const auto provider = source(2);
-    wiring.provide_inherited_time_series(requirement_identity, TS<bg::i64>::type(), provider);
+    wiring.provide_inherited_time_series(requirement_identity, TS<hg::i64>::type(), provider);
     wiring.order_after_consumers(requirement, collector);
 
     wiring.finalize();
@@ -185,16 +185,16 @@ TEST_CASE("mixed data and ordering dependencies report every wiring path in a cy
     const auto identity = 0;
     const auto requirement_identity = details::NestedBindingIdentity::object(&identity);
 
-    const auto producer = node<OrderSource>([](bg::i64) { return "collector"; });
+    const auto producer = node<OrderSource>([](hg::i64) { return "collector"; });
 
-    const auto client = node<OrderJoin>([](wp<TS<bg::i64>>, wp<TS<bg::i64>>) { return "client"; });
+    const auto client = node<OrderJoin>([](wp<TS<hg::i64>>, wp<TS<hg::i64>>) { return "client"; });
     auto wiring = GraphWiring{};
     const auto wiring_context = WiringContext{wiring};
     const auto requirement =
-        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<bg::i64>::type());
+        wiring.require_inherited_time_series(requirement_identity, util::symbol{"input"}, TS<hg::i64>::type());
     const auto producer_output = producer(1);
     (void)client(requirement, producer_output);
-    wiring.provide_inherited_time_series(requirement_identity, TS<bg::i64>::type(), producer_output);
+    wiring.provide_inherited_time_series(requirement_identity, TS<hg::i64>::type(), producer_output);
     wiring.order_after_consumers(requirement, producer_output);
 
     wiring.finalize();

@@ -1,7 +1,7 @@
-#include <bg/runtime_type.hpp>
+#include <hg/runtime_type.hpp>
 
-namespace bg {
+namespace hg {
 
 RuntimeType::~RuntimeType() = default;
 
-} // namespace bg
+} // namespace hg

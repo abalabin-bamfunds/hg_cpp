@@ -1,18 +1,18 @@
-#include <bg/evaluation_profile.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/mesh.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/nested.hpp>
-#include <bg/reduce.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/mesh.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/nested.hpp>
+#include <hg/reduce.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -26,11 +26,11 @@
 #include <unordered_map>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct profile_source {
     Out<TS<i64>> output;
@@ -64,7 +64,7 @@ struct profiling_counter_source {
     }
 };
 
-const auto profile_increment = bg::node([](i64 input) { return input + 1; });
+const auto profile_increment = hg::node([](i64 input) { return input + 1; });
 
 EvaluationTime time(i64 microseconds) {
     return MIN_DT + std::chrono::microseconds{microseconds};
@@ -74,7 +74,7 @@ EvaluationTime time(i64 microseconds) {
 
 TEST_CASE("runtime graph profiling records node and cycle checkpoints",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -150,10 +150,10 @@ TEST_CASE("runtime graph profiling records node and cycle checkpoints",
 TEST_CASE("runtime graph profiling records nested graph ownership",
           "[evaluation][profile][feature:profiling][feature:nested-graph]") {
     const auto inner =
-        bg::graph("name"_n = "profile_inner", [](bg::wp<TS<i64>> input) { return profile_increment(input); });
+        hg::graph("name"_n = "profile_inner", [](hg::wp<TS<i64>> input) { return profile_increment(input); });
 
-    const auto outer = bg::graph("name"_n = "profile_outer", [&] {
-        return bg::nested(inner, bg::operators::const_(true), bg::operators::const_(3));
+    const auto outer = hg::graph("name"_n = "profile_outer", [&] {
+        return hg::nested(inner, hg::operators::const_(true), hg::operators::const_(3));
     });
 
     auto wiring = GraphWiring{};
@@ -198,37 +198,37 @@ TEST_CASE("runtime graph profiling balances graph entries while resuming pending
           "[evaluation][profile][feature:profiling][feature:mesh][feature:nested-graph]") {
     auto profile_mesh_events = std::vector<int>{};
 
-    const auto values = bg::node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>> output) {
+    const auto values = hg::node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>> output) {
         output[2].set(20);
         output[1].set(10);
     });
 
-    const auto dependencies = bg::node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>> output) { output[2].set(1); });
+    const auto dependencies = hg::node([](In<TS<i64>>, Out<TSD<i64, TS<i64>>> output) { output[2].set(1); });
 
     const auto record_dependency_key =
-        bg::node([&profile_mesh_events](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<i64>> dependency_key,
+        hg::node([&profile_mesh_events](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<i64>> dependency_key,
                                         Out<TS<i64>> output) {
             profile_mesh_events.push_back(static_cast<int>(*key * 10 + 1));
             output.set(*dependency_key);
         });
 
     const auto add_dependency =
-        bg::node([&profile_mesh_events](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<i64>> value,
-                                        In<TS<i64>, bg::optional> dependency, Out<TS<i64>> output) {
+        hg::node([&profile_mesh_events](In<TS<i64, TimeSeriesGuarantee::const_>> key, In<TS<i64>> value,
+                                        In<TS<i64>, hg::optional> dependency, Out<TS<i64>> output) {
             profile_mesh_events.push_back(static_cast<int>(*key * 10 + 2));
             output.set(*key + *value * 0 + (dependency.valid() ? *dependency : 0));
         });
 
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
 
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
         const auto input = source();
-        (void)bg::mesh(
+        (void)hg::mesh(
             [&](auto key, auto item, auto dependency_key) {
                 const auto requested_key = record_dependency_key(key, dependency_key);
-                return add_dependency(key, item, bg::mesh()[requested_key]);
+                return add_dependency(key, item, hg::mesh()[requested_key]);
             },
             values(input), dependencies(input), "__key_arg__"_n = 0);
     }
@@ -300,7 +300,7 @@ TEST_CASE("runtime graph profiling balances graph entries while resuming pending
 
 TEST_CASE("map profiling stores a key label until the reader consumes it",
           "[evaluation][profile][feature:profiling][feature:map]") {
-    const auto keys = bg::node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
+    const auto keys = hg::node([](In<TS<i64>> value, Out<TSD<i64, TS<i64>>> output) {
         if (*value == 1) {
             output[41].set(*value);
         } else {
@@ -308,13 +308,13 @@ TEST_CASE("map profiling stores a key label until the reader consumes it",
         }
     });
 
-    const auto source = bg::node<profiling_counter_source>();
+    const auto source = hg::node<profiling_counter_source>();
 
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
         const auto input = source();
-        (void)bg::map([](auto, auto item) { return profile_increment(item); }, keys(input),
+        (void)hg::map([](auto, auto item) { return profile_increment(item); }, keys(input),
                       "__key_arg__"_n = 0);
     }
     wiring.finalize();
@@ -341,14 +341,14 @@ TEST_CASE("map profiling stores a key label until the reader consumes it",
 
         ++labelled_graphs;
         CHECK(graph->parent_graph_id.value != 0);
-        CHECK(*bg::scalar_cast<i64>(*graph->label) == 41);
+        CHECK(*hg::scalar_cast<i64>(*graph->label) == 41);
     }
     CHECK(labelled_graphs == 1);
 }
 
 TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the same graph ID",
           "[evaluation][profile][feature:profiling][feature:reduce]") {
-    const auto values = bg::node([](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) {
+    const auto values = hg::node([](In<TS<i64>> input, Out<TSD<i64, TS<i64>>> output) {
         if (*input == 1) {
             output[1].set(10);
             output[2].set(20);
@@ -359,20 +359,20 @@ TEST_CASE("compact reduce profiles pair-slot reuse as stop then start of the sam
         }
     });
     const auto add =
-        bg::node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
+        hg::node([](In<TS<i64>> left, In<TS<i64>> right, Out<TS<i64>> output) { output.set(*left + *right); });
 
-    const auto reducer = bg::graph("name"_n = "profile_reduce_pair",
-                                   [&add](bg::wp<TS<i64>> left, bg::wp<TS<i64>> right) { return add(left, right); });
+    const auto reducer = hg::graph("name"_n = "profile_reduce_pair",
+                                   [&add](hg::wp<TS<i64>> left, hg::wp<TS<i64>> right) { return add(left, right); });
 
-    const auto sink = bg::node([](In<TS<i64>>) {});
+    const auto sink = hg::node([](In<TS<i64>>) {});
 
-    const auto source = bg::node<profiling_counter_source>();
+    const auto source = hg::node<profiling_counter_source>();
 
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
         const auto input = source();
-        sink(bg::reduce(reducer, values(input)));
+        sink(hg::reduce(reducer, values(input)));
     }
     wiring.finalize();
 
@@ -434,7 +434,7 @@ struct profile_start_only {
 
 TEST_CASE("runtime graph profiling records scheduled nodes without evaluation functions",
           "[evaluation][profile][feature:profiling]") {
-    const auto scheduled = bg::node<profile_start_only>();
+    const auto scheduled = hg::node<profile_start_only>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -465,7 +465,7 @@ TEST_CASE("runtime graph profiling records scheduled nodes without evaluation fu
 
 TEST_CASE("simulation evaluation engine records a profile",
           "[evaluation][profile][feature:profiling][feature:simulation]") {
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -507,7 +507,7 @@ TEST_CASE("runtime graph profiling exposes committed cycles and releases consume
           "[evaluation][profile][feature:profiling]") {
     auto memory = counting_memory_resource{};
 
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -518,7 +518,7 @@ TEST_CASE("runtime graph profiling exposes committed cycles and releases consume
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    auto profile = EvaluationProfile{64, bg::allocator{memory}};
+    auto profile = EvaluationProfile{64, hg::allocator{memory}};
     profile_source::evaluations = 0;
 
     runtime.start(time(1), profile);
@@ -547,7 +547,7 @@ TEST_CASE("runtime graph profiling exposes committed cycles and releases consume
 
 TEST_CASE("profile transfer before the first cycle preserves pending label cleanup",
           "[evaluation][profile][feature:profiling]") {
-    const auto throwing_node = bg::node<throwing_profile_node>();
+    const auto throwing_node = hg::node<throwing_profile_node>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -574,7 +574,7 @@ TEST_CASE("profile transfer before the first cycle preserves pending label clean
 
 TEST_CASE("profile transfer during an open cycle preserves pending label cleanup",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -645,7 +645,7 @@ TEST_CASE("profile reader rejects node checkpoints outside an outer cycle",
 
 TEST_CASE("runtime graph profiling records each graph instance against its compiled graph",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -699,7 +699,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after recordin
           "[evaluation][profile][feature:profiling]") {
     auto memory = counting_memory_resource{};
 
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -710,7 +710,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after recordin
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    auto profile = EvaluationProfile{32, bg::allocator{memory}};
+    auto profile = EvaluationProfile{32, hg::allocator{memory}};
     memory.fail_after(0);
     profile_source::evaluations = 0;
 
@@ -726,7 +726,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after cycle re
           "[evaluation][profile][feature:profiling]") {
     auto memory = counting_memory_resource{};
 
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -737,7 +737,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after cycle re
     const auto compiled = CompiledGraph{wiring};
     auto global_state = GlobalState{};
     auto runtime = RuntimeGraph{compiled, global_state};
-    auto profile = EvaluationProfile{32, bg::allocator{memory}};
+    auto profile = EvaluationProfile{32, hg::allocator{memory}};
     profile_source::evaluations = 0;
 
     runtime.start(time(1), profile);
@@ -753,7 +753,7 @@ TEST_CASE("runtime graph profiling falls back to plain evaluation after cycle re
 
 TEST_CASE("runtime graph profiling rolls back a cycle after node evaluation throws",
           "[evaluation][profile][feature:profiling]") {
-    const auto throwing_node = bg::node<throwing_profile_node>();
+    const auto throwing_node = hg::node<throwing_profile_node>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -779,7 +779,7 @@ TEST_CASE("runtime graph profiling rolls back a cycle after node evaluation thro
 
 TEST_CASE("runtime graph rejects a profile that was not used at start",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node<profile_source>();
+    const auto source = hg::node<profile_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -815,7 +815,7 @@ struct profile_stop_context_source {
 
 TEST_CASE("runtime graph keeps the profile selected at start",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node<profile_stop_context_source>();
+    const auto source = hg::node<profile_stop_context_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};

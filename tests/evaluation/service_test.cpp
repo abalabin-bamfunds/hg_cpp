@@ -1,12 +1,12 @@
 #include "service_test_helpers.hpp"
 
-#include <bg/service_feedback.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
+#include <hg/service_feedback.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
 
 #include <utility>
 
-using namespace bg;
+using namespace hg;
 
 template <template <typename, auto...> typename Field>
 using SERVICE_KWARGS = BundleSchemaVariableDeclaration<"SERVICE_KWARGS", Field>;
@@ -14,7 +14,7 @@ using SERVICE_KWARGS = BundleSchemaVariableDeclaration<"SERVICE_KWARGS", Field>;
 TEST_CASE("service request and reply wiring can share a separately wired client ID",
           "[feature:service][series:tsd][shape:multiple][declaration:generic]") {
     using VALUE = ScalarVariable<"CLIENT_REPLY_VALUE">;
-    const auto service = bg::service<VALUE, auto(TS<VALUE>, i64)->TS<VALUE>>{"echo_route", {"value", "route"}};
+    const auto service = hg::service<VALUE, auto(TS<VALUE>, i64)->TS<VALUE>>{"echo_route", {"value", "route"}};
     auto submitted = std::vector<i64>{};
     const auto observe = node([&](In<TSD<service_client_id_t, TS<i64>>> requests) {
         requests.for_each_key_value([&](const auto &, const auto &value) {
@@ -48,12 +48,12 @@ TEST_CASE("service request and reply wiring can share a separately wired client 
         return request;
     };
 
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 4}).equals<i64>({6, 9}));
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 4}).equals<i64>({6, 9}));
     CHECK(submitted == std::vector<i64>{6, 9});
 }
 
 TEST_CASE("service reply wiring requires a const client ID", "[feature:service][wiring]") {
-    const auto service = bg::service<auto(TS<i64>)->TS<i64>>{"reply_id", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->TS<i64>>{"reply_id", {"value"}};
     const auto client_id_source = node([](Out<TS<service_client_id_t>> output) { output.set(123); });
 
     CHECK_THROWS_WITH(testing::test_wiring([&] { service.client_replies(client_id_source()); }),
@@ -63,7 +63,7 @@ TEST_CASE("service reply wiring requires a const client ID", "[feature:service][
 
 TEST_CASE("service publishes each valid client input and selects its response",
           "[feature:service][series:tsd][shape:single-node]") {
-    const auto service = bg::service<auto(TS<i64>)->TS<i64>>{"double", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->TS<i64>>{"double", {"value"}};
     auto client_ids = std::vector<service_client_id_t>{};
 
     const auto implement = node([&](In<TSD<service_client_id_t, TS<i64>>> requests,
@@ -90,7 +90,7 @@ TEST_CASE("service publishes each valid client input and selects its response",
     });
     const auto tested = [&](wp<TS<i64>> input) { return service(invalidate_zero(input)); };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 0, 4, 0});
 
     CHECK(actual.equals<i64>({4, 6, std::nullopt, 8, std::nullopt}));
     REQUIRE(client_ids.size() == 3);
@@ -100,7 +100,7 @@ TEST_CASE("service publishes each valid client input and selects its response",
 
 TEST_CASE("service keeps a client active while any input is valid",
           "[feature:service][series:tsd][shape:multiple]") {
-    const auto service = bg::service<auto(TS<i64>, TS<float>)->TS<float>>{"sum", {"integer", "fraction"}};
+    const auto service = hg::service<auto(TS<i64>, TS<float>)->TS<float>>{"sum", {"integer", "fraction"}};
 
     auto integer_request_sizes = std::vector<std::size_t>{};
     auto fraction_request_sizes = std::vector<std::size_t>{};
@@ -160,7 +160,7 @@ TEST_CASE("service keeps a client active while any input is valid",
         return service(invalidate_zero(integer), invalidate_negative(fraction));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         GraphRunOptions{.services = &catalogue},
         {2, 0, 6, 0},
@@ -174,7 +174,7 @@ TEST_CASE("service keeps a client active while any input is valid",
 
 TEST_CASE("service arguments bind by implementation signature before wiring",
           "[feature:service][feature:variadic-wiring][series:tsd][shape:multiple]") {
-    const auto service = bg::service<auto(TS<i64>, TS<i64>)->TS<i64>>{"sum_with_offset", {"first", "second"}};
+    const auto service = hg::service<auto(TS<i64>, TS<i64>)->TS<i64>>{"sum_with_offset", {"first", "second"}};
     const auto add = node([](In<TSD<service_client_id_t, TS<i64>>> second, i64 offset,
                              In<TSD<service_client_id_t, TS<i64>>> first,
                              Out<TSD<service_client_id_t, TS<i64>>> output) {
@@ -192,7 +192,7 @@ TEST_CASE("service arguments bind by implementation signature before wiring",
 
     auto direct_catalogue = ServiceCatalogue{};
     direct_catalogue.register_impl(service, implementation, 10);
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &direct_catalogue}, {2, 5}, {3, 7})
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &direct_catalogue}, {2, 5}, {3, 7})
               .equals<i64>({15, 22}));
 
     const auto wrapper =
@@ -200,22 +200,22 @@ TEST_CASE("service arguments bind by implementation signature before wiring",
               [&](wp<TSB<SCHEMA>, var_args> positional,
                   wp<TSB<SERVICE_KWARGS>, var_kwargs> named) -> wp<TSD<service_client_id_t, TS<i64>>> {
                   auto supplied = std::vector<WiringArgument>{};
-                  bg::details::append_wiring_arguments(supplied, bg::args(positional));
-                  bg::details::append_wiring_arguments(supplied, bg::kwargs(named));
-                  const auto bound = bg::details::bind_wiring_arguments(implementation.signature(), supplied);
+                  hg::details::append_wiring_arguments(supplied, hg::args(positional));
+                  hg::details::append_wiring_arguments(supplied, hg::kwargs(named));
+                  const auto bound = hg::details::bind_wiring_arguments(implementation.signature(), supplied);
                   const auto output =
                       static_cast<const WiringTemplate &>(implementation)(std::span<const WiringArgument>{bound});
                   return output->as<TSD<service_client_id_t, TS<i64>>>();
               });
     auto wrapped_catalogue = ServiceCatalogue{};
     wrapped_catalogue.register_impl(service, wrapper, 10);
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &wrapped_catalogue}, {2, 5}, {3, 7})
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &wrapped_catalogue}, {2, 5}, {3, 7})
               .equals<i64>({15, 22}));
 }
 
 TEST_CASE("feedback service wrapper delays requests into its nested implementation",
           "[feature:service][feature:feedback][feature:nested-graph][series:tsd][shape:nested]") {
-    const auto service = bg::service<auto(TS<i64>)->TS<i64>>{"echo", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->TS<i64>>{"echo", {"value"}};
     const auto respond = node([](In<TSD<service_client_id_t, TS<i64>>> requests,
                                  Out<TSD<service_client_id_t, TS<i64>>> responses) {
         requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
@@ -232,7 +232,7 @@ TEST_CASE("feedback service wrapper delays requests into its nested implementati
     catalogue.register_impl(service, feedback_service_implementation(service, implementation));
     const auto tested = [&](wp<TS<i64>> value) { return service(value); };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
     CHECK(actual.equals<i64>({std::nullopt, 2, 4, 6}));
 }
@@ -241,7 +241,7 @@ TEST_CASE("feedback service wrapper maps generic types and forwards scalar argum
           "[feature:service][feature:feedback][feature:nested-graph]"
           "[declaration:generic][scalar:generic][series:tsd][shape:nested]") {
     using VALUE = ScalarVariable<"FEEDBACK_SERVICE_VALUE">;
-    const auto service = bg::service<VALUE, auto(TS<VALUE>, i64)->TS<VALUE>>{"generic_echo", {"value", "route"}};
+    const auto service = hg::service<VALUE, auto(TS<VALUE>, i64)->TS<VALUE>>{"generic_echo", {"value", "route"}};
     auto route_11_installation_values = std::vector<i64>{};
     auto route_22_installation_values = std::vector<i64>{};
 
@@ -277,7 +277,7 @@ TEST_CASE("feedback service wrapper maps generic types and forwards scalar argum
         return add(first, second);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, GraphRunOptions{.services = &catalogue}, {2, 4, 6});
 
     CHECK(actual.equals<i64>({std::nullopt, 4, 8, 12}));
@@ -289,7 +289,7 @@ TEST_CASE("feedback service wrapper maps generic types and forwards scalar argum
 
 TEST_CASE("feedback service wrapper caps a final client request to ordinary",
           "[feature:service][feature:feedback][feature:nested-graph][series:tsd][guarantee:final]") {
-    const auto service = bg::service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{"final_echo", {"value"}};
+    const auto service = hg::service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{"final_echo", {"value"}};
     const auto respond = node([](In<TSD<service_client_id_t, TS<i64>>> requests,
                                  Out<TSD<service_client_id_t, TS<i64>>> responses) {
         requests.for_each_key_value([&](const auto &client_id, const auto &value) {
@@ -303,15 +303,15 @@ TEST_CASE("feedback service wrapper caps a final client request to ordinary",
 
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(service, feedback_service_implementation(service, implementation));
-    const auto tested = [&] { return service(bg::operators::const_(i64{7})); };
+    const auto tested = [&] { return service(hg::operators::const_(i64{7})); };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue});
     CHECK(actual.equals<i64>({std::nullopt, 7}));
 }
 
 TEST_CASE("service keeps an unbound reference request as an invalid item",
           "[feature:service][series:reference][shape:multiple]") {
-    const auto service = bg::service<auto(TS<i64>, TS<i64>)->TS<i64>>{"reference_status", {"stable", "selected"}};
+    const auto service = hg::service<auto(TS<i64>, TS<i64>)->TS<i64>>{"reference_status", {"stable", "selected"}};
     auto implementation_evaluations = std::size_t{};
     auto request_states = std::vector<std::array<bool, 5>>{};
 
@@ -348,7 +348,7 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
         return service(stable, selected);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         GraphRunOptions{.services = &catalogue},
         {10, 20, 30, 40, 50, 60},
@@ -369,7 +369,7 @@ TEST_CASE("service keeps an unbound reference request as an invalid item",
 
 TEST_CASE("sink service receives and withdraws valid client inputs",
           "[feature:service][series:tsd][shape:sink]") {
-    const auto service = bg::service<auto(TS<i64>)->void>{"audit", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->void>{"audit", {"value"}};
     auto received = std::vector<i64>{};
     auto removed = std::size_t{};
     auto sizes = std::vector<std::size_t>{};
@@ -398,7 +398,7 @@ TEST_CASE("sink service receives and withdraws valid client inputs",
         return valid;
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {5, 7, 0, 9});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {5, 7, 0, 9});
 
     CHECK(actual.equals<i64>({5, 7, std::nullopt, 9}));
     CHECK(received == std::vector<i64>{5, 7, 9});
@@ -407,7 +407,7 @@ TEST_CASE("sink service receives and withdraws valid client inputs",
 }
 
 TEST_CASE("service scalar arguments select separate implementations", "[feature:service][shape:multiple]") {
-    const auto service = bg::service<auto(TS<i64>, i64)->TS<i64>>{"add_offset", {"value", "offset"}};
+    const auto service = hg::service<auto(TS<i64>, i64)->TS<i64>>{"add_offset", {"value", "offset"}};
 
     const auto implement = node([](In<TSD<service_client_id_t, TS<i64>>> requests, i64 offset,
                                    Out<TSD<service_client_id_t, TS<i64>>> responses) {
@@ -434,12 +434,12 @@ TEST_CASE("service scalar arguments select separate implementations", "[feature:
         return sum(first, second);
     };
 
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 4}).equals<i64>({32, 38}));
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 4}).equals<i64>({32, 38}));
 }
 
 TEST_CASE("catch-all service combines unmatched scalar instances and yields to an exact implementation",
           "[feature:service][series:tsd][shape:multiple][scalar:integer]") {
-    const auto service = bg::service<auto(TS<i64>, i64)->TS<i64>>{"routed_add", {"value", "instance"}};
+    const auto service = hg::service<auto(TS<i64>, i64)->TS<i64>>{"routed_add", {"value", "instance"}};
     auto catch_all_sizes = std::vector<std::size_t>{};
     const auto respond = node([&](In<TSD<service_client_id_t, TS<i64>>> values,
                                   In<TSD<service_client_id_t, TS<i64, TimeSeriesGuarantee::final>>> instances,
@@ -479,14 +479,14 @@ TEST_CASE("catch-all service combines unmatched scalar instances and yields to a
         return sum(service(value, 1), service(value, 2), service(value, 3));
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {4, 6});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {4, 6});
     CHECK(actual.equals<i64>({118, 124}));
     CHECK(catch_all_sizes == std::vector<std::size_t>{2, 2});
 }
 
 TEST_CASE("catch-all services lift multiple scalar parameters",
           "[feature:service][series:tsd][shape:multiple][scalar:integer]") {
-    const auto service = bg::service<auto(TS<i64>, i64, i64)->TS<i64>>{"multi_route", {"value", "region", "instance"}};
+    const auto service = hg::service<auto(TS<i64>, i64, i64)->TS<i64>>{"multi_route", {"value", "region", "instance"}};
     auto group_sizes = std::vector<std::size_t>{};
     const auto respond = node([&](In<TSD<service_client_id_t, TS<i64>>> values,
                                   In<TSD<service_client_id_t, TS<i64, TimeSeriesGuarantee::final>>> regions,
@@ -518,13 +518,13 @@ TEST_CASE("catch-all services lift multiple scalar parameters",
         return sum(service(value, 10, 100), service(value, 20, 200));
     };
 
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2}).equals<i64>({332, 334}));
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2}).equals<i64>({332, 334}));
     CHECK(group_sizes == std::vector<std::size_t>{2, 2});
 }
 
 TEST_CASE("outputless catch-all service withdraws and restores final scalar entries",
           "[feature:service][series:tsd][shape:sink][transition:revalidation]") {
-    const auto service = bg::service<auto(TS<i64>, i64)->void>{"routed_audit", {"value", "instance"}};
+    const auto service = hg::service<auto(TS<i64>, i64)->void>{"routed_audit", {"value", "instance"}};
     auto request_sizes = std::vector<std::size_t>{};
     auto client_ids = std::vector<service_client_id_t>{};
     const auto observe = node([&](In<TSD<service_client_id_t, TS<i64>>> values,
@@ -558,7 +558,7 @@ TEST_CASE("outputless catch-all service withdraws and restores final scalar entr
         return valid;
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {5, 6, 0, 8});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {5, 6, 0, 8});
     CHECK(actual.equals<i64>({5, 6, std::nullopt, 8}));
     CHECK(request_sizes == std::vector<std::size_t>{1, 1, 0, 1});
     REQUIRE(client_ids.size() == 3);
@@ -568,7 +568,7 @@ TEST_CASE("outputless catch-all service withdraws and restores final scalar entr
 
 TEST_CASE("catch-all service clients inside map and switch branches forward their scalar values",
           "[feature:service][feature:map][feature:switch][feature:nested-graph][series:tsd][shape:nested]") {
-    const auto service = bg::service<auto(TS<i64>, i64)->void>{"nested_route", {"value", "instance"}};
+    const auto service = hg::service<auto(TS<i64>, i64)->void>{"nested_route", {"value", "instance"}};
     auto requests = std::vector<std::pair<i64, i64>>{};
     const auto observe = node([&](In<TSD<service_client_id_t, TS<i64>>> values,
                                   In<TSD<service_client_id_t, TS<i64, TimeSeriesGuarantee::final>>> instances) {
@@ -610,7 +610,7 @@ TEST_CASE("catch-all service clients inside map and switch branches forward thei
     };
 
     const auto actual =
-        bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{5, 1}}, {{5, 2}}, {{5, 3}}, {{5, 4}}},
+        hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{5, 1}}, {{5, 2}}, {{5, 3}}, {{5, 4}}},
                             {{{5, 1}}, {{5, 2}}, {{5, 1}}, {{5, 2}}});
     CHECK(actual.equals<i64>({1, 2, 3, 4}));
     CHECK(requests == std::vector<std::pair<i64, i64>>{{1, 10}, {2, 20}, {3, 10}, {4, 20}});
@@ -618,7 +618,7 @@ TEST_CASE("catch-all service clients inside map and switch branches forward thei
 
 TEST_CASE("feedback delays catch-all service replies while forwarding scalar values",
           "[feature:service][feature:feedback][feature:nested-graph][series:tsd][shape:nested]") {
-    const auto service = bg::service<auto(TS<i64>, i64)->TS<i64>>{"delayed_route", {"value", "instance"}};
+    const auto service = hg::service<auto(TS<i64>, i64)->TS<i64>>{"delayed_route", {"value", "instance"}};
     const auto respond = node([](In<TSD<service_client_id_t, TS<i64>>> values,
                                  In<TSD<service_client_id_t, TS<i64, TimeSeriesGuarantee::final>>> instances,
                                  Out<TSD<service_client_id_t, TS<i64>>> output) {
@@ -643,7 +643,7 @@ TEST_CASE("feedback delays catch-all service replies while forwarding scalar val
         return sum(service(value, 10), service(value, 20));
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2, 3});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1, 2, 3});
     CHECK(actual.equals<i64>({std::nullopt, 32, 34, 36}));
 }
 
@@ -670,14 +670,14 @@ TEST_CASE("subscription implementation receives named installation inputs after 
         return service(key_source(1), 10);
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 4});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {2, 3, 4});
 
     CHECK(actual.equals<i64>({113, 114, 115}));
 }
 
 TEST_CASE("service clients in map branches withdraw requests when branches stop",
           "[feature:service][feature:map][series:tsd][shape:nested]") {
-    const auto service = bg::service<auto(TS<i64>)->void>{"audit", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->void>{"audit", {"value"}};
     auto request_sizes = std::vector<std::size_t>{};
     auto added_counts = std::vector<std::size_t>{};
     auto removed_counts = std::vector<std::size_t>{};
@@ -707,7 +707,7 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
         return mapped[i64{5}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue},
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue},
                                             {{{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}});
 
     CHECK(actual.equals<i64>({7, std::nullopt, 7}));
@@ -719,7 +719,7 @@ TEST_CASE("service clients in map branches withdraw requests when branches stop"
 TEST_CASE("service clients follow repeated switch changes after a map branch returns",
           "[feature:service][feature:map][feature:switch][feature:nested-graph]"
           "[series:tsd][shape:nested][transition:removal]") {
-    const auto service = bg::service<auto(TS<i64>)->void>{"audit", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->void>{"audit", {"value"}};
     auto request_sizes = std::vector<std::size_t>{};
     auto added_counts = std::vector<std::size_t>{};
     auto removed_counts = std::vector<std::size_t>{};
@@ -766,7 +766,7 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
         return mapped[i64{5}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         GraphRunOptions{.services = &catalogue},
         {{{5, 7}}, {{5, 7}}, {{5, 7}}, {{5, literal::REMOVE}}, {{5, 7}}, {{5, 7}}},
@@ -781,7 +781,7 @@ TEST_CASE("service clients follow repeated switch changes after a map branch ret
 
 TEST_CASE("service rejects a response cycle through a client input",
           "[feature:service][feature:graph-compilation]") {
-    const auto service = bg::service<auto(TS<i64>)->TS<i64>>{"identity", {"value"}};
+    const auto service = hg::service<auto(TS<i64>)->TS<i64>>{"identity", {"value"}};
     const auto implement = node([](In<TSD<service_client_id_t, TS<i64>>> requests,
                                    Out<TSD<service_client_id_t, TS<i64>>> responses) {
         requests.for_each_removed([&](const auto &client_id) { responses.erase(client_id); });
@@ -801,7 +801,7 @@ TEST_CASE("service rejects a response cycle through a client input",
 
     auto diagnostic = std::string{};
     try {
-        (void)bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1});
+        (void)hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }

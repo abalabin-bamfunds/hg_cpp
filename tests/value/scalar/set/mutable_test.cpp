@@ -1,11 +1,11 @@
-#include <bg/global_state.hpp>
+#include <hg/global_state.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a mutable scalar set inserts unique items",
           "[value][scalar][set][scalar:set][mutable][feature:scalar-collection][transition:addition]") {

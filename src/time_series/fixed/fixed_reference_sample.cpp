@@ -1,12 +1,12 @@
 #include "fixed_reference_sample.hpp"
 
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <cassert>
 #include <exception>
@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 ReferenceSample *create_sampled_fixed_collection(const TimeSeriesType &type, ResolvedTimeSeries previous,
@@ -229,4 +229,4 @@ TimeSeriesRuntimeType::ConstItem SampledFixedCollection::item(item_id_t id) cons
     return {*current_child.runtime_type, last_updated, current_child.storage};
 }
 
-} // namespace bg::details
+} // namespace hg::details

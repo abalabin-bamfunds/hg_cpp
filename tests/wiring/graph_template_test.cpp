@@ -1,16 +1,16 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/with_signature.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/with_signature.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -24,11 +24,11 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct source_definition {
     Out<TS<float>> output;
@@ -398,8 +398,8 @@ TEST_CASE("callable output guarantee inference is local to its node signature",
                                             [=](wp<TS<double>> input) { return inferred_output_graph(input); });
 
     const auto inputs = std::array{1.0, 2.0, 3.0};
-    CHECK(bg::run_graph(inferred_output_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
-    CHECK(bg::run_graph(forwarding_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
+    CHECK(hg::run_graph(inferred_output_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
+    CHECK(hg::run_graph(forwarding_graph, inputs).equals<double>({2.0, 3.0, 4.0}));
 }
 
 TEST_CASE("a graph reference result uses its declaration guarantee",

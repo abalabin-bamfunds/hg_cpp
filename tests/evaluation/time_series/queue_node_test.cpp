@@ -1,12 +1,12 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/queue.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/queue.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -179,10 +179,10 @@ TEST_CASE("queue declarations require ordinary guarantees in every mode",
         for (const auto guarantee :
              {TimeSeriesGuarantee::deduplicated, TimeSeriesGuarantee::final, TimeSeriesGuarantee::const_}) {
             const auto &output_type = TS<List<i64>>::type().with_guarantee(guarantee);
-            require_rejected(queue(bg::output_type = output_type, start = [](Queue) {}, bg::mode = mode));
+            require_rejected(queue(hg::output_type = output_type, start = [](Queue) {}, hg::mode = mode));
         }
         require_rejected(
-            queue<TSD<i64, TS<List<i64>, TimeSeriesGuarantee::final>>>(start = [](Queue) {}, bg::mode = mode));
+            queue<TSD<i64, TS<List<i64>, TimeSeriesGuarantee::final>>>(start = [](Queue) {}, hg::mode = mode));
     }
 }
 

@@ -1,11 +1,11 @@
-#include <bg/time_series/ref/fixed_item_selection.hpp>
+#include <hg/time_series/ref/fixed_item_selection.hpp>
 
 #include "item_selection.hpp"
 
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 namespace {
 
@@ -65,4 +65,4 @@ static_assert(sizeof(ItemSelection<FixedObservedItems>) == 5 * sizeof(void *));
 static_assert(sizeof(FixedObservedItems) == 33 * sizeof(void *));
 static_assert(sizeof(FixedItemSubscriptions) == 14 * sizeof(void *));
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,15 +1,15 @@
-#include <bg/operators.hpp>
+#include <hg/operators.hpp>
 
-#include <bg/node/node_template.hpp>
-#include <bg/time_series/tsb/operators.hpp>
-#include <bg/time_series/tsd/operators.hpp>
-#include <bg/time_series/tsl/operators.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/time_series/tsb/operators.hpp>
+#include <hg/time_series/tsd/operators.hpp>
+#include <hg/time_series/tsl/operators.hpp>
 
 #include <array>
 #include <optional>
 #include <span>
 
-namespace bg::operators {
+namespace hg::operators {
 
 namespace {
 
@@ -106,4 +106,4 @@ const auto registered = [] {
 }();
 
 } // namespace
-} // namespace bg::operators
+} // namespace hg::operators

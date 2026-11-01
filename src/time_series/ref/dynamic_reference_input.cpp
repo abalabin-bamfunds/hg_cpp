@@ -1,10 +1,10 @@
-#include <bg/time_series/ref/dynamic_reference_input.hpp>
+#include <hg/time_series/ref/dynamic_reference_input.hpp>
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/output_notification.hpp>
-#include <bg/graph/runtime_graph.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/graph/runtime_graph.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 bool DynamicReferenceInputStorage::refresh(EvaluationTime evaluation_time) noexcept {
     const auto value = binding_ ? binding_.value() : Reference{};
@@ -57,4 +57,4 @@ void DynamicReferenceInputStorage::notify(OutputChangeContext &context, std::siz
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

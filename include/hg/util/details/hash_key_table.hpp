@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/util/linear_hash_table.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/util/linear_hash_table.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <cassert>
 #include <concepts>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util::details {
+namespace hg::util::details {
 
 template <typename Key, typename Hash, typename Equal> class hash_key_table {
   public:
@@ -267,4 +267,4 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     [[no_unique_address]] Equal equal_;
 };
 
-} // namespace bg::util::details
+} // namespace hg::util::details

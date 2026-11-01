@@ -1,10 +1,10 @@
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_variable.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_variable.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -17,11 +17,11 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct weighted_add {
     In<TS<float>> lhs;
@@ -83,7 +83,7 @@ struct dynamic_reference_input_node {
 TEST_CASE("a dynamic reference input is internal to an aggregate node",
           "[node_template][feature:node-api][feature:reference][definition:aggregate]"
           "[series:reference][guarantee:ordinary][guarantee:final]") {
-    const auto node = bg::node<dynamic_input_test::dynamic_reference_input_node>();
+    const auto node = hg::node<dynamic_input_test::dynamic_reference_input_node>();
 
     const auto check_dynamic_reference = [&](const Type &argument, TimeSeriesGuarantee guarantee,
                                              const Type &target) {
@@ -124,7 +124,7 @@ struct dynamic_reference_input_default_guarantee_node {
 TEST_CASE("an internal dynamic reference input defaults its root guarantee to ordinary",
           "[node_template][feature:node-api][feature:reference][definition:aggregate]"
           "[series:reference][guarantee:ordinary]") {
-    const auto node = bg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
+    const auto node = hg::node<dynamic_input_test::dynamic_reference_input_default_guarantee_node>();
 
     const auto resolution = node.signature().resolve_with_type_map(std::array<const Type *, 0>{});
 
@@ -146,7 +146,7 @@ TEST_CASE("a callable node receives typed inputs, scalars, and output",
 
     const auto graph = [&](wp<TS<i64>> input) { return add(input, 1); };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals({3, 5, 7}));
 }
 
 TEST_CASE("a callable node can omit its output", "[node_template][feature:node-api][definition:function]") {
@@ -160,7 +160,7 @@ TEST_CASE("a callable node can omit its output", "[node_template][feature:node-a
     };
 
     STATIC_CHECK(std::same_as<decltype(sink(std::declval<WiringPoint>())), void>);
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals({1, 2, 3}));
     CHECK(sum == 6);
 }
 
@@ -429,7 +429,7 @@ static_assert(AggregateNodeClass<time_series_variable_guarantee>);
 
 TEST_CASE("a time series variable can expose its guarantee as another variable",
           "[node_template][type_system][feature:node-api]") {
-    const auto node = bg::node<time_series_variable_guarantee>();
+    const auto node = hg::node<time_series_variable_guarantee>();
     const auto &list =
         TSL<TS<float, TimeSeriesGuarantee::ordinary>, 2, TimeSeriesGuarantee::final>::type();
     const auto arguments = std::array<const Type *, 1>{&list};
@@ -568,7 +568,7 @@ TEST_CASE("collection inputs retain their resolved runtime layout", "[node_templ
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return check_guarantee(input); };
-    CHECK(bg::run_graph(graph, {42}).equals<i64>({42}));
+    CHECK(hg::run_graph(graph, {42}).equals<i64>({42}));
 }
 
 TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
@@ -598,9 +598,9 @@ TEST_CASE("direct TSS inputs keep concrete and resolved key runtime types",
 
     const auto guarantee_graph = [&](wp<TSS<i64>> input) { return read_guarantee(input); };
 
-    CHECK(bg::run_graph(concrete_graph, {{42}}).equals<i64>({42}));
-    CHECK(bg::run_graph(generic_graph, {{42}}).equals<i64>({42}));
-    CHECK(bg::run_graph(guarantee_graph, {{42}}).equals<i64>({42}));
+    CHECK(hg::run_graph(concrete_graph, {{42}}).equals<i64>({42}));
+    CHECK(hg::run_graph(generic_graph, {{42}}).equals<i64>({42}));
+    CHECK(hg::run_graph(guarantee_graph, {{42}}).equals<i64>({42}));
 }
 
 TEST_CASE("native collection outputs bind directly only for concrete declarations",
@@ -637,7 +637,7 @@ TEST_CASE("only outputs with unresolved declarations store an output runtime typ
 
 TEST_CASE("runtime type use follows resolved input types",
           "[node_template][feature:type-system][feature:node-api]") {
-    const auto node = bg::node(scalar_or_time_series_input_definition{});
+    const auto node = hg::node(scalar_or_time_series_input_definition{});
     const auto scalar_arguments = std::array<const Type *, 1>{&int64_type()};
     const auto time_series_arguments = std::array<const Type *, 1>{&TS<i64>::type()};
 

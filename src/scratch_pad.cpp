@@ -1,8 +1,8 @@
-#include <bg/scratch_pad.hpp>
+#include <hg/scratch_pad.hpp>
 
-#include <bg/details/evaluation_scratch.hpp>
+#include <hg/details/evaluation_scratch.hpp>
 
-namespace bg {
+namespace hg {
 
 ScratchPad::~ScratchPad() {
     reset();
@@ -40,4 +40,4 @@ void ScratchPad::reset() noexcept {
     frame_ = nullptr;
 }
 
-} // namespace bg
+} // namespace hg

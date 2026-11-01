@@ -1,4 +1,4 @@
-#include <bg/global_state.hpp>
+#include <hg/global_state.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <utility>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a mutable scalar dictionary inserts and replaces entries",
           "[value][scalar][dict][scalar:dict][mutable][feature:scalar-collection][transition:addition]") {

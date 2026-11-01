@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <memory_resource>
 
-namespace bg::details {
+namespace hg::details {
 
 struct SampledFixedCollection final : ReferenceSample {
     SampledFixedCollection(const TimeSeriesType &type, ResolvedTimeSeries previous,
@@ -33,4 +33,4 @@ struct SampledFixedCollection final : ReferenceSample {
     mutable util::sparse_bunch<SampledReferenceChange> child_samples;
 };
 
-} // namespace bg::details
+} // namespace hg::details

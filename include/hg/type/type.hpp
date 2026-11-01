@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/type/details/static_registry_entry.hpp>
+#include <hg/type/details/static_registry_entry.hpp>
 
+#include <typeinfo>
 #include <ddv/visitable.h>
 
 #include <concepts>
 #include <optional>
 #include <string>
 #include <type_traits>
-#include <typeinfo>
 
-namespace bg {
+namespace hg {
 
 class DictScalarType;
 class BuiltinScalarType;
@@ -136,4 +136,4 @@ template <type_cast_target Target> const Target &type_cast(const Type &type) {
     return *result;
 }
 
-} // namespace bg
+} // namespace hg

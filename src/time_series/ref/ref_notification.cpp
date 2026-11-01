@@ -1,14 +1,14 @@
-#include <bg/time_series/ref/ref_notification.hpp>
+#include <hg/time_series/ref/ref_notification.hpp>
 
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/util/scope_exit.hpp>
 
-namespace bg {
+namespace hg {
 
 void ReferenceInputStorage::replace_deferred(DeferredReferenceInputState &state,
                                              bool selected_view_valid) noexcept {
@@ -32,9 +32,9 @@ void ReferenceInputStorage::release_deferred(bool selected_view_valid) noexcept 
     memory.delete_object(state);
 }
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 void ReferenceInputSubscriber::update_input(OutputChangeContext &context, ReferenceInputSampleLookup &samples,
                                             Reference new_reference,
@@ -259,4 +259,4 @@ void notify_mixed_reference_inputs(OutputChangeContext &context, const TimeSerie
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

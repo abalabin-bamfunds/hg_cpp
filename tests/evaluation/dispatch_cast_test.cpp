@@ -1,15 +1,15 @@
-#include <bg/graph.hpp>
-#include <bg/graph/details/dispatch_cast.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/switch.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/details/dispatch_cast.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/switch.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -17,8 +17,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct DispatchBase {
     Field<symbol> name;
@@ -119,7 +119,7 @@ TEST_CASE("dispatch casts work inside nested switch cases",
         return switch_(selector, cases{case_(1, middle)}, source).as<TS<i64>>();
     };
 
-    const auto actual = bg::run_graph(tested, {1}, {1});
+    const auto actual = hg::run_graph(tested, {1}, {1});
 
     CHECK(actual.equals({42}));
 }
@@ -146,7 +146,7 @@ TEST_CASE("a narrowed reference cast can feed a value input",
         return read_derived(cast);
     };
 
-    const auto actual = bg::run_graph(tested, {1});
+    const auto actual = hg::run_graph(tested, {1});
 
     CHECK(actual.equals({42}));
 }
@@ -182,7 +182,7 @@ TEST_CASE("a widened dispatch branch can advertise the switch output type",
         return read_base(selected);
     };
 
-    const auto actual = bg::run_graph(tested, {1, 1}, {1, 2});
+    const auto actual = hg::run_graph(tested, {1, 1}, {1, 2});
 
     CHECK(actual.equals({true, true}));
 }

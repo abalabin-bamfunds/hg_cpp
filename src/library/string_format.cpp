@@ -1,15 +1,15 @@
 #include "registration.hpp"
 #include "string_format_helpers.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tick_format.hpp>
+#include <hg/graph.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tick_format.hpp>
 
 #include <fmt/args.h>
 #include <fmt/chrono.h>
@@ -28,10 +28,10 @@
 #include <utility>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"STRING_FORMAT_G">;
 
@@ -249,8 +249,8 @@ struct string_format_overloads {
     }
 
     static std::string format(std::string_view pattern,
-                              const In<TSB<FORMAT_POSITIONAL>, var_args, bg::all_valid> &positional,
-                              const In<TSB<FORMAT_NAMED>, var_kwargs, bg::all_valid> &named) {
+                              const In<TSB<FORMAT_POSITIONAL>, var_args, hg::all_valid> &positional,
+                              const In<TSB<FORMAT_NAMED>, var_kwargs, hg::all_valid> &named) {
         auto store = fmt::dynamic_format_arg_store<fmt::format_context>{};
         auto names = std::vector<std::string>{};
         names.reserve(positional.size() + named.size());
@@ -356,8 +356,8 @@ struct string_format_overloads {
         })};
 
     overload<format_> format_impl{node(
-        eval = [](std::string_view pattern, In<TSB<FORMAT_POSITIONAL>, var_args, bg::all_valid> positional,
-                 In<TSB<FORMAT_NAMED>, var_kwargs, bg::all_valid> named, Out<TS<string, G>> output) {
+        eval = [](std::string_view pattern, In<TSB<FORMAT_POSITIONAL>, var_args, hg::all_valid> positional,
+                 In<TSB<FORMAT_NAMED>, var_kwargs, hg::all_valid> named, Out<TS<string, G>> output) {
             output.set_value(ScalarValue<string>{format(pattern, positional, named)});
         },
         resolve<decltype(G)> = resolve_output)};
@@ -435,4 +435,4 @@ struct string_format_overloads {
 
 void register_string_format_operators() { register_overloads<string_format_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

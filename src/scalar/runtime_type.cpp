@@ -1,20 +1,20 @@
-#include <bg/scalar/bundle/runtime_type.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/dict/runtime_type.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/runtime_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/scalar/struct/runtime_type.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/linear_hash_table.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/runtime_bunch.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/bundle/runtime_type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/scalar/struct/runtime_type.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/linear_hash_table.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/runtime_bunch.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -27,7 +27,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 ScalarRuntimeType::~ScalarRuntimeType() = default;
 
@@ -1361,4 +1361,4 @@ const ScalarRuntimeType &resolve_default_scalar_runtime_type(const ScalarType &t
     return runtime_type;
 }
 
-} // namespace bg
+} // namespace hg

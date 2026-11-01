@@ -1,14 +1,14 @@
-#include <bg/time_series/tsd/tsd_key_subscription.hpp>
+#include <hg/time_series/tsd/tsd_key_subscription.hpp>
 
 #include "../ref/item_selection.hpp"
 
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 namespace {
 
@@ -88,4 +88,4 @@ static_assert(sizeof(ItemSelection<TsdObservedItems>) == 5 * sizeof(void *));
 static_assert(sizeof(TsdObservedItems) == 33 * sizeof(void *));
 static_assert(sizeof(TsdKeySubscriptions) == 14 * sizeof(void *));
 
-} // namespace bg::details
+} // namespace hg::details

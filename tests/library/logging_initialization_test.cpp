@@ -1,5 +1,5 @@
-#include <bg/logging.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/logging.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -22,7 +22,7 @@ namespace {
 
 std::filesystem::path log_path() {
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-    return std::filesystem::temp_directory_path() / ("bg_logging_" + std::to_string(nonce) + ".log");
+    return std::filesystem::temp_directory_path() / ("hg_logging_" + std::to_string(nonce) + ".log");
 }
 
 std::string read_file(const std::filesystem::path &path) {
@@ -32,7 +32,7 @@ std::string read_file(const std::filesystem::path &path) {
 }
 
 auto remove_file_on_exit(const std::filesystem::path &path) {
-    return bg::util::scope_exit{[path]() noexcept {
+    return hg::util::scope_exit{[path]() noexcept {
         auto error = std::error_code{};
         std::filesystem::remove(path, error);
     }};
@@ -126,14 +126,14 @@ class ConsoleCapture {
 
 } // namespace
 
-TEST_CASE("BG logging initializes lazily and rejects later configuration", "[library][logging]") {
-    bg::log::info("lazy initialization");
-    bg::logging::flush();
+TEST_CASE("HG logging initializes lazily and rejects later configuration", "[library][logging]") {
+    hg::log::info("lazy initialization");
+    hg::logging::flush();
 
-    CHECK_THROWS_AS(bg::logging::initialize(), std::logic_error);
+    CHECK_THROWS_AS(hg::logging::initialize(), std::logic_error);
 }
 
-TEST_CASE("BG logging initializes to an append-only file sink", "[library][logging]") {
+TEST_CASE("HG logging initializes to an append-only file sink", "[library][logging]") {
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
     {
@@ -142,68 +142,68 @@ TEST_CASE("BG logging initializes to an append-only file sink", "[library][loggi
         file << "previous\n";
     }
 
-    bg::logging::initialize({.file = path.string(), .std_err = true, .pattern = "{message}"});
-    CHECK(bg::logging::level() == bg::logging::Level::info);
-    CHECK(bg::logging::enabled(bg::logging::Level::info));
-    CHECK_FALSE(bg::logging::enabled(bg::logging::Level::debug));
+    hg::logging::initialize({.file = path.string(), .std_err = true, .pattern = "{message}"});
+    CHECK(hg::logging::level() == hg::logging::Level::info);
+    CHECK(hg::logging::enabled(hg::logging::Level::info));
+    CHECK_FALSE(hg::logging::enabled(hg::logging::Level::debug));
 
-    bg::log::info("configured output");
-    bg::logging::flush();
+    hg::log::info("configured output");
+    hg::logging::flush();
 
     CHECK(read_file(path) == "previous\nconfigured output\n");
-    CHECK_THROWS_AS(bg::logging::initialize(), std::logic_error);
+    CHECK_THROWS_AS(hg::logging::initialize(), std::logic_error);
 }
 
-TEST_CASE("BG logging validates patterns before initialization", "[library][logging]") {
-    CHECK_THROWS_AS(bg::logging::initialize({.pattern = "{unknown}"}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::logging::initialize({.pattern = "{message} {message}"}), std::invalid_argument);
-    CHECK_THROWS_AS(bg::logging::initialize({.pattern = "%(message)"}), std::invalid_argument);
+TEST_CASE("HG logging validates patterns before initialization", "[library][logging]") {
+    CHECK_THROWS_AS(hg::logging::initialize({.pattern = "{unknown}"}), std::invalid_argument);
+    CHECK_THROWS_AS(hg::logging::initialize({.pattern = "{message} {message}"}), std::invalid_argument);
+    CHECK_THROWS_AS(hg::logging::initialize({.pattern = "%(message)"}), std::invalid_argument);
 
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
-    bg::logging::initialize({.file = path.string(), .pattern = "{{{level:>8}}}|{logger}|{message}"});
-    bg::log::warning("ready");
-    bg::logging::flush();
+    hg::logging::initialize({.file = path.string(), .pattern = "{{{level:>8}}}|{logger}|{message}"});
+    hg::log::warning("ready");
+    hg::logging::flush();
 
-    CHECK(read_file(path).find("{ WARNING}|bg|ready\n") != std::string::npos);
+    CHECK(read_file(path).find("{ WARNING}|hg|ready\n") != std::string::npos);
 }
 
-TEST_CASE("BG logging level changes control enabled calls", "[library][logging]") {
-    CHECK(bg::logging::level() == bg::logging::Level::info);
-    bg::logging::set_level(bg::logging::Level::debug);
-    CHECK(bg::logging::level() == bg::logging::Level::debug);
-    CHECK(bg::logging::enabled(bg::logging::Level::debug));
-    CHECK(bg::logging::enabled(bg::logging::Level::critical));
-    CHECK_FALSE(bg::logging::enabled(bg::logging::Level::trace));
+TEST_CASE("HG logging level changes control enabled calls", "[library][logging]") {
+    CHECK(hg::logging::level() == hg::logging::Level::info);
+    hg::logging::set_level(hg::logging::Level::debug);
+    CHECK(hg::logging::level() == hg::logging::Level::debug);
+    CHECK(hg::logging::enabled(hg::logging::Level::debug));
+    CHECK(hg::logging::enabled(hg::logging::Level::critical));
+    CHECK_FALSE(hg::logging::enabled(hg::logging::Level::trace));
 
-    bg::logging::set_level(bg::logging::Level::off);
-    CHECK_FALSE(bg::logging::enabled(bg::logging::Level::critical));
-    CHECK_FALSE(bg::logging::enabled(bg::logging::Level::off));
+    hg::logging::set_level(hg::logging::Level::off);
+    CHECK_FALSE(hg::logging::enabled(hg::logging::Level::critical));
+    CHECK_FALSE(hg::logging::enabled(hg::logging::Level::off));
 }
 
-TEST_CASE("BG logging defaults to stdout with microsecond timestamps", "[library][logging]") {
+TEST_CASE("HG logging defaults to stdout with microsecond timestamps", "[library][logging]") {
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
     {
         auto capture = ConsoleCapture{stdout, path};
-        bg::logging::initialize();
-        bg::log::info("default output");
-        bg::logging::flush();
+        hg::logging::initialize();
+        hg::log::info("default output");
+        hg::logging::flush();
         capture.restore();
     }
 
     const auto output = read_file(path);
-    CHECK(std::regex_search(output, std::regex{R"(^\d{2}:\d{2}:\d{2}\.\d{6} LOG_INFO\s+bg\s+default output\n$)"}));
+    CHECK(std::regex_search(output, std::regex{R"(^\d{2}:\d{2}:\d{2}\.\d{6} LOG_INFO\s+hg\s+default output\n$)"}));
 }
 
-TEST_CASE("BG logging can select stderr and UTC timestamps", "[library][logging]") {
+TEST_CASE("HG logging can select stderr and UTC timestamps", "[library][logging]") {
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
     {
         auto capture = ConsoleCapture{stderr, path};
-        bg::logging::initialize({.std_err = true, .pattern = "{time}|{message}", .time_pattern = "%z", .utc = true});
-        bg::log::info("UTC output");
-        bg::logging::flush();
+        hg::logging::initialize({.std_err = true, .pattern = "{time}|{message}", .time_pattern = "%z", .utc = true});
+        hg::log::info("UTC output");
+        hg::logging::flush();
         capture.restore();
     }
 

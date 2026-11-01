@@ -1,13 +1,13 @@
 #include "type_registration.hpp"
 
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
 
 #include <algorithm>
 #include <stdexcept>
 #include <unordered_map>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 thread_local SemanticTypeRegistration *active_registration = nullptr;
@@ -126,4 +126,4 @@ void SemanticTypeRegistration::complete() {
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

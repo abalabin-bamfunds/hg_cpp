@@ -2,7 +2,7 @@
 
 #include <type_traits>
 
-namespace bg::util {
+namespace hg::util {
 
 // A type can opt in when only its default state supports byte-copy initialization.
 template <typename T>
@@ -11,4 +11,4 @@ concept byte_copy_initializable =
     ((std::is_trivially_copyable_v<T> && std::is_default_constructible_v<T>) ||
      (std::is_nothrow_default_constructible_v<T> && requires { requires T::supports_byte_copy_initialization; }));
 
-} // namespace bg::util
+} // namespace hg::util

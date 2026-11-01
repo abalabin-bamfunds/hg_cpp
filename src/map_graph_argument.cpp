@@ -1,13 +1,13 @@
-#include <bg/map/details/map_graph_argument.hpp>
+#include <hg/map/details/map_graph_argument.hpp>
 
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <memory>
 #include <optional>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class MapGraphArgumentBuilder {
@@ -393,4 +393,4 @@ MapGraphArgumentWiring build_map_graph_argument_wiring(util::symbol name, const 
     return MapGraphArgumentBuilder{name, function, std::move(call), preserve_named_arguments, type_map}.build();
 }
 
-} // namespace bg::details
+} // namespace hg::details

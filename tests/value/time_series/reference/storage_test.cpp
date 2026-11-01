@@ -1,17 +1,17 @@
-#include <bg/node/input.hpp>
-#include <bg/node/output.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/node/input.hpp>
+#include <hg/node/output.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a time series reference value is one pointer",
           "[value][time-series][reference][feature:time-series-storage]") {

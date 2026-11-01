@@ -1,15 +1,15 @@
-#include <bg/graph/details/dispatch_cast.hpp>
+#include <hg/graph/details/dispatch_cast.hpp>
 
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <memory>
 #include <optional>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 struct DispatchCastForm {
@@ -145,4 +145,4 @@ WiringPoint dispatch_cast(WiringPoint source, const TimeSeriesType &target_type)
     return source.record()->wiring().register_record(std::make_unique<DispatchCastWiringRecord>(source, target_type));
 }
 
-} // namespace bg::details
+} // namespace hg::details

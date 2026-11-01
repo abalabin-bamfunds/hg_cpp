@@ -1,5 +1,5 @@
-#include <bg/bg.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/hg.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -9,7 +9,7 @@
 
 namespace {
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a scalar set propagates through a value time series",
           "[node][time_series][scalar][set][scalar:set][feature:state]") {
@@ -25,7 +25,7 @@ TEST_CASE("a scalar set propagates through a value time series",
 
     const auto graph = [&] { return sum(source(input)); };
 
-    CHECK(bg::run_graph(graph).equals<i64>({3}));
+    CHECK(hg::run_graph(graph).equals<i64>({3}));
 }
 
 TEST_CASE("a scalar set output accepts a C++ range",
@@ -34,7 +34,7 @@ TEST_CASE("a scalar set output accepts a C++ range",
     const auto size = node([](In<TS<Set<i64>>> input) { return static_cast<i64>(input.value_view().size()); });
     const auto graph = [&] { return size(source()); };
 
-    CHECK(bg::run_graph(graph).equals<i64>({2}));
+    CHECK(hg::run_graph(graph).equals<i64>({2}));
 }
 
 TEST_CASE("a scalar set output rejects an incompatible scalar range",
@@ -57,7 +57,7 @@ TEST_CASE("a scalar set output rejects an incompatible scalar range",
     const auto size = node([](In<TS<Set<i64>>> input) { return static_cast<i64>(input.value_view().size()); });
     const auto graph = [&](wp<TS<i64>> action) { return size(source(action)); };
 
-    CHECK(bg::run_graph(graph, {0, 1}).equals<i64>({2, std::nullopt}));
+    CHECK(hg::run_graph(graph, {0, 1}).equals<i64>({2, std::nullopt}));
 }
 
 struct inspect_scalar_set_state {
@@ -79,7 +79,7 @@ TEST_CASE("scalar set state is available during node start",
 
     const auto graph = [&] { return inspect(); };
 
-    CHECK(bg::run_graph(graph).equals<i64>({2}));
+    CHECK(hg::run_graph(graph).equals<i64>({2}));
 }
 
 struct inspect_scalar_set {
@@ -103,7 +103,7 @@ TEST_CASE("a scalar set is available from packed graph scalar storage",
 
     const auto graph = [&] { return inspect(input); };
 
-    CHECK(bg::run_graph(graph).equals<i64>({3}));
+    CHECK(hg::run_graph(graph).equals<i64>({3}));
 }
 
 } // namespace

@@ -1,17 +1,17 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -52,14 +52,14 @@ template <> struct hash<run_graph_argument::captured_pointer> {
 
 } // namespace std
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_type_traits<run_graph_argument::captured_pointer> {
     static const ScalarType &type() noexcept {
         class Type final : public ScalarType {
           public:
             bool is_resolved() const noexcept override { return true; }
-            const bg::Type &resolve(const TypeMap &) const override { return *this; }
+            const hg::Type &resolve(const TypeMap &) const override { return *this; }
             bool supports_equality() const noexcept override { return true; }
             bool supports_hash() const noexcept override { return true; }
         };
@@ -70,12 +70,12 @@ template <> struct scalar_type_traits<run_graph_argument::captured_pointer> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 struct boundary_node {
     static constexpr bool deduplicate_wiring = false;
@@ -541,7 +541,7 @@ TEST_CASE("callable graph time series unions accept each form and preserve the s
     STATIC_CHECK(details::graph_time_series_union<GRAPH_INPUT_FORM>::value);
     STATIC_CHECK_FALSE(details::graph_time_series_union<Union<"INVALID_GRAPH_INPUT", TS<i64>, i64>>::value);
 
-    using namespace bg::literals;
+    using namespace hg::literals;
     auto builder_calls = 0;
     auto records = std::vector<const details::WiringRecord *>{};
     auto types = std::vector<const TimeSeriesType *>{};
@@ -635,7 +635,7 @@ TEST_CASE("aggregate graph time series unions accept each declared form",
         }
     };
 
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto inspect = graph<union_graph>();
 

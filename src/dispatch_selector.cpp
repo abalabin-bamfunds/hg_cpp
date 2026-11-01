@@ -1,13 +1,13 @@
-#include <bg/dispatch/details/dispatch_selector.hpp>
+#include <hg/dispatch/details/dispatch_selector.hpp>
 
-#include <bg/graph/node.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 DispatchSelectorDefinition::DispatchSelectorDefinition(
     std::span<const WiringArgument> inputs, std::span<const DispatchSelectorCandidate> candidates)
@@ -55,4 +55,4 @@ std::unique_ptr<NodeTemplate> make_dispatch_selector(std::span<const WiringArgum
         DispatchSelectorDefinition{inputs, candidates});
 }
 
-} // namespace bg::details
+} // namespace hg::details

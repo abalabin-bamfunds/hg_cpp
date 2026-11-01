@@ -1,11 +1,11 @@
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <stdexcept>
 #include <utility>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a scope exit function runs when its scope ends",
           "[utils][scope_exit][coverage-exempt]") {

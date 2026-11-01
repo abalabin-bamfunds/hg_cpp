@@ -1,10 +1,10 @@
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,8 +12,8 @@
 #include <string>
 #include <type_traits>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -93,9 +93,9 @@ TEST_CASE("valid_items annotations compose with opt and typed views",
 
     testing::test_wiring([&] {
         const auto value = source();
-        const auto valid = bg::valid_items(value);
+        const auto valid = hg::valid_items(value);
         const auto optional_valid = opt(valid);
-        const auto valid_optional = bg::valid_items(opt(value));
+        const auto valid_optional = hg::valid_items(opt(value));
         const auto view = valid_optional.as<TSD<i64, TS<i64>>>();
 
         static_assert(std::is_same_v<std::remove_cvref_t<decltype(optional_valid)>,
@@ -121,9 +121,9 @@ TEST_CASE("valid_items annotations require a capable receiver and survive refere
     const auto ordinary = node([](In<TSD<i64, TS<i64>>>) {});
 
     testing::test_wiring([&] {
-        capable(bg::valid_items(source()));
-        capable(bg::valid_items(reference_source()));
-        CHECK_THROWS_AS(ordinary(bg::valid_items(source())), TypeResolutionError);
+        capable(hg::valid_items(source()));
+        capable(hg::valid_items(reference_source()));
+        CHECK_THROWS_AS(ordinary(hg::valid_items(source())), TypeResolutionError);
     });
 }
 

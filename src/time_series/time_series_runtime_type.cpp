@@ -1,29 +1,29 @@
-#include <bg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
 
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/ts/ts_input.hpp>
-#include <bg/time_series/ts/ts_output.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/ts/ts_input.hpp>
+#include <hg/time_series/ts/ts_output.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <ranges>
@@ -31,7 +31,7 @@
 #include <unordered_map>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 TimeSeriesRuntimeType::~TimeSeriesRuntimeType() = default;
 
@@ -457,4 +457,4 @@ const TimeSeriesRuntimeType &resolve_default_time_series_runtime_type(const Time
     throw std::logic_error{"resolved time series type has no default runtime type"};
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,14 +1,14 @@
-#include <bg/dispatch.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/dispatch.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -20,8 +20,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct DispatchBase {
     Field<symbol> name;
@@ -102,7 +102,7 @@ TEST_CASE("dispatch selects the most specific implementation for a runtime scala
             output_is_reference_to_i64 = target != nullptr && &target->value_type() == &int64_type();
             return output.as<TS<i64>>();
         };
-    const auto derived_result = bg::run_graph(derived_graph, {1, 1});
+    const auto derived_result = hg::run_graph(derived_graph, {1, 1});
 
     CHECK(output_is_reference_to_i64);
     CHECK(derived_result.equals<i64>({20, 20}));
@@ -115,7 +115,7 @@ TEST_CASE("dispatch selects the most specific implementation for a runtime scala
             const auto source = publish_base(trigger, base_value).as<TS<Bundle<DispatchBase>>>();
             return dispatch(source).as<TS<i64>>();
         };
-    const auto base_result = bg::run_graph(base_graph, {1, 1});
+    const auto base_result = hg::run_graph(base_graph, {1, 1});
 
     CHECK(base_result.equals<i64>({10, std::nullopt}));
 }
@@ -156,7 +156,7 @@ TEST_CASE("dispatch passes graph arguments to the selected implementation",
         return dispatch(publish(trigger, value), graph_argument).as<TS<i64>>();
     };
 
-    CHECK(bg::run_graph(tested, {1}).equals<i64>({17}));
+    CHECK(hg::run_graph(tested, {1}).equals<i64>({17}));
     CHECK(received_graph_argument);
 }
 
@@ -206,7 +206,7 @@ TEST_CASE("dispatch selects a registered input-type tuple",
         const auto second = publish_second(trigger, second_value).as<TS<Bundle<DispatchOtherBase>>>();
         return dispatch(first, second).as<TS<i64>>();
     };
-    const auto result = bg::run_graph(graph, {1, 1});
+    const auto result = hg::run_graph(graph, {1, 1});
 
     CHECK(result.equals<i64>({40, std::nullopt}));
 }
@@ -240,7 +240,7 @@ TEST_CASE("dispatch expands union input forms across selected inputs",
         const auto second = publish_second(trigger, second_value).as<TS<Bundle<DispatchOtherBase>>>();
         return dispatch(first, second).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(graph, {1});
+    const auto actual = hg::run_graph(graph, {1});
 
     CHECK(actual.equals<i64>({30}));
     CHECK(saw_derived_pair);
@@ -268,7 +268,7 @@ TEST_CASE("dispatch expands scalar-variable alternatives",
         const auto source = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
         return dispatch(source).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(tested, {1});
+    const auto actual = hg::run_graph(tested, {1});
 
     CHECK(actual.equals<i64>({30}));
     CHECK(saw_derived);
@@ -302,7 +302,7 @@ TEST_CASE("dispatch input specificity precedes reference-to-value binding cost",
         const auto source = publish(selection, derived, base).as<REF<TS<Bundle<DispatchBase>>>>();
         return dispatch(source).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(graph, {1, 2});
+    const auto actual = hg::run_graph(graph, {1, 2});
 
     CHECK(actual.equals<i64>({20, 10}));
 }
@@ -327,7 +327,7 @@ TEST_CASE("dispatch resolves selected-input candidates from other implementation
         const auto source = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
         return dispatch(source, value).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(graph, {1});
+    const auto actual = hg::run_graph(graph, {1});
 
     CHECK(actual.equals<i64>({20}));
     CHECK(saw_derived_input);
@@ -361,7 +361,7 @@ TEST_CASE("dispatch preserves runtime ambiguity across partial specializations",
         return dispatch(first, second).as<TS<i64>>();
     };
 
-    CHECK_THROWS_AS(bg::run_graph(graph, {1}), std::logic_error);
+    CHECK_THROWS_AS(hg::run_graph(graph, {1}), std::logic_error);
 }
 
 TEST_CASE("dispatch preserves the source time-series guarantee while narrowing its value type",
@@ -384,7 +384,7 @@ TEST_CASE("dispatch preserves the source time-series guarantee while narrowing i
         const auto source = publish_final(trigger, value).as<TS<Bundle<DispatchBase>, TimeSeriesGuarantee::final>>();
         return dispatch(source).as<TS<i64>>();
     };
-    const auto result = bg::run_graph(graph, {1});
+    const auto result = hg::run_graph(graph, {1});
 
     CHECK(result.equals<i64>({20}));
 }
@@ -412,7 +412,7 @@ TEST_CASE("dispatch adapts a covariant scalar-value output to its declared type"
         return read_name(dispatch(source));
     };
 
-    const auto actual = bg::run_graph(tested, {1});
+    const auto actual = hg::run_graph(tested, {1});
 
     CHECK(actual.equals({true}));
 }
@@ -436,7 +436,7 @@ TEST_CASE("dispatch passes its explicit type mapping to the selected implementat
         return dispatch(output_type, input).as<TS<i64>>();
     };
 
-    const auto actual = bg::run_graph(graph, {1, 2, 3});
+    const auto actual = hg::run_graph(graph, {1, 2, 3});
 
     CHECK(actual.equals<i64>({20, std::nullopt, std::nullopt}));
 }
@@ -475,7 +475,7 @@ TEST_CASE("dispatch follows runtime type changes, invalidation, and revalidation
         return dispatch(source).as<TS<i64>>();
     };
 
-    const auto actual = bg::run_graph(graph, {1, 2, literal::INVALID, 1, 2});
+    const auto actual = hg::run_graph(graph, {1, 2, literal::INVALID, 1, 2});
 
     CHECK(actual.equals<i64>({20, 10, std::nullopt, 20, 10}));
     auto invalidated = false;
@@ -514,7 +514,7 @@ TEST_CASE("dispatch selects through a reference to a changing concrete value typ
                                    .as<REF<TS<Bundle<DispatchBase>>>>();
         return dispatch(reference).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(graph, {1, 2});
+    const auto actual = hg::run_graph(graph, {1, 2});
 
     CHECK(actual.equals<i64>({20, 10}));
 }
@@ -552,7 +552,7 @@ TEST_CASE("dispatch only adds runtime tuples whose declared implementation is se
         const auto second = publish_second(trigger, second_value).as<TS<Bundle<DispatchOtherBase>>>();
         return dispatch(first, second).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(graph, {1});
+    const auto actual = hg::run_graph(graph, {1});
 
     CHECK(actual.equals<i64>({10}));
 }
@@ -581,7 +581,7 @@ TEST_CASE("dispatch skips an implementation with a mismatched independent scalar
         return dispatch(input, i64{1}).as<TS<i64>>();
     };
 
-    CHECK(bg::run_graph(graph, {1}).equals<i64>({10}));
+    CHECK(hg::run_graph(graph, {1}).equals<i64>({10}));
 }
 
 TEST_CASE("dispatch supports outputless implementation graphs",
@@ -601,7 +601,7 @@ TEST_CASE("dispatch supports outputless implementation graphs",
         (void)dispatch(source);
         return trigger;
     };
-    (void)bg::run_graph(graph, {1, 1});
+    (void)hg::run_graph(graph, {1, 1});
 
     CHECK(selected == std::vector<i64>{20, 20});
 }
@@ -626,7 +626,7 @@ TEST_CASE("dispatch rejects implementations with a different output presence",
         const auto source = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
         return output_dispatch(source).as<TS<i64>>();
     };
-    CHECK_THROWS_AS(bg::run_graph(output_graph, {1}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(output_graph, {1}), WiringError);
 
     using SinkDispatchSignature = auto(TS<Bundle<DispatchBase>>) -> void;
     const auto sink_dispatch = dispatch_<SinkDispatchSignature>{output_implementation};
@@ -635,7 +635,7 @@ TEST_CASE("dispatch rejects implementations with a different output presence",
         (void)sink_dispatch(source);
         return trigger;
     };
-    CHECK_THROWS_AS(bg::run_graph(sink_graph, {1}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(sink_graph, {1}), WiringError);
 }
 
 TEST_CASE("dispatch enumerates implementation input types resolved by an explicit mapping",
@@ -656,7 +656,7 @@ TEST_CASE("dispatch enumerates implementation input types resolved by an explici
         const auto source = publish(trigger, value).as<TS<Bundle<DispatchBase>>>();
         return dispatch(input_type, source).as<TS<i64>>();
     };
-    const auto actual = bg::run_graph(graph, {1});
+    const auto actual = hg::run_graph(graph, {1});
 
     CHECK(actual.equals<i64>({20}));
 }
@@ -680,7 +680,7 @@ TEST_CASE("dispatch commits a selected implementation with a default scalar argu
         return dispatch(publish(trigger, value)).as<TS<i64>>();
     };
 
-    CHECK(bg::run_graph(tested, {1}).equals<i64>({9}));
+    CHECK(hg::run_graph(tested, {1}).equals<i64>({9}));
 }
 
 TEST_CASE("dispatch preserves named argument binding when invoking the selected implementation",
@@ -700,7 +700,7 @@ TEST_CASE("dispatch preserves named argument binding when invoking the selected 
         return dispatch("1"_n = i64{7}, "0"_n = publish(trigger, value)).as<TS<i64>>();
     };
 
-    CHECK(bg::run_graph(tested, {1}).equals<i64>({7}));
+    CHECK(hg::run_graph(tested, {1}).equals<i64>({7}));
 }
 
 TEST_CASE("dispatch commits a selected implementation with variadic time-series arguments",
@@ -721,7 +721,7 @@ TEST_CASE("dispatch commits a selected implementation with variadic time-series 
         return dispatch(publish(trigger, source_value), extra_value).as<TS<i64>>();
     };
 
-    CHECK(bg::run_graph(tested, {1, 1}, {3, 5}).equals<i64>({3, 5}));
+    CHECK(hg::run_graph(tested, {1, 1}, {3, 5}).equals<i64>({3, 5}));
 }
 
 TEST_CASE("dispatch reports implementation argument normalization failures",
@@ -738,7 +738,7 @@ TEST_CASE("dispatch reports implementation argument normalization failures",
     };
 
     try {
-        (void)bg::run_graph(tested, bg::input<TS<Bundle<DispatchBase>>>({}));
+        (void)hg::run_graph(tested, hg::input<TS<Bundle<DispatchBase>>>({}));
         FAIL("dispatch should reject the missing implementation argument");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());

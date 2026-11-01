@@ -1,15 +1,15 @@
-#include <bg/graph.hpp>
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
-#include <bg/graph/details/wiring_record_overlay.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -25,8 +25,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 using VARIADIC_RESULT = ScalarVariable<"VARIADIC_RESULT">;
 
@@ -215,7 +215,7 @@ TEST_CASE("a positional variadic graph preserves its arguments",
         CHECK(values[0].is_scalar());
         CHECK(values[1].is_scalar());
         const auto &type = static_cast<const TimeSeriesBundleType &>(values.type());
-        CHECK(&type.item_type(0) == &TS<bg::i64, TimeSeriesGuarantee::const_>::type());
+        CHECK(&type.item_type(0) == &TS<hg::i64, TimeSeriesGuarantee::const_>::type());
         sink(values);
     });
 
@@ -224,7 +224,7 @@ TEST_CASE("a positional variadic graph preserves its arguments",
 
 TEST_CASE("a resolution overlay owns variadic wiring records used by probing",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
 
     const auto candidate = graph("name"_n = "candidate", [](wp<TSB<SCHEMA>, var_args>) {});
     auto wiring = GraphWiring{};
@@ -262,7 +262,7 @@ TEST_CASE("a variadic graph forwards a complete pack only",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
     const auto receiver = graph("name"_n = "receiver", [&](wp<TSB<SCHEMA>, var_args> values) {
         REQUIRE(values.size() == 1);
-        CHECK(&values[0].scalar().type() == &cpp_scalar_type<bg::i64>());
+        CHECK(&values[0].scalar().type() == &cpp_scalar_type<hg::i64>());
     });
 
     const auto sender = graph("name"_n = "sender", [&](wp<TSB<SCHEMA>, var_args> values) { receiver(values); });
@@ -459,29 +459,29 @@ TEST_CASE("two variadic packs materialize independently for callable and aggrega
           "[definition:function][definition:aggregate][representation:free]") {
     const auto callable = node(
         [](In<TSB<ARGS>, var_args> positional, In<TSB<KWARGS>, var_kwargs> named,
-           Out<TS<bg::i64>> output) {
-            auto left = bg::i64{};
+           Out<TS<hg::i64>> output) {
+            auto left = hg::i64{};
             positional[0].visit([&](const In<TS<SCALAR>> *value) {
-                left = scalar_cast<bg::i64>(value->value_view()).value();
+                left = scalar_cast<hg::i64>(value->value_view()).value();
             }, ddv::noop);
             named[0].visit(
                 [&](const In<TS<SCALAR>> *value) {
-                    output.set(left + scalar_cast<bg::i64>(value->value_view()).value());
+                    output.set(left + scalar_cast<hg::i64>(value->value_view()).value());
                 },
                 ddv::noop);
         });
 
     const auto aggregate = node<AggregateDualVariadicValue>();
-    const auto left = std::array<bg::i64, 2>{1, 2};
-    const auto right = std::array<bg::i64, 2>{3, 4};
+    const auto left = std::array<hg::i64, 2>{1, 2};
+    const auto right = std::array<hg::i64, 2>{3, 4};
 
-    const auto callable_result = bg::run_graph(
-        [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second) {
+    const auto callable_result = hg::run_graph(
+        [&](wp<TS<hg::i64>> first, wp<TS<hg::i64>> second) {
             return callable(first, "right"_n = second);
         },
         left, right);
-    const auto aggregate_result = bg::run_graph(
-        [&](wp<TS<bg::i64>> first, wp<TS<bg::i64>> second) {
+    const auto aggregate_result = hg::run_graph(
+        [&](wp<TS<hg::i64>> first, wp<TS<hg::i64>> second) {
             return aggregate(first, "right"_n = second);
         },
         left, right);
@@ -629,10 +629,10 @@ TEST_CASE("requirements and resolvers see fixed, positional, then named argument
         require = [&](const WiringArguments &arguments) {
             ++requirement_calls;
             REQUIRE(arguments.size() == 4);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(0)).value() == 0);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(1)).value() == 1);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(2)).value() == 2);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar("named")).value() == 3);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(0)).value() == 0);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(1)).value() == 1);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(2)).value() == 2);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar("named")).value() == 3);
             return accept;
         });
 
@@ -655,10 +655,10 @@ TEST_CASE("an output runtime hook sees flattened named variadic arguments",
             CHECK(arguments.argument_name(1).text() == "1");
             CHECK(arguments.argument_name(2).text() == "2");
             CHECK(arguments.argument_name(3).text() == "named");
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(0)).value() == 0);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(1)).value() == 1);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(2)).value() == 2);
-            CHECK(scalar_cast<bg::i64>(*arguments.scalar(3)).value() == 3);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(0)).value() == 0);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(1)).value() == 1);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(2)).value() == 2);
+            CHECK(scalar_cast<hg::i64>(*arguments.scalar(3)).value() == 3);
             return cpp_time_series_runtime_type<TS<i64>>(*arguments.resolved_output_type());
         });
 
@@ -800,7 +800,7 @@ TEST_CASE("a positional variadic graph omits absent scalars without sparse field
     const auto tested = graph("name"_n = "variadic", [&](wp<TSB<SCHEMA>, var_args> values) {
         REQUIRE(values.size() == 1);
         CHECK(values[0].name()->text() == "0");
-        CHECK(scalar_cast<bg::i64>(values[0].scalar()).value() == 42);
+        CHECK(scalar_cast<hg::i64>(values[0].scalar()).value() == 42);
     });
 
     testing::test_wiring([&] { tested(std::optional<int>{}, 42); });
@@ -817,7 +817,7 @@ TEST_CASE("an operator selects a fixed overload before a variadic overload",
     }));
     operation.overload(graph("name"_n = "variadic", [&](wp<TSB<SCHEMA>, var_args> values) {
         selected = "variadic";
-        return operators::const_(values[0]).as<TS<bg::i64, TimeSeriesGuarantee::const_>>();
+        return operators::const_(values[0]).as<TS<hg::i64, TimeSeriesGuarantee::const_>>();
     }));
 
     const auto source = node([](Out<TS<i64>>) {});
@@ -909,7 +909,7 @@ TEST_CASE("a variadic operator cache distinguishes named pack schemas",
     CachedNamedVariadicNode::requirement_calls = 0;
     CachedNamedVariadicNode::resolver_calls = 0;
 
-    auto operation = operator_<auto(TS_T) -> TS<bg::i64>>{"named", {"arguments"}};
+    auto operation = operator_<auto(TS_T) -> TS<hg::i64>>{"named", {"arguments"}};
     operation.overload(node<CachedNamedVariadicNode>());
 
     testing::test_wiring([&] {
@@ -979,13 +979,13 @@ TEST_CASE("an operator caches requirements over both variadic packs",
 
     const auto implementation = node(
         eval = [](In<TSB<ARGS>, var_args>, In<TSB<KWARGS>, var_kwargs>,
-                  Out<TS<bg::i64>>) {},
+                  Out<TS<hg::i64>>) {},
         require = [&](const WiringArguments &arguments) {
             ++requirement_calls;
             (void)arguments.scalar("named");
             return accept;
         });
-    auto operation = operator_<auto(TS_T) -> TS<bg::i64>>{"mixed", {"arguments"}};
+    auto operation = operator_<auto(TS_T) -> TS<hg::i64>>{"mixed", {"arguments"}};
     operation.overload(implementation);
 
     testing::test_wiring([&] {
@@ -1003,7 +1003,7 @@ TEST_CASE("a variadic operator cache distinguishes forwarded named pack schemas"
     CachedNamedVariadicNode::requirement_calls = 0;
     CachedNamedVariadicNode::resolver_calls = 0;
 
-    auto operation = operator_<auto(TS_T) -> TS<bg::i64>>{"named", {"arguments"}};
+    auto operation = operator_<auto(TS_T) -> TS<hg::i64>>{"named", {"arguments"}};
     operation.overload(node<CachedNamedVariadicNode>());
 
     const auto sender = graph(
@@ -1025,7 +1025,7 @@ TEST_CASE("an operator cache includes scalar reads from rejected fixed overloads
     ZeroModeNode::requirement_calls = 0;
     VariadicModeFallbackNode::requirement_calls = 0;
 
-    auto operation = operator_<auto(bg::i64) -> TS<bg::i64>>{"mode", {"mode"}};
+    auto operation = operator_<auto(hg::i64) -> TS<hg::i64>>{"mode", {"mode"}};
     operation.overload(node<ZeroModeNode>());
     operation.overload(node<VariadicModeFallbackNode>());
 
@@ -1045,7 +1045,7 @@ TEST_CASE("a variadic operator cache includes scalar reads from rejected overloa
     ScalarDependentRejectingVariadicNode::requirement_calls = 0;
     VariadicModeFallbackNode::requirement_calls = 0;
 
-    auto operation = operator_<auto(bg::i64) -> TS<bg::i64>>{"mode", {"mode"}};
+    auto operation = operator_<auto(hg::i64) -> TS<hg::i64>>{"mode", {"mode"}};
     operation.overload(node<ScalarDependentRejectingVariadicNode>());
     operation.overload(node<VariadicModeFallbackNode>());
 
@@ -1065,7 +1065,7 @@ TEST_CASE("a forwarded variadic pack cache rechecks flattened scalar reads",
     ScalarDependentRejectingVariadicNode::requirement_calls = 0;
     VariadicModeFallbackNode::requirement_calls = 0;
 
-    auto operation = operator_<auto(bg::i64) -> TS<bg::i64>>{"mode", {"mode"}};
+    auto operation = operator_<auto(hg::i64) -> TS<hg::i64>>{"mode", {"mode"}};
     operation.overload(node<ScalarDependentRejectingVariadicNode>());
     operation.overload(node<VariadicModeFallbackNode>());
 
@@ -1088,7 +1088,7 @@ TEST_CASE("a variadic operator cache recreates each candidate's absent arguments
     ScalarDependentRejectingVariadicNode::requirement_calls = 0;
     OptionalFixedVariadicNode::requirement_calls = 0;
 
-    auto operation = operator_<auto(bg::i64) -> TS<bg::i64>>{"mode", {"mode"}};
+    auto operation = operator_<auto(hg::i64) -> TS<hg::i64>>{"mode", {"mode"}};
     operation.overload(node<ScalarDependentRejectingVariadicNode>());
     operation.overload(node<OptionalFixedVariadicNode>());
 
@@ -1116,25 +1116,25 @@ TEST_CASE("a materialized pack keeps scalar and time series fields",
     const auto materialize = node<MaterializedVariadicValue>();
 
     const auto packed = graph(
-        "name"_n = "materialize", [&](wp<TSB<SCHEMA>, var_args> values) -> wp<TS<bg::i64>> {
+        "name"_n = "materialize", [&](wp<TSB<SCHEMA>, var_args> values) -> wp<TS<hg::i64>> {
             const auto &type = static_cast<const TimeSeriesBundleType &>(values.type());
             REQUIRE(type.item_count() == 2);
-            CHECK(&type.item_type(0) == &TS<bg::i64, TimeSeriesGuarantee::const_>::type());
-            CHECK(&type.item_type(1) == &TS<bg::i64>::type());
+            CHECK(&type.item_type(0) == &TS<hg::i64, TimeSeriesGuarantee::const_>::type());
+            CHECK(&type.item_type(1) == &TS<hg::i64>::type());
 
-            return materialize(values).as<TS<bg::i64>>();
+            return materialize(values).as<TS<hg::i64>>();
         });
 
-    const auto tested = [&](wp<TS<bg::i64>> input) { return packed(7, input); };
+    const auto tested = [&](wp<TS<hg::i64>> input) { return packed(7, input); };
 
-    const auto actual = bg::run_graph(tested, {1, 2, 3});
+    const auto actual = hg::run_graph(tested, {1, 2, 3});
     CHECK(actual.equals({8, 9, 10}));
 }
 
 TEST_CASE("equivalent variadic node calls reuse materialization and the receiver",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][scalar:integer]"
           "[definition:aggregate][representation:free]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
 
     const auto receiver = node<MaterializedVariadicValue>();
     auto wiring = GraphWiring{};
@@ -1165,7 +1165,7 @@ TEST_CASE("an empty materialized pack is valid at graph start",
     });
     const auto tested = [&] { return packed(); };
 
-    const auto actual = bg::run_graph(tested);
+    const auto actual = hg::run_graph(tested);
 
     CHECK(actual.equals({true}));
 }
@@ -1181,7 +1181,7 @@ TEST_CASE("a nested graph preserves an empty variadic parameter",
 
     const auto tested = [&](wp<TS<bool>> run) { return nested(inner, run); };
 
-    const auto actual = bg::run_graph(tested, {true});
+    const auto actual = hg::run_graph(tested, {true});
 
     CHECK(actual.equals({true}));
 }
@@ -1193,20 +1193,20 @@ TEST_CASE("a nested graph keeps scalar pack entries inside and crosses time seri
     const auto materialize = node<MaterializedVariadicValue>();
 
     const auto inner = graph("name"_n = "inner", [&](wp<TSB<SCHEMA>, var_args> values) {
-        return materialize(values).as<TS<bg::i64>>();
+        return materialize(values).as<TS<hg::i64>>();
     });
 
-    const auto tested = [&](wp<TS<bg::i64>> input, wp<TS<bool>> run) {
+    const auto tested = [&](wp<TS<hg::i64>> input, wp<TS<bool>> run) {
         return nested(inner, run, 7, input);
     };
 
-    const auto actual = bg::run_graph(tested, {1, 2, 3}, {true, true, true});
+    const auto actual = hg::run_graph(tested, {1, 2, 3}, {true, true, true});
 
     CHECK(actual.equals({8, 9, 10}));
 
     auto wiring = GraphWiring{};
 
-    const auto value_source = node([](Out<TS<bg::i64>>) {});
+    const auto value_source = node([](Out<TS<hg::i64>>) {});
 
     const auto run_source = node([](Out<TS<bool>>) {});
     {
@@ -1244,15 +1244,15 @@ TEST_CASE("a nested variadic scalar is owned only by the inner graph",
 
 TEST_CASE("a variadic graph preserves fixed parameters and time series entries",
           "[feature:wiring][feature:variadic-wiring][series:tsb][schema:generic][definition:function]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
 
     const auto tested = graph("name"_n = "fixed_then_variadic",
                               [&](int fixed, wp<TSB<SCHEMA>, var_args> values) {
                                   CHECK(fixed == 3);
                                   REQUIRE(values.size() == 2);
                                   CHECK(values[0].is_time_series());
-                                  CHECK(&values[0].type() == &TS<bg::i64>::type());
-                                  CHECK(&values[0].time_series().type() == &TS<bg::i64>::type());
+                                  CHECK(&values[0].type() == &TS<hg::i64>::type());
+                                  CHECK(&values[0].time_series().type() == &TS<hg::i64>::type());
                                   CHECK(values[1].is_scalar());
                               });
 

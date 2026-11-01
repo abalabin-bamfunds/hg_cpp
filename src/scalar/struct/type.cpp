@@ -1,6 +1,6 @@
-#include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <stdexcept>
@@ -9,7 +9,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedStructScalarType final : public StructScalarType {
@@ -62,4 +62,4 @@ const StructScalarType &canonical_struct_scalar_type(const std::type_info &ident
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

@@ -1,8 +1,8 @@
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/dispatch.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/dispatch.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/scalar/value.hpp>
 
 #include "test_scalar_provider.hpp"
 
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -71,7 +71,7 @@ TEST_CASE("scalar formatting handles built-ins and native aliases",
     const auto maximum_duration = ScalarValue<timedelta_t>{timedelta_t::max()};
     const auto fractional_date_time = ScalarValue<date_time_t>{
         date_time.view().value() + std::chrono::microseconds{123456}};
-    const auto bytes = ScalarValue<bg::bytes>{std::array{byte{0x00}, byte{0x7f}, byte{0xff}}};
+    const auto bytes = ScalarValue<hg::bytes>{std::array{byte{0x00}, byte{0x7f}, byte{0xff}}};
 
     CHECK(fmt::format("{}", integer.view()) == "42");
     CHECK(fmt::format("{}", native_integer.view()) == "7");

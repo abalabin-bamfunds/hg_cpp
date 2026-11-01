@@ -1,6 +1,6 @@
-#include <bg/bg.hpp>
+#include <hg/hg.hpp>
 
 int main() {
-    const bg::util::symbol value{"installed-sdk"};
-    return value.has_value() && !bg::version().empty() ? 0 : 1;
+    const hg::util::symbol value{"installed-sdk"};
+    return value.has_value() && !hg::version().empty() ? 0 : 1;
 }

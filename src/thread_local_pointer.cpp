@@ -9,7 +9,7 @@
 #include <pthread.h>
 #endif
 
-namespace bg::util {
+namespace hg::util {
 
 thread_local_pointer::thread_local_pointer() {
 #if defined(_WIN32)
@@ -57,4 +57,4 @@ void thread_local_pointer::set(void *value) noexcept {
 #endif
 }
 
-} // namespace bg::util
+} // namespace hg::util

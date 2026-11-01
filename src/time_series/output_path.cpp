@@ -1,14 +1,14 @@
-#include <bg/time_series/details/output_path.hpp>
+#include <hg/time_series/details/output_path.hpp>
 
-#include <bg/evaluation_context.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 #include <memory>
 
-namespace bg::details {
+namespace hg::details {
 
 class OutputPath {
   public:
@@ -78,4 +78,4 @@ void release_output_path(void *path) noexcept {
     output_path.context().scratch().release_last(&output_path, sizeof(OutputPath));
 }
 
-} // namespace bg::details
+} // namespace hg::details

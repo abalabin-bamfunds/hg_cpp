@@ -1,13 +1,13 @@
-#include <bg/reduce/details/reduce_node_definition.hpp>
+#include <hg/reduce/details/reduce_node_definition.hpp>
 
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/scalar_type.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/scalar_type.hpp>
 
 #include <array>
 #include <limits>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 struct ReduceNodeIdentity {
@@ -174,4 +174,4 @@ CompactReduceNodeDefinition::compile(const ResolvedSignature &, allocator &) con
             .default_parameter = default_parameter_};
 }
 
-} // namespace bg::details
+} // namespace hg::details

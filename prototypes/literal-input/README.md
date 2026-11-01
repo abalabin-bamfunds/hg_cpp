@@ -1,8 +1,8 @@
 # Literal probes
 
-The literal carriers live in `include/bg/literal/`. Scalar construction lives in
-`include/bg/scalar/literal.hpp`; owning value transfer lives in
-`include/bg/scalar/value.hpp`. See the
+The literal carriers live in `include/hg/literal/`. Scalar construction lives in
+`include/hg/scalar/literal.hpp`; owning value transfer lives in
+`include/hg/scalar/value.hpp`. See the
 [literal API](../../docs/development/design/scalar-api.md#literals) for source lifetimes and scalar
 construction, and the [node API](../../docs/development/design/node-api.md) for `Out::apply()`.
 
@@ -12,8 +12,8 @@ read-only dependency checkouts:
 
 ```sh
 cmake -S prototypes/literal-input -B build/prototypes/literal-input -G Ninja \
-  -DFETCHCONTENT_SOURCE_DIR_TPACK=/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/tpack-src \
-  -DFETCHCONTENT_SOURCE_DIR_DDVISITOR=/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src
+  -DFETCHCONTENT_SOURCE_DIR_TPACK=/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/tpack-src \
+  -DFETCHCONTENT_SOURCE_DIR_DDVISITOR=/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src
 cmake --build build/prototypes/literal-input --target literal_input_probe -j2
 build/prototypes/literal-input/literal_input_probe
 cmake --build build/prototypes/literal-input --target literal_time_series_apply_probe -j2
@@ -30,9 +30,9 @@ different allocator while an outer scalar allocation context is active.
 caller-owned scalar visitor mux:
 
 ```cpp
-auto visitor = ddv::make_visitable_visitor<bg::ScalarVisitTypes>(
-    std::tuple<>{}, [](const bg::Scalar<bg::i64> *value) { (void)value->value(); }, ddv::noop);
-auto &scalar_types = static_cast<bg::ScalarVisitTypes &>(visitor);
+auto visitor = ddv::make_visitable_visitor<hg::ScalarVisitTypes>(
+    std::tuple<>{}, [](const hg::Scalar<hg::i64> *value) { (void)value->value(); }, ddv::noop);
+auto &scalar_types = static_cast<hg::ScalarVisitTypes &>(visitor);
 item.accept(scalar_types);
 ```
 
@@ -42,36 +42,36 @@ borrowed construction callbacks and recursively initialize lists, sets,
 dictionaries, compound scalars, and bundles:
 
 ```cpp
-auto nested = bg::ScalarValue<bg::List<bg::List<bg::i64>>>::from_literal(
+auto nested = hg::ScalarValue<hg::List<hg::List<hg::i64>>>::from_literal(
     {{1, 2}, {}, {3}});
 
-auto dictionary = bg::ScalarValue<bg::Dict<bg::string, bg::List<bg::i64>>>::from_literal(
+auto dictionary = hg::ScalarValue<hg::Dict<hg::string, hg::List<hg::i64>>>::from_literal(
     {{"a", {1, 2}}, {"b", {3, 4}}});
 
-auto set = bg::ScalarValue<bg::Set<bg::i64>>::from_literal({1, 2, 2});
+auto set = hg::ScalarValue<hg::Set<hg::i64>>::from_literal({1, 2, 2});
 
 struct Point {
-    bg::i64 x;
-    const bg::i64 y;
+    hg::i64 x;
+    const hg::i64 y;
 };
-auto point = bg::ScalarValue<Point>::from_literal({{"y", 2}, {"x", 1}});
+auto point = hg::ScalarValue<Point>::from_literal({{"y", 2}, {"x", 1}});
 
 template <template <typename, auto...> typename Field> struct Record {
-    Field<bg::List<bg::i64>> values;
-    Field<bg::i64, bg::optional> note;
+    Field<hg::List<hg::i64>> values;
+    Field<hg::i64, hg::optional> note;
 };
-auto memory = bg::allocator{};
-auto record = bg::ScalarValue<bg::Bundle<Record>>::from_literal(
+auto memory = hg::allocator{};
+auto record = hg::ScalarValue<hg::Bundle<Record>>::from_literal(
     {{"values", {1, 2}}}, memory);
 
-const auto &item_runtime = bg::cpp_scalar_runtime_type<bg::i64>();
-const auto &inner_type = bg::list_scalar_type(item_runtime.type());
-const auto inner_available = std::array<const bg::ScalarRuntimeType *, 1>{&item_runtime};
-const auto &inner_runtime = bg::resolve_scalar_runtime_type(inner_type, inner_available);
-const auto &outer_type = bg::list_scalar_type(inner_type);
-const auto outer_available = std::array<const bg::ScalarRuntimeType *, 1>{&inner_runtime};
-const auto &runtime_type = bg::resolve_scalar_runtime_type(outer_type, outer_available);
-auto erased = bg::ScalarValue<>::from_literal(runtime_type, {{1, 2}, {}, {3}});
+const auto &item_runtime = hg::cpp_scalar_runtime_type<hg::i64>();
+const auto &inner_type = hg::list_scalar_type(item_runtime.type());
+const auto inner_available = std::array<const hg::ScalarRuntimeType *, 1>{&item_runtime};
+const auto &inner_runtime = hg::resolve_scalar_runtime_type(inner_type, inner_available);
+const auto &outer_type = hg::list_scalar_type(inner_type);
+const auto outer_available = std::array<const hg::ScalarRuntimeType *, 1>{&inner_runtime};
+const auto &runtime_type = hg::resolve_scalar_runtime_type(outer_type, outer_available);
+auto erased = hg::ScalarValue<>::from_literal(runtime_type, {{1, 2}, {}, {3}});
 ```
 
 Sequence syntax, field validation, allocator ownership, and failure cleanup
@@ -86,7 +86,7 @@ optionally through `ScalarDispatch`; see [the scalar API](../../docs/development
 TSL, TSB, TSD, and TSS outputs:
 
 ```cpp
-#include <bg/literal/time_series_literal.hpp>
+#include <hg/literal/time_series_literal.hpp>
 
 scalar_output.apply(42);
 list_output.apply({{0, 10}, {2, 30}});
@@ -154,11 +154,11 @@ c++ -std=c++23 -fsanitize=address,undefined -fsanitize-address-use-after-scope \
   -fno-omit-frame-pointer \
   -Iprototypes/literal-input/include -Iinclude \
   -Itests/value/scalar \
-  -I/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
-  -I/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
   prototypes/literal-input/probe.cpp tests/value/scalar/test_scalar_provider.cpp \
-  -Lbuild/prototypes/literal-input/bg \
-  -Wl,-rpath,$PWD/build/prototypes/literal-input/bg -lbg \
+  -Lbuild/prototypes/literal-input/hg \
+  -Wl,-rpath,$PWD/build/prototypes/literal-input/hg -lhg \
   -o build/prototypes/literal-input/literal_input_probe_asan
 ASAN_OPTIONS=detect_stack_use_after_return=1:detect_stack_use_after_scope=1:detect_leaks=0 \
   UBSAN_OPTIONS=print_stacktrace=1 build/prototypes/literal-input/literal_input_probe_asan
@@ -168,16 +168,16 @@ The time-series probe can also run under ASan and UBSan while linking the
 normal lane-local engine library:
 
 ```sh
-/home/abalabin/miniforge3/envs/bg-build/bin/c++ -std=c++23 \
+/home/abalabin/miniforge3/envs/hg-build/bin/c++ -std=c++23 \
   -fsanitize=address,undefined -fsanitize-address-use-after-scope \
   -fno-omit-frame-pointer \
   -Iprototypes/literal-input/include -Iinclude -Itests/value/scalar \
-  -I/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
-  -I/home/abalabin/_bg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
   prototypes/literal-input/time_series_apply_probe.cpp tests/value/scalar/test_scalar_provider.cpp \
-  -Lbuild/prototypes/literal-input/bg \
-  -Wl,-rpath,/home/abalabin/_bg/.lanes/literal-input-prototype/build/prototypes/literal-input/bg \
-  -lbg -o build/prototypes/literal-input/literal_time_series_apply_probe_asan
+  -Lbuild/prototypes/literal-input/hg \
+  -Wl,-rpath,/home/abalabin/_hg/.lanes/literal-input-prototype/build/prototypes/literal-input/hg \
+  -lhg -o build/prototypes/literal-input/literal_time_series_apply_probe_asan
 ASAN_OPTIONS=detect_stack_use_after_return=1:detect_stack_use_after_scope=1:detect_leaks=0 \
   UBSAN_OPTIONS=print_stacktrace=1 build/prototypes/literal-input/literal_time_series_apply_probe_asan
 ```

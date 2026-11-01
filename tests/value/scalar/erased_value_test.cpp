@@ -1,5 +1,5 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,7 +8,7 @@
 #include <string_view>
 #include <typeinfo>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("an erased scalar value copies a borrowed value",
           "[value][scalar][erased][feature:scalar-api][scalar:generic]") {
@@ -33,7 +33,7 @@ TEST_CASE("an erased scalar value stores a pointer-sized borrowed value inline",
           "[value][scalar][erased][feature:scalar-api][scalar:generic][scalar:integer][storage:inline]") {
     const auto source_value = i64{42};
     const auto source = Scalar<i64>::from(source_value);
-    auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
+    auto allocator = hg::allocator{*std::pmr::null_memory_resource()};
     const auto value = ScalarValue<>{source, allocator};
 
     CHECK(*scalar_cast<i64>(value) == source_value);

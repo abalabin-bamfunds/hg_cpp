@@ -1,6 +1,6 @@
-#include <bg/type/guarantee_parameter.hpp>
+#include <hg/type/guarantee_parameter.hpp>
 
-namespace bg {
+namespace hg {
 
 bool GuaranteeParameter::match(TimeSeriesGuarantee supplied, TypeMap &type_map) const {
     if (const auto resolved = value()) {
@@ -26,4 +26,4 @@ TimeSeriesGuarantee GuaranteeParameter::resolve(const TypeMap &type_map) const {
     return guarantee_variable->resolve(type_map);
 }
 
-} // namespace bg
+} // namespace hg

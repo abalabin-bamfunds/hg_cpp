@@ -1,13 +1,13 @@
-#include <bg/graph/nested_graph.hpp>
+#include <hg/graph/nested_graph.hpp>
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 
 void NestedGraph::start(const CompiledNestedGraph &compiled, RuntimeGraphEvaluator &evaluator,
                         EvaluationContext &context, std::span<const NestedGraphInput> inputs,
@@ -155,4 +155,4 @@ void NestedGraph::stop_and_destroy(EvaluationContext &context) noexcept {
     destroy_stopped(context);
 }
 
-} // namespace bg
+} // namespace hg

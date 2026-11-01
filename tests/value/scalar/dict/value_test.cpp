@@ -1,6 +1,6 @@
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a scalar dictionary owns and exposes its entries",
           "[value][scalar][dict][scalar:dict][feature:scalar-collection]") {

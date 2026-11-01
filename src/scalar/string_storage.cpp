@@ -1,9 +1,9 @@
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/details/string_storage.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/string_builder.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/details/string_storage.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/string_builder.hpp>
 
 #include <algorithm>
 #include <cstring>
@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 namespace {
 
@@ -178,9 +178,9 @@ void StringStorage::set_size(std::size_t size) {
     mutable_data()[size] = '\0';
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 StringBuilder::StringBuilder() {
     auto memory = allocator{};
@@ -275,9 +275,9 @@ ScalarValue<string> StringBuilder::finish() && {
     return result;
 }
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 CppScalarRuntimeType<string>::CppScalarRuntimeType()
     : Base{cpp_scalar_type<string>(), shared_handle_flag} {}
@@ -343,4 +343,4 @@ void CppScalarRuntimeType<string>::do_assign_from_input(void *destination, const
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,9 +1,9 @@
-#include <bg/graph.hpp>
-#include <bg/details/graph_run.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/time_series/tick_serializer.hpp>
+#include <hg/graph.hpp>
+#include <hg/details/graph_run.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/time_series/tick_serializer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -171,7 +171,7 @@ TEST_CASE("run_graph compares runtime-typed scalar bundle literals",
 class ExtensionTimeSeriesType final : public TimeSeriesType {
   public:
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
     void format_name(std::string &result) const override { result += "test_extension"; }
 };
 
@@ -266,7 +266,7 @@ class StatefulExtensionTimeSeriesType final : public TimeSeriesType {
     StatefulExtensionTimeSeriesType() : TimeSeriesType{TimeSeriesGuarantee::ordinary} {}
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
     void format_name(std::string &result) const override { result += "test_stateful_extension"; }
 };
 

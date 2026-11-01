@@ -1,18 +1,18 @@
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/service_catalogue.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/service_catalogue.hpp>
 
-#include <bg/graph/details/service_instance_registry.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/context.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/details/service_instance_registry.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include "time_series/ref/ref_node.hpp"
 #include "operator_resolution_cache.hpp"
@@ -23,7 +23,7 @@
 #include <limits>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 struct GraphWiring::PendingNodeCall {
     enum class State : std::uint8_t { pending, resolving, resolved };
@@ -1207,9 +1207,9 @@ std::size_t GraphWiring::output_index(WiringPoint point) const {
     return point.record()->wired_output_index();
 }
 
-} // namespace bg
+} // namespace hg
 
-namespace bg {
+namespace hg {
 
 WiringPoint GraphWiring::require_inherited_time_series(details::NestedBindingIdentity identity, util::symbol name,
                                                        const TimeSeriesType &type) {
@@ -1401,4 +1401,4 @@ std::size_t GraphWiring::output_node_index(WiringPoint point) const {
     return node_index;
 }
 
-} // namespace bg
+} // namespace hg

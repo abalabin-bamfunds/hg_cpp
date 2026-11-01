@@ -1,16 +1,16 @@
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
-#include <bg/graph/details/wiring_materialisation.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_error.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/details/wiring_argument_descriptor.hpp>
+#include <hg/graph/details/wiring_materialisation.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_error.hpp>
 #include "time_series/ref/ref_node.hpp"
 
 #include <algorithm>
 #include <memory>
 #include <optional>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class OutputWiringRecord final : public details::WiringRecord {
@@ -331,4 +331,4 @@ WiringPoint GraphWiring::materialisation_form(WiringPoint point, const TimeSerie
     return result;
 }
 
-} // namespace bg
+} // namespace hg

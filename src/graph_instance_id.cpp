@@ -1,10 +1,10 @@
-#include <bg/graph/graph_instance_id.hpp>
+#include <hg/graph/graph_instance_id.hpp>
 
 #include <atomic>
 #include <limits>
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 namespace {
 
 std::atomic<std::uint64_t> next_graph_instance_id{1};
@@ -32,4 +32,4 @@ GraphInstanceId GraphInstanceIdAllocator::reserve_ids(std::uint64_t count) {
     }
 }
 
-} // namespace bg
+} // namespace hg

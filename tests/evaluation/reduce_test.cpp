@@ -1,15 +1,15 @@
-#include <bg/graph.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/reduce.hpp>
-#include <bg/reduce/details/reduce_graph_argument.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/switch.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/graph.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/reduce.hpp>
+#include <hg/reduce/details/reduce_graph_argument.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/switch.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -19,8 +19,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct ReduceBundle {
     Field<TS<i64>> left;
@@ -39,7 +39,7 @@ TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
         return reduce(add_graph, values);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}, {{1, 3}, {2, 6}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}, {{1, 3}, {2, 6}}});
 
     CHECK(actual.equals<i64>({5, 7, 9}));
 }
@@ -50,7 +50,7 @@ TEST_CASE("reduce carries an odd item to the next level of its tree",
         return reduce(add_graph, values);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 4}, {3, 7}}, {{1, 2}, {2, 5}, {3, 8}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 4}, {3, 7}}, {{1, 2}, {2, 5}, {3, 8}}});
 
     CHECK(actual.equals<i64>({12, 15}));
 }
@@ -66,7 +66,7 @@ TEST_CASE("reduce combines final TSD items with a nested reducer",
         return reduce(add_graph, final_values());
     };
 
-    const auto actual = bg::run_graph(tested);
+    const auto actual = hg::run_graph(tested);
 
     CHECK(actual.equals<i64>({7}));
 }
@@ -87,7 +87,7 @@ TEST_CASE("compact reduce does not propagate a dirty path when a child reducer d
         return reduce(suppress_selected_value, dictionary);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 2}, {3, 3}, {4, 4}}, {{1, 99}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 2}, {3, 3}, {4, 4}}, {{1, 99}}});
 
     CHECK(actual.equals<i64>({10, std::nullopt}));
 }
@@ -140,8 +140,8 @@ TEST_CASE("compact reduce does not republish an unchanged root when membership c
         auto context_scope = with_context("factor"_n = factor);
         return reduce(suppress_selected_value_with_context, make_dictionary(initialize));
     };
-    const auto compact_output = bg::run_graph(compact_graph, {true, false});
-    const auto fallback_output = bg::run_graph(fallback_graph, {true, false}, {0, 0});
+    const auto compact_output = hg::run_graph(compact_graph, {true, false});
+    const auto fallback_output = hg::run_graph(fallback_graph, {true, false}, {0, 0});
 
     CHECK(compact_output.equals<i64>({10, std::nullopt}));
     CHECK(fallback_output.equals<i64>({10, std::nullopt}));
@@ -164,7 +164,7 @@ TEST_CASE("nested reduce preserves the reducer selected for reference-backed inp
         return reduce(representation_sensitive_graph, dictionary);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}, {2, 4}}});
+    const auto actual = hg::run_graph(tested, {{{1, 3}, {2, 4}}});
 
     CHECK(actual.equals<i64>({7}));
 }
@@ -184,7 +184,7 @@ TEST_CASE("nested reduce tracks keys when a sampled TSD reassigns physical item 
         return reduce(add_graph, selected);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{10, 2}, {20, 3}, {30, 5}}, {{10, 2}, {20, 3}, {30, 5}},
                  {{10, 2}, {20, 3}, {30, 5}}, {{10, 2}, {20, 3}, {30, 5}}},
         {{{30, 6}, {20, 4}, {10, 3}}, {{30, 6}, {20, 4}, {10, 3}},
@@ -217,7 +217,7 @@ TEST_CASE("compact reduce handles addition that reuses an expired physical item 
 
     const auto tested = [=](wp<TS<i64>> phase) { return reduce(add_graph, make_dictionary(phase)); };
 
-    const auto actual = bg::run_graph(tested, {0, 1, 2});
+    const auto actual = hg::run_graph(tested, {0, 1, 2});
 
     REQUIRE(actual.size() == 3);
     CHECK((actual[0] && scalar_cast<i64>(actual[0]->view()).value() == 5));
@@ -243,7 +243,7 @@ TEST_CASE("compact reduce updates a sparse path in a larger TSD",
         return reduce(add_graph, make_dictionary(initialize, changed_key, changed_value));
     };
 
-    const auto actual = bg::run_graph(tested, {true, false}, {32, 32}, {100, 100});
+    const auto actual = hg::run_graph(tested, {true, false}, {32, 32}, {100, 100});
 
     CHECK(actual.equals<i64>({2080, 2148}));
 }
@@ -275,7 +275,7 @@ TEST_CASE("compact reduce timestamps a replacement input in its cycle and leaves
         CHECK(candidate.graph.compact_graph.has_value());
     });
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 1}, {2, 2}, {3, 3}}, {{1, literal::REMOVE}}, {{3, 30}}});
 
     CHECK(actual.equals<i64>({6, 5, 32}));
@@ -304,7 +304,7 @@ TEST_CASE("reduce combines final TSD items through a context-dependent fallback 
         return reduce(context_add_graph, final_values());
     };
 
-    const auto actual = bg::run_graph(tested, {10});
+    const auto actual = hg::run_graph(tested, {10});
 
     CHECK(actual.equals<i64>({17}));
 }
@@ -331,7 +331,7 @@ TEST_CASE("reduce retains untouched multi-node results and passive input state",
         return reduce(multi_node_passive_reducer, dictionary);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 2}, {3, 3}, {4, 4}}, {{1, 10}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 2}, {3, 3}, {4, 4}}, {{1, 10}}});
 
     CHECK(actual.equals<i64>({310, 119}));
 }
@@ -342,7 +342,7 @@ TEST_CASE("reduce adapts a generic lambda to the TSD item type",
         return reduce([](auto first, auto second) { return add_values(first, second); }, values);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}});
 
     CHECK(actual.equals<i64>({5, 7}));
 }
@@ -354,7 +354,7 @@ TEST_CASE("reduce carries inherited context references into its reducer graphs",
         return reduce(context_add_graph, dictionary);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}},
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}},
                                             {10, 20});
 
     CHECK(actual.equals<i64>({15, 27}));
@@ -378,7 +378,7 @@ TEST_CASE("reduce fallback reads values from reference TSD items with inherited 
         return reduce(context_add_graph, retain_references(install, first_value, second_value));
     };
 
-    const auto actual = bg::run_graph(tested, {3, 4, 5}, {8, 9, 10}, {true, false, false}, {2, 2, 2});
+    const auto actual = hg::run_graph(tested, {3, 4, 5}, {8, 9, 10}, {true, false, false}, {2, 2, 2});
 
     CHECK(actual.equals<i64>({13, 15, 17}));
 }
@@ -391,7 +391,7 @@ TEST_CASE("reduce publishes a singleton fallback value after retiring a pair gra
         return reduce(context_add_graph, dictionary);
     };
 
-    const auto actual = bg::run_graph(tested,
+    const auto actual = hg::run_graph(tested,
                                             {{{1, 3}, {2, 5}}, {{1, 4}, {2, literal::REMOVE}}, {{1, 7}}},
                                             {2, 2, 2});
 
@@ -414,7 +414,7 @@ TEST_CASE("reduce fallback refreshes a singleton reference item after selection 
         return reduce(context_add_graph, retain_reference(install, command));
     };
 
-    const auto actual = bg::run_graph(tested, {5, literal::INVALID, 9}, {true, false, false}, {2, 2, 2});
+    const auto actual = hg::run_graph(tested, {5, literal::INVALID, 9}, {true, false, false}, {2, 2, 2});
 
     CHECK(actual.equals<i64>({5, std::nullopt, 9}));
 }
@@ -425,7 +425,7 @@ TEST_CASE("reduce updates its tree when TSD membership changes and uses the defa
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, literal::REMOVE}}, {{1, 3}, {2, 6}},
                  {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
@@ -445,7 +445,7 @@ TEST_CASE("reduce omits invalid items while valid items remain",
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
-    const auto actual = bg::run_graph(tested, {{{1, 5}, {2, literal::INVALID}}});
+    const auto actual = hg::run_graph(tested, {{{1, 5}, {2, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({5}));
 }
@@ -455,7 +455,7 @@ TEST_CASE("reduce uses the default when a valid TSD has keys but no valid items"
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
-    const auto actual = bg::run_graph(tested, {{{1, literal::INVALID}, {2, literal::INVALID}}});
+    const auto actual = hg::run_graph(tested, {{{1, literal::INVALID}, {2, literal::INVALID}}});
 
     CHECK(actual.equals<i64>({20}));
 }
@@ -468,7 +468,7 @@ const auto namespace_scope_reduce_with_default = graph(
 
 TEST_CASE("reduce uses the default when a valid TSD is empty",
           "[feature:reduce][series:tsd][validity:optional][transition:removal]") {
-    const auto actual = bg::run_graph(namespace_scope_reduce_with_default, {{}});
+    const auto actual = hg::run_graph(namespace_scope_reduce_with_default, {{}});
 
     CHECK(actual.equals<i64>({20}));
 }
@@ -478,7 +478,7 @@ TEST_CASE("reduce does not use the default when the TSD is invalid",
     const auto tested = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return reduce(add_graph, dictionary, "default"_n = i64{20});
     };
-    const auto actual = bg::run_graph(tested, {literal::SKIP});
+    const auto actual = hg::run_graph(tested, {literal::SKIP});
 
     CHECK(actual.equals<i64>({std::nullopt}));
 }
@@ -499,7 +499,7 @@ TEST_CASE("reduce follows a stable reference to a single TSD item",
             return wp<TS<i64>>{reduce(add_graph, retain_reference(install, command))};
         });
 
-    const auto actual = bg::run_graph(tested, {5, literal::INVALID, 9}, {true, false, false});
+    const auto actual = hg::run_graph(tested, {5, literal::INVALID, 9}, {true, false, false});
 
     CHECK(actual.equals<i64>({5, std::nullopt, 9}));
 }
@@ -522,7 +522,7 @@ TEST_CASE("reduce follows stable TSD references as initially invalid items becom
             return wp<TS<i64>>{reduce(add_graph, retain_references(install, first_command, second_command))};
         });
 
-    const auto actual = bg::run_graph(tested, {5, 6, 7, 8},
+    const auto actual = hg::run_graph(tested, {5, 6, 7, 8},
                                       {literal::INVALID, 9, literal::INVALID, 11}, {true, false, false, false});
 
     REQUIRE(actual.size() == 4);
@@ -550,7 +550,7 @@ TEST_CASE("reduce forwards non-scalar TSD item references",
         return reduce(add_lists_graph, values);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, {{0, 10}, {1, 20}}}}, {{2, {{0, 30}, {1, 40}}}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals({{{0, 10}, {1, 20}}, {{0, 40}, {1, 60}}, {{0, 30}, {1, 40}}}));
@@ -583,7 +583,7 @@ TEST_CASE("reduce accepts reference-wrapped non-scalar TSD items",
         return reduce(add_lists_graph, values);
     };
 
-    const auto actual = bg::run_graph(tested,
+    const auto actual = hg::run_graph(tested,
                                       ticks({{{0, 1}, {1, 1}}, {{0, 2}, {1, 2}}}),
                                       ticks({{{0, 10}, {1, 10}}, {{0, 20}, {1, 20}}}),
                                       ticks({true, false}));
@@ -619,7 +619,7 @@ TEST_CASE("reduce accepts TSD values",
         return reduce(merge_graph, values);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, {{1, 2}, {2, 3}}}, {2, {{1, 5}, {3, 7}}}}});
+    const auto actual = hg::run_graph(tested, {{{1, {{1, 2}, {2, 3}}}, {2, {{1, 5}, {3, 7}}}}});
 
     CHECK(actual.equals({{{1, 2}, {2, 3}, {3, 7}}}));
 }
@@ -638,7 +638,7 @@ TEST_CASE("reduce maps and combines nested dictionaries",
 
     const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) { return reduce(merge, values); };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{1, 1}, {2, 2}}}},
          {{2, {{1, 3}, {2, 4}}}},
@@ -673,7 +673,7 @@ TEST_CASE("reduce maps a projected bundle of nested dictionaries",
         return reduce(merge, projected);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, {{1, 1}}}, {2, {{1, 2}}}}});
+    const auto actual = hg::run_graph(tested, {{{1, {{1, 1}}}, {2, {{1, 2}}}}});
 
     CHECK(actual.equals({{{1, 3}}}));
 }
@@ -691,7 +691,7 @@ TEST_CASE("reduce accepts TSS values",
                                    });
     const auto tested = [&](wp<TSD<i64, TSS<i64>>> values) { return reduce(merge_graph, values); };
 
-    const auto actual = bg::run_graph(tested, {{{1, {1, 2}}, {2, {2, 3}}}});
+    const auto actual = hg::run_graph(tested, {{{1, {1, 2}}, {2, {2, 3}}}});
 
     CHECK(actual.equals({{1, 2, 3}}));
 }
@@ -712,7 +712,7 @@ TEST_CASE("reduce accepts TSB values",
         return reduce(add_bundles_graph, values);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, {{"left", 1}, {"right", 2}}}, {2, {{"left", 10}, {"right", 20}}}}});
 
     CHECK(actual.equals({{{"left", 11}, {"right", 22}}}));
@@ -728,7 +728,7 @@ TEST_CASE("reduce accepts a non-scalar default whose type is also TSD",
         return reduce(empty_reducer, empty_values, "default"_n = fallback);
     };
 
-    const auto actual = bg::run_graph(tested, {{}}, {{{1, 42}}});
+    const auto actual = hg::run_graph(tested, {{}}, {{{1, 42}}});
 
     CHECK(actual.equals({{{1, 42}}}));
 }
@@ -743,7 +743,7 @@ TEST_CASE("reduce forwards updates from a non-scalar default while empty",
         return reduce(empty_reducer, empty_values, "default"_n = fallback);
     };
 
-    const auto actual = bg::run_graph(tested, {{}}, {{{1, 11}}, {{1, 22}}, {{1, 33}}, {{1, 44}}});
+    const auto actual = hg::run_graph(tested, {{}}, {{{1, 11}}, {{1, 22}}, {{1, 33}}, {{1, 44}}});
 
     CHECK(actual.equals({{{1, 11}}, {{1, 22}}, {{1, 33}}, {{1, 44}}}));
 }
@@ -765,7 +765,7 @@ TEST_CASE("reduce republishes a changed non-scalar default reference",
         return reduce(empty_reducer, empty_values, "default"_n = fallback);
     };
 
-    const auto actual = bg::run_graph(tested, {false, true}, {{}}, {{{1, 11}}}, {{{1, 22}}});
+    const auto actual = hg::run_graph(tested, {false, true}, {{}}, {{{1, 11}}}, {{{1, 22}}});
 
     CHECK(actual.equals({{{1, 11}}, {{1, 22}}}));
 }
@@ -790,7 +790,7 @@ TEST_CASE("reduce invalidates and revalidates a non-scalar default reference",
         return reduce(empty_reducer, empty_values, "default"_n = selected);
     };
 
-    const auto actual = bg::run_graph(tested, {true, false, true}, {{}}, {{{1, 11}}, {{1, 22}}, {{1, 33}}});
+    const auto actual = hg::run_graph(tested, {true, false, true}, {{}}, {{{1, 11}}, {{1, 22}}, {{1, 33}}});
 
     CHECK(actual.equals({{{1, 11}}, literal::INVALID, {{1, 33}}}));
 }
@@ -811,7 +811,7 @@ TEST_CASE("reduce preserves a non-scalar default reference while its target inva
         return observe(reduced, reduced);
     };
 
-    const auto actual = bg::run_graph(tested, {{}},
+    const auto actual = hg::run_graph(tested, {{}},
                                       {{{0, 11}, {1, 22}},
                                        {{0, literal::INVALID}, {1, literal::INVALID}},
                                        {{0, 11}, {1, 22}},
@@ -837,7 +837,7 @@ TEST_CASE("reduce combines values selected by a switch in each mapped item",
         return reduce(add_graph, selected, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 1}, {2, 2}}, {{1, 2}, {2, literal::REMOVE}},
                  {{1, 0}, {2, 1}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
@@ -854,7 +854,7 @@ TEST_CASE("nested reductions update independently as outer dictionary entries ch
         return reduce(add_graph, totals, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{1, 1}, {2, 2}}}, {2, {{1, 10}}}},
          {{1, {{2, 5}}}, {2, {{1, 20}}}},
@@ -878,7 +878,7 @@ TEST_CASE("switch can select a graph that reduces its dictionary input",
                        values);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {1, 2, 1}, {{{1, 1}, {2, 2}}, {{1, 3}, {2, literal::REMOVE}}, {{2, 4}}});
 
     CHECK(actual.equals<i64>({3, 13, 7}));
@@ -896,7 +896,7 @@ TEST_CASE("an empty reduction uses its default again after an outputless switch 
                        values);
     };
 
-    const auto actual = bg::run_graph(tested, ticks({1, 2, 1}), ticks({{}, {}, {}}));
+    const auto actual = hg::run_graph(tested, ticks({1, 2, 1}), ticks({{}, {}, {}}));
 
     CHECK(actual.equals<i64>({20, std::nullopt, 20}));
 }
@@ -919,7 +919,7 @@ TEST_CASE("mapped reductions apply each parent's switch to its own total across 
         return reduce(add_graph, selected, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{10, 1}}}, {2, {{10, 2}}}},
          {{1, {{10, 3}}}, {2, {{10, 4}}}},

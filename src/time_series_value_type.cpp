@@ -1,14 +1,14 @@
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTimeSeriesValueType final : public TimeSeriesValueType {
@@ -94,4 +94,4 @@ const Type &GenericTimeSeriesValueType::resolve(const TypeMap &type_map) const {
     return time_series_value_type(*scalar_type, guarantee().resolve(type_map));
 }
 
-} // namespace bg
+} // namespace hg

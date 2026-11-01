@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/allocator.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util::details {
+namespace hg::util::details {
 
 inline void require_supported_alignment(std::size_t alignment) {
     if (alignment == 1) {
@@ -32,19 +32,19 @@ inline std::size_t alignment_padding(std::size_t offset, std::size_t alignment) 
 class block_pointer;
 
 struct alignas(std::max_align_t) allocation_control {
-    explicit allocation_control(bg::allocator allocator) : allocator{allocator} {}
+    explicit allocation_control(hg::allocator allocator) : allocator{allocator} {}
 
     void retain() noexcept { references.fetch_add(1, std::memory_order_relaxed); }
 
-    bg::allocator allocator;
+    hg::allocator allocator;
     std::atomic<std::size_t> references{1};
 };
 
 struct buffer_block : allocation_control {
-    buffer_block(bg::allocator allocator, std::size_t capacity, std::size_t committed)
+    buffer_block(hg::allocator allocator, std::size_t capacity, std::size_t committed)
         : allocation_control{allocator}, capacity{capacity}, committed{committed} {}
 
-    static buffer_block *create(bg::allocator allocator, std::size_t capacity) {
+    static buffer_block *create(hg::allocator allocator, std::size_t capacity) {
         if (capacity == 0) {
             throw std::invalid_argument{"buffer capacity must be positive"};
         }
@@ -68,11 +68,11 @@ struct buffer_block : allocation_control {
 };
 
 struct single_writer_block : buffer_block {
-    single_writer_block(bg::allocator allocator, std::size_t capacity, std::size_t committed,
+    single_writer_block(hg::allocator allocator, std::size_t capacity, std::size_t committed,
                         std::size_t preferred_capacity)
         : buffer_block{allocator, capacity, committed}, preferred_capacity{preferred_capacity} {}
 
-    static single_writer_block *create(bg::allocator allocator, std::size_t payload_capacity,
+    static single_writer_block *create(hg::allocator allocator, std::size_t payload_capacity,
                                        std::size_t preferred_capacity) {
         constexpr auto data_offset = sizeof(single_writer_block);
         constexpr auto prefix = data_offset - sizeof(buffer_block);
@@ -117,7 +117,7 @@ struct concurrent_writer_block : buffer_block {
     static constexpr std::uint32_t maximum_sequence = sequence_mask;
     static constexpr std::uint64_t empty_commit_value = std::uint64_t{UINT32_MAX} << 32;
 
-    concurrent_writer_block(bg::allocator allocator, std::size_t capacity, std::size_t committed,
+    concurrent_writer_block(hg::allocator allocator, std::size_t capacity, std::size_t committed,
                             std::size_t block_capacity, std::size_t ring_capacity)
         : buffer_block{allocator, capacity, committed} {
         control.block_capacity = static_cast<std::uint32_t>(block_capacity);
@@ -132,7 +132,7 @@ struct concurrent_writer_block : buffer_block {
         return fixed_prefix + ring_capacity * sizeof(commit_slot);
     }
 
-    static concurrent_writer_block *create(bg::allocator allocator, std::size_t payload_capacity,
+    static concurrent_writer_block *create(hg::allocator allocator, std::size_t payload_capacity,
                                            std::size_t block_capacity, std::size_t ring_capacity) {
         const auto offset = data_offset(ring_capacity);
         if (payload_capacity == 0) {
@@ -434,7 +434,7 @@ inline concurrent_writer_block *concurrent_writer_block::next_for_reservation(st
     return expected;
 }
 
-inline concurrent_writer_block *new_concurrent_writer_block(bg::allocator allocator, std::size_t block_capacity,
+inline concurrent_writer_block *new_concurrent_writer_block(hg::allocator allocator, std::size_t block_capacity,
                                                             std::size_t ring_capacity) {
     if (block_capacity == 0 || block_capacity > UINT32_MAX) {
         throw std::invalid_argument{"buffer blocks must have a positive 32-bit capacity"};
@@ -448,4 +448,4 @@ inline concurrent_writer_block *new_concurrent_writer_block(bg::allocator alloca
 
 using buffer_control = variant_ptr<buffer_block, single_writer_block, concurrent_writer_block>;
 
-} // namespace bg::util::details
+} // namespace hg::util::details

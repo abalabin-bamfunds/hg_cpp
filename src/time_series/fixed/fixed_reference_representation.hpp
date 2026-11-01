@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 const ReferenceRepresentationFactory *fixed_collection_reference_representation_factory() noexcept;
 
-} // namespace bg::details
+} // namespace hg::details

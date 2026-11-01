@@ -1,5 +1,5 @@
-#include <bg/logging.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/logging.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -62,7 +62,7 @@ namespace {
 
 std::filesystem::path log_path() {
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-    return std::filesystem::temp_directory_path() / ("bg_logging_api_" + std::to_string(nonce) + ".log");
+    return std::filesystem::temp_directory_path() / ("hg_logging_api_" + std::to_string(nonce) + ".log");
 }
 
 std::string read_file(const std::filesystem::path &path) {
@@ -72,7 +72,7 @@ std::string read_file(const std::filesystem::path &path) {
 }
 
 auto remove_file_on_exit(const std::filesystem::path &path) {
-    return bg::util::scope_exit{[path]() noexcept {
+    return hg::util::scope_exit{[path]() noexcept {
         auto error = std::error_code{};
         std::filesystem::remove(path, error);
     }};
@@ -80,10 +80,10 @@ auto remove_file_on_exit(const std::filesystem::path &path) {
 
 } // namespace
 
-TEST_CASE("BG logging snapshots strings and defers value formatting", "[library][logging]") {
+TEST_CASE("HG logging snapshots strings and defers value formatting", "[library][logging]") {
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
-    bg::logging::initialize({.file = path.string(), .pattern = "{message}"});
+    hg::logging::initialize({.file = path.string(), .pattern = "{message}"});
 
     auto source = std::string{"before"};
     auto view = std::string_view{source};
@@ -96,14 +96,14 @@ TEST_CASE("BG logging snapshots strings and defers value formatting", "[library]
     auto move_only = MoveOnlyFormatProbe{std::make_unique<int>(23)};
 
     auto lock = std::unique_lock{format_mutex};
-    bg::log::info("probe={} view={} array={} tuple={} value={}", probe, view, characters, tuple,
+    hg::log::info("probe={} view={} array={} tuple={} value={}", probe, view, characters, tuple,
                   std::move(move_only));
     source[0] = 'x';
     characters[0] = 'x';
     lock.unlock();
-    bg::log::info("single={}", tuple);
+    hg::log::info("single={}", tuple);
 
-    bg::logging::flush();
+    hg::logging::flush();
     const auto output = read_file(path);
     CHECK(output.find("view=before") != std::string::npos);
     CHECK(output.find("array=a\\x00b") != std::string::npos);
@@ -118,49 +118,49 @@ TEST_CASE("BG logging snapshots strings and defers value formatting", "[library]
     }
 }
 
-TEST_CASE("disabled BG logging calls do not copy arguments", "[library][logging]") {
-    bg::logging::set_level(bg::logging::Level::off);
+TEST_CASE("disabled HG logging calls do not copy arguments", "[library][logging]") {
+    hg::logging::set_level(hg::logging::Level::off);
 
     auto format_mutex = std::mutex{};
     auto formatted_on = std::thread::id{};
     auto copies = 0;
     auto probe = DeferredFormatProbe{17, &format_mutex, &formatted_on, &copies};
-    bg::log::info("disabled {}", probe);
+    hg::log::info("disabled {}", probe);
 
     CHECK(copies == 0);
     CHECK(formatted_on == std::thread::id{});
 }
 
-TEST_CASE("disabled BG logging macros do not evaluate arguments", "[library][logging]") {
-    bg::logging::set_level(bg::logging::Level::off);
+TEST_CASE("disabled HG logging macros do not evaluate arguments", "[library][logging]") {
+    hg::logging::set_level(hg::logging::Level::off);
 
     auto evaluations = 0;
-    BG_LOG_TRACE("trace {}", ++evaluations);
-    BG_LOG_DEBUG("debug {}", ++evaluations);
-    BG_LOG_INFO("info {}", ++evaluations);
-    BG_LOG_WARNING("warning {}", ++evaluations);
-    BG_LOG_ERROR("error {}", ++evaluations);
-    BG_LOG_CRITICAL("critical {}", ++evaluations);
+    HG_LOG_TRACE("trace {}", ++evaluations);
+    HG_LOG_DEBUG("debug {}", ++evaluations);
+    HG_LOG_INFO("info {}", ++evaluations);
+    HG_LOG_WARNING("warning {}", ++evaluations);
+    HG_LOG_ERROR("error {}", ++evaluations);
+    HG_LOG_CRITICAL("critical {}", ++evaluations);
 
     CHECK(evaluations == 0);
 }
 
-TEST_CASE("enabled BG logging macros evaluate arguments once", "[library][logging]") {
+TEST_CASE("enabled HG logging macros evaluate arguments once", "[library][logging]") {
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
-    bg::logging::initialize({.level = bg::logging::Level::trace, .file = path.string(), .pattern = "{message}"});
+    hg::logging::initialize({.level = hg::logging::Level::trace, .file = path.string(), .pattern = "{message}"});
 
     auto evaluations = 0;
-    BG_LOG_TRACE("trace {}", ++evaluations);
-    BG_LOG_DEBUG("debug {}", ++evaluations);
-    BG_LOG_INFO("info {}", ++evaluations);
-    BG_LOG_WARNING("warning {}", ++evaluations);
-    BG_LOG_ERROR("error {}", ++evaluations);
-    BG_LOG_CRITICAL("critical {}", ++evaluations);
-    BG_LOG_INFO("without formatting arguments");
+    HG_LOG_TRACE("trace {}", ++evaluations);
+    HG_LOG_DEBUG("debug {}", ++evaluations);
+    HG_LOG_INFO("info {}", ++evaluations);
+    HG_LOG_WARNING("warning {}", ++evaluations);
+    HG_LOG_ERROR("error {}", ++evaluations);
+    HG_LOG_CRITICAL("critical {}", ++evaluations);
+    HG_LOG_INFO("without formatting arguments");
 
     CHECK(evaluations == 6);
-    bg::logging::flush();
+    hg::logging::flush();
     const auto output = read_file(path);
     CHECK(output.find("trace 1") != std::string::npos);
     CHECK(output.find("debug 2") != std::string::npos);
@@ -171,32 +171,32 @@ TEST_CASE("enabled BG logging macros evaluate arguments once", "[library][loggin
     CHECK(output.find("without formatting arguments") != std::string::npos);
 }
 
-TEST_CASE("BG logging macros are safe in conditionals and shadowed scopes", "[library][logging]") {
+TEST_CASE("HG logging macros are safe in conditionals and shadowed scopes", "[library][logging]") {
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
-    bg::logging::initialize({.file = path.string(), .pattern = "{message}"});
+    hg::logging::initialize({.file = path.string(), .pattern = "{message}"});
 
     const auto condition = true;
     if (condition)
-        BG_LOG_INFO("if branch");
+        HG_LOG_INFO("if branch");
     else
-        BG_LOG_INFO("unexpected else branch");
+        HG_LOG_INFO("unexpected else branch");
 
     if (!condition)
-        BG_LOG_INFO("unexpected if branch");
+        HG_LOG_INFO("unexpected if branch");
     else
-        BG_LOG_INFO("else branch");
+        HG_LOG_INFO("else branch");
 
-    const auto bg = 1;
+    const auto hg = 1;
     const auto logging = 2;
     const auto Level = 3;
     const auto enabled = 4;
     const auto log = 5;
     const auto info = 6;
-    BG_LOG_INFO("shadow-safe branch");
-    CHECK(bg + logging + Level + enabled + log + info == 21);
+    HG_LOG_INFO("shadow-safe branch");
+    CHECK(hg + logging + Level + enabled + log + info == 21);
 
-    ::bg::logging::flush();
+    ::hg::logging::flush();
     const auto output = read_file(path);
     CHECK(output.find("if branch") != std::string::npos);
     CHECK(output.find("else branch") != std::string::npos);

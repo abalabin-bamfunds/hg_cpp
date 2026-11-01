@@ -1,20 +1,20 @@
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
 
-#include <bg/graph/context.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/details/wiring_record_overlay.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_variable.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_variable.hpp>
 
 #include <algorithm>
 
-namespace bg::details {
+namespace hg::details {
 
 void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgumentExpansion expansion) {
     const auto *type = type_cast<TimeSeriesBundleType>(&expansion.bundle.type().target_type());
@@ -571,4 +571,4 @@ NormalizedWiringArguments probe_wiring_arguments(const Signature &signature, std
     return normalize(signature, arguments, false, nullptr, &records, parameter_aliases);
 }
 
-} // namespace bg::details
+} // namespace hg::details

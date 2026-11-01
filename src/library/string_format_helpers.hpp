@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/scalar/scalar.hpp>
+#include <hg/scalar/scalar.hpp>
 
 #include <fmt/args.h>
 
 #include <cstddef>
 #include <utility>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 
 template <typename VALUE>
 void push_format_argument(fmt::dynamic_format_arg_store<fmt::format_context> &store, const char *name,
@@ -36,4 +36,4 @@ void push_scalar_format_argument(fmt::dynamic_format_arg_store<fmt::format_conte
         [&](const auto *) { std::forward<FALLBACK>(push_fallback)(store, name, value); }, ddv::noop);
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

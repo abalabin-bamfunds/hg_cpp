@@ -1,15 +1,15 @@
-#include <bg/graph.hpp>
-#include <bg/map.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/switch.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/map.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/switch.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,8 +21,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct MapReferenceRow {
     Field<TS<i64>> value;
@@ -54,7 +54,7 @@ TEST_CASE("map applies a graph to each TSD item",
         return copy(map(mapped, values));
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}, {2, 10}}, {{1, 4}}, {{2, 20}}, {{1, literal::REMOVE}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 10}}, {{1, 4}}, {{2, 20}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals({{{1, 2}, {2, 11}}, {{1, 5}}, {{2, 21}}, {{1, literal::REMOVE}}}));
 }
@@ -90,7 +90,7 @@ TEST_CASE("map removes an output item while its result is invalid when valid_ite
         return observe_keys(command, map(identity, values, "__valid_items__"_n = true));
     };
 
-    bg::run_graph(tested, std::array{1, 2, 3, 4, 5});
+    hg::run_graph(tested, std::array{1, 2, 3, 4, 5});
 
     CHECK(observed == std::vector<i64>{1, 0, 2, 0, 2});
 }
@@ -114,7 +114,7 @@ TEST_CASE("map omits an item when its graph output is nothing",
         return observe(trigger, map(nothing, build_values(value), "__valid_items__"_n = true));
     };
 
-    CHECK(bg::run_graph(tested, {true, false, true}, {10, 20, 30}).equals({true, false, true}));
+    CHECK(hg::run_graph(tested, {true, false, true}, {10, 20, 30}).equals({true, false, true}));
     CHECK(observed == std::vector<bool>{false, false, false});
 }
 
@@ -146,7 +146,7 @@ TEST_CASE("map valid_items mode does not share runtime identity with ordinary ou
         return observe_keys(command, filtered, ordinary);
     };
 
-    bg::run_graph(tested, std::array{1, 2, 3});
+    hg::run_graph(tested, std::array{1, 2, 3});
 
     CHECK(observed == std::vector<i64>{3, 2, 3});
 }
@@ -183,7 +183,7 @@ TEST_CASE("map valid_items follows a switched reference and ignores stale target
                                "__valid_items__"_n = true));
     };
 
-    bg::run_graph(
+    hg::run_graph(
         tested, std::array{1, 2, 3, 4, 5, 6, 7, 8, 9},
         std::array{true, false, false, false, true, true, false, false, false},
         std::array<literal::TimeSeriesLiteral, 9>{literal::INVALID, literal::INVALID, 10, 10, 10, 10,
@@ -210,7 +210,7 @@ TEST_CASE("map evaluates an operator template through ordinary arguments",
         return map(operators::getattr, values(), util::symbol{"value"})[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested);
+    const auto actual = hg::run_graph(tested);
 
     CHECK(actual.equals<i64>({42}));
 }
@@ -226,7 +226,7 @@ TEST_CASE("map applies an inner graph's omitted scalar default",
         return map(add_default, values)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
 
     CHECK(actual.equals<i64>({4, 7}));
 }
@@ -239,7 +239,7 @@ TEST_CASE("map invokes a generic graph function",
             [i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
 
     CHECK(actual.equals<i64>({3, 6}));
 }
@@ -260,7 +260,7 @@ TEST_CASE("a second map can consume a constant output reference from the first m
         return map(receive, map(send, requests))[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 7}}});
+    const auto actual = hg::run_graph(tested, {{{1, 7}}});
 
     CHECK(actual.equals<i64>({42}));
 }
@@ -280,7 +280,7 @@ TEST_CASE("map valid_items retains a constant target",
         return observe_key(map(send, requests, "__valid_items__"_n = true));
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 7}}});
+    const auto actual = hg::run_graph(tested, {{{1, 7}}});
 
     CHECK(actual.equals<bool>({true}));
 }
@@ -304,7 +304,7 @@ TEST_CASE("map republishes an explicit reference output when its target changes"
                    pass_through(scale(value, 100)))[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, std::array{1, 2, 3}, std::array{true, false, true});
+    const auto actual = hg::run_graph(tested, std::array{1, 2, 3}, std::array{true, false, true});
 
     CHECK(actual.equals<i64>({10, 200, 30}));
 }
@@ -317,7 +317,7 @@ TEST_CASE("map invokes a graph function with a const wiring-point reference para
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
 
     CHECK(actual.equals<i64>({3, 6}));
 }
@@ -338,7 +338,7 @@ TEST_CASE("map generic graph functions preserve optional reference arguments",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 2}}, {{1, 5}}, {{1, 9}}},
         {1, literal::SKIP, 3});
 
@@ -374,7 +374,7 @@ TEST_CASE("map preserves a final item target through a nested dictionary referen
         return mapped[i64{1}];
     };
 
-    CHECK(bg::run_graph(tested, std::array{17}, std::array{true}).equals<i64>({17}));
+    CHECK(hg::run_graph(tested, std::array{17}, std::array{true}).equals<i64>({17}));
 }
 
 TEST_CASE("map invokes a graph through runtime arguments",
@@ -402,7 +402,7 @@ TEST_CASE("map invokes a graph through runtime arguments",
             [i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}}, {{1, 7}}});
+    const auto actual = hg::run_graph(tested, {{{1, 3}}, {{1, 7}}});
 
     CHECK(actual.equals<i64>({4, 8}));
 }
@@ -415,7 +415,7 @@ TEST_CASE("map passes a named argument positionally to a graph function",
                    "item"_n = values)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
 
     CHECK(actual.equals<i64>({3, 6}));
 }
@@ -434,7 +434,7 @@ TEST_CASE("map retains a named argument for a graph template",
                    "item"_n = values)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 5}}});
 
     CHECK(actual.equals<i64>({2, 5}));
 }
@@ -470,7 +470,7 @@ TEST_CASE("map retains a named reference collection as a variadic graph argument
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 5}}}, {10, 20}, {true, true});
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 5}}}, {10, 20}, {true, true});
 
     CHECK(actual.equals<i64>({2, 5}));
 }
@@ -487,7 +487,7 @@ TEST_CASE("map infers a leading key for a graph function with an output",
                    values)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}}, {{1, 7}}});
+    const auto actual = hg::run_graph(tested, {{{1, 3}}, {{1, 7}}});
 
     CHECK(actual.equals<i64>({4, 8}));
 }
@@ -505,7 +505,7 @@ TEST_CASE("map passes a const key to an indexed graph parameter",
             [i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}}, {{1, 7}}});
+    const auto actual = hg::run_graph(tested, {{{1, 3}}, {{1, 7}}});
 
     CHECK(actual.equals<i64>({4, 8}));
 }
@@ -527,7 +527,7 @@ TEST_CASE("map uses the union of mapped TSD key sets",
         return result[i64{2}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 1}}, {{1, 3}}}, {{{2, 10}}, {{2, 30}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}}, {{1, 3}}}, {{{2, 10}}, {{2, 30}}});
 
     CHECK(actual.equals<i64>({10, 30}));
 }
@@ -547,7 +547,7 @@ TEST_CASE("map runs a source graph for keys selected by a TSS",
         return map(source, keys)[i64{7}];
     };
 
-    const auto actual = bg::run_graph(tested, {{7}, {literal::REMOVED(7)}, {7}});
+    const auto actual = hg::run_graph(tested, {{7}, {literal::REMOVED(7)}, {7}});
 
     CHECK(actual.equals<i64>({7, std::nullopt, 7}));
 }
@@ -559,7 +559,7 @@ TEST_CASE("map infers a leading key for a source graph function",
         return map([](auto key) { return key; }, keys)[i64{3}];
     };
 
-    const auto actual = bg::run_graph(tested, {{3}, {literal::REMOVED(3)}, {3}});
+    const auto actual = hg::run_graph(tested, {{3}, {literal::REMOVED(3)}, {3}});
 
     CHECK(actual.equals<i64>({3, std::nullopt, 3}));
 }
@@ -573,7 +573,7 @@ TEST_CASE("a map key schedules its consumer when a branch starts",
         return map([&](auto key) { return copy_key(key); }, keys)[i64{5}];
     };
 
-    const auto actual = bg::run_graph(tested, {{5}, {literal::REMOVED(5)}, {5}});
+    const auto actual = hg::run_graph(tested, {{5}, {literal::REMOVED(5)}, {5}});
 
     CHECK(actual.equals<i64>({5, std::nullopt, 5}));
 }
@@ -589,7 +589,7 @@ TEST_CASE("map supports sink graph functions",
         map([&](auto item) { sink(item); }, input);
         return input[i64{1}];
     };
-    const auto actual = bg::run_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}});
+    const auto actual = hg::run_graph(tested, {{{1, 1}}, {{1, 2}}, {{1, 3}}});
 
     CHECK(actual.equals<i64>({1, 2, 3}));
     CHECK(recorded_values == std::vector<i64>{1, 2, 3});
@@ -609,7 +609,7 @@ TEST_CASE("map uses an explicitly selected TSD key set",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 3}, {2, 30}}, {{1, 4}, {2, 40}}, {{1, 5}, {2, 50}}},
         {{{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}});
 
@@ -633,7 +633,7 @@ TEST_CASE("a nested map selects keys from a referenced mapped dictionary",
         return outer[i64{1}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, {{1, 10}}}}, {{1, {{1, 11}}}}, {{1, {{1, 12}}}}},
         {{}, {{1, {{1, 20}}}}, {{1, {{1, literal::REMOVE}}}}});
 
@@ -654,7 +654,7 @@ TEST_CASE("map uses an explicitly selected TSS key set for a source graph",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{2}}, {{1}});
+    const auto actual = hg::run_graph(tested, {{2}}, {{1}});
 
     CHECK(actual.equals<i64>({1}));
 }
@@ -674,7 +674,7 @@ TEST_CASE("a pass-through TSD remains one input to every mapped graph",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 2}}, {{1, 3}}, {{1, 4}}}, {{{9, 10}}, {{9, 20}}, {{9, 30}}});
 
     CHECK(actual.equals<i64>({12, 23, 34}));
@@ -709,7 +709,7 @@ TEST_CASE("map passes direct and reference TSD inputs through to every mapped gr
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 2}}, {{1, 3}}, {{1, 4}}},
+    const auto actual = hg::run_graph(tested, {{{1, 2}}, {{1, 3}}, {{1, 4}}},
                                             {{{9, 10}}, {{9, 20}}, {{9, 30}}},
                                             {100, 200, 300},
                                             {true, true, true});
@@ -755,7 +755,7 @@ TEST_CASE("a mapped inner graph survives one TSD item removal while another TSD 
     RetainedMappedSum::starts = 0;
     RetainedMappedSum::stops = 0;
 
-    const auto actual = bg::run_graph(tested,
+    const auto actual = hg::run_graph(tested,
                                             {{{7, 10}}, {{7, literal::REMOVE}}, {{7, 30}}},
                                             {{{7, 1}}, {{7, 1}}, {{7, 1}}});
 
@@ -815,7 +815,7 @@ TEST_CASE("map selects a key parameter by name",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 3}}, {{1, 8}}});
+    const auto actual = hg::run_graph(tested, {{{1, 3}}, {{1, 8}}});
 
     CHECK(actual.equals<i64>({1, std::nullopt}));
 }
@@ -834,7 +834,7 @@ TEST_CASE("map reads a TSD through a nested graph reference",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {2, 5}, {true, true});
 
     CHECK(actual.equals<i64>({3, 6}));
@@ -862,7 +862,7 @@ TEST_CASE("map reads a TSS through a nested graph reference",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {true, false, true}, {true, true, true});
+    const auto actual = hg::run_graph(tested, {true, false, true}, {true, true, true});
 
     CHECK(actual.equals<i64>({1, std::nullopt, 1}));
 }
@@ -889,7 +889,7 @@ TEST_CASE("map reads values using a nested TSS reference as its key set",
         return result[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, 10}}, {{1, 20}}, {{1, 30}}},
+    const auto actual = hg::run_graph(tested, {{{1, 10}}, {{1, 20}}, {{1, 30}}},
                                             {true, false, true}, {true, true, true});
 
     CHECK(actual.equals<i64>({10, std::nullopt, 30}));
@@ -917,7 +917,7 @@ TEST_CASE("map drops a removed reference item while a sibling follows its target
         return capture_row_dictionary(map(lookup, lookups, pass_through(rows)));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, 9}, {2, 9}}, {{1, literal::REMOVE}}, literal::SKIP},
         {{{9, {{"value", 2}, {"label", "beta"}}}}, literal::SKIP,
@@ -966,7 +966,7 @@ TEST_CASE("map preserves keyed bundle references and materializes a distinct sch
     };
 
     const auto check = [&](const auto &app) {
-        const auto actual = bg::run_graph(
+        const auto actual = hg::run_graph(
             app,
             {{{"left", "a"}, {"right", "b"}}},
             {{{"a", {{"value", 1}, {"label", "one"}}}, {"b", {{"value", 2}, {"label", "two"}}}}});
@@ -1006,7 +1006,7 @@ TEST_CASE("each mapped graph reads the context for its own key",
         return capture_dictionary(map(add_with_context, values, offsets, selectors));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, 10}, {2, 20}}, {{1, 15}}},
         {{{1, 1}, {2, 2}}, {{2, 3}}},
@@ -1028,7 +1028,7 @@ TEST_CASE("map restores a removed key through a retained mapped reference",
         return selected_values[i64{1}];
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {{{1, 10}}, literal::SKIP, literal::SKIP},
         {{1}, {literal::REMOVED(1)}, {1}});
 
@@ -1056,7 +1056,7 @@ TEST_CASE("map retargets a selected dictionary reference across a nested graph",
         return capture_dictionary(map([](auto value) { return value; }, selected));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {false, true, false, literal::SKIP},
         {{{1, 1}, {2, 2}}, literal::SKIP, {{1, 3}}, {{1, 4}}},

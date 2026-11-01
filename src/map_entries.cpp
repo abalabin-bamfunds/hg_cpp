@@ -1,11 +1,11 @@
-#include <bg/map/details/map_entries.hpp>
+#include <hg/map/details/map_entries.hpp>
 
-#include <bg/evaluation_context.hpp>
+#include <hg/evaluation_context.hpp>
 
 #include <algorithm>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 MapEntries::MapEntries(allocator memory)
     : memory_{memory}, branches_pending_removal_{&memory.memory_resource()} {
@@ -100,4 +100,4 @@ void MapEntries::remove_stopped_entries() noexcept {
     branches_pending_removal_.clear();
 }
 
-} // namespace bg::details
+} // namespace hg::details

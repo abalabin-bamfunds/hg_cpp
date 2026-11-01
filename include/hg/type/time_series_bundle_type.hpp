@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/type/fixed_item_time_series_type.hpp>
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/type/fixed_item_time_series_type.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <optional>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesBundleType : public FixedItemTimeSeriesType {
   public:
@@ -56,4 +56,4 @@ class GenericTimeSeriesBundleType final : public TimeSeriesBundleType {
 
 const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSeriesGuarantee guarantee);
 
-} // namespace bg
+} // namespace hg

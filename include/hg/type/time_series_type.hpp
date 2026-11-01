@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/type.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/type.hpp>
 
 #include <cassert>
 #include <cstddef>
 #include <string>
 
-namespace bg {
+namespace hg {
 
 enum class TimeSeriesTypeRole { declaration, input, output };
 
@@ -61,4 +61,4 @@ class TimeSeriesType : public Type {
     mutable RuntimeTypeFactory default_runtime_type_factory_{};
 };
 
-} // namespace bg
+} // namespace hg

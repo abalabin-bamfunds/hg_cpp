@@ -1,12 +1,12 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 
 namespace {
 
@@ -170,4 +170,4 @@ void register_logical_operators() {
     register_overloads<logical_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

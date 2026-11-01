@@ -1,17 +1,17 @@
-#include <bg/graph.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/details/wiring.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/details/wiring.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -22,8 +22,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"G">;
 using DIRECT_RESULT = ScalarVariable<"DIRECT_RESULT">;
@@ -49,14 +49,14 @@ struct FirstCapturedListItem {
 TEST_CASE("a callable variadic TSL captures homogeneous time series and resolves its size",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][declaration:generic]"
           "[definition:function]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
 
     const auto tested = graph("name"_n = "capture", [](wp<TSL<TS_T, SIZE>, var_args> values) {
         REQUIRE(values.size() == 2);
 
         const auto &type = static_cast<const TimeSeriesListType &>(values.type());
         CHECK(type.item_count() == 2);
-        CHECK(&type.item_type() == &TS<bg::i64>::type());
+        CHECK(&type.item_type() == &TS<hg::i64>::type());
     });
 
     testing::test_wiring([&] { tested(source(), source()); });
@@ -65,10 +65,10 @@ TEST_CASE("a callable variadic TSL captures homogeneous time series and resolves
 TEST_CASE("an unnamed single time-series argument forms a one-item variadic TSL",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][scalar:i64]"
           "[declaration:generic][definition:function]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
     const auto tested = graph("name"_n = "capture", [](wp<TSL<TS_T, SIZE>, var_args> values) {
         REQUIRE(values.size() == 1);
-        CHECK(&values[0].type() == &TS<bg::i64>::type());
+        CHECK(&values[0].type() == &TS<hg::i64>::type());
     });
 
     testing::test_wiring([&] { tested(source()); });
@@ -130,7 +130,7 @@ TEST_CASE("a variadic TSL combines guarantees in nested reference item types",
 TEST_CASE("each variadic pack uses its declared collection operations",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][series:tsb]"
           "[schema:generic][declaration:generic][definition:function]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
 
     const auto tested = graph("name"_n = "mixed_collections",
                               [](wp<TSL<TS_T, SIZE>, var_args> positional, wp<TSB<KWARGS>, var_kwargs> named) {
@@ -139,7 +139,7 @@ TEST_CASE("each variadic pack uses its declared collection operations",
 
                                   const auto &list = static_cast<const TimeSeriesListType &>(positional.type());
                                   CHECK(list.item_count() == 2);
-                                  CHECK(&list.item_type() == &TS<bg::i64>::type());
+                                  CHECK(&list.item_type() == &TS<hg::i64>::type());
                                   CHECK(named["limit"].is_scalar());
                               });
 
@@ -151,11 +151,11 @@ TEST_CASE("an aggregate variadic TSL materializes as one runtime-sized list",
           "[definition:aggregate][representation:free]") {
     const auto first = node<FirstCapturedListItem>();
 
-    const auto tested = [&](wp<TS<bg::i64>> left, wp<TS<bg::i64>> right) {
+    const auto tested = [&](wp<TS<hg::i64>> left, wp<TS<hg::i64>> right) {
         return first(left, right);
     };
 
-    const auto actual = bg::run_graph(tested, {1, 2, 3}, {4, 5, 6});
+    const auto actual = hg::run_graph(tested, {1, 2, 3}, {4, 5, 6});
 
     CHECK(actual.equals({1, 2, 3}));
 }
@@ -164,7 +164,7 @@ TEST_CASE("free TSL materialization rejects borrowed input bindings",
           "[feature:wiring][feature:borrowed-input][series:fixed-tsl][representation:free]") {
     auto wiring = GraphWiring{};
     const auto context = WiringContext{wiring};
-    const auto input = wiring.borrowed_input(TS<bg::i64>::type());
+    const auto input = wiring.borrowed_input(TS<hg::i64>::type());
     const auto list = details::make_free_fixed_time_series_list(std::array{input});
 
     CHECK_THROWS_AS(wiring.materialize(list, list.type()), WiringError);
@@ -183,7 +183,7 @@ struct AggregateListSink {
 TEST_CASE("a variadic TSL rejects scalars and incompatible item types",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][declaration:generic]"
           "[definition:aggregate]") {
-    const auto integer = node([](Out<TS<bg::i64>>) {});
+    const auto integer = node([](Out<TS<hg::i64>>) {});
 
     const auto floating = node([](Out<TS<float>>) {});
 
@@ -198,12 +198,12 @@ TEST_CASE("a variadic TSL rejects scalars and incompatible item types",
 namespace {
 
 struct EmptyConcreteListGraph {
-    wp<TSL<TS<bg::i64, TimeSeriesGuarantee::final>, SIZE, TimeSeriesGuarantee::ordinary>, var_args> values;
+    wp<TSL<TS<hg::i64, TimeSeriesGuarantee::final>, SIZE, TimeSeriesGuarantee::ordinary>, var_args> values;
 
     void wire() const {
         CHECK(values.size() == 0);
         CHECK(&values.type() ==
-              &TSL<TS<bg::i64, TimeSeriesGuarantee::final>, 0, TimeSeriesGuarantee::ordinary>::type());
+              &TSL<TS<hg::i64, TimeSeriesGuarantee::final>, 0, TimeSeriesGuarantee::ordinary>::type());
     }
 };
 
@@ -218,7 +218,7 @@ TEST_CASE("an empty variadic TSL requires a concrete item type and collection gu
 
     const auto generic_item = graph("name"_n = "generic_item", [](wp<TSL<TS_T, SIZE>, var_args>) {});
     const auto generic_collection =
-        graph("name"_n = "generic_collection", [](wp<TSL<TS<bg::i64>, SIZE, EMPTY_G>, var_args>) {});
+        graph("name"_n = "generic_collection", [](wp<TSL<TS<hg::i64>, SIZE, EMPTY_G>, var_args>) {});
 
     testing::test_wiring([&] {
         concrete();
@@ -230,7 +230,7 @@ TEST_CASE("an empty variadic TSL requires a concrete item type and collection gu
 namespace {
 
 struct EmptyListValidity {
-    In<TSL<TS<bg::i64, TimeSeriesGuarantee::ordinary>, SIZE, TimeSeriesGuarantee::ordinary>, var_args, optional>
+    In<TSL<TS<hg::i64, TimeSeriesGuarantee::ordinary>, SIZE, TimeSeriesGuarantee::ordinary>, var_args, optional>
         values;
     Out<TS<bool>> output;
 
@@ -244,7 +244,7 @@ TEST_CASE("an empty materialized variadic TSL becomes valid at graph start",
           "[definition:aggregate][representation:free][validity:optional][transition:start]") {
     const auto validity = node<EmptyListValidity>();
 
-    const auto actual = bg::run_graph([&] { return validity(); });
+    const auto actual = hg::run_graph([&] { return validity(); });
 
     CHECK(actual.equals({true}));
 }
@@ -252,9 +252,9 @@ TEST_CASE("an empty materialized variadic TSL becomes valid at graph start",
 TEST_CASE("a concrete variadic TSL rejects a different capture size",
           "[feature:wiring][feature:variadic-wiring][series:fixed-tsl][declaration:concrete]"
           "[definition:function]") {
-    const auto source = node([](Out<TS<bg::i64>>) {});
+    const auto source = node([](Out<TS<hg::i64>>) {});
 
-    const auto tested = graph("name"_n = "fixed", [](wp<TSL<TS<bg::i64>, 2>, var_args>) {});
+    const auto tested = graph("name"_n = "fixed", [](wp<TSL<TS<hg::i64>, 2>, var_args>) {});
 
     testing::test_wiring([&] {
         CHECK_THROWS(tested(source()));
@@ -270,7 +270,7 @@ struct DirectListGraph {
     void wire() const {
         REQUIRE(values.size() == 2);
         CHECK(values[0].is_time_series());
-        CHECK(&values[0].type() == &TS<bg::i64>::type());
+        CHECK(&values[0].type() == &TS<hg::i64>::type());
     }
 };
 
@@ -279,7 +279,7 @@ struct DirectListGraph {
 TEST_CASE("an exact named TSL binds as one collection and supports lazy item selection",
           "[feature:wiring][feature:variadic-wiring][feature:getitem][series:fixed-tsl]"
           "[binding:direct][definition:aggregate][representation:native]") {
-    const auto source = node([](Out<TSL<TS<bg::i64>, 2>>) {});
+    const auto source = node([](Out<TSL<TS<hg::i64>, 2>>) {});
 
     const auto tested = graph<DirectListGraph>();
     auto wiring = GraphWiring{};
@@ -300,7 +300,7 @@ struct DirectBundleGraph {
     void wire() const {
         REQUIRE(values.size() == 2);
         CHECK(values["count"].is_time_series());
-        CHECK(&values["count"].type() == &TS<bg::i64>::type());
+        CHECK(&values["count"].type() == &TS<hg::i64>::type());
     }
 };
 
@@ -311,7 +311,7 @@ struct DirectDualBundleGraph {
     void wire() const {
         REQUIRE(positional.size() == 2);
         REQUIRE(named.size() == 2);
-        CHECK(&positional[0].type() == &TS<bg::i64>::type());
+        CHECK(&positional[0].type() == &TS<hg::i64>::type());
         CHECK(&named["value"].type() == &TS<float>::type());
     }
 };
@@ -339,8 +339,8 @@ TEST_CASE("args expands a TSB into positional wiring arguments",
     const auto source = node([](Out<TSB<TestBundle>>) {});
 
     const auto receive = graph("name"_n = "receive",
-                               [](wp<TS<bg::i64>> count, wp<TS<float>> value) {
-                                   CHECK(&count.type() == &TS<bg::i64>::type());
+                               [](wp<TS<hg::i64>> count, wp<TS<float>> value) {
+                                   CHECK(&count.type() == &TS<hg::i64>::type());
                                    CHECK(&value.type() == &TS<float>::type());
                                });
 
@@ -352,9 +352,9 @@ TEST_CASE("kwargs expands a TSB into named wiring arguments",
     const auto source = node([](Out<TSB<TestBundle>>) {});
 
     const auto receive = graph(
-        "name"_n = "receive", [](wp<TS<float>, "value"_n> value, wp<TS<bg::i64>, "count"_n> count) {
+        "name"_n = "receive", [](wp<TS<float>, "value"_n> value, wp<TS<hg::i64>, "count"_n> count) {
             CHECK(&value.type() == &TS<float>::type());
-            CHECK(&count.type() == &TS<bg::i64>::type());
+            CHECK(&count.type() == &TS<hg::i64>::type());
         });
 
     testing::test_wiring([&] { receive(kwargs(source())); });
@@ -366,8 +366,8 @@ TEST_CASE("kwargs binds fixed parameters before capturing remaining fields",
 
     const auto receive = graph(
         "name"_n = "receive",
-        [](wp<TS<bg::i64>, "count"_n> count, wp<TSB<SCHEMA>, var_kwargs> remaining) {
-            CHECK(&count.type() == &TS<bg::i64>::type());
+        [](wp<TS<hg::i64>, "count"_n> count, wp<TSB<SCHEMA>, var_kwargs> remaining) {
+            CHECK(&count.type() == &TS<hg::i64>::type());
             REQUIRE(remaining.size() == 1);
             CHECK(remaining[0].name()->text() == "value");
             CHECK(&remaining[0].type() == &TS<float>::type());
@@ -417,8 +417,8 @@ TEST_CASE("direct collection items are flat resolver and requirement arguments",
         resolve<DIRECT_RESULT> = [&](const WiringArguments &arguments) -> const ScalarType & {
             ++resolver_calls;
             REQUIRE(arguments.size() == 2);
-            CHECK(&arguments.resolved_type(0) == &TS<bg::i64>::type());
-            CHECK(&arguments.resolved_type(1) == &TS<bg::i64>::type());
+            CHECK(&arguments.resolved_type(0) == &TS<hg::i64>::type());
+            CHECK(&arguments.resolved_type(1) == &TS<hg::i64>::type());
             return int64_type();
         },
         require =
@@ -427,17 +427,17 @@ TEST_CASE("direct collection items are flat resolver and requirement arguments",
                 REQUIRE(arguments.size() == 2);
                 CHECK(arguments.argument_name(0).text() == "0");
                 CHECK(arguments.argument_name(1).text() == "1");
-                CHECK(&arguments.resolved_type(0) == &TS<bg::i64>::type());
-                CHECK(&arguments.resolved_type(1) == &TS<bg::i64>::type());
+                CHECK(&arguments.resolved_type(0) == &TS<hg::i64>::type());
+                CHECK(&arguments.resolved_type(1) == &TS<hg::i64>::type());
                 return accept;
             });
-    auto operation = operator_<auto(TS_T)->TS<bg::i64>>{"first", {"values"}};
+    auto operation = operator_<auto(TS_T)->TS<hg::i64>>{"first", {"values"}};
     operation.overload(receiver);
 
     testing::test_wiring([&] {
-        const auto first_source = node([](Out<TSL<TS<bg::i64>, 2>>) {});
+        const auto first_source = node([](Out<TSL<TS<hg::i64>, 2>>) {});
 
-        const auto second_source = node([](Out<TSL<TS<bg::i64>, 2>>) {});
+        const auto second_source = node([](Out<TSL<TS<hg::i64>, 2>>) {});
         (void)operation("values"_n = first_source());
         (void)operation("values"_n = second_source());
     });
@@ -449,11 +449,11 @@ TEST_CASE("direct collection items are flat resolver and requirement arguments",
 namespace {
 
 struct NestedDirectListGraph {
-    wp<TSL<TS<bg::i64>, SIZE>, var_args> values;
+    wp<TSL<TS<hg::i64>, SIZE>, var_args> values;
 
     inline static const auto first = node<FirstCapturedListItem>();
 
-    auto wire() const { return first(values).as<TS<bg::i64>>(); }
+    auto wire() const { return first(values).as<TS<hg::i64>>(); }
 };
 
 } // namespace
@@ -464,16 +464,16 @@ TEST_CASE("a direct variadic TSL crosses a nested boundary as one reference",
           "[definition:aggregate]") {
     const auto inner = graph<NestedDirectListGraph>();
 
-    const auto tested = [&](wp<TS<bg::i64>> left, wp<TS<bg::i64>> right, wp<TS<bool>> run) {
+    const auto tested = [&](wp<TS<hg::i64>> left, wp<TS<hg::i64>> right, wp<TS<bool>> run) {
         return nested(inner, run, "values"_n = tsl(left, right));
     };
 
-    const auto actual = bg::run_graph(tested, {1, 2}, {3, 4}, {true, true});
+    const auto actual = hg::run_graph(tested, {1, 2}, {3, 4}, {true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};
 
-    const auto value = node([](Out<TS<bg::i64>>) {});
+    const auto value = node([](Out<TS<hg::i64>>) {});
 
     const auto run = node([](Out<TS<bool>>) {});
     {
@@ -491,13 +491,13 @@ namespace {
 
 struct ReadBundleCount {
     In<TSB<TestBundle>> values;
-    Out<TS<bg::i64>> output;
+    Out<TS<hg::i64>> output;
 
     void evaluate() const { output.set(*values->count); }
 };
 
 struct MakeBundle {
-    In<TS<bg::i64>> count;
+    In<TS<hg::i64>> count;
     In<TS<float>> value;
     Out<TSB<TestBundle>> output;
 
@@ -512,7 +512,7 @@ struct NestedDirectBundleGraph {
 
     inline static const auto count = node<ReadBundleCount>();
 
-    auto wire() const { return count(values).as<TS<bg::i64>>(); }
+    auto wire() const { return count(values).as<TS<hg::i64>>(); }
 };
 
 } // namespace
@@ -525,16 +525,16 @@ TEST_CASE("a direct variadic TSB crosses a nested boundary as one reference",
 
     const auto make_bundle = node<MakeBundle>();
 
-    const auto tested = [&](wp<TS<bg::i64>> count, wp<TS<float>> value, wp<TS<bool>> run) {
+    const auto tested = [&](wp<TS<hg::i64>> count, wp<TS<float>> value, wp<TS<bool>> run) {
         return nested(inner, run, "values"_n = make_bundle(count, value));
     };
 
-    const auto actual = bg::run_graph(tested, {1, 2}, {3.0F, 4.0F}, {true, true});
+    const auto actual = hg::run_graph(tested, {1, 2}, {3.0F, 4.0F}, {true, true});
     CHECK(actual.equals({1, 2}));
 
     auto wiring = GraphWiring{};
 
-    const auto count = node([](Out<TS<bg::i64>>) {});
+    const auto count = node([](Out<TS<hg::i64>>) {});
 
     const auto value = node([](Out<TS<float>>) {});
 

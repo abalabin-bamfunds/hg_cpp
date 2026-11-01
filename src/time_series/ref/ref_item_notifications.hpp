@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory_resource>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 class ItemNotifications {
     struct DestinationItem {
@@ -102,4 +102,4 @@ class ItemNotifications {
     std::size_t batch_depth_{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

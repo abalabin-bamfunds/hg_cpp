@@ -1,9 +1,9 @@
-#include <bg/time_series/dynamic_value_input.hpp>
+#include <hg/time_series/dynamic_value_input.hpp>
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/runtime_graph.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/runtime_graph.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 void DynamicValueInputStorage::bind_raw(void *data, const DynamicValueBindingType *type, EvaluationContext &context,
                                         std::size_t storage_offset) {
@@ -37,4 +37,4 @@ TimeSeriesInputData DynamicValueInputStorage::input_data(const TimeSeriesRuntime
                             : type_->input_data(data_, evaluation_time);
 }
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,13 +1,13 @@
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/time_series/tss/tss_output.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/time_series/tss/tss_output.hpp>
 
 #include <memory>
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 void TimeSeriesSetRuntimeType::invalidate_output(const OutputState &output) const {
     if (!output.valid()) {
@@ -142,4 +142,4 @@ const TimeSeriesRuntimeType &time_series_set_runtime_type(const TimeSeriesSetTyp
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details

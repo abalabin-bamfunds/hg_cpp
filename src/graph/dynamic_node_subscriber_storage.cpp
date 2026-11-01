@@ -1,16 +1,16 @@
-#include <bg/graph/dynamic_node_subscriber_storage.hpp>
+#include <hg/graph/dynamic_node_subscriber_storage.hpp>
 
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cassert>
 
-namespace bg::details {
+namespace hg::details {
 class ReferenceProvider;
 }
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename... AdditionalDestinations>
 void DynamicNodeSubscriberStorage<AdditionalDestinations...>::add(DynamicNodeSubscriber subscriber, allocator memory) {
@@ -103,4 +103,4 @@ void DynamicNodeSubscriberStorage<AdditionalDestinations...>::release() noexcept
 template struct DynamicNodeSubscriberStorage<>;
 template struct DynamicNodeSubscriberStorage<ReferenceProvider>;
 
-} // namespace bg::details
+} // namespace hg::details

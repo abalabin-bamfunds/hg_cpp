@@ -1,13 +1,13 @@
-#include <bg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_error.hpp>
 
-#include <bg/type/type.hpp>
+#include <hg/type/type.hpp>
 
 #include <cstddef>
 #include <array>
 #include <algorithm>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 void append_type(std::string &result, const Type *type) {
@@ -260,4 +260,4 @@ std::string WiringError::render(std::string message, std::span<const WiringError
     return message;
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/util/details/buffer_blocks.hpp>
+#include <hg/allocator.hpp>
+#include <hg/util/details/buffer_blocks.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 enum class buffer_type { contiguous, single_writer_chain, concurrent_writer_chain };
 
@@ -26,16 +26,16 @@ class buffer {
   public:
     // The allocator must outlive all handles. Concurrent chains require thread-safe allocation and deallocation.
     // A retained chain handle pins its block and successors; move the root into a cursor to release prefixes.
-    static buffer contiguous(std::size_t capacity, bg::allocator allocator = {}) {
+    static buffer contiguous(std::size_t capacity, hg::allocator allocator = {}) {
         return buffer{details::buffer_block::create(allocator, capacity)};
     }
 
-    static buffer chain(std::size_t block_capacity, bg::allocator allocator = {}) {
+    static buffer chain(std::size_t block_capacity, hg::allocator allocator = {}) {
         return buffer{details::single_writer_block::create(allocator, block_capacity, block_capacity)};
     }
 
     static buffer concurrent_chain(std::size_t block_capacity, std::size_t commit_capacity,
-                                   bg::allocator allocator = {}) {
+                                   hg::allocator allocator = {}) {
         return buffer{details::new_concurrent_writer_block(allocator, block_capacity, commit_capacity)};
     }
 
@@ -792,4 +792,4 @@ template <typename Callback> void concurrent_buffer_reservation::read_written(Ca
 
 using concurrent_buffer_reader = buffer_reader;
 
-} // namespace bg::util
+} // namespace hg::util

@@ -1,12 +1,12 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -15,8 +15,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct LateBoundBundle {
     Field<TS<i64>> value;
@@ -161,7 +161,7 @@ TEST_CASE("a nested graph can consume a late-bound wiring point",
         return output;
     };
 
-    CHECK(bg::run_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
+    CHECK(hg::run_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
 }
 
 TEST_CASE("late-bound readiness propagates through TSB fields and kwargs",

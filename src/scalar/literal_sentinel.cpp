@@ -1,12 +1,12 @@
-#include <bg/literal/sentinel.hpp>
+#include <hg/literal/sentinel.hpp>
 
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class LiteralScalarType final : public ScalarType {
@@ -34,27 +34,27 @@ const ScalarType &scalar_type_traits<literal::TaggedLiteral>::type() noexcept {
     return type.get();
 }
 
-} // namespace bg
+} // namespace hg
 
 namespace literal {
 
-const Sentinel SKIP{bg::symbol{"bg.skip"}};
-const Sentinel INVALID{bg::symbol{"bg.invalid"}};
-const Sentinel REMOVE{bg::symbol{"bg.remove"}};
-const Sentinel REMOVED{bg::symbol{"bg.removed"}};
+const Sentinel SKIP{hg::symbol{"hg.skip"}};
+const Sentinel INVALID{hg::symbol{"hg.invalid"}};
+const Sentinel REMOVE{hg::symbol{"hg.remove"}};
+const Sentinel REMOVED{hg::symbol{"hg.removed"}};
 
-const Sentinel *Sentinel::from(const bg::ScalarData &value) noexcept {
-    if (value.empty() || &value.type() != &bg::cpp_scalar_type<Sentinel>()) {
+const Sentinel *Sentinel::from(const hg::ScalarData &value) noexcept {
+    if (value.empty() || &value.type() != &hg::cpp_scalar_type<Sentinel>()) {
         return nullptr;
     }
 
-    const auto erased = bg::Scalar<>::from(value);
-    return std::addressof(bg::Scalar<Sentinel>::from(erased).value());
+    const auto erased = hg::Scalar<>::from(value);
+    return std::addressof(hg::Scalar<Sentinel>::from(erased).value());
 }
 
 const Sentinel *Sentinel::from(const ScalarLiteralItem &value) {
     return value.visit_scalar([](const auto *scalar) {
-        return from(bg::details::scalar_data(*scalar));
+        return from(hg::details::scalar_data(*scalar));
     }).value();
 }
 
@@ -65,19 +65,19 @@ const Sentinel *Sentinel::from(const ScalarLiteral &value) {
         .value();
 }
 
-std::optional<TaggedLiteral> TaggedLiteral::from(const bg::ScalarData &value) {
-    if (value.empty() || &value.type() != &bg::cpp_scalar_type<TaggedLiteral>()) {
+std::optional<TaggedLiteral> TaggedLiteral::from(const hg::ScalarData &value) {
+    if (value.empty() || &value.type() != &hg::cpp_scalar_type<TaggedLiteral>()) {
         return std::nullopt;
     }
 
-    const auto erased = bg::Scalar<>::from(value);
-    return bg::Scalar<TaggedLiteral>::from(erased).value();
+    const auto erased = hg::Scalar<>::from(value);
+    return hg::Scalar<TaggedLiteral>::from(erased).value();
 }
 
 std::optional<TaggedLiteral> TaggedLiteral::from(const ScalarLiteralItem &value) {
     std::optional<TaggedLiteral> result;
     value.visit_scalar([&](const auto *scalar) {
-        const auto source = bg::details::scalar_data(*scalar);
+        const auto source = hg::details::scalar_data(*scalar);
         if (auto tagged = from(source)) {
             // DDV assigns visitor results, but TaggedLiteral is not move-assignable.
             result.emplace(*tagged);

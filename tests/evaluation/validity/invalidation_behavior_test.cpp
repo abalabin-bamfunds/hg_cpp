@@ -1,10 +1,10 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,7 +12,7 @@
 #include <optional>
 #include <stdexcept>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("required-input invalidation invalidates a node output",
           "[evaluation][invalidation][feature:invalidation][shape:single-node][validity:required]"
@@ -20,7 +20,7 @@ TEST_CASE("required-input invalidation invalidates a node output",
           "[definition:function]") {
     const auto copy = node([](float input) { return input; });
 
-    const auto actual = bg::run_graph(copy, {4.0F, literal::INVALID, 6.0F});
+    const auto actual = hg::run_graph(copy, {4.0F, literal::INVALID, 6.0F});
 
     CHECK(actual.equals({4.0F, literal::INVALID, 6.0F}));
 }
@@ -37,11 +37,11 @@ TEST_CASE("required-input invalidation propagates through a graph",
 
     const auto consume = node([](float input) { return input; });
 
-    const auto graph_template = bg::graph([&](wp<TS<float>> input) {
+    const auto graph_template = hg::graph([&](wp<TS<float>> input) {
         return consume(copy(input));
     });
 
-    const auto actual = bg::run_graph(graph_template, {4.0F, literal::INVALID, 6.0F});
+    const auto actual = hg::run_graph(graph_template, {4.0F, literal::INVALID, 6.0F});
 
     CHECK(actual.equals({4.0F, literal::INVALID, 6.0F}));
     CHECK(copy_evaluations == 2);
@@ -88,7 +88,7 @@ TEST_CASE("required-input invalidation is applied once while the input remains i
 
     const auto repeated_graph = [&](wp<TS<bool>> valid) { return fallback(counted_source(valid)); };
 
-    const auto actual = bg::run_graph(repeated_graph, {true, false, false});
+    const auto actual = hg::run_graph(repeated_graph, {true, false, false});
 
     CHECK(actual.equals({4.0F, -1.0F, std::nullopt}));
     CHECK(source_evaluations == 3);
@@ -133,7 +133,7 @@ TEST_CASE("a node can preserve its output when a required input becomes invalid"
         return observe(held, tick);
     };
 
-    const auto actual = bg::run_graph(graph, {4.0F, literal::INVALID}, {0, 1});
+    const auto actual = hg::run_graph(graph, {4.0F, literal::INVALID}, {0, 1});
 
     CHECK(actual.equals({4.0F, 4.0F}));
     CHECK(downstream_evaluations == 1);
@@ -186,7 +186,7 @@ TEST_CASE("invalidation callbacks run before invalidation publication",
         return output;
     };
 
-    const auto actual = bg::run_graph(tested, {4.0F, literal::INVALID});
+    const auto actual = hg::run_graph(tested, {4.0F, literal::INVALID});
 
     CHECK(actual.equals({4.0F, std::nullopt}));
     CHECK(invalidation_callback_state.callback_count == 1);
@@ -202,7 +202,7 @@ TEST_CASE("a node can produce an output when a required input becomes invalid",
 
     fallback_definition::evaluation_count = 0;
 
-    const auto actual = bg::run_graph(graph, {4.0F, literal::INVALID});
+    const auto actual = hg::run_graph(graph, {4.0F, literal::INVALID});
 
     CHECK(actual.equals({4.0F, -1.0F}));
     CHECK(fallback_definition::evaluation_count == 1);

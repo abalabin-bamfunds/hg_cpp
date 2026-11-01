@@ -1,12 +1,12 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node/input.hpp>
-#include <bg/node.hpp>
-#include <bg/node/output.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node/input.hpp>
+#include <hg/node.hpp>
+#include <hg/node/output.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,7 +16,7 @@
 #include <map>
 #include <memory>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -131,7 +131,7 @@ TEST_CASE("an aggregate definition selects its output runtime type during wiring
         return wp<TS<i64>>{aggregate(input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
     CHECK(selected_runtime_output::selector_calls == 1);
 }
 
@@ -161,5 +161,5 @@ TEST_CASE("a concrete aggregate evaluates using its selected output descriptor",
         return wp<TS<i64>>{aggregate(input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
 }

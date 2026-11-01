@@ -1,11 +1,11 @@
-#include <bg/scalar/builtins.hpp>
-#include <bg/time_series/time_series_state.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/time_series/time_series_state.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a time series state records validity transitions",
           "[feature:validity][series:generic][transition:update][transition:invalidation]"

@@ -1,7 +1,7 @@
-#include <bg/scalar/details/string_storage.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/scalar/string_builder.hpp>
+#include <hg/scalar/details/string_storage.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/scalar/string_builder.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -25,7 +25,7 @@ void count_final_release(void *context, const details::StringStorage *) noexcept
 TEST_CASE("a stored string view retains its canonical storage",
           "[feature:scalar-storage][scalar:string][storage:variable]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     const auto &runtime_type = cpp_scalar_runtime_type<string>();
     const auto source = std::string_view{"stored string"};
     auto *stored = allocator.allocate_bytes(runtime_type.size(), runtime_type.alignment());
@@ -68,7 +68,7 @@ TEST_CASE("a string storage hook runs after its last retained value",
 
 TEST_CASE("a string builder grows and appends a view of its own value", "[coverage-exempt]") {
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     {
         auto builder = StringBuilder{allocator, 4};
         builder.append("abc");

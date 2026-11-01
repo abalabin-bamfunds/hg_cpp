@@ -1,13 +1,13 @@
-#include <bg/scalar/format.hpp>
+#include <hg/scalar/format.hpp>
 
-#include <bg/scalar/bundle/scalar.hpp>
-#include <bg/scalar/dict/scalar.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/set/scalar.hpp>
-#include <bg/scalar/struct/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/bundle/scalar.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/set/scalar.hpp>
+#include <hg/scalar/struct/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <fmt/chrono.h>
 
@@ -17,7 +17,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 namespace {
 
 template <typename... Arguments>
@@ -202,4 +202,4 @@ void format_scalar(Scalar<> value, fmt::format_context &context) {
     format_value(Scalar<SCALAR>::from(value), context);
 }
 
-} // namespace bg
+} // namespace hg

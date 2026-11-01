@@ -1,17 +1,17 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/node/input.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/node/input.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <chrono>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -43,9 +43,9 @@ TEST_CASE("a scalar list passes values through compiled wiring", "[evaluation][v
         void evaluate() const {}
     };
 
-    const auto list_source = bg::node<list_source_definition>();
+    const auto list_source = hg::node<list_source_definition>();
 
-    const auto float_sink = bg::node<float_sink_definition>();
+    const auto float_sink = hg::node<float_sink_definition>();
     float_sink_definition::evaluation_count = 0;
     auto values = std::vector{2.5F};
     const auto list = ScalarValue<List<float>>{values};
@@ -83,12 +83,12 @@ struct generic_list_source_definition {
 
 TEST_CASE("a generic scalar list resolves its item view",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
-    const auto generic_list_source = bg::node<generic_list_source_definition>();
+    const auto generic_list_source = hg::node<generic_list_source_definition>();
     const auto values = std::vector{2.5F};
     const auto list = ScalarValue<List<float>>{values};
     const auto graph = [&] { return generic_list_source(list); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals<float>({2.5F}));
 }
@@ -115,12 +115,12 @@ struct generic_value_copy_definition {
 
 TEST_CASE("a generic scalar time-series view preserves its resolved scalar type",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
-    const auto starting_source = bg::node<starting_source_definition>();
+    const auto starting_source = hg::node<starting_source_definition>();
 
-    const auto generic_value_copy = bg::node<generic_value_copy_definition>();
+    const auto generic_value_copy = hg::node<generic_value_copy_definition>();
     const auto graph = [&] { return generic_value_copy(starting_source(2.5F)); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals<float>({2.5F}));
 }
@@ -133,7 +133,7 @@ struct generic_copy_definition {
 
     void evaluate() const {
         input->visit([&](const In<TS<SCALAR>> *value) { output.set_value(value->value_view()); },
-                     [](const In<TSL<TS_T, bg::SIZE>> *) {}, ddv::noop);
+                     [](const In<TSL<TS_T, hg::SIZE>> *) {}, ddv::noop);
     }
 };
 
@@ -148,12 +148,12 @@ struct double_source_definition {
 
 TEST_CASE("a generic time-series view preserves its resolved time-series type",
           "[evaluation][views][feature:time-series-view][declaration:generic]") {
-    const auto generic_copy = bg::node<generic_copy_definition>();
+    const auto generic_copy = hg::node<generic_copy_definition>();
 
-    const auto double_source = bg::node<double_source_definition>();
+    const auto double_source = hg::node<double_source_definition>();
     const auto graph = [&] { return generic_copy(double_source()); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({1.5}));
 }
@@ -161,8 +161,8 @@ TEST_CASE("a generic time-series view preserves its resolved time-series type",
 namespace {
 
 struct generic_list_view_copy_definition {
-    In<TSL<TS_T, bg::SIZE>> input;
-    Out<TSL<TS_T, bg::SIZE>> output;
+    In<TSL<TS_T, hg::SIZE>> input;
+    Out<TSL<TS_T, hg::SIZE>> output;
 
     void evaluate() const {
         input_size = input.size();
@@ -192,15 +192,15 @@ struct generic_list_view_value_definition {
 
 TEST_CASE("generic time-series list views expose their resolved size and items",
           "[evaluation][views][tsl][series:fixed-tsl][feature:time-series-view][declaration:generic]") {
-    const auto copy = bg::node<generic_list_view_copy_definition>();
+    const auto copy = hg::node<generic_list_view_copy_definition>();
 
-    const auto value = bg::node<generic_list_view_value_definition>();
+    const auto value = hg::node<generic_list_view_value_definition>();
     generic_list_view_copy_definition::input_size = 0;
     generic_list_view_copy_definition::output_size = 0;
 
-    const auto graph = [&](bg::wp<TSL<TS<i64>, 2>> input) { return value(copy(input)); };
+    const auto graph = [&](hg::wp<TSL<TS<i64>, 2>> input) { return value(copy(input)); };
 
-    const auto actual = bg::run_graph(graph, {{{0, 3}, {1, 7}}});
+    const auto actual = hg::run_graph(graph, {{{0, 3}, {1, 7}}});
 
     CHECK(generic_list_view_copy_definition::input_size == 2);
     CHECK(generic_list_view_copy_definition::output_size == 2);
@@ -215,8 +215,8 @@ template <template <typename, auto...> typename Field> struct RuntimeViewBundle 
 };
 
 struct generic_bundle_view_copy_definition {
-    In<TSB<bg::SCHEMA>> input;
-    Out<TSB<bg::SCHEMA>> output;
+    In<TSB<hg::SCHEMA>> input;
+    Out<TSB<hg::SCHEMA>> output;
 
     void evaluate() const {
         input_size = input.size();
@@ -235,8 +235,8 @@ struct generic_bundle_view_copy_definition {
 
     inline static std::size_t input_size{};
     inline static std::size_t output_size{};
-    inline static bg::util::symbol first_name{""};
-    inline static bg::util::symbol second_name{""};
+    inline static hg::util::symbol first_name{""};
+    inline static hg::util::symbol second_name{""};
 };
 
 struct generic_bundle_view_value_definition {
@@ -251,17 +251,17 @@ struct generic_bundle_view_value_definition {
 TEST_CASE("generic bundle views expose their resolved schema and items",
           "[evaluation][views][tsb][series:tsb][feature:time-series-view][declaration:generic]"
           "[schema:generic]") {
-    const auto copy = bg::node<generic_bundle_view_copy_definition>();
+    const auto copy = hg::node<generic_bundle_view_copy_definition>();
 
-    const auto value = bg::node<generic_bundle_view_value_definition>();
+    const auto value = hg::node<generic_bundle_view_value_definition>();
     generic_bundle_view_copy_definition::input_size = 0;
     generic_bundle_view_copy_definition::output_size = 0;
-    generic_bundle_view_copy_definition::first_name = bg::util::symbol{""};
-    generic_bundle_view_copy_definition::second_name = bg::util::symbol{""};
+    generic_bundle_view_copy_definition::first_name = hg::util::symbol{""};
+    generic_bundle_view_copy_definition::second_name = hg::util::symbol{""};
 
-    const auto graph = [&](bg::wp<TSB<RuntimeViewBundle>> input) { return value(copy(input)); };
+    const auto graph = [&](hg::wp<TSB<RuntimeViewBundle>> input) { return value(copy(input)); };
 
-    const auto actual = bg::run_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
+    const auto actual = hg::run_graph(graph, {{{"count", 4}, {"value", 2.5F}}});
 
     CHECK(generic_bundle_view_copy_definition::input_size == 2);
     CHECK(generic_bundle_view_copy_definition::output_size == 2);

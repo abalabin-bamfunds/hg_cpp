@@ -1,14 +1,14 @@
 #include "tsd_reference_sample.hpp"
 #include "../tss/tss_reference_sample.hpp"
 
-#include <bg/allocator.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -20,7 +20,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 class SampledDictionaryRuntimeType final : public TimeSeriesDictionaryRuntimeType {
   public:
@@ -667,4 +667,4 @@ ReferenceSampleFactory TimeSeriesDictionaryRuntimeType::reference_sample_factory
     return &create_sampled_dictionary;
 }
 
-} // namespace bg::details
+} // namespace hg::details

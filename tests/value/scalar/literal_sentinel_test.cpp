@@ -1,7 +1,7 @@
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,7 +10,7 @@
 
 #include "../../type/test_shared_literal_sentinel.hpp"
 
-using namespace bg;
+using namespace hg;
 
 static_assert(!std::is_copy_constructible_v<literal::Sentinel>);
 static_assert(!std::is_copy_assignable_v<literal::Sentinel>);

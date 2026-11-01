@@ -1,7 +1,7 @@
 #include "test_scalar_provider.hpp"
 
-#include <bg/bg.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/hg.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -290,7 +290,7 @@ TEST_CASE("a STRUCT node binds to and copies a concrete compound time series",
     const auto first = Price{.quantity = 1, .value = 2.5};
     const auto second = Price{.quantity = 2, .value = 3.5};
 
-    const auto result = bg::run_graph(graph, std::vector{first, second});
+    const auto result = hg::run_graph(graph, std::vector{first, second});
 
     CHECK(result.equals<Price>({first, second}));
 }
@@ -306,7 +306,7 @@ TEST_CASE("run_graph carries concrete compound scalar values and suppresses equa
     const auto first = Price{.quantity = 1, .value = 2.5};
     const auto second = Price{.quantity = 2, .value = 3.5};
 
-    const auto result = bg::run_graph(graph, std::vector{first, first, second});
+    const auto result = hg::run_graph(graph, std::vector{first, first, second});
 
     CHECK(result.equals<Price>({first, std::nullopt, second}));
 }

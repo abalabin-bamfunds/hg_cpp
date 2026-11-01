@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/details/operator_resolution.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/type_map.hpp>
+#include <hg/graph/details/operator_resolution.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/type_map.hpp>
 
 #include <cstddef>
 #include <deque>
@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct OperatorScalarRead {
     const WiringTemplate *implementation;
@@ -66,4 +66,4 @@ struct OperatorResolutionCache {
     std::deque<Entry> entries;
 };
 
-} // namespace bg::details
+} // namespace hg::details

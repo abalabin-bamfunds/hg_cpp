@@ -1,12 +1,12 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -18,7 +18,7 @@
 #include <memory>
 #include <optional>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -212,7 +212,7 @@ TEST_CASE("a runtime-signature node exposes resolved parameters, compiled data, 
         return wp<TS<i64>>{*runtime_node(input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals({3, 6, 9}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals({3, 6, 9}));
 }
 
 TEST_CASE("runtime-signature node timed scheduling can depend on the definition instance",
@@ -254,7 +254,7 @@ TEST_CASE("a callable selects its output runtime type from wiring arguments",
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
-        return bg::run_graph(graph, {4, 5});
+        return hg::run_graph(graph, {4, 5});
     };
 
     CHECK(run(1).equals<i64>({4, 5}));
@@ -287,7 +287,7 @@ TEST_CASE("a concrete callable evaluates using its selected output runtime type"
         const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
             return wp<TS<i64>>{compute(input, layout)};
         };
-        return bg::run_graph(graph, {4, 5});
+        return hg::run_graph(graph, {4, 5});
     };
 
     CHECK(run(1).equals<i64>({4, 5}));
@@ -397,13 +397,13 @@ TEST_CASE("a runtime-signature definition can select an output runtime type from
           "[feature:node-api][series:value][declaration:runtime][definition:runtime]") {
     InstanceOutputRuntimeDefinition::selector_calls = 0;
 
-    const auto node = bg::node(InstanceOutputRuntimeDefinition{InstanceOutputRuntimeDefinition::expected_layout});
+    const auto node = hg::node(InstanceOutputRuntimeDefinition{InstanceOutputRuntimeDefinition::expected_layout});
 
     const auto graph = [&](wp<TS<i64>> input) -> wp<TS<i64>> {
         return wp<TS<i64>>{*node(input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals<i64>({1, 2, 3}));
     CHECK(InstanceOutputRuntimeDefinition::selector_calls == 1);
 }
 
@@ -414,7 +414,7 @@ TEST_CASE("graph wiring owns a temporary runtime-signature node template",
         return wp<TS<i64>>{*node(RuntimeNodeDefinition{})(input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2}).equals({3, 6}));
+    CHECK(hg::run_graph(graph, {1, 2}).equals({3, 6}));
 }
 
 struct RuntimeSinkDefinition {
@@ -454,7 +454,7 @@ struct EmptyInvocationSourceDefinition {
 TEST_CASE("a runtime-signature node with no parameters exposes empty input and scalar ranges",
           "[node][runtime-signature][definition:runtime][feature:node-api]") {
     const auto source = node(EmptyInvocationSourceDefinition{});
-    CHECK(bg::run_graph(source).equals<i64>({1}));
+    CHECK(hg::run_graph(source).equals<i64>({1}));
 }
 
 TEST_CASE("a runtime-signature node can omit its output",
@@ -466,7 +466,7 @@ TEST_CASE("a runtime-signature node can omit its output",
         return input;
     };
 
-    CHECK(bg::run_graph(graph, {1, 2}).equals({1, 2}));
+    CHECK(hg::run_graph(graph, {1, 2}).equals({1, 2}));
 }
 
 struct RuntimeDynamicActivityDefinition {
@@ -496,7 +496,7 @@ TEST_CASE("a runtime-signature input changes its activity",
         return wp<TS<i64>>{*dynamic(input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2}).equals({1, std::nullopt}));
+    CHECK(hg::run_graph(graph, {1, 2}).equals({1, std::nullopt}));
 }
 
 struct OptionalScalarDefinition {
@@ -536,7 +536,7 @@ TEST_CASE("an absent optional scalar remains enumerable",
         return wp<TS<i64>>{*runtime_node(input, std::optional<i64>{})};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2}).equals({1, 2}));
+    CHECK(hg::run_graph(graph, {1, 2}).equals({1, 2}));
 }
 
 struct RuntimeAllValidDefinition {
@@ -585,7 +585,7 @@ TEST_CASE("a runtime-signature node applies all_valid using invocation metadata"
         return wp<TS<i64>>{*runtime_node(known, i64{7}, input)};
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3},
+    CHECK(hg::run_graph(graph, {1, 2, 3},
                                   {{{0, 10}, {1, 20}}, {{1, literal::INVALID}}, {{1, 22}}})
               .equals({7, std::nullopt, 7}));
 }
@@ -620,7 +620,7 @@ TEST_CASE("a runtime-signature input checks the declared base bundle schema",
         return wp<TS<i64>>{*runtime_node(input)};
     };
 
-    CHECK(bg::run_graph(graph, {{{"value", 42}}}).equals({1}));
+    CHECK(hg::run_graph(graph, {{{"value", 42}}}).equals({1}));
 }
 
 struct RuntimeDictionarySourceDefinition {

@@ -1,14 +1,14 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
+#include <hg/wall_clock.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -20,7 +20,7 @@
 #include <new>
 #include <stdexcept>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -203,7 +203,7 @@ struct nested_pending_controller_definition {
 TEST_CASE("fired handles remain visible while a nested graph resumes in one outer cycle",
           "[evaluation][nested][timed_scheduling][feature:nested-graph][feature:timed-scheduling]"
           "[transition:lifecycle]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto inner_timer = node<nested_pending_timer_definition>();
     GraphWiring inner_wiring;
@@ -286,7 +286,7 @@ struct indexed_heap_cancellation_definition {
 
 TEST_CASE("arbitrary timer cancellations preserve heap order",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:removal]") {
-    const auto node = bg::node<indexed_heap_cancellation_definition>();
+    const auto node = hg::node<indexed_heap_cancellation_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -369,7 +369,7 @@ struct fired_timer_lifecycle_definition {
 
 TEST_CASE("fired handles survive cancellation and become stale after the next cycle",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<fired_timer_lifecycle_definition>();
+    const auto node = hg::node<fired_timer_lifecycle_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -410,7 +410,7 @@ TEST_CASE("fired handles survive cancellation and become stale after the next cy
 TEST_CASE("simulation advances to mixed evaluation and wall-clock deadlines",
           "[evaluation][simulation][timed_scheduling][feature:simulation][feature:wall-clock]"
           "[feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<simulation_timer_progression_definition>();
+    const auto node = hg::node<simulation_timer_progression_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -435,7 +435,7 @@ TEST_CASE("simulation advances to mixed evaluation and wall-clock deadlines",
 TEST_CASE("simulation advances overdue wall-clock timers at the next minimum time",
           "[evaluation][simulation][timed_scheduling][feature:simulation][feature:wall-clock]"
           "[feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<simulation_timer_progression_definition>();
+    const auto node = hg::node<simulation_timer_progression_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -480,7 +480,7 @@ struct wall_clock_readiness_definition {
 TEST_CASE("wall-clock readiness does not follow evaluation time",
           "[evaluation][timed_scheduling][feature:wall-clock][feature:timed-scheduling]"
           "[transition:lifecycle]") {
-    const auto node = bg::node<wall_clock_readiness_definition>();
+    const auto node = hg::node<wall_clock_readiness_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -527,7 +527,7 @@ struct overdue_wall_clock_coalescing_definition {
 TEST_CASE("overdue wall-clock timers coalesce in one outer cycle",
           "[evaluation][timed_scheduling][feature:wall-clock][feature:timed-scheduling]"
           "[transition:lifecycle]") {
-    const auto node = bg::node<overdue_wall_clock_coalescing_definition>();
+    const auto node = hg::node<overdue_wall_clock_coalescing_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -786,7 +786,7 @@ struct startup_failure_with_timer_definition {
 
 TEST_CASE("startup failure clears timers registered before the failure",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<startup_failure_with_timer_definition>();
+    const auto node = hg::node<startup_failure_with_timer_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -817,7 +817,7 @@ struct evaluation_failure_with_timer_definition {
 
 TEST_CASE("evaluation failure clears timers registered before the failure",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<evaluation_failure_with_timer_definition>();
+    const auto node = hg::node<evaluation_failure_with_timer_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -837,7 +837,7 @@ struct stop_callback_timer_definition {
     static constexpr bool uses_timed_scheduling = true;
     static constexpr bool uses_cycle_callbacks = true;
 
-    stop_callback_timer_definition() : signature_{bg::util::symbol{"stop_callback_timer"}, {}} {}
+    stop_callback_timer_definition() : signature_{hg::util::symbol{"stop_callback_timer"}, {}} {}
 
     const Signature &signature() const noexcept { return signature_; }
 
@@ -864,7 +864,7 @@ struct deferred_cleanup_timer_definition {
     static constexpr bool uses_timed_scheduling = true;
     static constexpr bool uses_cycle_callbacks = true;
 
-    deferred_cleanup_timer_definition() : signature_{bg::util::symbol{"deferred_cleanup_timer"}, {}} {}
+    deferred_cleanup_timer_definition() : signature_{hg::util::symbol{"deferred_cleanup_timer"}, {}} {}
 
     const Signature &signature() const noexcept { return signature_; }
 
@@ -924,7 +924,7 @@ TEST_CASE("cycle cleanup schedules timers relative to the new invocation time",
           "[evaluation][timed_scheduling][feature:timed-scheduling][transition:lifecycle]") {
     const auto prefix = node<unscheduled_node_definition>();
 
-    const auto node = bg::node(deferred_cleanup_timer_definition{});
+    const auto node = hg::node(deferred_cleanup_timer_definition{});
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -961,7 +961,7 @@ TEST_CASE("cycle cleanup schedules timers relative to the new invocation time",
 
 TEST_CASE("stop callbacks can register timers that stop then clears",
           "[evaluation][timed_scheduling][lifecycle][feature:timed-scheduling][transition:stop]") {
-    const auto node = bg::node(stop_callback_timer_definition{});
+    const auto node = hg::node(stop_callback_timer_definition{});
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -983,7 +983,7 @@ TEST_CASE("stop callbacks can register timers that stop then clears",
 TEST_CASE("finalizing a running graph clears timers registered by stop callbacks",
           "[evaluation][timed_scheduling][lifecycle][feature:timed-scheduling][feature:finalization]"
           "[transition:lifecycle]") {
-    const auto node = bg::node(stop_callback_timer_definition{});
+    const auto node = hg::node(stop_callback_timer_definition{});
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -1057,7 +1057,7 @@ struct first_timer_allocation_failure_definition {
 
 TEST_CASE("first timer registration rolls back each allocation boundary",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<first_timer_allocation_failure_definition>();
+    const auto node = hg::node<first_timer_allocation_failure_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};
@@ -1084,7 +1084,7 @@ TEST_CASE("first timer registration rolls back each allocation boundary",
 
 TEST_CASE("failed timer registration rolls back its slot, heap and owner links",
           "[evaluation][timed_scheduling][failure][feature:timed-scheduling][transition:lifecycle]") {
-    const auto node = bg::node<timer_allocation_failure_definition>();
+    const auto node = hg::node<timer_allocation_failure_definition>();
     GraphWiring wiring;
     {
         WiringContext context{wiring};

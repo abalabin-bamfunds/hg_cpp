@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/util/symbol.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <stdexcept>
 #include <string>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class Type;
 
@@ -39,4 +39,4 @@ class TypeResolutionError : public std::runtime_error {
     const Type *supplied_;
 };
 
-} // namespace bg
+} // namespace hg

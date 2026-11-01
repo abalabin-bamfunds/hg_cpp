@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace bg::util {
+namespace hg::util {
 
 class thread_local_pointer {
   public:
@@ -19,4 +19,4 @@ class thread_local_pointer {
     std::uintptr_t key_;
 };
 
-} // namespace bg::util
+} // namespace hg::util

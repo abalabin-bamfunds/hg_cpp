@@ -1,12 +1,12 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,11 +15,11 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename> struct EmptyBundle {};
 
@@ -154,7 +154,7 @@ TEST_CASE("typed TSB field access reuses its wiring record",
 
 TEST_CASE("typed field access preserves free TSB sources",
           "[feature:getattr][feature:wiring][series:tsb][schema:named][representation:free]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto count_source = node([](Out<TS<i64>>) {});
 
@@ -166,7 +166,7 @@ TEST_CASE("typed field access preserves free TSB sources",
     const auto context = WiringContext{wiring};
     const auto count = count_source();
     const auto value = value_source();
-    const auto bundle = bg::bundle("value"_n = value, "count"_n = count).as<TSB<TestBundle>>();
+    const auto bundle = hg::bundle("value"_n = value, "count"_n = count).as<TSB<TestBundle>>();
     sink(bundle->count);
 
     (void)wiring.complete_pending_wiring();
@@ -195,7 +195,7 @@ TEST_CASE("typed TSB construction preserves field annotations",
 
 TEST_CASE("typed TSB construction reports invalid schema arguments as wiring errors",
           "[feature:wiring][series:tsb][schema:named][declaration:concrete]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     CHECK_THROWS_AS(testing::test_wiring([] { (void)bundle<TSB<SharedBundle>>(1); }), WiringError);
     CHECK_THROWS_AS(testing::test_wiring([] { (void)bundle<TSB<SharedBundle>>("missing"_n = 1, "value"_n = 2.5); }),
@@ -209,8 +209,8 @@ TEST_CASE("typed TSB construction reports invalid schema arguments as wiring err
 
 TEST_CASE("getattr selects a field from an unnamed free TSB",
           "[feature:getattr][feature:operator][series:tsb][schema:unnamed][representation:free]") {
-    using namespace bg::literals;
-    using namespace bg::util::literals;
+    using namespace hg::literals;
+    using namespace hg::util::literals;
 
     const auto count_source = node([](Out<TS<i64>>) {});
 
@@ -218,7 +218,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
     auto wiring = GraphWiring{};
 
     const auto context = WiringContext{wiring};
-    const auto bundle = bg::bundle("count"_n = count_source(), "value"_n = value_source());
+    const auto bundle = hg::bundle("count"_n = count_source(), "value"_n = value_source());
     const auto count = operators::getattr(bundle, "count"_sym);
 
     (void)wiring.complete_pending_wiring();
@@ -229,7 +229,7 @@ TEST_CASE("getattr selects a field from an unnamed free TSB",
 
 TEST_CASE("getattr selects a scalar field from a time series of Bundles",
           "[feature:getattr][feature:operator][series:value][scalar:hierarchical][schema:named]") {
-    using namespace bg::util::literals;
+    using namespace hg::util::literals;
 
     const auto source = node([](Out<TS<Bundle<SharedBundle>>>) {});
 
@@ -316,7 +316,7 @@ TEST_CASE("field selection from an argument-backed TSB does not materialize the 
     auto fields = std::vector<WiringArgument>{};
     fields.emplace_back(util::symbol{"count"}, i64{7});
     fields.emplace_back(util::symbol{"value"}, source());
-    const auto bundle = bg::bundle(std::span<const WiringArgument>{fields});
+    const auto bundle = hg::bundle(std::span<const WiringArgument>{fields});
     const auto value = details::time_series_bundle_field(bundle, util::symbol{"value"});
     const auto count = details::time_series_bundle_field(bundle, util::symbol{"count"});
     CHECK(&count.type() == &TS<i64, TimeSeriesGuarantee::const_>::type());
@@ -329,7 +329,7 @@ TEST_CASE("field selection from an argument-backed TSB does not materialize the 
 
 TEST_CASE("getattr on a TSB reference returns a reference to a value field",
           "[feature:getattr][feature:operator][series:tsb][series:reference][guarantee:final]") {
-    using namespace bg::util::literals;
+    using namespace hg::util::literals;
 
     const auto source = node([](Out<TSB<ReferenceFieldBundle>>) {});
     const auto reference =
@@ -345,7 +345,7 @@ TEST_CASE("getattr on a TSB reference returns a reference to a value field",
 
 TEST_CASE("getattr on a TSB reference preserves a reference field guarantee",
           "[feature:getattr][feature:operator][series:tsb][series:reference][guarantee:final]") {
-    using namespace bg::util::literals;
+    using namespace hg::util::literals;
 
     const auto source = node([](Out<TSB<ReferenceFieldBundle, TimeSeriesGuarantee::final>>) {});
     const auto reference =

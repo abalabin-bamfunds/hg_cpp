@@ -1,20 +1,20 @@
-#include <bg/type/signature.hpp>
+#include <hg/type/signature.hpp>
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/type/guarantee_variable.hpp>
-#include <bg/type/size_variable.hpp>
-#include <bg/type/details/resolver_type_resolution_error.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/wiring_argument_descriptor.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/type/guarantee_variable.hpp>
+#include <hg/type/size_variable.hpp>
+#include <hg/type/details/resolver_type_resolution_error.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <stdexcept>
@@ -22,7 +22,7 @@
 #include <unordered_set>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 template <typename Category>
@@ -690,4 +690,4 @@ ResolvedSignature Signature::complete_resolution_impl(
     return signature;
 }
 
-} // namespace bg
+} // namespace hg

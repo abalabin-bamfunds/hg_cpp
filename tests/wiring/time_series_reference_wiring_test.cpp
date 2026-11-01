@@ -1,18 +1,18 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/guarantee_variable.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/guarantee_variable.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 

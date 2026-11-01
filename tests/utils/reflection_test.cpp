@@ -1,11 +1,11 @@
-#include <bg/util/reflection.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <concepts>
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

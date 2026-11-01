@@ -1,4 +1,4 @@
-#include <bg/type/schema_metadata_values.hpp>
+#include <hg/type/schema_metadata_values.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -7,7 +7,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 struct SchemaMetadata::Impl {
     struct Entry {
@@ -132,4 +132,4 @@ SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries
     return SchemaMetadata{std::move(implementation)};
 }
 
-} // namespace bg
+} // namespace hg

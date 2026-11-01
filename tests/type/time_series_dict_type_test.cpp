@@ -1,23 +1,23 @@
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <concepts>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("time series dictionary annotations expose their key and item types",
           "[type_system][tsd][series:tsd][feature:type-system]") {

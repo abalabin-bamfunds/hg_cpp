@@ -1,18 +1,18 @@
-#include <bg/node/node_template.hpp>
+#include <hg/node/node_template.hpp>
 
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <functional>
 
-namespace bg {
+namespace hg {
 namespace {
 
 void combine_hash(std::size_t &result, std::size_t value) noexcept {
@@ -197,4 +197,4 @@ std::optional<WiringPoint> NodeTemplate::bind(GraphWiring &wiring, ResolvedSigna
     return output;
 }
 
-} // namespace bg
+} // namespace hg

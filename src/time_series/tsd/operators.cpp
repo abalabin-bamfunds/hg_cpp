@@ -1,12 +1,12 @@
-#include <bg/time_series/tsd/operators.hpp>
+#include <hg/time_series/tsd/operators.hpp>
 
-#include <bg/graph.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/node.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/node.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 using K = ScalarVariable<"K", Hashable>;
@@ -105,16 +105,16 @@ template <typename KEY, typename VALUE, auto GUARANTEE> struct tsd_getitem_tss {
 } // namespace
 
 void register_time_series_dict_operators(Operator &getitem) {
-    getitem.overload(bg::node<tsd_value_getitem_scalar>());
-    getitem.overload(bg::node<tsd_value_getitem_time_series>());
-    getitem.overload(bg::graph([](wp<TSD<K, V, G>, optional> dictionary, wp<TSS<K>> keys) {
-        static const auto select = bg::node<tsd_getitem_tss<K, V, G>>();
+    getitem.overload(hg::node<tsd_value_getitem_scalar>());
+    getitem.overload(hg::node<tsd_value_getitem_time_series>());
+    getitem.overload(hg::graph([](wp<TSD<K, V, G>, optional> dictionary, wp<TSS<K>> keys) {
+        static const auto select = hg::node<tsd_getitem_tss<K, V, G>>();
         return select(dictionary.as<TSD<K, REF<V, G>, G>>(), keys);
     }));
-    getitem.overload(bg::graph([](wp<TSD<K, REF<V, G>, G>, optional> dictionary, wp<TSS<K>> keys) {
-        static const auto select = bg::node<tsd_getitem_tss<K, V, G>>();
+    getitem.overload(hg::graph([](wp<TSD<K, REF<V, G>, G>, optional> dictionary, wp<TSS<K>> keys) {
+        static const auto select = hg::node<tsd_getitem_tss<K, V, G>>();
         return select(dictionary, keys);
     }));
 }
 
-} // namespace bg::details
+} // namespace hg::details

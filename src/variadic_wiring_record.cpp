@@ -1,12 +1,12 @@
-#include <bg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
 
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_error.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_error.hpp>
 
 #include <algorithm>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 VariadicWiringRecord::VariadicWiringRecord(VariadicCapture captured, VariadicMode mode,
                                            const VariadicWiringOperations &operations)
@@ -126,4 +126,4 @@ const VariadicWiringRecord *variadic_wiring_record(WiringPoint point) noexcept {
     return dynamic_cast<const VariadicWiringRecord *>(point.record());
 }
 
-} // namespace bg::details
+} // namespace hg::details

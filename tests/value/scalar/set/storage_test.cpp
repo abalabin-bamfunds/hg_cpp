@@ -1,9 +1,9 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/runtime_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,7 +11,7 @@
 #include <cstdint>
 #include <memory_resource>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("resolved scalar set storage supports mutation",
           "[value][scalar][set][scalar:set][storage][feature:scalar-storage]") {
@@ -20,7 +20,7 @@ TEST_CASE("resolved scalar set storage supports mutation",
     const auto available = std::array<const ScalarRuntimeType *, 1>{&item};
     const auto &set = static_cast<const ScalarSetRuntimeType &>(resolve_scalar_runtime_type(type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(set.size(), set.alignment());
     set.construct_initial_value(storage);
 
@@ -54,7 +54,7 @@ TEST_CASE("a scalar set copies nested items between composed and C++ storage",
     const auto &composed_set =
         static_cast<const ScalarSetRuntimeType &>(resolve_scalar_runtime_type(set_type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *item_storage = allocator.allocate_bytes(composed_item.size(), composed_item.alignment());
     composed_item.construct_initial_value(item_storage);
     const auto time_value = ScalarValue{EvaluationTime{EvaluationTime::duration{1}}};

@@ -1,11 +1,11 @@
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <memory_resource>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -38,7 +38,7 @@ TEST_CASE("a pointer-sized opaque scalar value uses inline storage",
     using PrivatePointerValue = ScalarValue<Opaque<private_data *>>;
 
     auto source = private_data{{1, 2, 3, 4}};
-    auto allocator = bg::allocator{*std::pmr::null_memory_resource()};
+    auto allocator = hg::allocator{*std::pmr::null_memory_resource()};
     const auto value = PrivatePointerValue{&source, allocator};
 
     const auto view = value.view();

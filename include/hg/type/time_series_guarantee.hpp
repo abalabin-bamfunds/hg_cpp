@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 enum class TimeSeriesGuarantee {
     ordinary,
@@ -21,4 +21,4 @@ constexpr TimeSeriesGuarantee strongest(TimeSeriesGuarantee lhs, TimeSeriesGuara
     return lhs > rhs ? lhs : rhs;
 }
 
-} // namespace bg
+} // namespace hg

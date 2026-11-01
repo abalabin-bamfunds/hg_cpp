@@ -1,7 +1,7 @@
-#include <bg/dispatch/details/dispatch_selector.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/bundle/value.hpp>
+#include <hg/dispatch/details/dispatch_selector.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/bundle/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,7 +11,7 @@
 
 namespace {
 
-using namespace bg;
+using namespace hg;
 
 template <template <typename, auto...> typename Field> struct DispatchBase {
     Field<symbol> name;

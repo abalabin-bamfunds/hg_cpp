@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/time_series_type.hpp>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesReferenceType : public TimeSeriesType {
   public:
@@ -47,4 +47,4 @@ class GenericTimeSeriesReferenceType final : public TimeSeriesReferenceType {
     [[nodiscard]] const Type &resolve(const TypeMap &type_map) const override;
 };
 
-} // namespace bg
+} // namespace hg

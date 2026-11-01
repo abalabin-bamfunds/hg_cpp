@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/type/details/scalar_type.hpp>
-#include <bg/type/type_map.hpp>
+#include <hg/type/details/scalar_type.hpp>
+#include <hg/type/type_map.hpp>
 
-namespace bg {
+namespace hg {
 
 class TypeScalarType : public ScalarType {
   public:
@@ -30,4 +30,4 @@ class GenericTypeScalarType final : public TypeScalarType {
     [[nodiscard]] bool do_match(const Type &supplied, TypeMap &type_map) const override;
 };
 
-} // namespace bg
+} // namespace hg

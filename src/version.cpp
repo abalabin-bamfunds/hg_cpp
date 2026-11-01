@@ -1,13 +1,13 @@
-#include <bg/version.hpp>
+#include <hg/version.hpp>
 
-#ifndef BG_VERSION
-#error "BG_VERSION must be supplied by the build system"
+#ifndef HG_VERSION
+#error "HG_VERSION must be supplied by the build system"
 #endif
 
-namespace bg {
+namespace hg {
 
 std::string_view version() noexcept {
-    return BG_VERSION;
+    return HG_VERSION;
 }
 
-} // namespace bg
+} // namespace hg

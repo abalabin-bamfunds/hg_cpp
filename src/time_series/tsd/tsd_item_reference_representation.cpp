@@ -1,18 +1,18 @@
 #include "tsd_reference_representation.hpp"
 
-#include <bg/allocator.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/allocator.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <algorithm>
 #include <memory>
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 struct ReferenceItemStorage {
@@ -407,4 +407,4 @@ ReferenceRepresentation *make_tsd_item_reference_representation(
         provider, base_reference, type, base_runtime_type, item_runtime_type);
 }
 
-} // namespace bg::details
+} // namespace hg::details

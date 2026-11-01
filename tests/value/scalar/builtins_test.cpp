@@ -1,4 +1,4 @@
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,7 +8,7 @@
 #include <string>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("built-in scalar aliases expose their C++ representations",
           "[feature:type-system][declaration:concrete][scalar:byte][scalar:i64][scalar:evaluation-time]"

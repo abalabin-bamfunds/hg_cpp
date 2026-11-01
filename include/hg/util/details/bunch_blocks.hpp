@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/storage_block.hpp>
+#include <hg/util/storage_block.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -12,7 +12,7 @@
 #include <memory_resource>
 #include <utility>
 
-namespace bg::util::details {
+namespace hg::util::details {
 
 template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
   public:
@@ -118,7 +118,7 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
         return current.data == nullptr ? nullptr : current.data + offset;
     }
 
-    ::bg::util::storage_block block_containing(size_type position) const noexcept {
+    ::hg::util::storage_block block_containing(size_type position) const noexcept {
         const auto [block_index, offset] = locate(position);
         const auto first = static_cast<std::uint64_t>(position) - offset;
         const auto end = std::min(first + block_capacity(block_index),
@@ -274,4 +274,4 @@ template <typename T, std::uint32_t InitialElements = 8> class bunch_blocks {
     size_type allocated_blocks_{};
 };
 
-} // namespace bg::util::details
+} // namespace hg::util::details

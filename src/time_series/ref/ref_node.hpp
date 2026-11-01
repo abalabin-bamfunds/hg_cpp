@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 class NodeTemplate;
 class TimeSeriesReferenceType;
@@ -18,4 +18,4 @@ namespace details {
 [[nodiscard]] WiringPoint forward_inherited_reference(WiringPoint source, const TimeSeriesReferenceType &type);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

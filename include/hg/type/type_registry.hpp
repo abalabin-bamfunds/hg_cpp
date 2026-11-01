@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/type/type.hpp>
+#include <hg/export.hpp>
+#include <hg/type/type.hpp>
 
 #include <concepts>
 #include <functional>
@@ -12,11 +12,11 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 // Owns semantic types whose references can outlive the operation that created them.
 // Static registration accepts only objects with process-static storage duration.
-class BG_EXPORT TypeRegistry {
+class HG_EXPORT TypeRegistry {
   private:
     class CacheBase {
       public:
@@ -101,4 +101,4 @@ class BG_EXPORT TypeRegistry {
     std::vector<std::unique_ptr<Type>> owned_types_;
 };
 
-} // namespace bg
+} // namespace hg

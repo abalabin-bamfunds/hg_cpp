@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
+#include <hg/evaluation_time.hpp>
 
 #include <chrono>
 
-namespace bg {
+namespace hg {
 
 class WallClock {
   public:
@@ -25,4 +25,4 @@ class SystemWallClock final : public WallClock {
     }
 };
 
-} // namespace bg
+} // namespace hg

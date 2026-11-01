@@ -1,8 +1,8 @@
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_storage.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_storage.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("fixed list changes cross bitset word boundaries",
           "[value][time_series][tsl][series:fixed-tsl][feature:time-series-storage][transition:update]") {
@@ -33,7 +33,7 @@ TEST_CASE("fixed list validity is derived from its items",
           "[value][time_series][tsl][series:fixed-tsl][feature:time-series-storage]") {
     const auto &runtime_type = cpp_time_series_runtime_type<TSL<TS<i64>, 3>>();
     auto memory = std::pmr::monotonic_buffer_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
     runtime_type.construct_runtime_value(storage, allocator);
 
@@ -59,7 +59,7 @@ TEST_CASE("fixed list runtime items use positional IDs",
           "[value][time_series][tsl][series:fixed-tsl][runtime_type][feature:time-series-storage]") {
     const auto &runtime_type = cpp_time_series_runtime_type<TSL<TS<i64>, 3>>();
     auto memory = std::pmr::monotonic_buffer_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
     runtime_type.construct_runtime_value(storage, allocator);
 

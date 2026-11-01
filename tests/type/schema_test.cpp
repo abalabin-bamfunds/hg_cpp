@@ -1,18 +1,18 @@
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/type/schema_metadata_values.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/type/schema_metadata_values.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -28,7 +28,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -58,7 +58,7 @@ struct ShutdownProbe {
 
         const auto metadata = shutdown_schema_metadata();
         const auto fields = std::array{SchemaField{util::symbol{"items"}, &list_type}};
-        const auto &descriptor = bg::schema(util::symbol{"ShutdownSchema"}, *identity, nullptr, fields, metadata);
+        const auto &descriptor = hg::schema(util::symbol{"ShutdownSchema"}, *identity, nullptr, fields, metadata);
         if (&descriptor != canonical_schema || descriptor.field_count() != 1 ||
             descriptor.field(0).type != &list_type || descriptor.metadata() != metadata ||
             !TypeRegistry::instance().contains(descriptor)) {
@@ -99,27 +99,27 @@ TEST_CASE("runtime schema identities and field metadata key canonical descriptor
         SchemaField{util::symbol{"bid"}, &double_type()},
         SchemaField{util::symbol{"ask"}, &double_type()},
     };
-    const auto &canonical = bg::schema(util::symbol{"Quote"}, identity, nullptr, fields);
+    const auto &canonical = hg::schema(util::symbol{"Quote"}, identity, nullptr, fields);
 
     CHECK(identity != other_identity);
-    CHECK(&bg::schema(util::symbol{"Quote"}, identity, nullptr, fields) == &canonical);
-    CHECK(&bg::schema(util::symbol{"OtherQuote"}, identity, nullptr, fields) != &canonical);
-    CHECK(&bg::schema(util::symbol{"Quote"}, other_identity, nullptr, fields) != &canonical);
+    CHECK(&hg::schema(util::symbol{"Quote"}, identity, nullptr, fields) == &canonical);
+    CHECK(&hg::schema(util::symbol{"OtherQuote"}, identity, nullptr, fields) != &canonical);
+    CHECK(&hg::schema(util::symbol{"Quote"}, other_identity, nullptr, fields) != &canonical);
 
     const auto reversed_fields = std::array{fields[1], fields[0]};
-    CHECK(&bg::schema(util::symbol{"Quote"}, identity, nullptr, reversed_fields) != &canonical);
+    CHECK(&hg::schema(util::symbol{"Quote"}, identity, nullptr, reversed_fields) != &canonical);
 
     const auto optional_fields = std::array{
         SchemaField{util::symbol{"bid"}, &double_type()},
         SchemaField{util::symbol{"ask"}, &double_type(), true},
     };
-    CHECK(&bg::schema(util::symbol{"Quote"}, identity, nullptr, optional_fields) != &canonical);
+    CHECK(&hg::schema(util::symbol{"Quote"}, identity, nullptr, optional_fields) != &canonical);
 
     const auto different_type_fields = std::array{
         SchemaField{util::symbol{"bid"}, &float_type()},
         SchemaField{util::symbol{"ask"}, &double_type()},
     };
-    CHECK(&bg::schema(util::symbol{"Quote"}, identity, nullptr, different_type_fields) != &canonical);
+    CHECK(&hg::schema(util::symbol{"Quote"}, identity, nullptr, different_type_fields) != &canonical);
 }
 
 TEST_CASE("schema metadata owns scalar values and ignores entry order in canonical identity",
@@ -136,8 +136,8 @@ TEST_CASE("schema metadata owns scalar values and ignores entry order in canonic
         schema_metadata_entry("extension.enabled", ScalarValue<bool>{true}),
         schema_metadata_entry("extension.version", ScalarValue<i64>{7}),
     });
-    const auto &first = bg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, metadata);
-    const auto &same = bg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, reordered);
+    const auto &first = hg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, metadata);
+    const auto &same = hg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, reordered);
 
     CHECK(metadata == reordered);
     CHECK(&first == &same);
@@ -149,7 +149,7 @@ TEST_CASE("schema metadata owns scalar values and ignores entry order in canonic
         schema_metadata_entry("extension.version", ScalarValue<i64>{8}),
         schema_metadata_entry("extension.enabled", ScalarValue<bool>{true}),
     });
-    CHECK(&bg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, different) != &first);
+    CHECK(&hg::schema(util::symbol{"MetadataSchema"}, identity, nullptr, fields, different) != &first);
 }
 
 TEST_CASE("schema metadata copy_with removes entries and applies overrides",
@@ -197,7 +197,7 @@ TEST_CASE("registered schema and List<string> descriptors survive process shutdo
         SchemaField{util::symbol{"items"}, &cpp_scalar_type<List<string>>()},
     };
     const auto metadata = shutdown_schema_metadata();
-    const auto &registered = bg::schema(util::symbol{"ShutdownSchema"}, identity, nullptr, fields, metadata);
+    const auto &registered = hg::schema(util::symbol{"ShutdownSchema"}, identity, nullptr, fields, metadata);
 
     REQUIRE(registered.field_count() == 1);
     CHECK(registered.metadata() == metadata);
@@ -217,10 +217,10 @@ TEST_CASE("derived schema metadata inherits base entries and replaces matching n
     });
     const auto base_fields = std::array{SchemaField{util::symbol{"value"}, &int64_type()}};
     const auto &base =
-        bg::schema(util::symbol{"MetadataBase"}, new_runtime_schema_id(), nullptr, base_fields, base_metadata);
+        hg::schema(util::symbol{"MetadataBase"}, new_runtime_schema_id(), nullptr, base_fields, base_metadata);
     const auto derived_fields = std::array{SchemaField{util::symbol{"extra"}, &double_type()}};
     const auto &derived =
-        bg::schema(util::symbol{"MetadataDerived"}, new_runtime_schema_id(), &base, derived_fields, derived_metadata);
+        hg::schema(util::symbol{"MetadataDerived"}, new_runtime_schema_id(), &base, derived_fields, derived_metadata);
 
     REQUIRE(derived.direct_metadata().size() == 2);
     REQUIRE(derived.metadata().size() == 3);
@@ -260,10 +260,10 @@ TEST_CASE("schema resolution preserves identity and resolves inherited field typ
     const auto derived_metadata =
         make_schema_metadata({schema_metadata_entry("extension.derived", ScalarValue<i64>{2})});
     const auto base_fields = std::array{SchemaField{util::symbol{"value"}, &variable}};
-    const auto &base = bg::schema(util::symbol{"Base"}, base_identity, nullptr, base_fields, base_metadata);
+    const auto &base = hg::schema(util::symbol{"Base"}, base_identity, nullptr, base_fields, base_metadata);
     const auto derived_fields = std::array{SchemaField{util::symbol{"extra"}, &float_type()}};
     const auto &derived =
-        bg::schema(util::symbol{"Derived"}, derived_identity, &base, derived_fields, derived_metadata);
+        hg::schema(util::symbol{"Derived"}, derived_identity, &base, derived_fields, derived_metadata);
     auto type_map = TypeMap{};
     type_map.set(variable, &int64_type());
 
@@ -291,7 +291,7 @@ TEST_CASE("schema registration publishes completed runtime schemas",
     reserved.finalize(fields);
     registration.commit();
 
-    CHECK(&bg::schema(name, identity, nullptr, fields, metadata) == &reserved);
+    CHECK(&hg::schema(name, identity, nullptr, fields, metadata) == &reserved);
 }
 
 TEST_CASE("schema registration rejects hierarchical schemas with time-series fields",
@@ -318,7 +318,7 @@ TEST_CASE("time series bundle types reject common schemas with non-time-series f
           "[feature:type-system][series:tsb][schema:named][declaration:runtime]") {
     const auto scalar_fields = std::array{SchemaField{util::symbol{"value"}, &int64_type()}};
     const auto &scalar_schema =
-        bg::schema(util::symbol{"ScalarField"}, new_runtime_schema_id(), nullptr, scalar_fields);
+        hg::schema(util::symbol{"ScalarField"}, new_runtime_schema_id(), nullptr, scalar_fields);
     CHECK_THROWS_WITH(time_series_bundle_type(scalar_schema, TimeSeriesGuarantee::ordinary),
                       "a time series bundle requires resolved, present time-series fields");
 
@@ -326,7 +326,7 @@ TEST_CASE("time series bundle types reject common schemas with non-time-series f
         SchemaField{util::symbol{"value"}, &TS<i64>::type(), true},
     };
     const auto &optional_schema =
-        bg::schema(util::symbol{"OptionalField"}, new_runtime_schema_id(), nullptr, optional_fields);
+        hg::schema(util::symbol{"OptionalField"}, new_runtime_schema_id(), nullptr, optional_fields);
     CHECK_THROWS_WITH(time_series_bundle_type(optional_schema, TimeSeriesGuarantee::ordinary),
                       "a time series bundle requires resolved, present time-series fields");
 }

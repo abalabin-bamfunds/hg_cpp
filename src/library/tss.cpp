@@ -1,21 +1,21 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/dict/scalar.hpp>
-#include <bg/time_series/item_id.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/type/time_series_dict_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/type/time_series_dict_type.hpp>
 
 #include <cstddef>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"G">;
 inline constexpr auto GD = guarantee_variable<"GD">;
@@ -466,7 +466,7 @@ struct tsd_set_overloads {
         const auto rhs_keys = operators::keys_(rhs);
         const auto lhs_references = static_cast<WiringPoint>(lhs).template as<TSD<K, REF<TS_T>, G>>();
         const auto rhs_references = static_cast<WiringPoint>(rhs).template as<TSD<K, REF<TS_T>, G>>();
-        static const auto route_node = bg::node<reference_routing_node<SYMMETRIC>>();
+        static const auto route_node = hg::node<reference_routing_node<SYMMETRIC>>();
         return route_node(lhs_references, rhs_references, lhs_keys, rhs_keys);
     }
 
@@ -558,4 +558,4 @@ void register_tss_operators() {
     register_overloads<tsd_set_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

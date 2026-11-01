@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/type/fixed_item_time_series_type.hpp>
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/size_parameter.hpp>
+#include <hg/type/fixed_item_time_series_type.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/size_parameter.hpp>
 
 #include <cstddef>
 #include <optional>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesListType : public FixedItemTimeSeriesType {
   public:
@@ -53,4 +53,4 @@ class GenericTimeSeriesListType final : public TimeSeriesListType {
 const TimeSeriesListType &time_series_list_type(const TimeSeriesType &item_type, std::size_t size,
                                                 TimeSeriesGuarantee guarantee);
 
-} // namespace bg
+} // namespace hg

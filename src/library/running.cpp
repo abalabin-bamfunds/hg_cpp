@@ -1,17 +1,17 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
 
 #include <cstdint>
 #include <type_traits>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"RUNNING_G">;
 inline constexpr auto RESULT_G = guarantee_variable<"RUNNING_RESULT_G">;
@@ -198,4 +198,4 @@ struct running_overloads {
 
 void register_running_operators() { register_overloads<running_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

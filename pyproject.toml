@@ -5,17 +5,17 @@ build-backend = "scikit_build_core.build"
 [project]
 name = "hg_cpp"
 version = "0.1.0"
-description = "Python bindings for the bg graph engine"
+description = "Python bindings for the hg graph engine"
 requires-python = ">=3.12"
 
 [project.optional-dependencies]
 test = ["pytest>=8"]
 
 [tool.scikit-build]
-cmake.define.BG_BUILD_PYTHON = "ON"
-cmake.define.BG_BUNDLE_FMT = "ON"
+cmake.define.HG_BUILD_PYTHON = "ON"
+cmake.define.HG_BUNDLE_FMT = "ON"
 cmake.define.BUILD_TESTING = "OFF"
-wheel.packages = ["bindings/python/python/bg"]
+wheel.packages = ["bindings/python/python/hg"]
 wheel.py-api = "cp312"
 sdist.include = [
   "CMakeLists.txt",

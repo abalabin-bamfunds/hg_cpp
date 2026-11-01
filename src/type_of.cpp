@@ -1,10 +1,10 @@
-#include <bg/type/type_of.hpp>
-#include <bg/type/type_registry.hpp>
+#include <hg/type/type_of.hpp>
+#include <hg/type/type_registry.hpp>
 
 #include <memory>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTypeScalarType final : public TypeScalarType {
@@ -49,4 +49,4 @@ const Type &GenericTypeScalarType::resolve(const TypeMap &type_map) const {
     return type_of(type().resolve(type_map));
 }
 
-} // namespace bg
+} // namespace hg

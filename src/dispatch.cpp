@@ -1,22 +1,22 @@
-#include <bg/dispatch.hpp>
-#include <bg/dispatch/details/dispatch_selector.hpp>
+#include <hg/dispatch.hpp>
+#include <hg/dispatch/details/dispatch_selector.hpp>
 
-#include <bg/graph/details/dispatch_cast.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
-#include <bg/graph/details/wiring_materialisation.hpp>
-#include <bg/graph/details/wiring_record_overlay.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/operator.hpp>
-#include <bg/switch.hpp>
-#include <bg/switch/details/switch_invoke.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph/details/dispatch_cast.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/wiring_materialisation.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/operator.hpp>
+#include <hg/switch.hpp>
+#include <hg/switch/details/switch_invoke.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <algorithm>
 #include <array>
@@ -25,7 +25,7 @@
 #include <string>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 const TimeSeriesValueType *dispatch_value_type(const Type &type) {
@@ -678,4 +678,4 @@ std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &d
     return static_cast<WiringPoint>(result);
 }
 
-} // namespace bg::details
+} // namespace hg::details

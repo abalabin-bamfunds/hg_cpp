@@ -1,19 +1,19 @@
-#include <bg/graph/operator.hpp>
+#include <hg/graph/operator.hpp>
 
-#include <bg/graph/context.hpp>
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/details/wiring_materialisation.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/details/wiring_record_overlay.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/details/resolver_type_resolution_error.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/details/wiring_materialisation.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/details/resolver_type_resolution_error.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include "operator_resolution_cache.hpp"
 
@@ -27,7 +27,7 @@
 #include <string>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 struct OverloadCandidate {
@@ -921,4 +921,4 @@ std::optional<WiringPoint> Operator::wire(GraphWiring &, ResolvedSignature, cons
     throw std::logic_error{"an operator must select an overload before wiring"};
 }
 
-} // namespace bg
+} // namespace hg

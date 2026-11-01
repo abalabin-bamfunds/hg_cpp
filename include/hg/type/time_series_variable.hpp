@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/guarantee_variable_instance.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/guarantee_variable_instance.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class GenericTimeSeriesVariableType final : public TimeSeriesType {
   public:
@@ -78,4 +78,4 @@ struct declaration_variable_traits<TimeSeriesVariableWithGuarantee<Variable, Gua
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

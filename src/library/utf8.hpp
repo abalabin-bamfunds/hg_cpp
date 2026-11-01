@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/scalar/builtins.hpp>
+#include <hg/scalar/builtins.hpp>
 
 #include <unicode/utf8.h>
 
@@ -10,11 +10,11 @@
 #include <stdexcept>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 class StringBuilder;
 }
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 
 enum class CaseConversion { lower, upper, fold };
 
@@ -98,4 +98,4 @@ class Utf8View {
     std::size_t length_{};
 };
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

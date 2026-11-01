@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 namespace details {
 
 template <typename Tag> constexpr std::uintptr_t tag_value(Tag tag) noexcept {
@@ -220,4 +220,4 @@ using variant_ptr = variant_ptr_with_alignment<details::minimum_alignment<Types.
 
 static_assert(sizeof(details::tagged_pointer_bits<alignof(void *), 1, std::uintptr_t>) == sizeof(void *));
 
-} // namespace bg::util
+} // namespace hg::util

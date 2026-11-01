@@ -1,7 +1,7 @@
-#include <bg/type/variable.hpp>
+#include <hg/type/variable.hpp>
 
-namespace bg {
+namespace hg {
 
 Variable::~Variable() = default;
 
-} // namespace bg
+} // namespace hg

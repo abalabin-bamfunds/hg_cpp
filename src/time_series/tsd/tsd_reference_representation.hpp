@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 class TimeSeriesDictionaryRepresentation : public ReferenceRepresentation {
   public:
@@ -53,4 +53,4 @@ ReferenceRepresentation *make_recursive_tsd_representation(ReferenceProvider &pr
                                                            const TimeSeriesRuntimeType &item_runtime_type,
                                                            allocator &memory);
 
-} // namespace bg::details
+} // namespace hg::details

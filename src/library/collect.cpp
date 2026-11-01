@@ -1,25 +1,25 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/dict/scalar.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/set/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tss/tss_output.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/set/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/time_series/tss/tss_output.hpp>
 
 #include <ranges>
 #include <utility>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto INPUT_G = guarantee_variable<"COLLECT_INPUT_G">;
 inline constexpr auto OUTPUT_G = guarantee_variable<"COLLECT_OUTPUT_G">;
@@ -29,7 +29,7 @@ using VALUE = ScalarVariable<"COLLECT_VALUE">;
 
 struct collect_overloads {
     static const TimeSeriesType *requested_output(const WiringArguments &arguments) {
-        const auto *mapping = arguments.type_map().find(::bg::details::type_parameter<OUT>());
+        const auto *mapping = arguments.type_map().find(::hg::details::type_parameter<OUT>());
         const auto *requested = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
         return requested == nullptr || *requested == nullptr ? nullptr : type_cast<TimeSeriesType>(*requested);
     }
@@ -344,4 +344,4 @@ struct collect_overloads {
 
 void register_collect_operators() { register_overloads<collect_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

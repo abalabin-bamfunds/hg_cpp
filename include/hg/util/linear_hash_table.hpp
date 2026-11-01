@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/util/contiguous_bunch.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/util/contiguous_bunch.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <array>
 #include <bit>
@@ -23,7 +23,7 @@
 #include <arm_neon.h>
 #endif
 
-namespace bg::util {
+namespace hg::util {
 
 // Splits or merges one bucket at a time, so capacity changes never process the complete table.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
@@ -468,4 +468,4 @@ class linear_hash_table {
     size_type size_{};
 };
 
-} // namespace bg::util
+} // namespace hg::util

@@ -1,8 +1,8 @@
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/util/occupancy_index.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/util/occupancy_index.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,13 +14,13 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 using namespace literals;
 
 TEST_CASE("a time series set publishes only new items",
           "[feature:collection-change][series:tss][scalar:integer][transition:addition][shape:single-node]") {
     const auto collect = node([](i64 value, Out<TSS<i64>> output) { output.insert(value); });
-    const auto actual = bg::run_graph(collect, {1, 2, 1});
+    const auto actual = hg::run_graph(collect, {1, 2, 1});
 
     CHECK(actual.equals({{1}, {2}, literal::SKIP}));
 }
@@ -55,7 +55,7 @@ TEST_CASE("a TSS input does not replay changes when another input triggers evalu
     });
     const auto graph = [&](wp<TS<i64>> trigger) { return inspect(update(trigger), trigger); };
 
-    const auto actual = bg::run_graph(graph, {1, 2, 3, 4});
+    const auto actual = hg::run_graph(graph, {1, 2, 3, 4});
 
     CHECK(actual.equals<observation>({observation{true, 1, 0, true, false},
                                      observation{false, 0, 0, false, false},
@@ -79,7 +79,7 @@ TEST_CASE("a set output reports its current size and membership",
         CHECK(output.empty());
     });
 
-    bg::run_graph(inspect, {0});
+    hg::run_graph(inspect, {0});
 }
 
 TEST_CASE("a time series set becomes valid on its first empty tick and remains valid",
@@ -105,7 +105,7 @@ TEST_CASE("a time series set becomes valid on its first empty tick and remains v
     });
 
     const auto wiring = graph("name"_n = "literal_set_input", [&](wp<TSS<i64>> input) { return observe(input); });
-    const auto actual = bg::run_graph(wiring, {{}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(2)}});
+    const auto actual = hg::run_graph(wiring, {{}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(2)}});
 
     CHECK(actual.equals<observation>({observation{true, 0, 0, 0}, observation{true, 2, 2, 0},
                                      observation{true, 0, 0, 2}}));
@@ -145,7 +145,7 @@ TEST_CASE("a TSS membership binding ignores changes to other keys",
     const auto graph = [&](wp<TSS<i64>> input) { return observe(input); };
     tss_membership_evaluation_count_definition::evaluation_count = 0;
 
-    const auto actual = bg::run_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
+    const auto actual = hg::run_graph(graph, {{7}, {8}, {literal::REMOVED(7)}, {7}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, false, true}));
     CHECK(tss_membership_evaluation_count_definition::evaluation_count == 3);
@@ -176,7 +176,7 @@ TEST_CASE("a TSS update removes a composite key with an rvalue REMOVED payload",
 
     const auto graph = [&] { return size(source()); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals<i64>({1, 0}));
 }
@@ -187,7 +187,7 @@ TEST_CASE("a TSS update applies scalar REMOVED entries in written order",
         output.apply({1, 2, literal::REMOVED(2), 3});
     });
 
-    const auto actual = bg::run_graph(update);
+    const auto actual = hg::run_graph(update);
 
     CHECK(actual.equals({{1, 3}}));
 }
@@ -199,7 +199,7 @@ TEST_CASE("a TSS update can reinsert an item after removing it in the same tick"
         output.apply({1, 2, literal::REMOVED(2), 2, 3});
     });
 
-    const auto actual = bg::run_graph(update);
+    const auto actual = hg::run_graph(update);
 
     CHECK(actual.equals({{1, 2, 3}}));
 }
@@ -244,7 +244,7 @@ TEST_CASE("adding and removing a set item in one invocation produces a tick",
 
     const auto source = node<inverse_set_mutation_source_definition>();
 
-    const auto actual = bg::run_graph([&] { return sink(source()); });
+    const auto actual = hg::run_graph([&] { return sink(source()); });
 
     CHECK(actual.equals<observation>({observation{true, 0, 0, 0}}));
 }
@@ -320,7 +320,7 @@ TEST_CASE("a TSS node preserves its output when it declares preserve_output",
 
     const auto graph = [&] { return size(set_from_value(source())); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({1}));
 }
@@ -332,7 +332,7 @@ TEST_CASE("a TSS node invalidates its output when a required input becomes inval
     const auto set_from_value = node<set_from_value_definition>();
     const auto size = node([](In<TSS<i64>> input) { return static_cast<i64>(input.size()); });
 
-    const auto actual = bg::run_graph([&] { return size(set_from_value(source())); });
+    const auto actual = hg::run_graph([&] { return size(set_from_value(source())); });
 
     CHECK(actual.equals({1, std::nullopt}));
     CHECK(actual.visit_tick(1, [](const TimeSeriesType &, bool valid, util::buffer_reader &) {
@@ -382,11 +382,11 @@ TEST_CASE("a TSS output invalidates its root and reports removal before revalida
 
     const auto graph = [&](wp<TS<i64>> command) { return inspect(update(command)); };
 
-    CHECK(bg::run_graph(graph, {0, 1, 2, 3}).equals<bool>({true, false, std::nullopt, true}));
+    CHECK(hg::run_graph(graph, {0, 1, 2, 3}).equals<bool>({true, false, std::nullopt, true}));
 
     const auto contains = node([](In<TSS<i64>> input) { return input.contains(1); });
     const auto contains_graph = [&](wp<TS<i64>> command) { return contains(update(command)); };
-    const auto membership = bg::run_graph(contains_graph, {0, 1, 2, 3});
+    const auto membership = hg::run_graph(contains_graph, {0, 1, 2, 3});
     CHECK(membership.equals<bool>({true, std::nullopt, std::nullopt, true}));
     CHECK(membership.visit_tick(1, [](const TimeSeriesType &, bool valid, util::buffer_reader &) {
         CHECK_FALSE(valid);
@@ -400,7 +400,7 @@ TEST_CASE("a time series set accepts its exact non-canonical item type",
 
     const auto graph = [&](wp<TSS<i64>> input) { return contains(input); };
 
-    const auto actual = bg::run_graph(graph, {{7}, {literal::REMOVED(7)}});
+    const auto actual = hg::run_graph(graph, {{7}, {literal::REMOVED(7)}});
 
     CHECK(actual.equals({true, false}));
 }
@@ -428,7 +428,7 @@ TEST_CASE("Out<TSS>::for_each supports erasing visited members across index word
 
     const auto graph = [&](wp<TS<i64>> trigger) { return size(update(trigger)); };
 
-    CHECK(bg::run_graph(graph, {0, 1, 2}).equals<i64>({130, 0, std::nullopt}));
+    CHECK(hg::run_graph(graph, {0, 1, 2}).equals<i64>({130, 0, std::nullopt}));
 }
 
 namespace {
@@ -521,7 +521,7 @@ TEST_CASE("a TSS input reports removed items when its reference selects an inval
         observe(select_set_reference(condition(), valid, invalid()));
     });
 
-    (void)bg::run_graph(wiring, {{11, 12}});
+    (void)hg::run_graph(wiring, {{11, 12}});
 
     CHECK(validity == std::vector{true, false});
     CHECK(sizes == std::vector<std::size_t>{2, 0});
@@ -560,7 +560,7 @@ TEST_CASE("a TSS input reports item changes when its reference selects another v
                                   observe(select_set_reference(condition(), first, second));
                               });
 
-    (void)bg::run_graph(wiring, {{11, 12}}, {{12, 13}});
+    (void)hg::run_graph(wiring, {{11, 12}}, {{12, 13}});
 
     CHECK(validity == std::vector{true, true});
     CHECK(sizes == std::vector<std::size_t>{2, 2});
@@ -600,7 +600,7 @@ TEST_CASE("a TSS reference sample preserves prior validity when the old target i
         observe(select_after_invalidation(previous_target, previous_target, current_target));
     };
 
-    (void)bg::run_graph(wiring, {{22}});
+    (void)hg::run_graph(wiring, {{22}});
 
     REQUIRE(became_valid.size() == 2);
     CHECK(became_valid == std::vector{true, false});
@@ -650,7 +650,7 @@ TEST_CASE("a sampled TSS reports item ID exchanges across a reference rebind",
         inspect(phase, select_set_reference(phase, first, second), first);
     });
 
-    (void)bg::run_graph(wiring, {{11, 12}}, {{12, 11}});
+    (void)hg::run_graph(wiring, {{11, 12}}, {{12, 11}});
 
     CHECK(remappings_match_keys == std::vector{true, true});
     CHECK(remapping_found == std::vector{false, true});
@@ -677,7 +677,7 @@ TEST_CASE("a sampled TSS does not report remapping for additions and removals at
         inspect(select_set_reference(phase, first, second));
     });
 
-    (void)bg::run_graph(wiring, {{11, 12}}, {{11, 13}});
+    (void)hg::run_graph(wiring, {{11, 12}}, {{11, 13}});
 
     CHECK(remapping_found == std::vector{false, false});
     CHECK(remapping_counts == std::vector<std::size_t>{0, 0});
@@ -698,7 +698,7 @@ TEST_CASE("a TSS reports no item ID remapping for ordinary additions and removal
 
     const auto wiring = graph("name"_n = "literal_set_input", [&](wp<TSS<i64>> input) { inspect(input); });
 
-    (void)bg::run_graph(wiring, {{10}, {literal::REMOVED(10), 20}});
+    (void)hg::run_graph(wiring, {{10}, {literal::REMOVED(10), 20}});
 
     CHECK(remapping_found == std::vector{false, false});
     CHECK(remapping_counts == std::vector<std::size_t>{0, 0});
@@ -734,7 +734,7 @@ TEST_CASE("a TSS input does not report stale removals after an invalid target is
     });
 
     const auto wiring = [&] { return observe(select_set_reference(condition(), valid(), invalid())); };
-    const auto actual = bg::run_graph(wiring);
+    const auto actual = hg::run_graph(wiring);
 
     CHECK(actual.equals<observation>({observation{true, 2, false}, observation{true, 0, true},
                                       observation{false, 0, false}}));
@@ -813,7 +813,7 @@ TEST_CASE("a TSS input reports removed items when its reference becomes null",
     const auto wiring = graph("name"_n = "literal_set_input",
                               [&](wp<TSS<i64>> source) { observe(reference(source)); });
 
-    (void)bg::run_graph(wiring, {{11, 12}});
+    (void)hg::run_graph(wiring, {{11, 12}});
 
     CHECK(validity == std::vector{true, false});
     CHECK(sizes == std::vector<std::size_t>{2, 0});
@@ -846,7 +846,7 @@ TEST_CASE("a passive TSS input does not retain a stale removal sample",
         observe(reference(source), trigger());
     });
 
-    (void)bg::run_graph(wiring, {{11, 12}});
+    (void)hg::run_graph(wiring, {{11, 12}});
 
     CHECK(validity == std::vector{true, false});
     CHECK(sizes == std::vector<std::size_t>{2, 0});
@@ -877,7 +877,7 @@ TEST_CASE("a generic input visitor sees TSS removals on reference invalidation",
     const auto wiring = graph("name"_n = "literal_set_input",
                               [&](wp<TSS<i64>> source) { observe(reference(source)); });
 
-    (void)bg::run_graph(wiring, {{11, 12}});
+    (void)hg::run_graph(wiring, {{11, 12}});
 
     CHECK(validity == std::vector{true, false});
     CHECK(sizes == std::vector<std::size_t>{2, 0});
@@ -894,5 +894,5 @@ TEST_CASE("a TSS update applies a root INVALID marker",
         }
     });
 
-    CHECK(bg::run_graph(source, {11, literal::INVALID, 12}).equals({{11}, literal::INVALID, {12}}));
+    CHECK(hg::run_graph(source, {11, literal::INVALID, 12}).equals({{11}, literal::INVALID, {12}}));
 }

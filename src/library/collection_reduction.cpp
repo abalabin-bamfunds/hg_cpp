@@ -1,11 +1,11 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -13,10 +13,10 @@
 #include <optional>
 #include <type_traits>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"COLLECTION_REDUCTION_G">;
 inline constexpr auto RESULT_G = guarantee_variable<"COLLECTION_REDUCTION_RESULT_G">;
@@ -418,4 +418,4 @@ struct collection_reduction_overloads {
 
 void register_collection_reduction_operators() { register_overloads<collection_reduction_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

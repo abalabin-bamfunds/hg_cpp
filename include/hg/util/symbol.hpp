@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/util/compile_time_string.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <string>
 #include <string_view>
 
-namespace bg::util {
+namespace hg::util {
 
 class symbol {
   public:
@@ -35,4 +35,4 @@ template <compile_time_string Text> [[nodiscard]] symbol operator""_sym() {
 
 } // namespace literals
 
-} // namespace bg::util
+} // namespace hg::util

@@ -1,8 +1,8 @@
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/with_signature.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/with_signature.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -11,8 +11,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field>
 using VALUES = BundleSchemaVariableDeclaration<"WITH_SIGNATURE_VALUES", Field>;
@@ -41,7 +41,7 @@ TEST_CASE("with_signature gives a positional variadic graph a fixed call signatu
     CHECK(callable.signature().parameter(0).name.text() == "left");
     CHECK(callable.signature().parameter(1).name.text() == "right");
 
-    const auto actual = bg::run_graph(callable, {1, 2}, {10, 20});
+    const auto actual = hg::run_graph(callable, {1, 2}, {10, 20});
     CHECK(actual.equals<i64>({11, 22}));
 }
 
@@ -61,7 +61,7 @@ TEST_CASE("with_signature forwards fixed parameter names to a named variadic gra
                                      TS<i64>::type()};
     const auto callable = with_signature(variadic, signature);
 
-    const auto actual = bg::run_graph(callable, {1, 2}, {10, 20});
+    const auto actual = hg::run_graph(callable, {1, 2}, {10, 20});
     CHECK(actual.equals<i64>({11, 22}));
 }
 
@@ -76,7 +76,7 @@ TEST_CASE("with_signature gives a variadic node a fixed call signature",
                                      TS<i64>::type()};
     const auto callable = with_signature(count, signature);
 
-    const auto actual = bg::run_graph(callable, {1, 2}, {10, 20});
+    const auto actual = hg::run_graph(callable, {1, 2}, {10, 20});
     CHECK(actual.equals<i64>({2, 2}));
 }
 

@@ -1,12 +1,12 @@
-#include <bg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
 
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 constexpr auto unmapped = std::numeric_limits<std::size_t>::max();
@@ -663,4 +663,4 @@ bool equivalent_wiring_bodies(const GraphWiring &left, std::span<const WiringPoi
     return equivalent(*left_data, *right_data);
 }
 
-} // namespace bg::details
+} // namespace hg::details

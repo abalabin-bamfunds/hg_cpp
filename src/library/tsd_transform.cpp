@@ -1,15 +1,15 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/dict/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
 using KEY = ScalarVariable<"REKEY_KEY", Hashable>;
@@ -484,4 +484,4 @@ struct tsd_transform_overloads {
 
 void register_tsd_transform_operators() { register_overloads<tsd_transform_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

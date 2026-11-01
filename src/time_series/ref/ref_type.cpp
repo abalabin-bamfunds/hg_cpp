@@ -1,15 +1,15 @@
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
 
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <stdexcept>
 #include <memory>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTimeSeriesReferenceType final : public TimeSeriesReferenceType {
@@ -131,4 +131,4 @@ const Type &GenericTimeSeriesReferenceType::resolve(const TypeMap &type_map) con
     return time_series_reference_type(*target, guarantee().resolve(type_map));
 }
 
-} // namespace bg
+} // namespace hg

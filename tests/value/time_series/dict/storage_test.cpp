@@ -1,7 +1,7 @@
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_storage.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_storage.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -10,7 +10,7 @@
 #include <memory_resource>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("dictionary runtime items use stable sparse IDs",
           "[value][time_series][tsd][series:tsd][runtime_type][feature:time-series-storage]") {
@@ -25,7 +25,7 @@ TEST_CASE("dictionary runtime items use stable sparse IDs",
     const auto item_value_offset = details::contained_time_series_value_offset(item_runtime_type);
 
     auto memory = std::pmr::monotonic_buffer_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *value = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
     runtime_type.construct_runtime_value(value, allocator);
     auto &storage = *static_cast<details::time_series_dict_storage *>(value);

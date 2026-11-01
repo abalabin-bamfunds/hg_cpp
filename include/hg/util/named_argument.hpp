@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/compile_time_string.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <cstddef>
 #include <string>
@@ -8,7 +8,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <util::compile_time_string Name, typename Value> struct named_argument {
     static constexpr auto name = Name;
@@ -75,12 +75,12 @@ decltype(auto) named_argument_value(First &&first, Rest &&...rest) {
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg::literals {
+namespace hg::literals {
 
 template <util::compile_time_string Name> [[nodiscard]] consteval auto operator""_n() {
     return details::compile_time_name<Name>{};
 }
 
-} // namespace bg::literals
+} // namespace hg::literals

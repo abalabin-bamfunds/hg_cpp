@@ -1,15 +1,15 @@
-#include <bg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
 
 #include "ref_item_notifications.hpp"
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cassert>
 #include <concepts>
@@ -18,7 +18,7 @@
 #include <ranges>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 ReferenceRepresentation::~ReferenceRepresentation() = default;
 ReferenceProviderComponent::~ReferenceProviderComponent() = default;
@@ -626,4 +626,4 @@ void ReferenceProvider::finalize_root(RootReference &root, allocator &memory) no
     root.clear_notifications();
 }
 
-} // namespace bg::details
+} // namespace hg::details

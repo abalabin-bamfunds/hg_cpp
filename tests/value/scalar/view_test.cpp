@@ -1,4 +1,4 @@
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -6,7 +6,7 @@
 #include <string_view>
 #include <type_traits>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

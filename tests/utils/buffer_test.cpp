@@ -1,4 +1,4 @@
-#include <bg/util/buffer.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <catch2/generators/catch_generators.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a contiguous buffer exposes committed bytes", "[coverage-exempt]") {
     auto data = util::buffer::contiguous(8);
@@ -765,7 +765,7 @@ TEST_CASE("a concurrent block rolls over before its local sequence wraps", "[cov
 TEST_CASE("a concurrent chain can retry rollover after allocation failure", "[coverage-exempt]") {
     auto memory = counting_memory_resource{};
     {
-        auto allocator = bg::allocator{memory};
+        auto allocator = hg::allocator{memory};
         auto data = util::buffer::concurrent_chain(2, 2, allocator);
         const auto initial_allocations = memory.allocations();
         const auto initial_bytes = memory.allocated_bytes();
@@ -833,7 +833,7 @@ TEST_CASE("block-local commit order hides later blocks until earlier reservation
 
 TEST_CASE("a moved chain handle transfers ownership to its writer", "[coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     std::optional<util::concurrent_buffer_writer> writer;
     std::optional<util::concurrent_buffer_reservation> reservation;
     {
@@ -1260,7 +1260,7 @@ TEST_CASE("a reader's current buffer remains valid after advancing the chain", "
 
 TEST_CASE("a restarted reader resumes and retained chunks keep only their block", "[coverage-exempt]") {
     auto memory = counting_memory_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     {
         auto data = util::buffer::chain(3, allocator);
         util::buffer_writer writer{data};

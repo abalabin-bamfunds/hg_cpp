@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <string_view>
 
-namespace bg::util {
+namespace hg::util {
 
 template <std::size_t Size> struct compile_time_string {
     char value[Size];
@@ -28,4 +28,4 @@ template <std::size_t Size> struct compile_time_string {
 
 template <std::size_t Size> compile_time_string(const char (&)[Size]) -> compile_time_string<Size>;
 
-} // namespace bg::util
+} // namespace hg::util

@@ -1,25 +1,25 @@
 #include "registration.hpp"
 #include "utf8.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
 
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"G">;
 using K = ScalarVariable<"K", Hashable>;
@@ -89,7 +89,7 @@ struct collection_overloads {
         require = require_values_list_output)};
 
     static const TimeSeriesType *requested_output(const WiringArguments &arguments) {
-        const auto *mapping = arguments.type_map().find(::bg::details::type_parameter<OUT>());
+        const auto *mapping = arguments.type_map().find(::hg::details::type_parameter<OUT>());
         const auto *requested = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
         return requested == nullptr || *requested == nullptr ? nullptr : type_cast<TimeSeriesType>(*requested);
     }
@@ -274,7 +274,7 @@ struct collection_overloads {
         }
     };
 
-    overload<contains_> contains_tss_scalar{bg::node<contains_tss_scalar_definition>()};
+    overload<contains_> contains_tss_scalar{hg::node<contains_tss_scalar_definition>()};
 
     struct contains_tss_time_series_key_definition {
         static constexpr bool uses_cycle_callbacks = true;
@@ -295,7 +295,7 @@ struct collection_overloads {
         }
     };
 
-    overload<contains_> contains_tss_time_series_key{bg::node<contains_tss_time_series_key_definition>()};
+    overload<contains_> contains_tss_time_series_key{hg::node<contains_tss_time_series_key_definition>()};
 
     template <bool ValidItems> struct contains_tsd_scalar_definition {
         static constexpr bool uses_cycle_callbacks = true;
@@ -320,16 +320,16 @@ struct collection_overloads {
         }
     };
 
-    overload<contains_> contains_tsd_scalar{bg::node<contains_tsd_scalar_definition<false>>()};
+    overload<contains_> contains_tsd_scalar{hg::node<contains_tsd_scalar_definition<false>>()};
 
     overload<contains_> contains_tsd_physical_scalar{graph([](wp<TSD<K, TS_T, G>> collection, Scalar<K> key) {
-        static const auto contains = bg::node<contains_tsd_scalar_definition<false>>();
+        static const auto contains = hg::node<contains_tsd_scalar_definition<false>>();
         return contains(collection, key);
     })};
 
     overload<contains_> contains_tsd_valid_items_scalar{graph([](wp<TSD<K, TS_T, G>, valid_items> collection,
                                                                    Scalar<K> key) {
-        static const auto contains = bg::node<contains_tsd_scalar_definition<true>>();
+        static const auto contains = hg::node<contains_tsd_scalar_definition<true>>();
         return contains(static_cast<WiringPoint>(collection), key);
     })};
 
@@ -356,17 +356,17 @@ struct collection_overloads {
         }
     };
 
-    overload<contains_> contains_tsd_time_series_key{bg::node<contains_tsd_time_series_key_definition<false>>()};
+    overload<contains_> contains_tsd_time_series_key{hg::node<contains_tsd_time_series_key_definition<false>>()};
 
     overload<contains_> contains_tsd_physical_time_series_key{
         graph([](wp<TSD<K, TS_T, G>> collection, wp<TS<K, G>> key) {
-            static const auto contains = bg::node<contains_tsd_time_series_key_definition<false>>();
+            static const auto contains = hg::node<contains_tsd_time_series_key_definition<false>>();
             return contains(collection, key);
         })};
 
     overload<contains_> contains_tsd_valid_items_time_series_key{
         graph([](wp<TSD<K, TS_T, G>, valid_items> collection, wp<TS<K, G>> key) {
-            static const auto contains = bg::node<contains_tsd_time_series_key_definition<true>>();
+            static const auto contains = hg::node<contains_tsd_time_series_key_definition<true>>();
             return contains(static_cast<WiringPoint>(collection), key);
         })};
 
@@ -430,4 +430,4 @@ void register_collection_operators() {
     register_overloads<collection_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

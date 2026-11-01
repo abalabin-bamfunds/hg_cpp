@@ -1,11 +1,11 @@
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/node/node_template_identity.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/node/node_template_identity.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,15 +23,15 @@ inline bool throw_on_equality{};
 inline bool throw_on_cacheability{};
 
 struct fallible_value {
-    explicit fallible_value(bg::i64 value) : value{value} {}
+    explicit fallible_value(hg::i64 value) : value{value} {}
 
-    bg::i64 value;
+    hg::i64 value;
 
     std::size_t hash() const {
         if (throw_on_hash) {
             throw std::runtime_error{"hash failed"};
         }
-        return std::hash<bg::i64>{}(value);
+        return std::hash<hg::i64>{}(value);
     }
 
     bool cacheable() const {
@@ -58,20 +58,20 @@ template <> struct hash<test_identity::fallible_value> {
         if (test_identity::throw_on_hash) {
             throw std::runtime_error{"hash failed"};
         }
-        return std::hash<bg::i64>{}(value.value);
+        return std::hash<hg::i64>{}(value.value);
     }
 };
 
 } // namespace std
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_type_traits<test_identity::fallible_value> {
     static const ScalarType &type() noexcept {
         class Type final : public ScalarType {
           public:
             bool is_resolved() const noexcept override { return true; }
-            const bg::Type &resolve(const TypeMap &) const override { return *this; }
+            const hg::Type &resolve(const TypeMap &) const override { return *this; }
             bool supports_equality() const noexcept override { return true; }
             bool supports_hash() const noexcept override { return true; }
         };
@@ -82,32 +82,32 @@ template <> struct scalar_type_traits<test_identity::fallible_value> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
 namespace {
 
 struct ScalarSource {
-    bg::Scalar<test_identity::fallible_value> value;
-    bg::Out<bg::TS<bg::i64>> output;
+    hg::Scalar<test_identity::fallible_value> value;
+    hg::Out<hg::TS<hg::i64>> output;
 
     void evaluate() const noexcept {}
 };
 
-const auto scalar_source = bg::node<ScalarSource>();
+const auto scalar_source = hg::node<ScalarSource>();
 
-using ScalarGraph = std::pair<std::unique_ptr<bg::GraphWiring>, bg::WiringPoint>;
+using ScalarGraph = std::pair<std::unique_ptr<hg::GraphWiring>, hg::WiringPoint>;
 
 ScalarGraph make_scalar_graph() {
-    auto wiring = std::make_unique<bg::GraphWiring>();
-    const auto context = bg::WiringContext{*wiring};
-    const auto value = bg::ScalarValue<test_identity::fallible_value>{test_identity::fallible_value{1}};
+    auto wiring = std::make_unique<hg::GraphWiring>();
+    const auto context = hg::WiringContext{*wiring};
+    const auto value = hg::ScalarValue<test_identity::fallible_value>{test_identity::fallible_value{1}};
     const auto output = scalar_source(value);
     (void)wiring->complete_pending_wiring(output);
     return {std::move(wiring), output};
 }
 
-bg::details::GraphWiringStructure structure(const ScalarGraph &graph) {
-    return bg::details::graph_wiring_structure(*graph.first, std::span<const bg::WiringPoint>{}, graph.second);
+hg::details::GraphWiringStructure structure(const ScalarGraph &graph) {
+    return hg::details::graph_wiring_structure(*graph.first, std::span<const hg::WiringPoint>{}, graph.second);
 }
 
 } // namespace
@@ -115,8 +115,8 @@ bg::details::GraphWiringStructure structure(const ScalarGraph &graph) {
 TEST_CASE("node template identity propagates operation exceptions", "[feature:wiring][wiring][identity][scalar]") {
     using Value = test_identity::fallible_value;
 
-    const auto left = bg::NodeTemplateIdentity::from_value(Value{1});
-    const auto right = bg::NodeTemplateIdentity::from_value(Value{1});
+    const auto left = hg::NodeTemplateIdentity::from_value(Value{1});
+    const auto right = hg::NodeTemplateIdentity::from_value(Value{1});
 
     test_identity::throw_on_hash = true;
     CHECK_THROWS_AS(left.hash(), std::runtime_error);

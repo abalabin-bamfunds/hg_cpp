@@ -1,9 +1,9 @@
 #include "tss_reference_sample.hpp"
 
-#include <bg/util/index.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/scalar/runtime_type.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/scalar/runtime_type.hpp>
 
 #include <cassert>
 #include <exception>
@@ -12,7 +12,7 @@
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 constexpr auto previous_item_flag = item_id_t{1} << 31;
@@ -364,4 +364,4 @@ ReferenceSampleFactory TimeSeriesSetRuntimeType::reference_sample_factory() cons
     return &create_sampled_set;
 }
 
-} // namespace bg::details
+} // namespace hg::details

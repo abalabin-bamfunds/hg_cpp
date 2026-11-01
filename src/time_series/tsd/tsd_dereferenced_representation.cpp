@@ -1,19 +1,19 @@
 #include "tsd_reference_representation.hpp"
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
 
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <memory>
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 template <bool Recursive> struct ItemBindingState;
@@ -918,4 +918,4 @@ ReferenceRepresentation *make_recursive_tsd_representation(ReferenceProvider &pr
         provider, base_reference, type, base_runtime_type, item_runtime_type);
 }
 
-} // namespace bg::details
+} // namespace hg::details

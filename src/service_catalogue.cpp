@@ -1,12 +1,12 @@
-#include <bg/service_catalogue.hpp>
+#include <hg/service_catalogue.hpp>
 
 #include <algorithm>
-#include <bg/graph/details/nested_binding_identity.hpp>
-#include <bg/graph/details/multiservice_ports.hpp>
-#include <bg/graph/details/service_instance_registry.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
+#include <hg/graph/details/nested_binding_identity.hpp>
+#include <hg/graph/details/multiservice_ports.hpp>
+#include <hg/graph/details/service_instance_registry.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
 #include <functional>
 #include <exception>
 #include <optional>
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 struct ServiceCatalogue::State {
     struct ScalarFilter {
@@ -1185,4 +1185,4 @@ void ServiceCatalogue::build(GraphWiring &wiring) const {
     }
 }
 
-} // namespace bg
+} // namespace hg

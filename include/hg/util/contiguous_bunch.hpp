@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/util/details/bunch_blocks.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/details/bunch_blocks.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cassert>
 #include <cstdint>
@@ -10,7 +10,7 @@
 #include <memory_resource>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 // Stores positions [0, size) without relocating live values when storage grows.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
@@ -96,4 +96,4 @@ template <typename T, std::uint32_t InitialElements = 8> class contiguous_bunch 
     size_type size_{};
 };
 
-} // namespace bg::util
+} // namespace hg::util

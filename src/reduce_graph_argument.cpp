@@ -1,20 +1,20 @@
-#include <bg/reduce/details/reduce_graph_argument.hpp>
+#include <hg/reduce/details/reduce_graph_argument.hpp>
 
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/service_instance_registry.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/details/service_instance_registry.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <array>
 #include <memory>
@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 const TimeSeriesType &reference_target(const TimeSeriesType &type) {
@@ -251,4 +251,4 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
     };
 }
 
-} // namespace bg::details
+} // namespace hg::details

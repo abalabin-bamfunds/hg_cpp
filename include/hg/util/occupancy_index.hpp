@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/index.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/index.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -11,7 +11,7 @@
 #include <stdexcept>
 #include <type_traits>
 
-namespace bg::util {
+namespace hg::util {
 
 // Tracks occupied 32-bit positions and reuses the lowest available position.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
@@ -124,4 +124,4 @@ class occupancy_index {
 
 static_assert(byte_copy_initializable<occupancy_index>);
 
-} // namespace bg::util
+} // namespace hg::util

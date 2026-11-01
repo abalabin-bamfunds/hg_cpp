@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/details/hash_key_table.hpp>
+#include <hg/util/details/hash_key_table.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -9,7 +9,7 @@
 #include <memory_resource>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 // Stores keys at stable addresses and changes capacity one bucket at a time.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
@@ -136,4 +136,4 @@ template <typename Key, typename Hash = std::hash<Key>, typename Equal = std::eq
     details::hash_key_table<Key, Hash, Equal> keys_;
 };
 
-} // namespace bg::util
+} // namespace hg::util

@@ -1,4 +1,4 @@
-#include <bg/util/contiguous_bunch.hpp>
+#include <hg/util/contiguous_bunch.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -7,7 +7,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

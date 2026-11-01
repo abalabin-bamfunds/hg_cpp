@@ -1,8 +1,8 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/util/symbol.hpp>
 
-namespace bg {
+namespace hg {
 
 template const ScalarRuntimeType &cpp_scalar_runtime_type<bool>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<byte>();
@@ -16,7 +16,7 @@ template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<bytes>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<symbol>();
 template const ScalarRuntimeType &cpp_scalar_runtime_type<const Type *>();
-template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::Sentinel>();
-template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::TaggedLiteral>();
+template HG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::Sentinel>();
+template HG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::TaggedLiteral>();
 
-} // namespace bg
+} // namespace hg

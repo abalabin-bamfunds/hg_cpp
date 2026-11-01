@@ -1,14 +1,14 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -45,14 +45,14 @@ template <> struct hash<map_wiring_test::MapLifetimeValue> {
 
 } // namespace std
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_type_traits<map_wiring_test::MapLifetimeValue> {
     static const ScalarType &type() noexcept {
         class Type final : public ScalarType {
           public:
             bool is_resolved() const noexcept override { return true; }
-            const bg::Type &resolve(const TypeMap &) const override { return *this; }
+            const hg::Type &resolve(const TypeMap &) const override { return *this; }
             bool supports_equality() const noexcept override { return true; }
             bool supports_hash() const noexcept override { return true; }
         };
@@ -63,12 +63,12 @@ template <> struct scalar_type_traits<map_wiring_test::MapLifetimeValue> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 using map_wiring_test::MapLifetimeValue;
 
 using MAP_LEFT = ScalarVariable<"MAP_LEFT">;

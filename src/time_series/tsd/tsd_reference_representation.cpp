@@ -1,10 +1,10 @@
 #include "tsd_reference_representation.hpp"
 
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <exception>
@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDictionaryRuntimeType {
@@ -327,4 +327,4 @@ const ReferenceRepresentationFactory *TimeSeriesDictionaryRuntimeType::reference
     return &factory;
 }
 
-} // namespace bg::details
+} // namespace hg::details

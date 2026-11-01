@@ -1,13 +1,13 @@
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,8 +16,8 @@
 #include <stdexcept>
 #include <string>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -81,7 +81,7 @@ TEST_CASE("an aggregate requirement can explain why it rejected an overload",
     };
 
     try {
-        (void)bg::run_graph(graph, {1.0F});
+        (void)hg::run_graph(graph, {1.0F});
         FAIL("expected rejected operator wiring");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());
@@ -196,7 +196,7 @@ TEST_CASE("an operator cache keys scalar values read by aggregate requirements",
             return result;
         };
 
-        return bg::run_graph(graph, {1.0F});
+        return hg::run_graph(graph, {1.0F});
     };
 
     CHECK(run(0).equals<float>({1.0F}));
@@ -243,7 +243,7 @@ TEST_CASE("callable requirements control overload applicability",
             return result;
         };
 
-        return bg::run_graph(graph, {2.0F});
+        return hg::run_graph(graph, {2.0F});
     };
 
     CHECK(run(0).equals({2.0F}));

@@ -1,10 +1,10 @@
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +13,7 @@
 #include <span>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 inline constexpr auto N = SizeVariableDeclaration<"N">{};

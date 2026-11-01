@@ -1,4 +1,4 @@
-#include <bg/util/linear_hash_table.hpp>
+#include <hg/util/linear_hash_table.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -7,7 +7,7 @@
 #include <cstddef>
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a linear hash table finds and removes positions",
           "[linear_hash_table][coverage-exempt]") {

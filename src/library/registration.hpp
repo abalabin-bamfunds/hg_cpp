@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 
 void register_numeric_operators();
 void register_conversion_operators();
@@ -23,4 +23,4 @@ void register_collection_reduction_operators();
 void register_tss_operators();
 void register_tsd_transform_operators();
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

@@ -1,16 +1,16 @@
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
 
 #include "../fixed/fixed_reference_representation.hpp"
-#include <bg/util/static_storage.hpp>
-#include <bg/time_series/tsl/tsl_free_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_input.hpp>
-#include <bg/time_series/tsl/tsl_output.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/time_series/tsl/tsl_free_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_input.hpp>
+#include <hg/time_series/tsl/tsl_output.hpp>
 
 #include <memory>
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 const ReferenceRepresentationFactory *FreeFixedTimeSeriesListRuntimeType::reference_representation_factory()
     const noexcept {
@@ -208,4 +208,4 @@ fixed_time_series_list_runtime_type(const TimeSeriesListType &type, const TimeSe
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details

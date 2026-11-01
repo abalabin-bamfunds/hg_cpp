@@ -1,7 +1,7 @@
-#include <bg/testing/time_series_tick_comparison.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/testing/time_series_tick_comparison.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg {
+namespace hg {
 
 template <> TimeSeriesDispatch<testing::TickLiteralComparison> &
 TimeSeriesDispatch<testing::TickLiteralComparison>::instance() noexcept {
@@ -9,4 +9,4 @@ TimeSeriesDispatch<testing::TickLiteralComparison>::instance() noexcept {
     return dispatch.get();
 }
 
-} // namespace bg
+} // namespace hg

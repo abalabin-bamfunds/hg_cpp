@@ -1,12 +1,12 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,7 +14,7 @@
 #include <optional>
 #include <string>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a constant value updates only in the first test graph cycle",
           "[feature:constant][feature:test-graph][series:value][scalar:integer][guarantee:const]"
@@ -23,7 +23,7 @@ TEST_CASE("a constant value updates only in the first test graph cycle",
         return operators::const_(3);
     };
 
-    CHECK(bg::run_graph(graph, {1, 2}).equals<i64>({3, std::nullopt}));
+    CHECK(hg::run_graph(graph, {1, 2}).equals<i64>({3, std::nullopt}));
 }
 
 TEST_CASE("a constant waits for another required input",
@@ -36,7 +36,7 @@ TEST_CASE("a constant waits for another required input",
     });
 
     const auto graph = [&](wp<TS<i64>> input) { return sum(operators::const_(4), input); };
-    const auto actual = bg::run_graph(graph, {literal::SKIP, 3});
+    const auto actual = hg::run_graph(graph, {literal::SKIP, 3});
 
     CHECK(actual.equals({std::nullopt, 7}));
     CHECK(evaluations == 1);
@@ -218,7 +218,7 @@ TEST_CASE("an inner constant uses its own start time",
 
     const auto outer = [&](wp<TS<bool>> run) { return nested(inner, run); };
 
-    const auto actual = bg::run_graph(outer, {false, true});
+    const auto actual = hg::run_graph(outer, {false, true});
 
     CHECK(actual.equals({std::nullopt, 2}));
 }

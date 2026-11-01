@@ -1,15 +1,15 @@
-#include <bg/type/time_series_type.hpp>
+#include <hg/type/time_series_type.hpp>
 
-#include <bg/type/fixed_item_time_series_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/type/fixed_item_time_series_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <algorithm>
 #include <array>
 #include <span>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 bool TimeSeriesType::contains_reference() const { return false; }
 
@@ -110,4 +110,4 @@ bool FixedItemTimeSeriesType::requires_reference_representation_for(const TimeSe
     return false;
 }
 
-} // namespace bg
+} // namespace hg

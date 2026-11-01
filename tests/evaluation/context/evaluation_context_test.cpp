@@ -1,8 +1,8 @@
-#include <bg/global_state.hpp>
-#include <bg/graph.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -12,8 +12,8 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -24,19 +24,19 @@ TEST_CASE("an evaluation context exposes the outer global state",
 
         void start(EvaluationContext *context) const {
             const auto value = ScalarValue{42};
-            context->global_state().write([&](auto &state) { state.set(bg::util::symbol{"result"}, value); });
+            context->global_state().write([&](auto &state) { state.set(hg::util::symbol{"result"}, value); });
             output.set(1);
         }
 
         void evaluate() const {}
     };
 
-    const auto global_state_source = bg::node<global_state_source_definition>();
+    const auto global_state_source = hg::node<global_state_source_definition>();
     auto state = GlobalState{};
 
-    bg::run_graph([&] { (void)global_state_source(); }, GraphRunOptions{.global_state = &state});
+    hg::run_graph([&] { (void)global_state_source(); }, GraphRunOptions{.global_state = &state});
 
-    state.read([](const auto &values) { CHECK(*bg::scalar_cast<i64>(values.at("result")) == 42); });
+    state.read([](const auto &values) { CHECK(*hg::scalar_cast<i64>(values.at("result")) == 42); });
 }
 
 struct invocation_scratch_callback_state {
@@ -166,13 +166,13 @@ struct scratch_reuse_sink_definition {
 
 TEST_CASE("evaluation contexts reset node scratch before publishing output",
           "[evaluation][context][scratch][feature:evaluation-context]") {
-    const auto source = bg::node<scratch_reuse_source_definition>();
+    const auto source = hg::node<scratch_reuse_source_definition>();
 
-    const auto sink = bg::node<scratch_reuse_sink_definition>();
+    const auto sink = hg::node<scratch_reuse_sink_definition>();
     scratch_reuse_source_definition::allocation = nullptr;
     scratch_reuse_sink_definition::allocation = nullptr;
 
-    bg::run_graph([&] { sink(source()); });
+    hg::run_graph([&] { sink(source()); });
 
     CHECK(scratch_reuse_sink_definition::value == 42);
     CHECK(scratch_reuse_sink_definition::allocation == scratch_reuse_source_definition::allocation);
@@ -318,7 +318,7 @@ TEST_CASE("nested graph node invocations own independent callback scopes",
     const auto source = node<invocation_end_nested_source_definition>();
     const auto inner = graph("name"_n = "invocation_end_inner", [&](wp<TS<i64>> input) { return source(input); });
     const auto tested = [&](wp<TS<i64>> input, wp<TS<bool>> run) { return nested(inner, run, input); };
-    const auto actual = bg::run_graph(tested, {1, 2}, {true, true});
+    const auto actual = hg::run_graph(tested, {1, 2}, {true, true});
 
     CHECK(actual.equals<i64>({1, 2}));
     CHECK(invocation_end_state.callback_count == 2);

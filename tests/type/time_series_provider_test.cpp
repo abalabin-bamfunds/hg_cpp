@@ -2,41 +2,41 @@
 #include "../utils/counting_memory_resource.hpp"
 #include "test_shared_literal_sentinel.hpp"
 
-#include <bg/feedback.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/literal_operations.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/input_data.hpp>
-#include <bg/time_series/literal_operations.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/output_state.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/tick_operations.hpp>
-#include <bg/time_series/queue_operations.hpp>
-#include <bg/time_series/time_series_type_traits.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/type/declaration_variables.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/feedback.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/literal_operations.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/input_data.hpp>
+#include <hg/time_series/literal_operations.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/output_state.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/tick_operations.hpp>
+#include <hg/time_series/queue_operations.hpp>
+#include <hg/time_series/time_series_type_traits.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/type/declaration_variables.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -57,7 +57,7 @@
 #include <type_traits>
 #include <utility>
 
-using namespace bg;
+using namespace hg;
 
 namespace provider {
 
@@ -95,8 +95,8 @@ struct QueueOperationState {
     int discard_calls{};
     bool last_incoming_valid{};
     bool fail_apply{};
-    bg::i64 last_applied_value{};
-    bg::i64 last_discarded_value{};
+    hg::i64 last_applied_value{};
+    hg::i64 last_discarded_value{};
 };
 inline QueueOperationState queue_operation_state;
 struct QueueOwnedOperationState {
@@ -107,23 +107,23 @@ struct QueueOwnedOperationState {
     int discard_calls{};
     bool fail_write{};
     bool fail_apply{};
-    bg::i64 last_applied_value{};
-    bg::i64 last_discarded_value{};
+    hg::i64 last_applied_value{};
+    hg::i64 last_discarded_value{};
 };
 inline QueueOwnedOperationState queue_owned_operation_state;
 
 template <template <typename, auto...> typename Field> struct QueueConflictBundle {
-    Field<bg::TS<bg::i64>> first;
-    Field<bg::TS<test_scalar_provider::value>> later;
+    Field<hg::TS<hg::i64>> first;
+    Field<hg::TS<test_scalar_provider::value>> later;
 };
 
-using QueueConflictSeries = bg::TSB<QueueConflictBundle>;
+using QueueConflictSeries = hg::TSB<QueueConflictBundle>;
 
 template <template <typename, auto...> typename Field> struct ProviderValueBundle {
-    Field<bg::TS<test_scalar_provider::value>> value;
+    Field<hg::TS<test_scalar_provider::value>> value;
 };
 
-using ProviderValueTimeSeriesBundle = bg::TSB<ProviderValueBundle>;
+using ProviderValueTimeSeriesBundle = hg::TSB<ProviderValueBundle>;
 inline int scalar_literal_semantic_calls{};
 inline int scalar_literal_runtime_calls{};
 inline const literal::ScalarLiteral *expected_scalar_literal{};
@@ -136,7 +136,7 @@ inline int series_runtime_type_calls{};
 inline int series_runtime_type_construction_calls{};
 
 template <typename Input>
-void write_tick(const Input &input, bg::ScalarBufferWriteContext &writer, bg::allocator &) {
+void write_tick(const Input &input, hg::ScalarBufferWriteContext &writer, hg::allocator &) {
     ++written_tick_count;
     const auto value = input.value();
     writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
@@ -145,28 +145,28 @@ void write_tick(const Input &input, bg::ScalarBufferWriteContext &writer, bg::al
 template <typename Item>
 struct Number {};
 
-class NumberType final : public bg::ScalarType {
+class NumberType final : public hg::ScalarType {
   public:
-    explicit NumberType(const bg::ScalarType &item) : item_{&item} {}
+    explicit NumberType(const hg::ScalarType &item) : item_{&item} {}
 
-    const bg::ScalarType &item_type() const noexcept { return *item_; }
+    const hg::ScalarType &item_type() const noexcept { return *item_; }
     bool is_resolved() const noexcept override { return item_->is_resolved(); }
-    const bg::Type &resolve(const bg::TypeMap &type_map) const override;
+    const hg::Type &resolve(const hg::TypeMap &type_map) const override;
 
   protected:
-    bool do_match(const bg::Type &supplied, bg::TypeMap &type_map) const override;
+    bool do_match(const hg::Type &supplied, hg::TypeMap &type_map) const override;
 
   private:
-    const bg::ScalarType *item_;
+    const hg::ScalarType *item_;
 };
 
-const NumberType &number_type(const bg::ScalarType &item) {
-    static auto types = bg::util::static_storage<std::map<const bg::ScalarType *, const NumberType *>>{};
+const NumberType &number_type(const hg::ScalarType &item) {
+    static auto types = hg::util::static_storage<std::map<const hg::ScalarType *, const NumberType *>>{};
     auto &canonical_types = types.get();
     const auto [entry, inserted] = canonical_types.try_emplace(&item, nullptr);
     if (inserted) {
         try {
-            entry->second = &bg::TypeRegistry::instance().register_owned(std::make_unique<NumberType>(item));
+            entry->second = &hg::TypeRegistry::instance().register_owned(std::make_unique<NumberType>(item));
         } catch (...) {
             canonical_types.erase(entry);
             throw;
@@ -175,16 +175,16 @@ const NumberType &number_type(const bg::ScalarType &item) {
     return *entry->second;
 }
 
-const bg::Type &NumberType::resolve(const bg::TypeMap &type_map) const {
-    const auto *item = bg::type_cast<bg::ScalarType>(&item_type().resolve(type_map));
+const hg::Type &NumberType::resolve(const hg::TypeMap &type_map) const {
+    const auto *item = hg::type_cast<hg::ScalarType>(&item_type().resolve(type_map));
     if (item == nullptr) {
-        throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map, bg::util::symbol{"Number"},
+        throw hg::TypeResolutionError{hg::TypeResolutionErrorCode::invalid_type_map, hg::util::symbol{"Number"},
                                       "number item type did not resolve to a scalar type"};
     }
     return number_type(*item);
 }
 
-bool NumberType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const {
+bool NumberType::do_match(const hg::Type &supplied, hg::TypeMap &type_map) const {
     const auto *number = dynamic_cast<const NumberType *>(&supplied);
     if (number == nullptr || !number->is_resolved()) {
         return false;
@@ -194,14 +194,14 @@ bool NumberType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
 }
 
 template <typename Item, auto... Properties>
-struct Series : bg::TimeSeriesDeclaration<Series<Item, Properties...>, Properties...> {};
+struct Series : hg::TimeSeriesDeclaration<Series<Item, Properties...>, Properties...> {};
 
 template <template <typename, auto...> typename Field> struct SampleBundle {
-    Field<Series<bg::i64>> value;
+    Field<Series<hg::i64>> value;
 };
 
 template <template <typename, auto...> typename Field> struct QueueProviderBundle {
-    Field<Series<bg::i64>> value;
+    Field<Series<hg::i64>> value;
 };
 
 template <template <typename, auto...> typename Field> struct QueueOwnedProviderPairBundle {
@@ -210,56 +210,56 @@ template <template <typename, auto...> typename Field> struct QueueOwnedProvider
 };
 
 using OwnedPayloadSeries = Series<Number<bool>>;
-using TsdFailureSeries = Series<Number<bg::byte>>;
+using TsdFailureSeries = Series<Number<hg::byte>>;
 using FailBeforePayloadSeries = Series<Number<double>>;
-using UnreadPayloadSeries = Series<Number<bg::symbol>>;
-using ThrowingReplaySeries = Series<Number<bg::string>>;
-using ReplayRegistrationSeries = Series<Number<bg::date_time_t>>;
-using IncompatibleReplaySeries = Series<Number<bg::i64>>;
-using WriteRegistrationSeries = Series<Number<bg::i64>, bg::TimeSeriesGuarantee::final>;
-using RuntimeReplaySeries = Series<Number<bg::timedelta_t>, bg::TimeSeriesGuarantee::deduplicated>;
-using RuntimeOutputSeries = Series<Number<bg::date_time_t>, bg::TimeSeriesGuarantee::deduplicated>;
-using FeedbackSeries = Series<Number<bg::i64>, bg::TimeSeriesGuarantee::deduplicated>;
+using UnreadPayloadSeries = Series<Number<hg::symbol>>;
+using ThrowingReplaySeries = Series<Number<hg::string>>;
+using ReplayRegistrationSeries = Series<Number<hg::date_time_t>>;
+using IncompatibleReplaySeries = Series<Number<hg::i64>>;
+using WriteRegistrationSeries = Series<Number<hg::i64>, hg::TimeSeriesGuarantee::final>;
+using RuntimeReplaySeries = Series<Number<hg::timedelta_t>, hg::TimeSeriesGuarantee::deduplicated>;
+using RuntimeOutputSeries = Series<Number<hg::date_time_t>, hg::TimeSeriesGuarantee::deduplicated>;
+using FeedbackSeries = Series<Number<hg::i64>, hg::TimeSeriesGuarantee::deduplicated>;
 
 enum class OutputFormat { view };
 inline constexpr auto view = OutputFormat::view;
 
-class SeriesType final : public bg::TimeSeriesType {
+class SeriesType final : public hg::TimeSeriesType {
   public:
-    SeriesType(const bg::ScalarType &item, bg::GuaranteeParameter guarantee)
+    SeriesType(const hg::ScalarType &item, hg::GuaranteeParameter guarantee)
         : TimeSeriesType{guarantee}, item_{&item} {}
 
-    const bg::ScalarType &item_type() const noexcept { return *item_; }
+    const hg::ScalarType &item_type() const noexcept { return *item_; }
     bool is_resolved() const noexcept override { return item_->is_resolved() && guarantee().is_resolved(); }
-    const bg::TimeSeriesType &with_guarantee(bg::TimeSeriesGuarantee guarantee) const override;
-    const bg::Type &resolve(const bg::TypeMap &type_map) const override;
+    const hg::TimeSeriesType &with_guarantee(hg::TimeSeriesGuarantee guarantee) const override;
+    const hg::Type &resolve(const hg::TypeMap &type_map) const override;
 
   protected:
-    bool do_match(const bg::Type &supplied, bg::TypeMap &type_map) const override;
+    bool do_match(const hg::Type &supplied, hg::TypeMap &type_map) const override;
 
   private:
-    const bg::ScalarType *item_;
+    const hg::ScalarType *item_;
 };
 
-const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type);
+const hg::TimeSeriesRuntimeType &series_runtime_type(const hg::TimeSeriesType &type);
 
 struct SeriesTypeKey {
-    const bg::ScalarType *item;
-    bg::TimeSeriesGuarantee guarantee;
+    const hg::ScalarType *item;
+    hg::TimeSeriesGuarantee guarantee;
 
     bool operator==(const SeriesTypeKey &) const = default;
 };
 
 struct SeriesTypeKeyHash {
     std::size_t operator()(const SeriesTypeKey &key) const noexcept {
-        const auto item = std::hash<const bg::ScalarType *>{}(key.item);
+        const auto item = std::hash<const hg::ScalarType *>{}(key.item);
         const auto guarantee = std::hash<int>{}(static_cast<int>(key.guarantee));
         return item ^ (guarantee << 1);
     }
 };
 
-const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarantee guarantee) {
-    return bg::TypeRegistry::instance().get_or_create<SeriesType, SeriesTypeKeyHash>(
+const SeriesType &series_type(const hg::ScalarType &item, hg::TimeSeriesGuarantee guarantee) {
+    return hg::TypeRegistry::instance().get_or_create<SeriesType, SeriesTypeKeyHash>(
         SeriesTypeKey{&item, guarantee}, [&] {
             auto type = std::make_unique<SeriesType>(item, guarantee);
             type->set_default_runtime_type_factory(&series_runtime_type);
@@ -267,20 +267,20 @@ const SeriesType &series_type(const bg::ScalarType &item, bg::TimeSeriesGuarante
         });
 }
 
-const bg::TimeSeriesType &SeriesType::with_guarantee(bg::TimeSeriesGuarantee guarantee) const {
+const hg::TimeSeriesType &SeriesType::with_guarantee(hg::TimeSeriesGuarantee guarantee) const {
     return series_type(item_type(), guarantee);
 }
 
-const bg::Type &SeriesType::resolve(const bg::TypeMap &type_map) const {
-    const auto *item = bg::type_cast<bg::ScalarType>(&item_type().resolve(type_map));
+const hg::Type &SeriesType::resolve(const hg::TypeMap &type_map) const {
+    const auto *item = hg::type_cast<hg::ScalarType>(&item_type().resolve(type_map));
     if (item == nullptr) {
-        throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map, bg::util::symbol{"Series"},
+        throw hg::TypeResolutionError{hg::TypeResolutionErrorCode::invalid_type_map, hg::util::symbol{"Series"},
                                       "series item type did not resolve to a scalar type"};
     }
     return series_type(*item, guarantee().resolve(type_map));
 }
 
-bool SeriesType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const {
+bool SeriesType::do_match(const hg::Type &supplied, hg::TypeMap &type_map) const {
     const auto *series = dynamic_cast<const SeriesType *>(&supplied);
     if (series == nullptr || !series->is_resolved()) {
         return false;
@@ -295,39 +295,39 @@ bool SeriesType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const
     return true;
 }
 
-class SeriesRuntimeType final : public bg::TimeSeriesRuntimeType {
+class SeriesRuntimeType final : public hg::TimeSeriesRuntimeType {
   public:
-    explicit SeriesRuntimeType(const bg::TimeSeriesType &type)
-        : TimeSeriesRuntimeType{type, sizeof(bg::i64), alignof(bg::i64), false, false, true} {
+    explicit SeriesRuntimeType(const hg::TimeSeriesType &type)
+        : TimeSeriesRuntimeType{type, sizeof(hg::i64), alignof(hg::i64), false, false, true} {
         ++series_runtime_type_construction_calls;
     }
 
     void construct_initial_value(void *destination) const noexcept override {
-        std::construct_at(static_cast<bg::i64 *>(destination));
+        std::construct_at(static_cast<hg::i64 *>(destination));
     }
 
-    void destroy_value(void *value, bg::allocator &) const noexcept override {
-        std::destroy_at(static_cast<bg::i64 *>(value));
+    void destroy_value(void *value, hg::allocator &) const noexcept override {
+        std::destroy_at(static_cast<hg::i64 *>(value));
     }
 
-    void copy(const bg::TimeSeriesInputData &input, bg::OutputState &output) const override {
+    void copy(const hg::TimeSeriesInputData &input, hg::OutputState &output) const override {
         ++copied_series_count;
         if (!input.valid()) {
             output.invalidate();
             return;
         }
 
-        *static_cast<bg::i64 *>(output.mutable_data()) = *static_cast<const bg::i64 *>(input.data());
+        *static_cast<hg::i64 *>(output.mutable_data()) = *static_cast<const hg::i64 *>(input.data());
         output.publish();
     }
 
-    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
+    hg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
 };
 
-const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &type) {
+const hg::TimeSeriesRuntimeType &series_runtime_type(const hg::TimeSeriesType &type) {
     ++series_runtime_type_calls;
-    static auto types = bg::util::static_storage<
-        std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesRuntimeType>>>{};
+    static auto types = hg::util::static_storage<
+        std::map<const hg::TimeSeriesType *, std::unique_ptr<SeriesRuntimeType>>>{};
     auto &runtime_types = types.get();
     const auto [entry, inserted] = runtime_types.try_emplace(&type);
     if (inserted) {
@@ -336,39 +336,39 @@ const bg::TimeSeriesRuntimeType &series_runtime_type(const bg::TimeSeriesType &t
     return *entry->second;
 }
 
-void register_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
-    auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesQueueOperations>::instance();
+void register_queue_operations(const hg::TimeSeriesRuntimeType &runtime_type) {
+    auto &dispatch = hg::TimeSeriesDispatch<hg::TimeSeriesQueueOperations>::instance();
     if (dispatch.find_exact(runtime_type) == nullptr) {
-        auto operations = bg::TimeSeriesQueueOperations::for_runtime(
-            [](const literal::TimeSeriesLiteral &, bg::ScalarBufferProjectionContext &projection) {
+        auto operations = hg::TimeSeriesQueueOperations::for_runtime(
+            [](const literal::TimeSeriesLiteral &, hg::ScalarBufferProjectionContext &projection) {
                 ++queue_operation_state.project_calls;
-                projection.write_bytes(sizeof(bg::i64));
+                projection.write_bytes(sizeof(hg::i64));
             },
-            [](const literal::TimeSeriesLiteral &literal, bg::ScalarBufferWriteContext &writer,
-               bg::allocator &memory) {
+            [](const literal::TimeSeriesLiteral &literal, hg::ScalarBufferWriteContext &writer,
+               hg::allocator &memory) {
                 ++queue_operation_state.write_calls;
-                auto value_owner = bg::ScalarValue<bg::i64>::from_literal(literal, memory);
+                auto value_owner = hg::ScalarValue<hg::i64>::from_literal(literal, memory);
                 const auto value = value_owner.view().value();
                 writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
             },
-            [](const bg::TimeSeriesRuntimeType::ConstItem &item, bg::EvaluationTime now, bool incoming_valid,
-               bg::util::buffer_reader &reader) {
+            [](const hg::TimeSeriesRuntimeType::ConstItem &item, hg::EvaluationTime now, bool incoming_valid,
+               hg::util::buffer_reader &reader) {
                 ++queue_operation_state.conflict_calls;
                 queue_operation_state.last_incoming_valid = incoming_valid;
                 if (incoming_valid) {
-                    (void)reader.read_raw<bg::i64>();
+                    (void)reader.read_raw<hg::i64>();
                     return item.last_updated.time() == now;
                 }
                 return item.last_updated.valid() && item.last_updated.time() == now;
             },
-            [](bg::util::buffer_reader &reader, bg::OutputState &output) {
+            [](hg::util::buffer_reader &reader, hg::OutputState &output) {
                 ++queue_operation_state.apply_calls;
-                const auto value = reader.read_raw<bg::i64>();
+                const auto value = reader.read_raw<hg::i64>();
                 queue_operation_state.last_applied_value = value;
                 if (queue_operation_state.fail_apply) {
                     throw std::runtime_error{"provider queue apply failed after consuming its payload"};
                 }
-                *static_cast<bg::i64 *>(output.mutable_data()) = value;
+                *static_cast<hg::i64 *>(output.mutable_data()) = value;
                 output.publish();
             });
         if (!dispatch.add(runtime_type, std::move(operations))) {
@@ -377,8 +377,8 @@ void register_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
     }
 
     if (dispatch.find_exact(runtime_type.type()) == nullptr) {
-        auto operations = bg::TimeSeriesQueueOperations::for_type([](bg::util::buffer_reader &reader) {
-            queue_operation_state.last_discarded_value = reader.read_raw<bg::i64>();
+        auto operations = hg::TimeSeriesQueueOperations::for_type([](hg::util::buffer_reader &reader) {
+            queue_operation_state.last_discarded_value = reader.read_raw<hg::i64>();
             ++queue_operation_state.discard_calls;
         });
         if (!dispatch.add(runtime_type.type(), std::move(operations))) {
@@ -387,13 +387,13 @@ void register_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
     }
 }
 
-class SampledSeries final : public bg::details::ReferenceSample {
+class SampledSeries final : public hg::details::ReferenceSample {
   public:
-    SampledSeries(const bg::TimeSeriesType &type, bg::details::ResolvedTimeSeries previous,
-                  bg::details::ResolvedTimeSeries current, bg::EvaluationTime evaluation_time,
-                  bg::allocator &memory)
+    SampledSeries(const hg::TimeSeriesType &type, hg::details::ResolvedTimeSeries previous,
+                  hg::details::ResolvedTimeSeries current, hg::EvaluationTime evaluation_time,
+                  hg::allocator &memory)
         : runtime_type{&series_runtime_type(type)}, previous_source{previous}, current_source{current},
-          sampled_last_updated{bg::TimeSeriesState::from_validity_transition(
+          sampled_last_updated{hg::TimeSeriesState::from_validity_transition(
               evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid())},
           memory{memory} {
         ++reference_samples_created;
@@ -408,25 +408,25 @@ class SampledSeries final : public bg::details::ReferenceSample {
         }
     }
 
-    bg::TimeSeriesRuntimeType::ConstItem input() const noexcept override {
+    hg::TimeSeriesRuntimeType::ConstItem input() const noexcept override {
         return {*runtime_type, sampled_last_updated, current_source.storage};
     }
 
-    bg::details::ResolvedTimeSeries previous() const noexcept override { return previous_source; }
+    hg::details::ResolvedTimeSeries previous() const noexcept override { return previous_source; }
 
   private:
-    const bg::TimeSeriesRuntimeType *runtime_type;
-    bg::details::ResolvedTimeSeries previous_source;
-    bg::details::ResolvedTimeSeries current_source;
-    bg::TimeSeriesState sampled_last_updated;
-    bg::allocator memory;
+    const hg::TimeSeriesRuntimeType *runtime_type;
+    hg::details::ResolvedTimeSeries previous_source;
+    hg::details::ResolvedTimeSeries current_source;
+    hg::TimeSeriesState sampled_last_updated;
+    hg::allocator memory;
     std::size_t reference_count{1};
 };
 
-bg::details::ReferenceSample *create_sampled_series(const bg::TimeSeriesType &type,
-                                                     bg::details::ResolvedTimeSeries previous,
-                                                     bg::details::ResolvedTimeSeries current,
-                                                     bg::EvaluationTime evaluation_time, bg::allocator &memory) {
+hg::details::ReferenceSample *create_sampled_series(const hg::TimeSeriesType &type,
+                                                     hg::details::ResolvedTimeSeries previous,
+                                                     hg::details::ResolvedTimeSeries current,
+                                                     hg::EvaluationTime evaluation_time, hg::allocator &memory) {
     ++reference_sample_factory_calls;
     if ((previous.runtime_type == nullptr && current.runtime_type == nullptr) ||
         (!previous.valid() && !current.valid())) {
@@ -435,16 +435,16 @@ bg::details::ReferenceSample *create_sampled_series(const bg::TimeSeriesType &ty
     return memory.new_object<SampledSeries>(type, previous, current, evaluation_time, memory);
 }
 
-bg::details::ReferenceSampleFactory SeriesRuntimeType::reference_sample_factory() const noexcept {
+hg::details::ReferenceSampleFactory SeriesRuntimeType::reference_sample_factory() const noexcept {
     return &create_sampled_series;
 }
 
 struct SeriesViewStorage {
-    bg::i64 value{};
-    bg::i64 guard{};
+    hg::i64 value{};
+    hg::i64 guard{};
 };
 
-bg::i64 scalar_literal_number(const literal::ScalarLiteral &literal, bg::allocator &memory) {
+hg::i64 scalar_literal_number(const literal::ScalarLiteral &literal, hg::allocator &memory) {
     const auto fields = literal.visit(
         [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
             throw std::invalid_argument{"provider scalar literal requires a one-field sequence"};
@@ -460,68 +460,68 @@ bg::i64 scalar_literal_number(const literal::ScalarLiteral &literal, bg::allocat
             &tagged->argument != test_shared_literal_sentinel::extension_argument()) {
             throw std::invalid_argument{"provider received an unsupported literal sentinel"};
         }
-        const auto value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument, memory);
+        const auto value = hg::ScalarValue<hg::i64>::from_literal(tagged->argument, memory);
         return value.view().value();
     }
-    const auto value = bg::ScalarValue<bg::i64>::from_literal(fields.front(), memory);
+    const auto value = hg::ScalarValue<hg::i64>::from_literal(fields.front(), memory);
     return value.view().value();
 }
 
 void construct_scalar_literal_semantic(const literal::ScalarLiteral &literal,
-                                       const bg::ScalarRuntimeType &runtime_type, void *destination,
-                                       bg::allocator &memory) {
+                                       const hg::ScalarRuntimeType &runtime_type, void *destination,
+                                       hg::allocator &memory) {
     ++scalar_literal_semantic_calls;
     scalar_literal_address_matches = &literal == expected_scalar_literal;
     const auto storage =
         test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 10)};
-    runtime_type.construct_from_input(destination, bg::Scalar<test_scalar_provider::value>::from(storage), memory);
+    runtime_type.construct_from_input(destination, hg::Scalar<test_scalar_provider::value>::from(storage), memory);
 }
 
 void construct_scalar_literal_runtime(const literal::ScalarLiteral &literal,
-                                      const bg::ScalarRuntimeType &runtime_type, void *destination,
-                                      bg::allocator &memory) {
+                                      const hg::ScalarRuntimeType &runtime_type, void *destination,
+                                      hg::allocator &memory) {
     ++scalar_literal_runtime_calls;
     scalar_literal_address_matches = &literal == expected_scalar_literal;
     const auto storage =
         test_scalar_provider::storage{static_cast<int>(scalar_literal_number(literal, memory) + 100)};
-    runtime_type.construct_from_input(destination, bg::Scalar<test_scalar_provider::value>::from(storage), memory);
+    runtime_type.construct_from_input(destination, hg::Scalar<test_scalar_provider::value>::from(storage), memory);
 }
 
-void fail_scalar_literal_construction(const literal::ScalarLiteral &, const bg::ScalarRuntimeType &, void *,
-                                      bg::allocator &) {
+void fail_scalar_literal_construction(const literal::ScalarLiteral &, const hg::ScalarRuntimeType &, void *,
+                                      hg::allocator &) {
     throw std::runtime_error{"provider scalar literal construction failed"};
 }
 
 bool register_scalar_literal_handlers() {
     static const auto registered = [] {
-        auto &dispatch = bg::ScalarDispatch<bg::ScalarLiteralOperations>::instance();
-        return dispatch.add(bg::cpp_scalar_type<test_scalar_provider::value>(),
-                            bg::ScalarLiteralOperations{&construct_scalar_literal_semantic}) &&
+        auto &dispatch = hg::ScalarDispatch<hg::ScalarLiteralOperations>::instance();
+        return dispatch.add(hg::cpp_scalar_type<test_scalar_provider::value>(),
+                            hg::ScalarLiteralOperations{&construct_scalar_literal_semantic}) &&
                dispatch.add(test_scalar_provider::canonicalizing_runtime_type(),
-                            bg::ScalarLiteralOperations{&construct_scalar_literal_runtime}) &&
+                            hg::ScalarLiteralOperations{&construct_scalar_literal_runtime}) &&
                dispatch.add(test_scalar_provider::copy_only_semantic_type(),
-                            bg::ScalarLiteralOperations{&fail_scalar_literal_construction});
+                            hg::ScalarLiteralOperations{&fail_scalar_literal_construction});
     }();
     return registered;
 }
 
 struct SeriesLiteralUpdate {
     enum class Kind { value, skip, invalid } kind;
-    bg::i64 value;
+    hg::i64 value;
 };
 
-bg::i64 time_series_literal_number(const literal::ScalarLiteralItem &literal) {
+hg::i64 time_series_literal_number(const literal::ScalarLiteralItem &literal) {
     if (const auto tagged = literal::TaggedLiteral::from(literal)) {
         if (tagged->sentinel != *test_shared_literal_sentinel::extension() ||
             &tagged->argument != test_shared_literal_sentinel::extension_argument()) {
             throw std::invalid_argument{"provider received an unsupported literal sentinel"};
         }
-        const auto value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument);
+        const auto value = hg::ScalarValue<hg::i64>::from_literal(tagged->argument);
         return value.view().value();
     }
-    return literal.visit_scalar([](const auto *value) -> bg::i64 {
+    return literal.visit_scalar([](const auto *value) -> hg::i64 {
         using Value = std::remove_cvref_t<decltype(*value)>;
-        if constexpr (std::same_as<Value, bg::Scalar<bg::i64>>) {
+        if constexpr (std::same_as<Value, hg::Scalar<hg::i64>>) {
             return value->value();
         } else {
             throw std::invalid_argument{"provider time-series literal requires an i64 value"};
@@ -543,7 +543,7 @@ SeriesLiteralUpdate read_series_literal(const literal::TimeSeriesLiteral &litera
             &tagged->argument != test_shared_literal_sentinel::extension_argument()) {
             throw std::invalid_argument{"provider received an unsupported literal sentinel"};
         }
-        const auto value = bg::ScalarValue<bg::i64>::from_literal(tagged->argument);
+        const auto value = hg::ScalarValue<hg::i64>::from_literal(tagged->argument);
         return {SeriesLiteralUpdate::Kind::value, value.view().value()};
     }
     return literal.visit(
@@ -555,23 +555,23 @@ SeriesLiteralUpdate read_series_literal(const literal::TimeSeriesLiteral &litera
         }).value();
 }
 
-class SeriesViewRuntimeType final : public bg::TimeSeriesRuntimeType {
+class SeriesViewRuntimeType final : public hg::TimeSeriesRuntimeType {
   public:
-    explicit SeriesViewRuntimeType(const bg::TimeSeriesType &type)
+    explicit SeriesViewRuntimeType(const hg::TimeSeriesType &type)
         : TimeSeriesRuntimeType{type, sizeof(SeriesViewStorage), alignof(SeriesViewStorage), false, false, true} {}
 
     void construct_initial_value(void *destination) const noexcept override {
         std::construct_at(static_cast<SeriesViewStorage *>(destination));
     }
 
-    void destroy_value(void *value, bg::allocator &) const noexcept override {
+    void destroy_value(void *value, hg::allocator &) const noexcept override {
         std::destroy_at(static_cast<SeriesViewStorage *>(value));
     }
 };
 
-const bg::TimeSeriesRuntimeType &series_view_runtime_type(const bg::TimeSeriesType &type) {
-    static auto types = bg::util::static_storage<
-        std::map<const bg::TimeSeriesType *, std::unique_ptr<SeriesViewRuntimeType>>>{};
+const hg::TimeSeriesRuntimeType &series_view_runtime_type(const hg::TimeSeriesType &type) {
+    static auto types = hg::util::static_storage<
+        std::map<const hg::TimeSeriesType *, std::unique_ptr<SeriesViewRuntimeType>>>{};
     auto &runtime_types = types.get();
     const auto [entry, inserted] = runtime_types.try_emplace(&type);
     if (inserted) {
@@ -580,17 +580,17 @@ const bg::TimeSeriesRuntimeType &series_view_runtime_type(const bg::TimeSeriesTy
     return *entry->second;
 }
 
-class UnsupportedCopyRuntimeType final : public bg::TimeSeriesRuntimeType {
+class UnsupportedCopyRuntimeType final : public hg::TimeSeriesRuntimeType {
   public:
-    explicit UnsupportedCopyRuntimeType(const bg::TimeSeriesType &type) : TimeSeriesRuntimeType{type} {}
+    explicit UnsupportedCopyRuntimeType(const hg::TimeSeriesType &type) : TimeSeriesRuntimeType{type} {}
 
     void construct_initial_value(void *) const noexcept override {}
-    void destroy_value(void *, bg::allocator &) const noexcept override {}
+    void destroy_value(void *, hg::allocator &) const noexcept override {}
 };
 
 } // namespace provider
 
-namespace bg {
+namespace hg {
 
 template <typename Item, auto... Properties> struct time_series_type_traits<provider::Series<Item, Properties...>> {
     using semantic_type = provider::SeriesType;
@@ -624,7 +624,7 @@ template <typename Item> struct scalar_declaration_traits<provider::Number<Item>
 
 template <typename Item> struct declaration_variable_traits<provider::Number<Item>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
-        ::bg::for_each_declaration_variable<Item>(std::forward<Visitor>(visitor));
+        ::hg::for_each_declaration_variable<Item>(std::forward<Visitor>(visitor));
     }
 };
 
@@ -665,7 +665,7 @@ struct output_declaration_traits<Out<provider::Series<string>, provider::view>> 
 template <typename Item, auto... SeriesProperties>
 struct declaration_variable_traits<provider::Series<Item, SeriesProperties...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
-        ::bg::for_each_declaration_variable<Item>(std::forward<Visitor>(visitor));
+        ::hg::for_each_declaration_variable<Item>(std::forward<Visitor>(visitor));
         TimeSeriesDeclarationProperties<SeriesProperties...>::for_each_variable(std::forward<Visitor>(visitor));
     }
 };
@@ -758,12 +758,12 @@ class Out<provider::Series<Item, Properties...>, provider::view>
     using Base::Base;
 };
 
-} // namespace bg
+} // namespace hg
 
 namespace provider {
 
-template <typename Output> void apply_provider_literal(const literal::TimeSeriesLiteral &literal, bg::OutputState &state) {
-    auto erased = bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{state}};
+template <typename Output> void apply_provider_literal(const literal::TimeSeriesLiteral &literal, hg::OutputState &state) {
+    auto erased = hg::Out<hg::TS_T>{hg::TimeSeriesOutputBinding{state}};
     auto output = erased.as_output<Output>();
     const auto update = read_series_literal(literal);
     if (update.kind == SeriesLiteralUpdate::Kind::skip) {
@@ -779,24 +779,24 @@ template <typename Output> void apply_provider_literal(const literal::TimeSeries
     output.set(update.value);
 }
 
-void apply_series_literal_semantic(const literal::TimeSeriesLiteral &literal, bg::OutputState &output) {
+void apply_series_literal_semantic(const literal::TimeSeriesLiteral &literal, hg::OutputState &output) {
     ++time_series_literal_semantic_calls;
-    apply_provider_literal<bg::Out<RuntimeOutputSeries>>(literal, output);
+    apply_provider_literal<hg::Out<RuntimeOutputSeries>>(literal, output);
 }
 
-void apply_series_literal_runtime(const literal::TimeSeriesLiteral &literal, bg::OutputState &output) {
+void apply_series_literal_runtime(const literal::TimeSeriesLiteral &literal, hg::OutputState &output) {
     ++time_series_literal_runtime_calls;
-    apply_provider_literal<bg::Out<RuntimeOutputSeries, view>>(literal, output);
+    apply_provider_literal<hg::Out<RuntimeOutputSeries, view>>(literal, output);
 }
 
 bool register_time_series_literal_handlers() {
     using Series = RuntimeOutputSeries;
     static const auto registered = [] {
-        auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesLiteralOperations>::instance();
+        auto &dispatch = hg::TimeSeriesDispatch<hg::TimeSeriesLiteralOperations>::instance();
         return dispatch.add(Series::type(),
-                            bg::TimeSeriesLiteralOperations{&apply_series_literal_semantic}) &&
+                            hg::TimeSeriesLiteralOperations{&apply_series_literal_semantic}) &&
                dispatch.add(series_view_runtime_type(Series::type()),
-                            bg::TimeSeriesLiteralOperations{&apply_series_literal_runtime});
+                            hg::TimeSeriesLiteralOperations{&apply_series_literal_runtime});
     }();
     return registered;
 }
@@ -816,7 +816,7 @@ TEST_CASE("generic output copy uses the provider runtime for its output layout",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(copy(provide(input))); };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 2>{41, 82}).equals<i64>({41, 82}));
+    CHECK(hg::run_graph(graph, std::array<i64, 2>{41, 82}).equals<i64>({41, 82}));
     CHECK(provider::copied_series_count == 2);
 }
 
@@ -968,7 +968,7 @@ TEST_CASE("a provider reference samples retargeted valid sources at the referenc
         return consume(select(choose_second, provide(first), provide(second)), choose_second);
     };
 
-    const auto actual = bg::run_graph(graph, {101, literal::SKIP, literal::SKIP},
+    const auto actual = hg::run_graph(graph, {101, literal::SKIP, literal::SKIP},
                                       {202, literal::SKIP, literal::SKIP}, {false, true, false});
 
     CHECK(actual.equals<i64>({101, 202, 101}));
@@ -981,18 +981,18 @@ TEST_CASE("a provider reference samples retargeted valid sources at the referenc
 }
 
 struct RuntimeProviderViewDefinition {
-    using output_time_series_type = provider::Series<bg::i64>;
-    using output_declaration_type = bg::Out<output_time_series_type, provider::view>;
+    using output_time_series_type = provider::Series<hg::i64>;
+    using output_declaration_type = hg::Out<output_time_series_type, provider::view>;
 
     RuntimeProviderViewDefinition()
-        : signature_{bg::util::symbol{"runtime_provider_view"},
-                     {{bg::util::symbol{"input"}, &bg::TS<bg::i64>::type()}},
+        : signature_{hg::util::symbol{"runtime_provider_view"},
+                     {{hg::util::symbol{"input"}, &hg::TS<hg::i64>::type()}},
                      output_time_series_type::type()} {}
 
-    const bg::Signature &signature() const { return signature_; }
+    const hg::Signature &signature() const { return signature_; }
 
-    static void evaluate(bg::NodeInvocation<> invocation) {
-        const auto input = invocation.input<bg::In<bg::TS<bg::i64>>>(0);
+    static void evaluate(hg::NodeInvocation<> invocation) {
+        const auto input = invocation.input<hg::In<hg::TS<hg::i64>>>(0);
         const auto output = invocation.output_as<output_declaration_type>();
         if (*input == 0) {
             output.invalidate();
@@ -1001,30 +1001,30 @@ struct RuntimeProviderViewDefinition {
         }
     }
 
-    bg::Signature signature_;
+    hg::Signature signature_;
 };
 
 namespace provider {
 
 template <typename Series>
-void replay_tick_view(bg::util::buffer_reader &reader, const bg::Out<Series, view> &output) {
+void replay_tick_view(hg::util::buffer_reader &reader, const hg::Out<Series, view> &output) {
     ++replayed_tick_count;
-    output.set(reader.read_raw<bg::i64>());
+    output.set(reader.read_raw<hg::i64>());
 }
 
 template <typename Series>
-void replay_tick_default(bg::util::buffer_reader &reader, const bg::Out<Series> &output) {
+void replay_tick_default(hg::util::buffer_reader &reader, const hg::Out<Series> &output) {
     ++replayed_tick_count;
-    output.set(reader.read_raw<bg::i64>());
+    output.set(reader.read_raw<hg::i64>());
 }
 
 template <typename Series>
-void replay_tick_view_override(bg::util::buffer_reader &reader, const bg::Out<Series, view> &output) {
-    output.set(reader.read_raw<bg::i64>() + 100);
+void replay_tick_view_override(hg::util::buffer_reader &reader, const hg::Out<Series, view> &output) {
+    output.set(reader.read_raw<hg::i64>() + 100);
 }
 
-void discard_tick(bg::util::buffer_reader &reader) {
-    (void)reader.read_raw<bg::i64>();
+void discard_tick(hg::util::buffer_reader &reader) {
+    (void)reader.read_raw<hg::i64>();
     ++discarded_tick_count;
 }
 
@@ -1048,105 +1048,105 @@ class allocation_counter : public std::pmr::memory_resource {
 };
 
 struct alignas(std::max_align_t) owned_provider_payload {
-    bg::ScalarValue<> value;
+    hg::ScalarValue<> value;
 };
 
-void write_owned_payload_value(bg::ScalarBufferWriteContext &writer, bg::allocator &memory, std::string value) {
+void write_owned_payload_value(hg::ScalarBufferWriteContext &writer, hg::allocator &memory, std::string value) {
     auto count = std::uint32_t{1};
     writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
-    const auto marker = bg::i64{17};
+    const auto marker = hg::i64{17};
     writer.write_bytes(std::as_bytes(std::span{&marker, std::size_t{1}}));
-    const auto stored = bg::ScalarValue<bg::string>{std::move(value), memory};
-    auto payload = bg::ScalarValue<>{stored, memory};
+    const auto stored = hg::ScalarValue<hg::string>{std::move(value), memory};
+    auto payload = hg::ScalarValue<>{stored, memory};
     writer.write(std::move(payload));
 }
 
 template <typename Series>
-void write_owned_payload(const bg::In<Series> &, bg::ScalarBufferWriteContext &writer, bg::allocator &memory) {
+void write_owned_payload(const hg::In<Series> &, hg::ScalarBufferWriteContext &writer, hg::allocator &memory) {
     write_owned_payload_value(writer, memory, "provider-owned retained payload that needs allocated storage");
 }
 
 template <typename Series>
-void write_two_owned_payloads_then_fail(const bg::In<Series> &, bg::ScalarBufferWriteContext &writer,
-                                        bg::allocator &memory) {
+void write_two_owned_payloads_then_fail(const hg::In<Series> &, hg::ScalarBufferWriteContext &writer,
+                                        hg::allocator &memory) {
     auto count = std::uint32_t{2};
     writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
-    const auto marker = bg::i64{29};
+    const auto marker = hg::i64{29};
     writer.write_bytes(std::as_bytes(std::span{&marker, std::size_t{1}}));
-    const auto first_value = bg::ScalarValue<bg::string>{
+    const auto first_value = hg::ScalarValue<hg::string>{
         std::string{"first provider-owned payload with allocated storage"}, memory};
-    const auto second_value = bg::ScalarValue<bg::string>{
+    const auto second_value = hg::ScalarValue<hg::string>{
         std::string{"second provider-owned payload with allocated storage"}, memory};
-    auto first = bg::ScalarValue<>{first_value, memory};
-    auto second = bg::ScalarValue<>{second_value, memory};
+    auto first = hg::ScalarValue<>{first_value, memory};
+    auto second = hg::ScalarValue<>{second_value, memory};
     writer.write(std::move(first));
     writer.write(std::move(second));
     throw std::runtime_error{"provider write failed after writing two payloads"};
 }
 
 template <typename Series>
-void replay_owned_payload_record(bg::util::buffer_reader &reader, const bg::Out<Series> &output) {
+void replay_owned_payload_record(hg::util::buffer_reader &reader, const hg::Out<Series> &output) {
     const auto count = reader.read_raw<std::uint32_t>();
-    output.set(reader.read_raw<bg::i64>());
+    output.set(reader.read_raw<hg::i64>());
     for (auto index = std::uint32_t{}; index < count; ++index) {
-        (void)reader.peek<bg::ScalarValue<>>();
-        reader.consume<bg::ScalarValue<>>();
+        (void)reader.peek<hg::ScalarValue<>>();
+        reader.consume<hg::ScalarValue<>>();
     }
 }
 
 template <typename Series>
-void replay_owned_payload_then_fail(bg::util::buffer_reader &reader, const bg::Out<Series> &) {
+void replay_owned_payload_then_fail(hg::util::buffer_reader &reader, const hg::Out<Series> &) {
     (void)reader.read_raw<std::uint32_t>();
-    (void)reader.read_raw<bg::i64>();
-    (void)reader.peek<bg::ScalarValue<>>();
-    reader.consume<bg::ScalarValue<>>();
+    (void)reader.read_raw<hg::i64>();
+    (void)reader.peek<hg::ScalarValue<>>();
+    reader.consume<hg::ScalarValue<>>();
     throw std::runtime_error{"provider replay failed after reading its payload"};
 }
 
-void discard_owned_payload(bg::util::buffer_reader &reader) {
+void discard_owned_payload(hg::util::buffer_reader &reader) {
     (void)reader.read_raw<std::uint32_t>();
-    (void)reader.read_raw<bg::i64>();
-    reader.skip<bg::ScalarValue<>>();
+    (void)reader.read_raw<hg::i64>();
+    reader.skip<hg::ScalarValue<>>();
 }
 
-void discard_owned_payload_record(bg::util::buffer_reader &reader) {
+void discard_owned_payload_record(hg::util::buffer_reader &reader) {
     const auto count = reader.read_raw<std::uint32_t>();
-    (void)reader.read_raw<bg::i64>();
+    (void)reader.read_raw<hg::i64>();
     for (auto index = std::uint32_t{}; index < count; ++index) {
-        reader.skip<bg::ScalarValue<>>();
+        reader.skip<hg::ScalarValue<>>();
     }
 }
 
-template <typename Series> void write_second_payload_then_fail(const bg::In<Series> &input,
-                                                                 bg::ScalarBufferWriteContext &writer,
-                                                                 bg::allocator &memory) {
+template <typename Series> void write_second_payload_then_fail(const hg::In<Series> &input,
+                                                                 hg::ScalarBufferWriteContext &writer,
+                                                                 hg::allocator &memory) {
     if (++payload_write_count == 2) {
         write_two_owned_payloads_then_fail(input, writer, memory);
     }
     write_owned_payload(input, writer, memory);
 }
 
-template <typename Series> void write_tsd_payload_then_fail(const bg::In<Series> &,
-                                                             bg::ScalarBufferWriteContext &writer,
-                                                             bg::allocator &memory) {
+template <typename Series> void write_tsd_payload_then_fail(const hg::In<Series> &,
+                                                             hg::ScalarBufferWriteContext &writer,
+                                                             hg::allocator &memory) {
     if (++failed_tsd_write_count == 2) {
         throw std::runtime_error{"provider write failed in a later TSD entry"};
     }
     write_owned_payload_value(writer, memory, "owned payload in the first completed TSD entry");
 }
 
-template <typename Series> void fail_before_payload(const bg::In<Series> &, bg::ScalarBufferWriteContext &,
-                                                     bg::allocator &) {
+template <typename Series> void fail_before_payload(const hg::In<Series> &, hg::ScalarBufferWriteContext &,
+                                                     hg::allocator &) {
     throw std::runtime_error{"provider write failed before producing a value"};
 }
 
-void write_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
-                           bg::ScalarBufferWriteContext &writer, bg::allocator &memory) {
+void write_provider_scalar(hg::Scalar<test_scalar_provider::value> value,
+                           hg::ScalarBufferWriteContext &writer, hg::allocator &memory) {
     const auto number = value.value().get();
     writer.write_bytes(std::as_bytes(std::span{&number, std::size_t{1}}));
     if (number == 79) {
         const auto payload_storage = test_scalar_provider::storage{number};
-        auto payload = bg::ScalarValue<>{bg::Scalar<test_scalar_provider::value>::from(
+        auto payload = hg::ScalarValue<>{hg::Scalar<test_scalar_provider::value>::from(
                                              payload_storage),
                                          memory};
         writer.write(owned_provider_payload{std::move(payload)});
@@ -1154,8 +1154,8 @@ void write_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
     if (number == 73 || number == 91) {
         const auto text = number == 73 ? "provider payload with value-dependent size"
                                        : "provider payload emitted before a deliberate write failure";
-        const auto stored = bg::ScalarValue<bg::string>{text, memory};
-        auto payload = bg::ScalarValue<>{stored, memory};
+        const auto stored = hg::ScalarValue<hg::string>{text, memory};
+        auto payload = hg::ScalarValue<>{stored, memory};
         writer.write(owned_provider_payload{std::move(payload)});
     }
     const auto write = ++scalar_tick_state.writes;
@@ -1169,8 +1169,8 @@ void write_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
     }
 }
 
-void project_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
-                             bg::ScalarBufferProjectionContext &projection) {
+void project_provider_scalar(hg::Scalar<test_scalar_provider::value> value,
+                             hg::ScalarBufferProjectionContext &projection) {
     projection.write_bytes(sizeof(int));
     const auto number = value.value().get();
     if (number == 73 || number == 79 || number == 91) {
@@ -1178,18 +1178,18 @@ void project_provider_scalar(bg::Scalar<test_scalar_provider::value> value,
     }
 }
 
-void project_provider_scalar_semantic(bg::Scalar<test_scalar_provider::value> value,
-                                      bg::ScalarBufferProjectionContext &projection) {
+void project_provider_scalar_semantic(hg::Scalar<test_scalar_provider::value> value,
+                                      hg::ScalarBufferProjectionContext &projection) {
     (void)value;
     projection.write_bytes(sizeof(int) + 32);
 }
 
-void read_provider_scalar(bg::util::buffer_reader &reader, auto consume) {
+void read_provider_scalar(hg::util::buffer_reader &reader, auto consume) {
     ++scalar_tick_state.reads;
     const auto number = reader.read_raw<int>();
     if (number == 79) {
         const auto &payload = reader.peek<owned_provider_payload>();
-        const auto value = bg::scalar_cast<test_scalar_provider::value>(payload.value.view());
+        const auto value = hg::scalar_cast<test_scalar_provider::value>(payload.value.view());
         reader.consume<owned_provider_payload>();
         if (throw_before_scalar_read_callback) {
             throw std::runtime_error{"provider scalar read failed before callback"};
@@ -1204,10 +1204,10 @@ void read_provider_scalar(bg::util::buffer_reader &reader, auto consume) {
         reader.consume<owned_provider_payload>();
     }
     const auto storage = test_scalar_provider::storage{number};
-    consume(bg::Scalar<test_scalar_provider::value>::from(storage));
+    consume(hg::Scalar<test_scalar_provider::value>::from(storage));
 }
 
-void discard_provider_scalar(bg::util::buffer_reader &reader) {
+void discard_provider_scalar(hg::util::buffer_reader &reader) {
     const auto number = reader.read_raw<int>();
     if (number == 73 || number == 79 || number == 91) {
         reader.skip<owned_provider_payload>();
@@ -1215,85 +1215,85 @@ void discard_provider_scalar(bg::util::buffer_reader &reader) {
     ++scalar_tick_state.discards;
 }
 
-void discard_owned_payload_and_count(bg::util::buffer_reader &reader) {
+void discard_owned_payload_and_count(hg::util::buffer_reader &reader) {
     discard_owned_payload_record(reader);
     ++discarded_tick_count;
 }
 
 template <typename Series>
-void fail_incompatible_replay(bg::util::buffer_reader &, const bg::Out<Series> &) {
+void fail_incompatible_replay(hg::util::buffer_reader &, const hg::Out<Series> &) {
     incompatible_replay_called = true;
 }
 
 bool register_provider_scalar_buffer_handlers() {
     static const auto registered = [] {
-        auto semantic = bg::ScalarBufferOperations::for_read<test_scalar_provider::value>(
+        auto semantic = hg::ScalarBufferOperations::for_read<test_scalar_provider::value>(
             [](auto &reader, auto consume) { read_provider_scalar(reader, consume); });
         semantic.set_discard(discard_provider_scalar);
         semantic.set_project<test_scalar_provider::value>(project_provider_scalar_semantic);
-        auto runtime = bg::ScalarBufferOperations{};
+        auto runtime = hg::ScalarBufferOperations{};
         runtime.set_write<test_scalar_provider::value>(write_provider_scalar);
         runtime.set_project<test_scalar_provider::value>(project_provider_scalar);
-        auto unprojected_runtime = bg::ScalarBufferOperations{};
+        auto unprojected_runtime = hg::ScalarBufferOperations{};
         unprojected_runtime.set_write<test_scalar_provider::value>(write_provider_scalar);
-        auto &dispatch = bg::ScalarDispatch<bg::ScalarBufferOperations>::instance();
-        return dispatch.add(bg::cpp_scalar_type<test_scalar_provider::value>(), std::move(semantic)) &&
-               dispatch.add(bg::cpp_scalar_runtime_type<test_scalar_provider::value>(), std::move(runtime)) &&
+        auto &dispatch = hg::ScalarDispatch<hg::ScalarBufferOperations>::instance();
+        return dispatch.add(hg::cpp_scalar_type<test_scalar_provider::value>(), std::move(semantic)) &&
+               dispatch.add(hg::cpp_scalar_runtime_type<test_scalar_provider::value>(), std::move(runtime)) &&
                dispatch.add(test_scalar_provider::canonicalizing_runtime_type(), std::move(unprojected_runtime));
     }();
     return registered;
 }
 
-void register_owned_queue_operations(const bg::TimeSeriesRuntimeType &runtime_type) {
-    auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesQueueOperations>::instance();
+void register_owned_queue_operations(const hg::TimeSeriesRuntimeType &runtime_type) {
+    auto &dispatch = hg::TimeSeriesDispatch<hg::TimeSeriesQueueOperations>::instance();
     if (dispatch.find_exact(runtime_type) == nullptr) {
-        auto operations = bg::TimeSeriesQueueOperations::for_runtime(
-            [](const literal::TimeSeriesLiteral &, bg::ScalarBufferProjectionContext &projection) {
+        auto operations = hg::TimeSeriesQueueOperations::for_runtime(
+            [](const literal::TimeSeriesLiteral &, hg::ScalarBufferProjectionContext &projection) {
                 ++queue_owned_operation_state.project_calls;
-                projection.write_bytes(sizeof(bg::i64) + sizeof(std::uint32_t));
-                projection.emplace<bg::ScalarValue<>>();
+                projection.write_bytes(sizeof(hg::i64) + sizeof(std::uint32_t));
+                projection.emplace<hg::ScalarValue<>>();
             },
-            [](const literal::TimeSeriesLiteral &literal, bg::ScalarBufferWriteContext &writer,
-               bg::allocator &memory) {
+            [](const literal::TimeSeriesLiteral &literal, hg::ScalarBufferWriteContext &writer,
+               hg::allocator &memory) {
                 ++queue_owned_operation_state.write_calls;
-                auto value_owner = bg::ScalarValue<bg::i64>::from_literal(literal, memory);
+                auto value_owner = hg::ScalarValue<hg::i64>::from_literal(literal, memory);
                 const auto value = value_owner.view().value();
                 const auto count = std::uint32_t{1};
                 writer.write_bytes(std::as_bytes(std::span{&value, std::size_t{1}}));
                 writer.write_bytes(std::as_bytes(std::span{&count, std::size_t{1}}));
-                const auto stored = bg::ScalarValue<bg::string>{"provider queue payload that owns allocated storage",
+                const auto stored = hg::ScalarValue<hg::string>{"provider queue payload that owns allocated storage",
                                                                 memory};
-                auto payload = bg::ScalarValue<>{stored, memory};
+                auto payload = hg::ScalarValue<>{stored, memory};
                 writer.write(std::move(payload));
                 if (queue_owned_operation_state.fail_write) {
                     throw std::runtime_error{"provider queue write failed after an owned payload"};
                 }
             },
-            [](const bg::TimeSeriesRuntimeType::ConstItem &item, bg::EvaluationTime now, bool incoming_valid,
-               bg::util::buffer_reader &reader) {
+            [](const hg::TimeSeriesRuntimeType::ConstItem &item, hg::EvaluationTime now, bool incoming_valid,
+               hg::util::buffer_reader &reader) {
                 ++queue_owned_operation_state.conflict_calls;
                 if (incoming_valid) {
-                    (void)reader.read_raw<bg::i64>();
+                    (void)reader.read_raw<hg::i64>();
                     const auto count = reader.read_raw<std::uint32_t>();
                     for (auto index = std::uint32_t{}; index < count; ++index) {
-                        reader.consume<bg::ScalarValue<>>();
+                        reader.consume<hg::ScalarValue<>>();
                     }
                     return item.last_updated.time() == now;
                 }
                 return item.last_updated.valid() && item.last_updated.time() == now;
             },
-            [](bg::util::buffer_reader &reader, bg::OutputState &output) {
+            [](hg::util::buffer_reader &reader, hg::OutputState &output) {
                 ++queue_owned_operation_state.apply_calls;
-                const auto value = reader.read_raw<bg::i64>();
+                const auto value = reader.read_raw<hg::i64>();
                 const auto count = reader.read_raw<std::uint32_t>();
                 for (auto index = std::uint32_t{}; index < count; ++index) {
-                    auto payload = reader.read<bg::ScalarValue<>>();
+                    auto payload = reader.read<hg::ScalarValue<>>();
                 }
                 queue_owned_operation_state.last_applied_value = value;
                 if (queue_owned_operation_state.fail_apply) {
                     throw std::runtime_error{"provider queue apply failed after an owned payload"};
                 }
-                *static_cast<bg::i64 *>(output.mutable_data()) = value;
+                *static_cast<hg::i64 *>(output.mutable_data()) = value;
                 output.publish();
             });
         if (!dispatch.add(runtime_type, std::move(operations))) {
@@ -1302,11 +1302,11 @@ void register_owned_queue_operations(const bg::TimeSeriesRuntimeType &runtime_ty
     }
 
     if (dispatch.find_exact(runtime_type.type()) == nullptr) {
-        auto operations = bg::TimeSeriesQueueOperations::for_type([](bg::util::buffer_reader &reader) {
-            (void)reader.read_raw<bg::i64>();
+        auto operations = hg::TimeSeriesQueueOperations::for_type([](hg::util::buffer_reader &reader) {
+            (void)reader.read_raw<hg::i64>();
             const auto count = reader.read_raw<std::uint32_t>();
             for (auto index = std::uint32_t{}; index < count; ++index) {
-                reader.skip<bg::ScalarValue<>>();
+                reader.skip<hg::ScalarValue<>>();
                 ++queue_owned_operation_state.discard_calls;
             }
         });
@@ -1318,12 +1318,12 @@ void register_owned_queue_operations(const bg::TimeSeriesRuntimeType &runtime_ty
 
 void register_default_tick_handlers() {
     static const auto registered = [] {
-        using Series = provider::Series<bg::i64>;
-        auto &dispatch = bg::TimeSeriesDispatch<bg::TimeSeriesTickOperations>::instance();
-        auto semantic = bg::TimeSeriesTickOperations::for_type<Series>(
-            write_tick<bg::In<Series>>, replay_tick_default<Series>, discard_tick);
-        auto runtime = bg::TimeSeriesTickOperations::for_write<Series>(write_tick<bg::In<Series>>);
-        runtime.set_replay<bg::Out<Series, provider::view>>(replay_tick_view<Series>);
+        using Series = provider::Series<hg::i64>;
+        auto &dispatch = hg::TimeSeriesDispatch<hg::TimeSeriesTickOperations>::instance();
+        auto semantic = hg::TimeSeriesTickOperations::for_type<Series>(
+            write_tick<hg::In<Series>>, replay_tick_default<Series>, discard_tick);
+        auto runtime = hg::TimeSeriesTickOperations::for_write<Series>(write_tick<hg::In<Series>>);
+        runtime.set_replay<hg::Out<Series, provider::view>>(replay_tick_view<Series>);
         return dispatch.add(Series::type(), std::move(semantic)) &&
                dispatch.add(provider::series_view_runtime_type(Series::type()), std::move(runtime));
     }();
@@ -1333,32 +1333,32 @@ void register_default_tick_handlers() {
 }
 
 struct TickDelayStorage {
-    explicit TickDelayStorage(bg::allocator memory)
-        : buffer{bg::util::buffer::chain(256, memory)}, reader{buffer, Series<bg::i64>::type()},
+    explicit TickDelayStorage(hg::allocator memory)
+        : buffer{hg::util::buffer::chain(256, memory)}, reader{buffer, Series<hg::i64>::type()},
           writer{buffer, memory} {
         register_default_tick_handlers();
     }
 
-    bg::util::buffer buffer;
-    bg::TimeSeriesTickReader reader;
-    bg::TimeSeriesTickWriter writer;
+    hg::util::buffer buffer;
+    hg::TimeSeriesTickReader reader;
+    hg::TimeSeriesTickWriter writer;
 };
 
 struct OneTickDelay {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::In<Series<bg::i64>, bg::optional> input;
-    bg::Out<Series<bg::i64>, provider::view> output;
-    bg::State<TickDelayStorage *> storage;
+    hg::In<Series<hg::i64>, hg::optional> input;
+    hg::Out<Series<hg::i64>, provider::view> output;
+    hg::State<TickDelayStorage *> storage;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(hg::EvaluationContext *context) const {
         auto memory = context->runtime_graph().allocation();
         *storage = memory.new_object<TickDelayStorage>(memory);
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         if ((*storage)->reader.has_next()) {
-            (*storage)->reader.replay(bg::Out<bg::TS_T>{bg::TimeSeriesOutputBinding{output.output_state()}});
+            (*storage)->reader.replay(hg::Out<hg::TS_T>{hg::TimeSeriesOutputBinding{output.output_state()}});
         }
 
         if ((*storage)->writer.write(input, context->evaluation_time())) {
@@ -1366,7 +1366,7 @@ struct OneTickDelay {
         }
     }
 
-    void stop(bg::EvaluationContext *context) const noexcept {
+    void stop(hg::EvaluationContext *context) const noexcept {
         auto memory = context->runtime_graph().allocation();
         memory.delete_object(*storage);
         *storage = nullptr;
@@ -1374,27 +1374,27 @@ struct OneTickDelay {
 };
 
 struct Aggregate {
-    bg::In<Series<bg::i64>> input;
-    bg::Out<Series<bg::i64>> output;
+    hg::In<Series<hg::i64>> input;
+    hg::Out<Series<hg::i64>> output;
 
     void evaluate() const { output.set(input.value()); }
 };
 
 struct ViewAggregate {
-    bg::In<bg::TS<bg::i64>> input;
-    bg::Out<Series<bg::i64>, provider::view> output;
+    hg::In<hg::TS<hg::i64>> input;
+    hg::Out<Series<hg::i64>, provider::view> output;
 
     void evaluate() const { output.set(*input); }
 };
 
-using ContextAction = std::function<void(bg::EvaluationContext &)>;
+using ContextAction = std::function<void(hg::EvaluationContext &)>;
 
 struct ContextActionNode {
-    bg::Scalar<bg::Opaque<ContextAction *>> action;
-    bg::In<bg::TS<bg::i64>> trigger;
-    bg::Out<bg::TS<bg::i64>> result;
+    hg::Scalar<hg::Opaque<ContextAction *>> action;
+    hg::In<hg::TS<hg::i64>> trigger;
+    hg::Out<hg::TS<hg::i64>> result;
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         (**action)(*context);
         result.set(*trigger);
     }
@@ -1425,7 +1425,7 @@ TEST_CASE("a provider declaration exposes public semantic and runtime customizat
     CHECK(&resolve_time_series_runtime_type(semantic_type, supplied_runtime_types) == &supplied);
     CHECK_THROWS_AS(register_time_series_runtime_type(supplied), std::invalid_argument);
 
-    const auto unresolved = provider::SeriesRuntimeType{provider::Series<bg::SCALAR>::type()};
+    const auto unresolved = provider::SeriesRuntimeType{provider::Series<hg::SCALAR>::type()};
     CHECK_THROWS_AS(register_time_series_runtime_type(unresolved), std::invalid_argument);
 
     const auto wrong_value_family = provider::SeriesRuntimeType{TS<i64>::type()};
@@ -1738,7 +1738,7 @@ TEST_CASE("erased time-series literal updates use runtime handlers and publish t
     const auto graph = [&](wp<TS<i64>> input) { return consume(make_list(input)); };
 
     provider::time_series_literal_semantic_calls = 0;
-    const auto result = bg::run_graph(graph, {4, 8});
+    const auto result = hg::run_graph(graph, {4, 8});
     CHECK(result.equals<i64>({4, 8}));
     CHECK(provider::time_series_literal_semantic_calls == 2);
 }
@@ -1840,7 +1840,7 @@ TEST_CASE("provider inputs and configured outputs bind through public owners",
 TEST_CASE("provider input casts accept compatible generic declarations",
           "[value][time_series][feature:time-series-view][series:generic][declaration:generic]") {
     using Series = provider::Series<i64>;
-    using GenericSeries = provider::Series<bg::SCALAR>;
+    using GenericSeries = provider::Series<hg::SCALAR>;
     const auto time = MIN_DT + std::chrono::microseconds{1};
     auto value = i64{17};
     const auto state = TimeSeriesState{time};
@@ -1851,7 +1851,7 @@ TEST_CASE("provider input casts accept compatible generic declarations",
     CHECK(generic_input.value() == 17);
     CHECK(&generic_input.runtime_type() == &cpp_time_series_runtime_type<Series>());
     CHECK(&generic_input.runtime_type().type() == &Series::type());
-    CHECK_THROWS_AS(erased_input.as<TS<bg::SCALAR>>(), std::bad_cast);
+    CHECK_THROWS_AS(erased_input.as<TS<hg::SCALAR>>(), std::bad_cast);
 }
 
 TEST_CASE("tick write dispatch reaches provider-defined time series",
@@ -1919,7 +1919,7 @@ TEST_CASE("run_graph captures provider time series with registered literal compa
     provider::run_graph_comparison_count = 0;
 
     {
-        const auto result = bg::run_graph(graph, ticks);
+        const auto result = hg::run_graph(graph, ticks);
         CHECK(result.equals({17, literal::INVALID, 31}));
         CHECK(provider::run_graph_comparison_count == 2);
         CHECK_FALSE(result.equals({17, literal::INVALID, 32}));
@@ -1937,7 +1937,7 @@ TEST_CASE("run_graph captures provider time series with registered literal compa
     const auto dictionary_graph = [&](wp<TS<i64>> input) { return publish_dictionary(input); };
     const auto dictionary_ticks = std::array<i64, 1>{17};
     provider::run_graph_comparison_count = 0;
-    const auto dictionary_result = bg::run_graph(dictionary_graph, dictionary_ticks);
+    const auto dictionary_result = hg::run_graph(dictionary_graph, dictionary_ticks);
     CHECK(dictionary_result.equals({{{1, literal::REMOVED(17)}}}));
     CHECK(provider::run_graph_comparison_count == 1);
 }
@@ -1949,10 +1949,10 @@ TEST_CASE("run_graph compares provider scalar values in nested time-series input
     REQUIRE(provider::register_provider_scalar_buffer_handlers());
 
     const auto identity = [](wp<> input) { return wp<>{input}; };
-    const auto series = bg::run_graph(identity, bg::input<TS<Value>>({{7}, {9}}));
+    const auto series = hg::run_graph(identity, hg::input<TS<Value>>({{7}, {9}}));
 
     const auto dictionary =
-        bg::run_graph(identity, bg::input<TSD<i64, TS<Value>>>({{{1, {7}}}, {{1, {9}}}}));
+        hg::run_graph(identity, hg::input<TSD<i64, TS<Value>>>({{{1, {7}}}, {{1, {9}}}}));
 
     CHECK(series.equals({{7}, {9}}));
     CHECK(dictionary.equals({{{1, {7}}}, {{1, {9}}}}));
@@ -2054,7 +2054,7 @@ TEST_CASE("queue collection inspection stops at its first conflict",
     const auto previous_time = MIN_DT + std::chrono::microseconds{1};
     const auto evaluation_time = previous_time + std::chrono::microseconds{1};
     auto memory_resource = std::pmr::monotonic_buffer_resource{};
-    auto allocator = bg::allocator{memory_resource};
+    auto allocator = hg::allocator{memory_resource};
     const auto &runtime_type = cpp_time_series_runtime_type<Series>();
 
     auto *input_storage = allocator.allocate_bytes(runtime_type.value_size(), runtime_type.value_alignment());
@@ -2684,7 +2684,7 @@ TEST_CASE("a custom TSD key hook that throws after its callback does not discard
     const auto replay_node = node<provider::ContextActionNode>();
 
     const auto graph = [&](wp<TS<i64>> trigger) { return replay_node(replay_action_value, trigger); };
-    const auto graph_result = bg::run_graph(graph, {79});
+    const auto graph_result = hg::run_graph(graph, {79});
 
     CHECK(graph_result.equals<i64>({79}));
     CHECK(failure == "bundle key read failed after callback");
@@ -2984,7 +2984,7 @@ TEST_CASE("failed TSD write releases owned payloads from completed entries",
 
     const auto graph = [&](wp<TS<i64>> input) { return serialize(populate(input)); };
 
-    CHECK(bg::run_graph(graph, {17}).equals({true}));
+    CHECK(hg::run_graph(graph, {17}).equals({true}));
     CHECK(resource.allocations > 0);
     CHECK(resource.allocations == resource.deallocations);
 }
@@ -3138,7 +3138,7 @@ TEST_CASE("nested generic TSD replay selects the handler by item runtime represe
 
     const auto graph = [&](wp<TS<i64>> input) { return read_item(replay_dictionary(make_dictionary(input))); };
 
-    CHECK(bg::run_graph(graph, {17}).equals({17}));
+    CHECK(hg::run_graph(graph, {17}).equals({17}));
 }
 
 TEST_CASE("provider replay prefers exact runtime handlers over semantic handlers",
@@ -3305,7 +3305,7 @@ TEST_CASE("a node delays a configured provider output through ticks",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(delay(provide(input))); };
 
-    const auto actual = bg::run_graph(graph, {1, 2, 3, 4});
+    const auto actual = hg::run_graph(graph, {1, 2, 3, 4});
 
     CHECK(actual.equals<i64>({std::nullopt, 1, 2, 3, 4}));
 }
@@ -3333,7 +3333,7 @@ TEST_CASE("feedback uses registered handlers for provider time series",
         return output;
     };
 
-    const auto actual = bg::run_graph(graph, {2, 5, 7});
+    const auto actual = hg::run_graph(graph, {2, 5, 7});
     CHECK(actual.equals<i64>({std::nullopt, 2, 5, 7}));
     CHECK(provider::written_tick_count == 3);
     CHECK(provider::replayed_tick_count == 3);
@@ -3352,12 +3352,12 @@ TEST_CASE("a provider output binding works in a callable node",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    CHECK(bg::run_graph(graph, {3, 8}).equals<i64>({3, 8}));
+    CHECK(hg::run_graph(graph, {3, 8}).equals<i64>({3, 8}));
 }
 
 TEST_CASE("a provider generic series resolves its scalar and guarantee variables",
           "[type][time_series][feature:type-system][declaration:generic]") {
-    using Generic = provider::Series<bg::SCALAR, guarantee_variable<"G">>;
+    using Generic = provider::Series<hg::SCALAR, guarantee_variable<"G">>;
     using Concrete = provider::Series<i64>;
     using GenericValue = TS<i64, guarantee_variable<"G">>;
     static_assert(time_series_type_traits<Generic>::generic);
@@ -3383,7 +3383,7 @@ TEST_CASE("a provider generic series resolves its scalar and guarantee variables
 
 TEST_CASE("a generic provider input matches a concrete provider series", "[evaluation][time_series][feature:test-graph]") {
     using Concrete = provider::Series<i64>;
-    using Generic = provider::Series<bg::SCALAR>;
+    using Generic = provider::Series<hg::SCALAR>;
     static_assert(!details::direct_time_series_input<In<Generic>>);
 
     const auto provide = node([](In<TS<i64>> input, Out<Concrete> output) { output.set(*input); });
@@ -3392,14 +3392,14 @@ TEST_CASE("a generic provider input matches a concrete provider series", "[evalu
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    CHECK(bg::run_graph(graph, {4, 9}).equals<i64>({4, 9}));
+    CHECK(hg::run_graph(graph, {4, 9}).equals<i64>({4, 9}));
 }
 
 TEST_CASE("a provider scalar declaration resolves in a generic series signature",
           "[evaluation][time_series][feature:test-graph]") {
     using Concrete = provider::Series<provider::Number<i64>>;
-    using Generic = provider::Series<provider::Number<bg::SCALAR>>;
-    static_assert(scalar_declaration_traits<provider::Number<bg::SCALAR>>::generic);
+    using Generic = provider::Series<provider::Number<hg::SCALAR>>;
+    static_assert(scalar_declaration_traits<provider::Number<hg::SCALAR>>::generic);
 
     const auto provide = node([](In<TS<i64>> input, Out<Concrete> output) { output.set(*input); });
 
@@ -3407,7 +3407,7 @@ TEST_CASE("a provider scalar declaration resolves in a generic series signature"
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    CHECK(bg::run_graph(graph, {11, 14}).equals<i64>({11, 14}));
+    CHECK(hg::run_graph(graph, {11, 14}).equals<i64>({11, 14}));
 }
 
 TEST_CASE("a builtin collection publishes provider items", "[evaluation][time_series][feature:test-graph]") {
@@ -3432,7 +3432,7 @@ TEST_CASE("a builtin collection publishes provider items", "[evaluation][time_se
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(make_list(input)); };
 
-    CHECK(bg::run_graph(graph, {6, 10}).equals<i64>({6, 10}));
+    CHECK(hg::run_graph(graph, {6, 10}).equals<i64>({6, 10}));
 }
 
 TEST_CASE("an aggregate node binds configured provider outputs through public owners",
@@ -3447,7 +3447,7 @@ TEST_CASE("an aggregate node binds configured provider outputs through public ow
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(aggregate(provide(input))); };
 
-    CHECK(bg::run_graph(graph, {5, 7}).equals<i64>({5, 7}));
+    CHECK(hg::run_graph(graph, {5, 7}).equals<i64>({5, 7}));
 }
 
 TEST_CASE("configured provider outputs select distinct callable and aggregate runtimes",
@@ -3469,7 +3469,7 @@ TEST_CASE("configured provider outputs select distinct callable and aggregate ru
 
     const auto callable_graph = [&](wp<TS<i64>> input) { return callable_consume(callable_provide(input)); };
 
-    CHECK(bg::run_graph(callable_graph, {2, 3}).equals<i64>({2, 3}));
+    CHECK(hg::run_graph(callable_graph, {2, 3}).equals<i64>({2, 3}));
     CHECK(callable_runtime == &view_runtime);
 
     const auto *aggregate_runtime = static_cast<const TimeSeriesRuntimeType *>(nullptr);
@@ -3483,7 +3483,7 @@ TEST_CASE("configured provider outputs select distinct callable and aggregate ru
 
     const auto aggregate_graph = [&](wp<TS<i64>> input) { return aggregate_consume(aggregate(input)); };
 
-    CHECK(bg::run_graph(aggregate_graph, {4, 5}).equals<i64>({4, 5}));
+    CHECK(hg::run_graph(aggregate_graph, {4, 5}).equals<i64>({4, 5}));
     CHECK(aggregate_runtime == &view_runtime);
 }
 
@@ -3503,7 +3503,7 @@ TEST_CASE("a runtime-signature node binds its configured provider output",
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(input)); };
 
-    const auto actual = bg::run_graph(graph, {12, 0, 14});
+    const auto actual = hg::run_graph(graph, {12, 0, 14});
     provider::view_invalidation_observer = nullptr;
 
     CHECK(actual.equals<i64>({12, std::nullopt, 14}));
@@ -3568,8 +3568,8 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
 
     const auto concrete_provide = node([](In<TS<i64>> input, Out<Series> output) { output.set(*input); });
 
-    const auto generic_copy = node([](In<provider::Series<bg::SCALAR>> input,
-                                      Out<provider::Series<bg::SCALAR>> output) { output.set(input.value()); });
+    const auto generic_copy = node([](In<provider::Series<hg::SCALAR>> input,
+                                      Out<provider::Series<hg::SCALAR>> output) { output.set(input.value()); });
 
     const auto generic_consume = node([&](In<Series> input, Out<TS<i64>> output) {
         generic_runtime = &input.runtime_type();
@@ -3580,7 +3580,7 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
         return generic_consume(generic_copy(concrete_provide(input)));
     };
 
-    CHECK(bg::run_graph(generic_graph, {6, 7}).equals<i64>({6, 7}));
+    CHECK(hg::run_graph(generic_graph, {6, 7}).equals<i64>({6, 7}));
     CHECK(generic_runtime == &default_runtime);
 
     const auto *default_runtime_after_view = static_cast<const TimeSeriesRuntimeType *>(nullptr);
@@ -3596,7 +3596,7 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
 
     const auto default_graph = [&](wp<TS<i64>> input) { return default_consume(default_copy(view_provide(input))); };
 
-    CHECK(bg::run_graph(default_graph, {8, 9}).equals<i64>({8, 9}));
+    CHECK(hg::run_graph(default_graph, {8, 9}).equals<i64>({8, 9}));
     CHECK(default_runtime_after_view == &default_runtime);
 
     const auto *list_item_runtime = static_cast<const TimeSeriesRuntimeType *>(nullptr);
@@ -3611,7 +3611,7 @@ TEST_CASE("ordinary provider outputs use resolved declarations instead of input 
 
     const auto list_graph = [&](wp<TS<i64>> input) { return list_consume(make_list(view_provide(input))); };
 
-    CHECK(bg::run_graph(list_graph, {10, 11}).equals<i64>({10, 11}));
+    CHECK(hg::run_graph(list_graph, {10, 11}).equals<i64>({10, 11}));
     CHECK(list_item_runtime == &default_runtime);
 }
 
@@ -3635,7 +3635,7 @@ TEST_CASE("a configured provider output invalidates through its declared interfa
 
     const auto graph = [&](wp<TS<i64>> input) { return consume(provide(source(input))); };
 
-    CHECK(bg::run_graph(graph, {12, 0}).equals<i64>({12, std::nullopt}));
+    CHECK(hg::run_graph(graph, {12, 0}).equals<i64>({12, std::nullopt}));
     CHECK(invalidated);
     provider::view_invalidation_observer = nullptr;
 }
@@ -3643,7 +3643,7 @@ TEST_CASE("a configured provider output invalidates through its declared interfa
 TEST_CASE("a mismatched provider selector does not register a node", "[type][time_series][feature:test-graph]") {
     using Series = provider::Series<string>;
 
-    const auto node = bg::node([](Out<Series, provider::view>) {});
+    const auto node = hg::node([](Out<Series, provider::view>) {});
     auto wiring = GraphWiring{};
     auto context = WiringContext{wiring};
 

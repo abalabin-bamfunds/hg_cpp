@@ -1,14 +1,14 @@
-#include <bg/library.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/library.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,7 +20,7 @@
 #include <string>
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -67,7 +67,7 @@ TEST_CASE("matches performs regex search and publishes only a boolean result",
         return operators::matches(std::string_view{"(needle)"}, text);
     };
 
-    CHECK(bg::run_graph(matches, {"a needle here", "needle", "needles", "no match"})
+    CHECK(hg::run_graph(matches, {"a needle here", "needle", "needles", "no match"})
               .equals<bool>({true, true, true, false}));
 }
 
@@ -87,9 +87,9 @@ TEST_CASE("matches accepts symbol patterns and subjects and propagates the subje
         return result;
     };
 
-    CHECK(bg::run_graph(symbol_match).equals<bool>({true}));
-    CHECK(bg::run_graph(constant).equals<bool>({false}));
-    CHECK(bg::run_graph(deduplicated, {"x", "x", "y"}).equals<bool>({true, std::nullopt, false}));
+    CHECK(hg::run_graph(symbol_match).equals<bool>({true}));
+    CHECK(hg::run_graph(constant).equals<bool>({false}));
+    CHECK(hg::run_graph(deduplicated, {"x", "x", "y"}).equals<bool>({true, std::nullopt, false}));
 }
 
 TEST_CASE("matches accepts independent string and symbol pattern and subject types",
@@ -101,8 +101,8 @@ TEST_CASE("matches accepts independent string and symbol pattern and subject typ
         return operators::matches(std::string_view{"(?<word>café)"}, text);
     };
 
-    CHECK(bg::run_graph(symbol_pattern, {"café", "none"}).equals<bool>({true, false}));
-    CHECK(bg::run_graph(symbol_text, {symbol{"café"}, symbol{"none"}}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(symbol_pattern, {"café", "none"}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(symbol_text, {symbol{"café"}, symbol{"none"}}).equals<bool>({true, false}));
 }
 
 TEST_CASE("matches observes reference-backed subjects when the selected target changes",
@@ -112,7 +112,7 @@ TEST_CASE("matches observes reference-backed subjects when the selected target c
         return operators::matches("needle", operators::if_then_else(condition, left, right));
     };
 
-    CHECK(bg::run_graph(matches, std::array{true, false, false, true},
+    CHECK(hg::run_graph(matches, std::array{true, false, false, true},
                               std::array<std::string_view, 4>{"needle", "plain", "needle", "plain"},
                               std::array<std::string_view, 4>{"plain", "needle", "plain", "needle"})
               .equals<bool>({true, true, false, false}));
@@ -131,7 +131,7 @@ TEST_CASE("prepared regex matchers have independent state in mapped graph instan
         return copy(mapped);
     };
 
-    const auto actual = bg::run_graph(tested, {{{1, "x"}, {2, "none"}}, {{1, "none"}}, {{2, "x"}}});
+    const auto actual = hg::run_graph(tested, {{{1, "x"}, {2, "none"}}, {{1, "none"}}, {{2, "x"}}});
     CHECK(actual.equals({{{1, true}, {2, false}}, {{1, false}}, {{2, true}}}));
 }
 
@@ -153,7 +153,7 @@ TEST_CASE("equal prepared regex patterns deduplicate matcher nodes",
     const auto compiled = CompiledGraph{wiring};
 
     CHECK(compiled.node_count() == 3);
-    CHECK(bg::run_graph([&] { return tested(source()); }).equals<bool>({true}));
+    CHECK(hg::run_graph([&] { return tested(source()); }).equals<bool>({true}));
 }
 
 TEST_CASE("prepared patterns outlive wiring and matchers remain runtime-instance local",
@@ -191,7 +191,7 @@ TEST_CASE("match_ accepts symbol patterns and symbol subjects",
           "[feature:operator][series:fixed-tsl][scalar:string][scalar:symbol]") {
     const auto captures = [](wp<TS<symbol>> text) { return operators::match_(symbol{"(x)"}, text); };
 
-    CHECK(bg::run_graph(captures, {symbol{"x"}, symbol{"none"}})
+    CHECK(hg::run_graph(captures, {symbol{"x"}, symbol{"none"}})
               .equals({{{0, "x"}}, literal::INVALID}));
 }
 
@@ -201,7 +201,7 @@ TEST_CASE("replace supports Python replacement references and preserves UTF-8 ou
         return operators::replace(R"((?<word>é)(?<optional>x)?)", R"(\g<word>2-$-\\)", text);
     };
 
-    CHECK(bg::run_graph(replace, {"éx and é", "none"})
+    CHECK(hg::run_graph(replace, {"éx and é", "none"})
               .equals<string>({"é2-$-\\ and é2-$-\\", "none"}));
 }
 
@@ -212,9 +212,9 @@ TEST_CASE("replace supports numbered, named, and whole-match references",
     };
     const auto backreference = [](wp<TS<string>> text) { return operators::matches(R"((.)\1)", text); };
 
-    CHECK(bg::run_graph(replace, {"foo and foo", "none"})
+    CHECK(hg::run_graph(replace, {"foo and foo", "none"})
               .equals<string>({"foo|foo|foo and foo|foo|foo", "none"}));
-    CHECK(bg::run_graph(backreference, {"book", "abc"}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(backreference, {"book", "abc"}).equals<bool>({true, false}));
 }
 
 TEST_CASE("regex patterns and captures preserve embedded NUL",
@@ -226,9 +226,9 @@ TEST_CASE("regex patterns and captures preserve embedded NUL",
     const auto replace = [=](wp<TS<string>> text) { return operators::replace(capture_pattern, "X", text); };
     const auto captures = [=](wp<TS<string>> text) { return operators::match_(capture_pattern, text); };
 
-    CHECK(bg::run_graph(matches, {subject}).equals<bool>({true}));
-    CHECK(bg::run_graph(replace, {subject}).equals<string>({"xXy"}));
-    CHECK(bg::run_graph(captures, {subject}).equals({{{0, std::string_view{"a\0b", 3}}}}));
+    CHECK(hg::run_graph(matches, {subject}).equals<bool>({true}));
+    CHECK(hg::run_graph(replace, {subject}).equals<string>({"xXy"}));
+    CHECK(hg::run_graph(captures, {subject}).equals({{{0, std::string_view{"a\0b", 3}}}}));
 }
 
 TEST_CASE("replace emits unmatched groups as empty and handles octal escapes as Unicode",
@@ -236,15 +236,15 @@ TEST_CASE("replace emits unmatched groups as empty and handles octal escapes as 
     const auto unmatched = [](wp<TS<string>> text) { return operators::replace("(a)?b", R"(\1x)", text); };
     const auto octal = [](wp<TS<string>> text) { return operators::replace("x", R"(\377)", text); };
 
-    CHECK(bg::run_graph(unmatched, {"b", "ab"}).equals<string>({"x", "ax"}));
-    CHECK(bg::run_graph(octal, {"x", "no x"}).equals<string>({"ÿ", "no ÿ"}));
+    CHECK(hg::run_graph(unmatched, {"b", "ab"}).equals<string>({"x", "ax"}));
+    CHECK(hg::run_graph(octal, {"x", "no x"}).equals<string>({"ÿ", "no ÿ"}));
 }
 
 TEST_CASE("replace follows ICU zero-length match progression",
           "[feature:operator][series:value][scalar:string][transition:update]") {
     const auto replace = [](wp<TS<string>> text) { return operators::replace("x*", "_", text); };
 
-    CHECK(bg::run_graph(replace, {"abxd", ""}).equals<string>({"_a_b__d_", "_"}));
+    CHECK(hg::run_graph(replace, {"abxd", ""}).equals<string>({"_a_b__d_", "_"}));
 }
 
 TEST_CASE("replace decodes Python control escapes and preserves escaped punctuation",
@@ -254,8 +254,8 @@ TEST_CASE("replace decodes Python control escapes and preserves escaped punctuat
     };
     const auto punctuation = [](wp<TS<string>> text) { return operators::replace("x", R"(\&\.)", text); };
 
-    CHECK(bg::run_graph(controls, {"x"}).equals<string>({"\n\t\r\a\b\f\v"}));
-    CHECK(bg::run_graph(punctuation, {"x"}).equals<string>({R"(\&\.)"}));
+    CHECK(hg::run_graph(controls, {"x"}).equals<string>({"\n\t\r\a\b\f\v"}));
+    CHECK(hg::run_graph(punctuation, {"x"}).equals<string>({R"(\&\.)"}));
 }
 
 TEST_CASE("replace accepts independent string and symbol pattern, replacement, and subject types",
@@ -267,8 +267,8 @@ TEST_CASE("replace accepts independent string and symbol pattern, replacement, a
         return operators::replace(symbol{"x"}, std::string_view{"é"}, text);
     };
 
-    CHECK(bg::run_graph(string_symbol_string, {"x🍕x", "none"}).equals<string>({"💠🍕💠", "none"}));
-    CHECK(bg::run_graph(symbol_string_symbol, {symbol{"xx"}, symbol{"none"}})
+    CHECK(hg::run_graph(string_symbol_string, {"x🍕x", "none"}).equals<string>({"💠🍕💠", "none"}));
+    CHECK(hg::run_graph(symbol_string_symbol, {symbol{"xx"}, symbol{"none"}})
               .equals<string>({"éé", "none"}));
 }
 
@@ -278,7 +278,7 @@ TEST_CASE("replace preserves embedded NUL and astral UTF-8 in subjects and repla
         return operators::replace("(🍕)", std::string_view{"a\0b", 3}, text);
     };
 
-    CHECK(bg::run_graph(replace, {"left🍕right", std::string_view{"🍕\0🍕", 9}})
+    CHECK(hg::run_graph(replace, {"left🍕right", std::string_view{"🍕\0🍕", 9}})
               .equals<string>({std::string_view{"lefta\0bright", 12}, std::string_view{"a\0b\0a\0b", 7}}));
 }
 
@@ -288,7 +288,7 @@ TEST_CASE("match_ returns capture groups in order and invalidates unmatched grou
         return operators::match_(R"((?<word>é)(?<optional>x)?)", text);
     };
 
-    CHECK(bg::run_graph(captures, {"éx", "é", "none"})
+    CHECK(hg::run_graph(captures, {"éx", "é", "none"})
               .equals({{{0, "é"}, {1, "x"}}, {{0, "é"}, {1, literal::INVALID}}, literal::INVALID}));
 }
 
@@ -302,10 +302,10 @@ TEST_CASE("match_ uses a fixed capture size, rejects patterns without captures, 
     };
     const auto no_captures = [](wp<TS<string>> text) { return operators::match_("x", text); };
 
-    CHECK(bg::run_graph(captures).equals({{{0, "x"}}}));
+    CHECK(hg::run_graph(captures).equals({{{0, "x"}}}));
     auto error_message = std::string{};
     try {
-        static_cast<void>(bg::run_graph(no_captures, {"x"}));
+        static_cast<void>(hg::run_graph(no_captures, {"x"}));
     } catch (const WiringError &error) {
         error_message = error.what();
     }
@@ -319,8 +319,8 @@ TEST_CASE("match_ distinguishes an all-unmatched successful match from search fa
     };
     const auto matched = [](wp<TS<string>> text) { return operators::matches("(?:(a)?(b)?)", text); };
 
-    CHECK(bg::run_graph(captures_valid, {""}).equals<bool>({false}));
-    CHECK(bg::run_graph(matched, {""}).equals<bool>({true}));
+    CHECK(hg::run_graph(captures_valid, {""}).equals<bool>({false}));
+    CHECK(hg::run_graph(matched, {""}).equals<bool>({true}));
 }
 
 TEST_CASE("match_ preserves empty captures, omits absent captures, and revalidates after match loss",
@@ -329,9 +329,9 @@ TEST_CASE("match_ preserves empty captures, omits absent captures, and revalidat
     const auto empty_and_absent = [](wp<TS<string>> text) { return operators::match_(R"((x)?())", text); };
     const auto captures = [](wp<TS<string>> text) { return operators::match_("(x)", text); };
 
-    CHECK(bg::run_graph(empty_and_absent, {"", "x"})
+    CHECK(hg::run_graph(empty_and_absent, {"", "x"})
               .equals({{{1, ""}}, {{0, "x"}, {1, ""}}}));
-    CHECK(bg::run_graph(captures, {"x", "none", "x"})
+    CHECK(hg::run_graph(captures, {"x", "none", "x"})
               .equals({{{0, "x"}}, literal::INVALID, {{0, "x"}}}));
 }
 
@@ -343,12 +343,12 @@ TEST_CASE("regex operators invalidate and revalidate with a required subject",
     const auto matches_valid = [](wp<TS<string>> text) { return operators::valid(operators::matches("x", text)); };
     const auto replace_valid = [](wp<TS<string>> text) { return operators::valid(operators::replace("x", "y", text)); };
 
-    CHECK(bg::run_graph(matches, {"x", literal::INVALID, "z"}).equals<bool>({true, std::nullopt, false}));
-    CHECK(bg::run_graph(replace, {"x", literal::INVALID, "z"}).equals<string>({"y", std::nullopt, "z"}));
-    CHECK(bg::run_graph(matches_valid,
+    CHECK(hg::run_graph(matches, {"x", literal::INVALID, "z"}).equals<bool>({true, std::nullopt, false}));
+    CHECK(hg::run_graph(replace, {"x", literal::INVALID, "z"}).equals<string>({"y", std::nullopt, "z"}));
+    CHECK(hg::run_graph(matches_valid,
                               {literal::SKIP, literal::INVALID, "x", literal::SKIP, literal::INVALID, "x"})
               .equals<bool>({false, std::nullopt, true, std::nullopt, false, true}));
-    CHECK(bg::run_graph(replace_valid,
+    CHECK(hg::run_graph(replace_valid,
                               {literal::SKIP, literal::INVALID, "x", literal::SKIP, literal::INVALID, "x"})
               .equals<bool>({false, std::nullopt, true, std::nullopt, false, true}));
 }
@@ -373,19 +373,19 @@ TEST_CASE("regex operations reject malformed UTF-8 patterns, replacements, and s
 
     for (const auto value : malformed) {
         CHECK_THROWS_AS(
-            bg::run_graph([&](wp<TS<string>> text) { return operators::matches(value, text); }, {"x"}),
+            hg::run_graph([&](wp<TS<string>> text) { return operators::matches(value, text); }, {"x"}),
             WiringError);
         CHECK_THROWS_AS(
-            bg::run_graph([&](wp<TS<string>> text) { return replace_pattern(value, text); }, {"x"}),
+            hg::run_graph([&](wp<TS<string>> text) { return replace_pattern(value, text); }, {"x"}),
             WiringError);
         CHECK_THROWS_AS(
-            bg::run_graph([&](wp<TS<string>> text) { return replace_text(value, text); }, {"x"}),
+            hg::run_graph([&](wp<TS<string>> text) { return replace_text(value, text); }, {"x"}),
             WiringError);
-        CHECK_THROWS_AS(bg::run_graph([&](wp<TS<string>> text) { return match(value, text); }, {"x"}),
+        CHECK_THROWS_AS(hg::run_graph([&](wp<TS<string>> text) { return match(value, text); }, {"x"}),
                         WiringError);
-        CHECK_THROWS_AS(bg::run_graph(malformed_subject, {value}), std::invalid_argument);
-        CHECK_THROWS_AS(bg::run_graph(malformed_replace_subject, {value}), std::invalid_argument);
-        CHECK_THROWS_AS(bg::run_graph(malformed_capture_subject, {value}), std::invalid_argument);
+        CHECK_THROWS_AS(hg::run_graph(malformed_subject, {value}), std::invalid_argument);
+        CHECK_THROWS_AS(hg::run_graph(malformed_replace_subject, {value}), std::invalid_argument);
+        CHECK_THROWS_AS(hg::run_graph(malformed_capture_subject, {value}), std::invalid_argument);
     }
 }
 
@@ -395,7 +395,7 @@ TEST_CASE("regex pattern and replacement errors occur before matching",
     const auto invalid_group = [](wp<TS<string>> text) { return operators::replace("x", R"(\g<2>)", text); };
     const auto invalid_octal = [](wp<TS<string>> text) { return operators::replace("x", R"(\400)", text); };
 
-    CHECK_THROWS_AS(bg::run_graph(invalid_pattern, {"no match"}), WiringError);
-    CHECK_THROWS_AS(bg::run_graph(invalid_group, {"no match"}), WiringError);
-    CHECK_THROWS_AS(bg::run_graph(invalid_octal, {"no match"}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(invalid_pattern, {"no match"}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(invalid_group, {"no match"}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(invalid_octal, {"no match"}), WiringError);
 }

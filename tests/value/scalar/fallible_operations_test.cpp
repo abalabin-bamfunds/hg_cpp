@@ -1,10 +1,10 @@
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/set/type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,7 +16,7 @@
 #include <stdexcept>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace test_scalar {
 
@@ -47,14 +47,14 @@ template <> struct std::hash<test_scalar::fallible_value> {
     }
 };
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_type_traits<test_scalar::fallible_value> {
     static const ScalarType &type() noexcept {
         class Type final : public ScalarType {
           public:
             bool is_resolved() const noexcept override { return true; }
-            const bg::Type &resolve(const TypeMap &) const override { return *this; }
+            const hg::Type &resolve(const TypeMap &) const override { return *this; }
             bool supports_equality() const noexcept override { return true; }
             bool supports_hash() const noexcept override { return true; }
         };
@@ -65,7 +65,7 @@ template <> struct scalar_type_traits<test_scalar::fallible_value> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
 TEST_CASE("scalar collections propagate hash and equality exceptions",
           "[value][scalar][collection][feature:scalar-collection]") {

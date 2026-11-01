@@ -1,4 +1,4 @@
-#include <bg/util/hash_dictionary.hpp>
+#include <hg/util/hash_dictionary.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -12,7 +12,7 @@
 #include <string_view>
 #include <unordered_map>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

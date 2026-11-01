@@ -1,4 +1,4 @@
-#include <bg/details/evaluation_scratch.hpp>
+#include <hg/details/evaluation_scratch.hpp>
 
 #include "../../utils/counting_memory_resource.hpp"
 
@@ -12,7 +12,7 @@ TEST_CASE("evaluation scratch retains record addresses while it grows",
     auto memory = counting_memory_resource{};
 
     {
-        auto scratch = bg::details::EvaluationScratch{memory};
+        auto scratch = hg::details::EvaluationScratch{memory};
         CHECK(memory.allocations() == 0);
 
         auto &frame = scratch.push_frame();
@@ -30,7 +30,7 @@ TEST_CASE("evaluation scratch retains record addresses while it grows",
 
 TEST_CASE("evaluation scratch restores nested frames", "[evaluation][scratch][feature:evaluation-scratch]") {
     auto memory = counting_memory_resource{};
-    auto scratch = bg::details::EvaluationScratch{memory};
+    auto scratch = hg::details::EvaluationScratch{memory};
     auto &outer = scratch.push_frame();
     (void)scratch.allocate(outer, 32, alignof(std::max_align_t));
 
@@ -49,7 +49,7 @@ TEST_CASE("evaluation scratch restores nested frames", "[evaluation][scratch][fe
 TEST_CASE("evaluation scratch reuses its last released allocation",
           "[evaluation][scratch][feature:evaluation-scratch]") {
     auto memory = counting_memory_resource{};
-    auto scratch = bg::details::EvaluationScratch{memory};
+    auto scratch = hg::details::EvaluationScratch{memory};
     auto &frame = scratch.push_frame();
 
     auto *first = scratch.allocate(frame, 48, alignof(void *));

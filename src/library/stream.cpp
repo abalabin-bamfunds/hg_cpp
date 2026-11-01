@@ -1,23 +1,23 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <cstdint>
 #include <limits>
 #include <optional>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto DEDUPED = guarantee_variable<"DEDUPED", TimeSeriesGuarantee::deduplicated>;
 inline constexpr auto G = guarantee_variable<"G">;
@@ -168,7 +168,7 @@ struct stream_overloads {
             candidates.reserve(values.size());
             for (auto index = std::size_t{}; index < values.size(); ++index) {
                 auto candidate = values[index].time_series();
-                validities.push_back(bg::operators::valid(candidate));
+                validities.push_back(hg::operators::valid(candidate));
                 candidates.push_back(candidate);
             }
 
@@ -187,7 +187,7 @@ struct stream_overloads {
         State<bool> has_selection;
 
         static const TimeSeriesType *requested_result(const WiringArguments &arguments) {
-            const auto *mapping = arguments.type_map().find(bg::details::type_parameter<OUT>());
+            const auto *mapping = arguments.type_map().find(hg::details::type_parameter<OUT>());
             const auto *requested_mapping = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
             return requested_mapping == nullptr || *requested_mapping == nullptr
                        ? nullptr
@@ -652,4 +652,4 @@ void register_stream_operators() {
     register_overloads<stream_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

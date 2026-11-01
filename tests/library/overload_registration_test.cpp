@@ -1,7 +1,7 @@
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,8 +13,8 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace overload_registration_tests {
 
@@ -75,7 +75,7 @@ TEST_CASE("an overload forwards callable arguments to node and retains the calla
 
     CHECK_FALSE(captured_lifetime.expired());
     const auto callable = [](wp<TS<i64>> value) { return callable_operator(value); };
-    CHECK(bg::run_graph(callable, std::array<i64, 1>{7}).equals<i64>({42}));
+    CHECK(hg::run_graph(callable, std::array<i64, 1>{7}).equals<i64>({42}));
 }
 
 TEST_CASE("an aggregate overload registers when its declaration object is constructed",
@@ -85,10 +85,10 @@ TEST_CASE("an aggregate overload registers when its declaration object is constr
     };
 
     const auto aggregate = [](wp<TS<i64>> value) { return aggregate_operator(value); };
-    CHECK_THROWS_AS(bg::run_graph(aggregate, std::array<i64, 1>{3}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(aggregate, std::array<i64, 1>{3}), WiringError);
 
     register_overloads<registration_group>();
-    CHECK(bg::run_graph(aggregate, std::array<i64, 1>{3}).equals<i64>({3}));
+    CHECK(hg::run_graph(aggregate, std::array<i64, 1>{3}).equals<i64>({3}));
 
     testing::test_wiring([&] {
         const auto source = node([](Out<TS<i64>>) {});
@@ -147,7 +147,7 @@ TEST_CASE("an overload registers an already constructed node template",
     }
 
     const auto graph = [](wp<TS<i64>> value) { return node_template_operator(value); };
-    CHECK(bg::run_graph(graph, std::array<i64, 1>{5}).equals<i64>({5}));
+    CHECK(hg::run_graph(graph, std::array<i64, 1>{5}).equals<i64>({5}));
 }
 
 TEST_CASE("an overload registers an already constructed graph template",
@@ -157,7 +157,7 @@ TEST_CASE("an overload registers an already constructed graph template",
         overload<graph_template_operator> registration{implementation};
     }
     const auto graph = [](wp<TS<i64>> value) { return graph_template_operator(value); };
-    CHECK(bg::run_graph(graph, std::array<i64, 1>{8}).equals<i64>({8}));
+    CHECK(hg::run_graph(graph, std::array<i64, 1>{8}).equals<i64>({8}));
 }
 
 TEST_CASE("graph overload groups reflect member names and rename copies independently",
@@ -186,7 +186,7 @@ TEST_CASE("graph overload groups reflect member names and rename copies independ
     CHECK(renamed.signature().name().text() == "renamed_identity");
     CHECK(implementation.signature().name().text() != "identity_graph");
     const auto graph = [](wp<TS<i64>> value) { return reflected_graph_operator(value); };
-    CHECK(bg::run_graph(graph, std::array<i64, 1>{8}).equals<i64>({8}));
+    CHECK(hg::run_graph(graph, std::array<i64, 1>{8}).equals<i64>({8}));
 }
 
 TEST_CASE("instantiate_overloads registers each selected class-template specialization",
@@ -196,8 +196,8 @@ TEST_CASE("instantiate_overloads registers each selected class-template speciali
     }
     const auto integer_graph = [](wp<TS<i64>> value) { return family_operator(value); };
     const auto floating_graph = [](wp<TS<double>> value) { return family_operator(value); };
-    CHECK(bg::run_graph(integer_graph, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
-    CHECK(bg::run_graph(floating_graph, std::array{1.5, 3.5}).equals<double>({1.5, 3.5}));
+    CHECK(hg::run_graph(integer_graph, std::array<i64, 2>{2, 4}).equals<i64>({2, 4}));
+    CHECK(hg::run_graph(floating_graph, std::array{1.5, 3.5}).equals<double>({1.5, 3.5}));
 }
 
 TEST_CASE("family overload groups apply one reflected name to each specialization",
@@ -276,7 +276,7 @@ TEST_CASE("an overload forwards node options to node",
         },
         schedule_on_start = true};
 
-    CHECK(bg::run_graph(scheduled_operator, input<TS<i64>>({literal::SKIP}))
+    CHECK(hg::run_graph(scheduled_operator, input<TS<i64>>({literal::SKIP}))
               .equals<bool>({false}));
 }
 
@@ -287,8 +287,8 @@ TEST_CASE("an overload forwards callable requirements and resolvers to node",
         resolve<RESULT> = []() -> const ScalarType & { return int64_type(); },
         require = [](const WiringArguments &arguments) { return &arguments.resolved_type(0) == &TS<i64>::type(); }};
 
-    CHECK(bg::run_graph(resolved_callable_operator, input<TS<i64>>({2, 4})).equals<i64>({2, 4}));
-    CHECK_THROWS_AS(bg::run_graph(resolved_callable_operator, input<TS<double>>({1.5})), WiringError);
+    CHECK(hg::run_graph(resolved_callable_operator, input<TS<i64>>({2, 4})).equals<i64>({2, 4}));
+    CHECK_THROWS_AS(hg::run_graph(resolved_callable_operator, input<TS<double>>({1.5})), WiringError);
 }
 
 TEST_CASE("registration members run in declaration order",
@@ -311,7 +311,7 @@ TEST_CASE("registration members run in declaration order",
     registration_order.clear();
     const registration_group registrations{};
     const auto graph = [](wp<TS<i64>> value) { return registration_order_operator(value); };
-    CHECK(bg::run_graph(graph, std::array<i64, 1>{0}).equals<i64>({2}));
+    CHECK(hg::run_graph(graph, std::array<i64, 1>{0}).equals<i64>({2}));
     CHECK(registration_order == std::vector<int>{1, 2});
 }
 

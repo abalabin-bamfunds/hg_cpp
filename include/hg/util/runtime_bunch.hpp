@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/storage_block.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/storage_block.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -16,7 +16,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 struct runtime_item_layout {
     static constexpr auto maximum_block_bytes = std::size_t{256} * 1024;
@@ -87,7 +87,7 @@ class runtime_bunch_blocks {
         return current.data == nullptr ? nullptr : current.data + offset * layout.size;
     }
 
-    ::bg::util::storage_block block_containing(size_type position, const runtime_item_layout &layout) const noexcept {
+    ::hg::util::storage_block block_containing(size_type position, const runtime_item_layout &layout) const noexcept {
         const auto [block_index, offset] = locate(position, layout);
         const auto first = static_cast<std::uint64_t>(position) - offset;
         const auto end = std::min(first + block_capacity(block_index, layout),
@@ -326,7 +326,7 @@ class runtime_contiguous_bunch {
 class runtime_sparse_bunch {
   public:
     using size_type = std::uint32_t;
-    using storage_block = ::bg::util::storage_block;
+    using storage_block = ::hg::util::storage_block;
     static constexpr bool supports_byte_copy_initialization = true;
 
     template <typename Constructor>
@@ -388,4 +388,4 @@ class runtime_sparse_bunch {
 static_assert(byte_copy_initializable<runtime_contiguous_bunch>);
 static_assert(byte_copy_initializable<runtime_sparse_bunch>);
 
-} // namespace bg::util
+} // namespace hg::util

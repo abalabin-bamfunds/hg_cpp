@@ -1,22 +1,22 @@
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/operators.hpp>
-#include <bg/time_series/tsb/tsb_free_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/compiled_node.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/operators.hpp>
+#include <hg/time_series/tsb/tsb_free_runtime_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -25,7 +25,7 @@
 #include <string>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class FreeTimeSeriesBundleNodeTemplate final : public NodeTemplate {
@@ -436,12 +436,12 @@ const VariadicWiringOperations &time_series_bundle_variadic_wiring_operations() 
     return operations;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 wp<> bundle(std::span<const WiringArgument> fields) {
     return wp<>{details::make_free_time_series_bundle(fields)};
 }
 
-} // namespace bg
+} // namespace hg

@@ -2,12 +2,12 @@
 
 namespace test_shared_schema_provider {
 
-const bg::ScalarType &scalar_type() {
-    return bg::cpp_scalar_type<bg::Bundle<SharedSchema>>();
+const hg::ScalarType &scalar_type() {
+    return hg::cpp_scalar_type<hg::Bundle<SharedSchema>>();
 }
 
-const bg::TimeSeriesBundleType &time_series_type() {
-    return bg::TSB<SharedSchema>::type();
+const hg::TimeSeriesBundleType &time_series_type() {
+    return hg::TSB<SharedSchema>::type();
 }
 
 } // namespace test_shared_schema_provider

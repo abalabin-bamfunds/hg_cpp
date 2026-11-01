@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_template.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_template.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Target> class SignatureWiringTemplate final : public WiringTemplate {
   public:
@@ -82,9 +82,9 @@ template <typename Target> class SignatureWiringTemplate final : public WiringTe
     Signature signature_;
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <typename Target>
     requires std::derived_from<std::remove_cvref_t<Target>, WiringTemplate>
@@ -93,4 +93,4 @@ template <typename Target>
         std::forward<Target>(target), std::move(signature)};
 }
 
-} // namespace bg
+} // namespace hg

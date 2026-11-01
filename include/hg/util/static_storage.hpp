@@ -6,7 +6,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 // Stores a function-static object without running its destructor at process shutdown.
 template <typename T> class static_storage {
@@ -33,4 +33,4 @@ template <typename T> class static_storage {
 
 static_assert(std::is_trivially_destructible_v<static_storage<int>>);
 
-} // namespace bg::util
+} // namespace hg::util

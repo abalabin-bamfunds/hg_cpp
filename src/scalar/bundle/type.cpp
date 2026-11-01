@@ -1,11 +1,11 @@
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
 
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include "../../type/type_registration.hpp"
 
@@ -19,7 +19,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 void HierarchicalScalarType::format_name(std::string &result) const {
     if (is_resolved()) {
@@ -214,4 +214,4 @@ const ResolvedHierarchicalScalarType &hierarchical_scalar_type(const Schema &sch
     return details::canonical_hierarchical_scalar_type(schema);
 }
 
-} // namespace bg
+} // namespace hg

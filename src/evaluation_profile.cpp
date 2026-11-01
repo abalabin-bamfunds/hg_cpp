@@ -1,8 +1,8 @@
-#include <bg/evaluation_profile.hpp>
+#include <hg/evaluation_profile.hpp>
 
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <array>
 #include <chrono>
@@ -16,7 +16,7 @@
 #include <intrin.h>
 #endif
 
-namespace bg {
+namespace hg {
 namespace {
 
 constexpr auto record_tag_shift = 30;
@@ -476,4 +476,4 @@ EvaluationProfile::~EvaluationProfile() noexcept {
     }
 }
 
-} // namespace bg
+} // namespace hg

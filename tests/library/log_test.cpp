@@ -1,10 +1,10 @@
-#include <bg/library.hpp>
-#include <bg/logging.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/library.hpp>
+#include <hg/logging.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include "../value/scalar/test_scalar_provider.hpp"
 
@@ -26,8 +26,8 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 struct LogFormattingGate {
     void wait_until_entered() {
@@ -74,7 +74,7 @@ namespace {
 
 std::filesystem::path log_path() {
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
-    return std::filesystem::temp_directory_path() / ("bg_log_operator_" + std::to_string(nonce) + ".log");
+    return std::filesystem::temp_directory_path() / ("hg_log_operator_" + std::to_string(nonce) + ".log");
 }
 
 std::vector<std::string> read_lines(const std::filesystem::path &path) {
@@ -157,11 +157,11 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the logging thread",
 
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
-    bg::logging::initialize({.file = path.string(), .pattern = "{message}"});
-    CHECK_THROWS_AS(bg::logging::initialize(), std::logic_error);
+    hg::logging::initialize({.file = path.string(), .pattern = "{message}"});
+    CHECK_THROWS_AS(hg::logging::initialize(), std::logic_error);
 
     auto gate = LogFormattingGate{};
-    bg::log::info("{}", LogGateProbe{&gate});
+    hg::log::info("{}", LogGateProbe{&gate});
     gate.wait_until_entered();
     auto release_gate = util::scope_exit{[&gate]() noexcept { gate.release(); }};
 
@@ -204,7 +204,7 @@ TEST_CASE("log_ defers scalar and nested tick formatting to the logging thread",
 
     gate.release();
     release_gate.release();
-    bg::logging::flush();
+    hg::logging::flush();
 
     const auto messages = read_lines(path);
     const auto contains_message = [&](std::string_view expected) {

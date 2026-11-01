@@ -1,7 +1,7 @@
-#include <bg/bg.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/hg.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -360,7 +360,7 @@ TEST_CASE("run_graph accepts a tuple-valued time series input and output",
 
     const auto graph = [&](wp<TS<Nested>> input) { return identity(input); };
 
-    const auto actual = bg::run_graph(graph, {{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}});
+    const auto actual = hg::run_graph(graph, {{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}});
 
     REQUIRE(actual.size() == 2);
     const auto first = actual[0]->view();
@@ -372,12 +372,12 @@ TEST_CASE("run_graph accepts a tuple-valued time series input and output",
     CHECK(second.get<1>().get<0>().value() == "NYSE");
     CHECK(second.get<1>().get<1>().value() == symbol{"IBM"});
 
-    using bg::literals::operator""_n;
+    using hg::literals::operator""_n;
 
-    const auto erased_graph = bg::graph("name"_n = "erased_tuple_identity",
+    const auto erased_graph = hg::graph("name"_n = "erased_tuple_identity",
                                         [&](wp<> input) { return wp<>{identity(input)}; });
-    const auto erased = bg::run_graph(
-        erased_graph, bg::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
+    const auto erased = hg::run_graph(
+        erased_graph, hg::input<TS<Nested>>({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     CHECK(erased.equals({{1, {"NASDAQ", symbol{"NQ"}}}, {2, {"NYSE", symbol{"IBM"}}}}));
     REQUIRE(retained.has_value());
     CHECK(retained->view().get<0>().value() == 1);

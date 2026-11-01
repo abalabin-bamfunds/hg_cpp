@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 template <typename Function>
     requires std::is_nothrow_invocable_v<Function &>
@@ -36,4 +36,4 @@ class [[nodiscard]] scope_exit {
 
 template <typename Function> scope_exit(Function) -> scope_exit<std::decay_t<Function>>;
 
-} // namespace bg::util
+} // namespace hg::util

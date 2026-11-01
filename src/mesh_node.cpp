@@ -1,23 +1,23 @@
-#include <bg/graph/details/mesh_node.hpp>
+#include <hg/graph/details/mesh_node.hpp>
 
-#include <bg/allocator.hpp>
-#include <bg/graph/nested_graph.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/map/details/map_node_definition.hpp>
-#include <bg/map/details/map_runtime.hpp>
-#include <bg/node.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/ref/ref_output.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/tsd/tsd_key_subscription.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/map/details/map_node_definition.hpp>
+#include <hg/map/details/map_runtime.hpp>
+#include <hg/node.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/ref/ref_output.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/tsd/tsd_key_subscription.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -29,7 +29,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class MeshRuntimeState;
@@ -870,4 +870,4 @@ std::unique_ptr<NodeTemplate> make_mesh_node(MapGraphWiring wiring, const Resolv
         MeshNodeDefinition{std::move(wiring), outer_signature});
 }
 
-} // namespace bg::details
+} // namespace hg::details

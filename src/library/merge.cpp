@@ -1,28 +1,28 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/time_series/tss/tss_output.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/time_series/tss/tss_output.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
 
 #include <algorithm>
 #include <limits>
 #include <span>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto N = SizeVariableDeclaration<"N">{};
 
@@ -194,7 +194,7 @@ struct merge_overloads {
                 arguments.push_back({std::move(value), false});
             }
             static const auto merge_items = graph<merge_dictionary_items_graph>();
-            return wp<OUT>{bg::map(merge_items, std::span<const MapArgument>{arguments})};
+            return wp<OUT>{hg::map(merge_items, std::span<const MapArgument>{arguments})};
         }
 
         static const TimeSeriesType *resolve(OUT, const WiringArguments &arguments) {
@@ -266,4 +266,4 @@ void register_merge_operators() {
     register_overloads<merge_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

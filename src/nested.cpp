@@ -1,32 +1,32 @@
-#include <bg/details/evaluation_context.hpp>
-#include <bg/graph/details/nested.hpp>
+#include <hg/details/evaluation_context.hpp>
+#include <hg/graph/details/nested.hpp>
 
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/details/nested_graph_context.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/node.hpp>
-#include <bg/node/input.hpp>
-#include <bg/node/output.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/guarantee_variable_instance.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/compiled_node.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/nested_graph_context.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/node.hpp>
+#include <hg/node/input.hpp>
+#include <hg/node/output.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/guarantee_variable_instance.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type.hpp>
 
 #include <memory>
 #include <stdexcept>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 namespace {
 
@@ -291,4 +291,4 @@ std::unique_ptr<NodeTemplate> make_nested_node(NestedGraphWiring wiring, const R
         NestedNodeDefinition{std::move(wiring), graph_signature});
 }
 
-} // namespace bg::details
+} // namespace hg::details

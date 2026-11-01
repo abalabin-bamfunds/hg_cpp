@@ -1,11 +1,11 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,7 +14,7 @@
 #include <cstdint>
 #include <stdexcept>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -62,7 +62,7 @@ struct lifecycle_definition {
 
 TEST_CASE("the simulation engine shares one wall clock across node contexts",
           "[evaluation][simulation][context][feature:wall-clock][transition:start][transition:stop]") {
-    const auto lifecycle = bg::node<lifecycle_definition>();
+    const auto lifecycle = hg::node<lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -85,7 +85,7 @@ TEST_CASE("the simulation engine shares one wall clock across node contexts",
 
 TEST_CASE("direct runtime graph lifecycle paths use the system wall clock",
           "[evaluation][context][feature:wall-clock][transition:start][transition:stop]") {
-    const auto lifecycle = bg::node<lifecycle_definition>();
+    const auto lifecycle = hg::node<lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -144,7 +144,7 @@ struct scheduled_lifecycle_definition {
 
 TEST_CASE("one simulation wall clock follows each outer evaluation cycle",
           "[evaluation][simulation][context][feature:wall-clock][transition:lifecycle]") {
-    const auto lifecycle = bg::node<scheduled_lifecycle_definition>();
+    const auto lifecycle = hg::node<scheduled_lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -197,7 +197,7 @@ struct failing_lifecycle_definition {
 
 TEST_CASE("failure stop functions retain the active wall clock",
           "[evaluation][simulation][lifecycle][failure][feature:wall-clock][transition:stop]") {
-    const auto failing = bg::node<failing_lifecycle_definition>();
+    const auto failing = hg::node<failing_lifecycle_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -256,9 +256,9 @@ struct invalidation_observer_definition {
 
 TEST_CASE("invalidation functions retain the active wall clock",
           "[evaluation][simulation][invalidation][feature:wall-clock][transition:invalidation]") {
-    const auto source = bg::node<invalidating_source_definition>();
+    const auto source = hg::node<invalidating_source_definition>();
 
-    const auto observer = bg::node<invalidation_observer_definition>();
+    const auto observer = hg::node<invalidation_observer_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -317,15 +317,15 @@ TEST_CASE("nested graph contexts share the outer simulation wall clock",
         void start() const { output.set(true); }
     };
 
-    using namespace bg::literals;
+    using namespace hg::literals;
 
-    const auto lifecycle = bg::node<nested_lifecycle_definition>();
+    const auto lifecycle = hg::node<nested_lifecycle_definition>();
 
-    const auto inner = bg::graph("name"_n = "inner_wall_clock", [&]() -> bg::wp<TS<i64>> { return lifecycle(); });
+    const auto inner = hg::graph("name"_n = "inner_wall_clock", [&]() -> hg::wp<TS<i64>> { return lifecycle(); });
     const auto outer =
-        bg::graph("name"_n = "outer_wall_clock", [&](bg::wp<TS<bool>> run) { return bg::nested(inner, run); });
+        hg::graph("name"_n = "outer_wall_clock", [&](hg::wp<TS<bool>> run) { return hg::nested(inner, run); });
 
-    const auto run_source = bg::node<nested_run_source_definition>();
+    const auto run_source = hg::node<nested_run_source_definition>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};

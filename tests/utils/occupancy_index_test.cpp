@@ -1,4 +1,4 @@
-#include <bg/util/occupancy_index.hpp>
+#include <hg/util/occupancy_index.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("an occupancy index allocates and reuses positions", "[occupancy_index][coverage-exempt]") {
     auto memory = counting_memory_resource{};

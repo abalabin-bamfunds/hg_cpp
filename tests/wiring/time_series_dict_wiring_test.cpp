@@ -1,11 +1,11 @@
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <utility>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("getitem leaves unsupported collection results generic", "[wiring][coverage-exempt]") {
     STATIC_CHECK(std::same_as<decltype(std::declval<wp<TSS<i64>>>()[i64{}]), wp<>>);

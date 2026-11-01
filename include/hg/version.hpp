@@ -2,9 +2,9 @@
 
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
-/// Returns the semantic version of the linked bg library.
+/// Returns the semantic version of the linked hg library.
 std::string_view version() noexcept;
 
-} // namespace bg
+} // namespace hg

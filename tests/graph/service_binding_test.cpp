@@ -1,13 +1,13 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/service.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/service.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,8 +16,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("compiled root graph contains its service binding provider",
           "[feature:service][feature:graph-compilation][shape:nested]") {

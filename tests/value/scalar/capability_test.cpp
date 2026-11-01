@@ -1,16 +1,16 @@
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/mutable_collection.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/set/type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/mutable_collection.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <concepts>
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

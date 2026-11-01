@@ -1,12 +1,12 @@
 #include "registration.hpp"
 #include "utf8.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/string_builder.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/string_builder.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <unicode/bytestream.h>
 #include <unicode/casemap.h>
@@ -22,10 +22,10 @@
 #include <string_view>
 #include <utility>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"G">;
 
@@ -165,9 +165,9 @@ struct string_overloads {
     })};
 
     // String indexing.
-    overload<bg::operators::getitem> getitem_string_index{node(
+    overload<hg::operators::getitem> getitem_string_index{node(
         [](std::string_view text, i64 index) { return Utf8View{text}.at(index); })};
-    overload<bg::operators::getitem> getitem_symbol_index{node(
+    overload<hg::operators::getitem> getitem_symbol_index{node(
         [](symbol text, i64 index) { return Utf8View{text}.at(index); })};
 
     // Unicode casing.
@@ -237,4 +237,4 @@ void register_string_operators() {
     register_overloads<string_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

@@ -1,13 +1,13 @@
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 void TimeSeriesDictionaryRuntimeType::invalidate_output(const OutputState &output) const {
     if (!output.valid()) {
@@ -79,4 +79,4 @@ time_series_dictionary_runtime_type(const TimeSeriesDictionaryType &type, const 
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details

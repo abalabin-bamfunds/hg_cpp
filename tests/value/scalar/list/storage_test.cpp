@@ -1,10 +1,10 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,7 +20,7 @@
 
 #include "../test_scalar_provider.hpp"
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("resolved scalar list storage supports mutation",
           "[value][scalar][list][scalar:list][storage][feature:scalar-storage]") {
@@ -29,7 +29,7 @@ TEST_CASE("resolved scalar list storage supports mutation",
     const auto available = std::array<const ScalarRuntimeType *, 1>{&item};
     const auto &list = static_cast<const ScalarListRuntimeType &>(resolve_scalar_runtime_type(type, available));
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(list.size(), list.alignment());
     list.construct_initial_value(storage);
 
@@ -184,7 +184,7 @@ TEST_CASE("a scalar list copies between composed and C++ storage",
     const auto source =
         ScalarValue<List>{std::vector<RuntimeListItem>{{.first = 1, .second = 2}, {.first = 3, .second = 4}}};
     auto memory = std::pmr::unsynchronized_pool_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto *storage = allocator.allocate_bytes(composed.size(), composed.alignment());
     composed.construct_from_input(storage, source, allocator);
 

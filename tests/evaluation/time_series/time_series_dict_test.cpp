@@ -1,9 +1,9 @@
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -14,13 +14,13 @@
 #include <optional>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a dictionary graph preserves its input updates",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer][transition:update]") {
     const auto identity = [](wp<TSD<i64, TS<i64>>> input) { return input; };
 
-    const auto actual = bg::run_graph(identity, {{{1, 10}, {2, 20}}, {{1, 11}}});
+    const auto actual = hg::run_graph(identity, {{{1, 10}, {2, 20}}, {{1, 11}}});
 
     CHECK(actual.equals({{{1, 10}, {2, 20}}, {{1, 11}}}));
 }
@@ -100,7 +100,7 @@ TEST_CASE("dictionary change selections distinguish updates from modifications",
     });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{1, literal::INVALID}}, {{1, 10}, {2, literal::INVALID}}, {{1, 11}, {2, 20}},
                 {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
@@ -158,7 +158,7 @@ TEST_CASE("dictionary updated selections exclude additions and modified selectio
     });
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); };
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{1, 10}}, {{1, 11}, {2, 20}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals<observation>({
@@ -180,7 +180,7 @@ TEST_CASE("a node can read one dictionary item",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(input); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({10, 11, std::nullopt}));
 }
@@ -224,7 +224,7 @@ TEST_CASE("a dictionary output can erase visited keys without changing retained 
           "[transition:addition][transition:removal]") {
     const auto source = node<erase_output_keys_definition>();
 
-    CHECK(bg::run_graph([&] { return source(); }).equals({{{1, 10}, {3, 30}}}));
+    CHECK(hg::run_graph([&] { return source(); }).equals({{{1, 10}, {3, 30}}}));
 }
 
 TEST_CASE("a node can select a dictionary item using a time series key",
@@ -236,7 +236,7 @@ TEST_CASE("a node can select a dictionary item using a time series key",
         return select(input, key);
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{1, 10}, {2, 100}}, {{1, 11}, {2, 110}}, {{1, 12}, {2, 120}}}, {1, 2, 1});
 
     CHECK(actual.equals({10, 110, 12}));
@@ -246,7 +246,7 @@ TEST_CASE("a time series dictionary publishes item and key changes",
           "[evaluation][tsd][series:tsd][feature:collection-change][transition:addition][transition:removal]"
           "[transition:update][scalar:integer]"
           "[representation:native][declaration:concrete][binding:direct]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
     struct Snapshot {
         i64 size;
         i64 first_value;
@@ -273,10 +273,10 @@ TEST_CASE("a time series dictionary publishes item and key changes",
         return size;
     });
 
-    const auto graph = bg::graph("name"_n = "dictionary_change_input",
+    const auto graph = hg::graph("name"_n = "dictionary_change_input",
                                  [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); });
 
-    const auto actual = bg::run_graph(graph,
+    const auto actual = hg::run_graph(graph,
                                             {{{1, 10}, {2, 20}},
                                              {{1, 11}},
                                              {{1, 12}, {3, 30}},
@@ -369,7 +369,7 @@ TEST_CASE("a TSD input does not replay changes when another input triggers evalu
         return inspect(dictionary, dictionary, trigger);
     };
 
-    const auto actual = bg::run_graph(graph, {1, 2, 3, 4, 5, 6});
+    const auto actual = hg::run_graph(graph, {1, 2, 3, 4, 5, 6});
 
     CHECK(actual.equals<observation>({observation{.modified = true,
                                                   .added = 1,
@@ -454,7 +454,7 @@ TEST_CASE("a TSD update removes an entry with REMOVE",
 
         return observation{input.contains(1), input.contains(2), input.contains(99), added, modified};
     });
-    const auto actual = bg::run_graph([&] { return inspect(source()); });
+    const auto actual = hg::run_graph([&] { return inspect(source()); });
 
     CHECK(actual.equals<observation>({observation{true, true, false, 2, 2}, observation{false, true, false, 0, 0},
                                       observation{true, true, false, 1, 1}}));
@@ -471,7 +471,7 @@ TEST_CASE("a TSD update applies a root INVALID marker",
         }
     });
 
-    CHECK(bg::run_graph(source, {11, literal::INVALID, 12})
+    CHECK(hg::run_graph(source, {11, literal::INVALID, 12})
               .equals({{{1, 11}}, literal::INVALID, {{1, 12}}}));
 }
 
@@ -519,7 +519,7 @@ struct dictionary_cursor_definition {
 TEST_CASE("a time series dictionary cursor enumerates current and changed items",
           "[evaluation][tsd][feature:collection-change][series:tsd][scalar:integer]"
           "[transition:addition][transition:removal][binding:direct]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto sink = node<dictionary_cursor_definition>();
     dictionary_cursor_definition::current.clear();
@@ -529,9 +529,9 @@ TEST_CASE("a time series dictionary cursor enumerates current and changed items"
     dictionary_cursor_definition::modified.clear();
     dictionary_cursor_definition::removed_physical.clear();
 
-    const auto graph = bg::graph("name"_n = "dictionary_cursor_input",
+    const auto graph = hg::graph("name"_n = "dictionary_cursor_input",
                                  [&](wp<TSD<i64, TS<i64>>> input) { sink(input); });
-    (void)bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    (void)hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(dictionary_cursor_definition::current ==
           std::vector<std::vector<item_id_t>>{{0, 1}, {0, 1}, {0}});
@@ -579,14 +579,14 @@ struct valid_dictionary_cursor_definition {
 
 TEST_CASE("a time series dictionary valid cursor skips invalid items",
           "[evaluation][tsd][feature:validity][series:tsd][transition:invalidation]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto sink = node<valid_dictionary_cursor_definition>();
     valid_dictionary_cursor_definition::snapshots.clear();
 
-    const auto graph = bg::graph("name"_n = "valid_dictionary_cursor_input",
+    const auto graph = hg::graph("name"_n = "valid_dictionary_cursor_input",
                                  [&](wp<TSD<i64, TS<i64>>> input) { sink(input); });
-    (void)bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
+    (void)hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, literal::INVALID}}});
 
     CHECK(valid_dictionary_cursor_definition::snapshots == std::vector<std::vector<i64>>{{1, 2}, {2}});
 }
@@ -607,7 +607,7 @@ TEST_CASE("dictionary item queries distinguish addition from modification",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return modified(input); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals<item_changes>(
         {item_changes{false, true}, item_changes{true, true}, item_changes{false, false}}));
@@ -628,7 +628,7 @@ TEST_CASE("a value dictionary provides a source-backed reference representation"
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(input); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, std::nullopt, 111}));
     // The item reference remains valid after an unrelated dictionary change.
@@ -655,7 +655,7 @@ TEST_CASE("rekeying a reference dictionary preserves item updates and removals",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(rekey_reference_dictionary(input)); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, 211, 111}));
 }
@@ -695,7 +695,7 @@ TEST_CASE("source dictionary item routes batch fan-out to reference dictionaries
         return add(sum(rekey(values, i64{100})), sum(rekey(values, i64{200})));
     };
 
-    const auto actual = bg::run_graph(graph, std::array{1, 2, 3});
+    const auto actual = hg::run_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({992, 1120, 1116}));
 }
@@ -717,7 +717,7 @@ TEST_CASE("a reference dictionary dereferences unrelated node outputs",
 
     const auto graph = [&](wp<TS<i64>> input) { return sum(references(increment(input), scale(input))); };
 
-    const auto actual = bg::run_graph(graph, std::array{1, 2, 3});
+    const auto actual = hg::run_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({12, 23, 34}));
 }
@@ -735,7 +735,7 @@ TEST_CASE("an explicit dictionary reference input receives a recursively adapted
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return summarize(pass(input)); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({210, 211, 111}));
 }
@@ -753,7 +753,7 @@ TEST_CASE("a node observes dictionary item addition, removal, and restoration",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(input); };
 
-    const auto actual = bg::run_graph(graph, {literal::SKIP, {{3, 30}}, {{3, literal::REMOVE}}, {{3, 31}}});
+    const auto actual = hg::run_graph(graph, {literal::SKIP, {{3, 30}}, {{3, literal::REMOVE}}, {{3, 31}}});
 
     CHECK(actual.equals({std::nullopt, 30, std::nullopt, 31}));
 }
@@ -766,7 +766,7 @@ TEST_CASE("a node can publish a contained dictionary reference",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(rekey_reference_dictionary(input)); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     CHECK(actual.equals({10, 11, std::nullopt}));
 }
@@ -787,7 +787,7 @@ TEST_CASE("a node can read a collection-valued dictionary item",
         return sum(select(input));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{1, {{0, 10}, {1, 20}}}}, {{1, {{0, 11}}}}});
 
     CHECK(actual.equals({30, 31}));
@@ -821,7 +821,7 @@ TEST_CASE("a node observes same-cycle dictionary item resurrection",
     const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[3]; });
     const auto graph = [&] { return select(source()); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({30, 31}));
 }
@@ -835,7 +835,7 @@ TEST_CASE("time series dictionaries can contain time series dictionaries",
         return select(input);
     };
 
-    const auto actual = bg::run_graph(graph, {{{1, {{2, 12}}}}});
+    const auto actual = hg::run_graph(graph, {{{1, {{2, 12}}}}});
 
     CHECK(actual.equals({12}));
 }
@@ -855,7 +855,7 @@ TEST_CASE("time series dictionaries can contain runtime-sized time series",
 
     const auto graph = [&](wp<TSD<i64, TSB<DictionaryBundle>>> input) { return extract(input); };
 
-    const auto actual = bg::run_graph(graph, {{{1, {{"value", 12}}}}});
+    const auto actual = hg::run_graph(graph, {{{1, {{"value", 12}}}}});
 
     CHECK(actual.equals({12}));
 }
@@ -884,7 +884,7 @@ TEST_CASE("adding and removing a new dictionary item in one invocation produces 
     const auto marker = node([](In<TSD<i64, TS<i64>>>) { return true; });
     const auto graph = [&] { return marker(source()); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({true}));
 }
@@ -936,7 +936,7 @@ TEST_CASE("resurrecting a dictionary item reports a modification",
         input.for_each_modified([&](const auto &) { ++modified; });
         return observation{static_cast<i64>(input.size()), *input[1], added, updated, removed, modified};
     });
-    const auto actual = bg::run_graph([&] { return inspect(source()); });
+    const auto actual = hg::run_graph([&] { return inspect(source()); });
 
     CHECK(actual.equals<observation>({observation{1, 10, 1, 0, 0, 1}, observation{1, 20, 0, 1, 0, 1}}));
 }
@@ -982,7 +982,7 @@ TEST_CASE("resurrecting a dictionary collection item reports a modification",
     });
     const auto graph = [&] { return count(source()); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals<change_counts>({change_counts{0, 1}, change_counts{1, 1}}));
 }
@@ -1000,7 +1000,7 @@ TEST_CASE("a generic dictionary view uses its resolved item type",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(copy(input)); };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}}});
 
     CHECK(actual.equals<i64>({10}));
 }
@@ -1025,12 +1025,12 @@ TEST_CASE("a dictionary becomes valid on its first empty tick and remains valid"
         return observation{input.valid(), static_cast<i64>(input.size()), added, removed};
     });
 
-    using namespace bg::literals;
+    using namespace hg::literals;
 
-    const auto graph = bg::graph("name"_n = "empty_dictionary_input",
+    const auto graph = hg::graph("name"_n = "empty_dictionary_input",
                                  [&](wp<TSD<i64, TS<i64>>> input) { return inspect(input); });
     const auto actual =
-        bg::run_graph(graph, {{}, {{1, 10}, {2, 20}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
+        hg::run_graph(graph, {{}, {{1, 10}, {2, 20}}, {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
     CHECK(actual.equals<observation>({observation{true, 0, 0, 0}, observation{true, 2, 2, 0},
                                      observation{true, 0, 0, 2}}));
@@ -1080,7 +1080,7 @@ TEST_CASE("a TSD node preserves its output when it declares preserve_output",
 
     const auto graph = [&] { return select(dict_from_value(source())); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({1}));
 }
@@ -1092,7 +1092,7 @@ TEST_CASE("a TSD node invalidates its output when a required input becomes inval
     const auto dict_from_value = node<dict_from_value_definition>();
     const auto select = node([](In<TSD<i64, TS<i64>>> input) { return *input[1]; });
 
-    const auto actual = bg::run_graph([&] { return select(dict_from_value(source())); });
+    const auto actual = hg::run_graph([&] { return select(dict_from_value(source())); });
 
     CHECK(actual.equals({1, std::nullopt}));
     CHECK(actual.visit_tick(1, [](const TimeSeriesType &, bool valid, util::buffer_reader &) {
@@ -1133,14 +1133,14 @@ struct dictionary_enumeration_sink_definition {
 TEST_CASE("dictionary enumeration exposes keys, ids, values, and their associations",
           "[evaluation][series:tsd][feature:time-series-view][feature:collection-change]"
           "[scalar:integer][binding:direct]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto sink = node<dictionary_enumeration_sink_definition>();
     dictionary_enumeration_sink_definition::snapshots.clear();
 
-    const auto graph = bg::graph("name"_n = "dictionary_enumeration_input",
+    const auto graph = hg::graph("name"_n = "dictionary_enumeration_input",
                                  [&](wp<TSD<i64, TS<i64>>> input) { sink(input); });
-    (void)bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
+    (void)hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}}});
 
     REQUIRE(dictionary_enumeration_sink_definition::snapshots.size() == 3);
     auto first = dictionary_enumeration_sink_definition::snapshots.front();
@@ -1196,7 +1196,7 @@ TEST_CASE("a dictionary view accepts its exact non-canonical key type",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return read(input); };
 
-    const auto actual = bg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});
 
     CHECK(actual.equals({70, -1}));
 }
@@ -1213,7 +1213,7 @@ TEST_CASE("a dictionary input accepts its exact non-canonical key type",
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return select(input); };
 
-    const auto actual = bg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});
+    const auto actual = hg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}});
 
     CHECK(actual.equals({70, std::nullopt}));
 }

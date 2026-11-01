@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace bg::util {
+namespace hg::util {
 
 // Describes raw storage owned by a block. data remains valid while its owning bunch is unchanged and does not imply
 // that any cell in the block is constructed.
@@ -13,4 +13,4 @@ struct storage_block {
     const void *data;
 };
 
-} // namespace bg::util
+} // namespace hg::util

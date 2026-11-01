@@ -1,17 +1,17 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/reduce.hpp>
-#include <bg/reduce/details/default_reduce_wiring.hpp>
-#include <bg/reduce/details/reduce_graph_argument.hpp>
-#include <bg/service.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/reduce.hpp>
+#include <hg/reduce/details/default_reduce_wiring.hpp>
+#include <hg/reduce/details/reduce_graph_argument.hpp>
+#include <hg/service.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -20,8 +20,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 const auto dictionary_source = node([](Out<TSD<i64, TS<i64>>>) {});
 

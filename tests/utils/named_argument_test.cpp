@@ -1,4 +1,4 @@
-#include <bg/util/named_argument.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -7,8 +7,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("argument value types remove names and cvref without decaying arrays", "[coverage-exempt]") {
     using NamedReference = details::named_argument<"value", const int &>;

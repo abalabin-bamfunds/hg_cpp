@@ -1,13 +1,13 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,8 +16,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 using RESULT = TimeSeriesVariable<"RESULT">;
 using KEY = ScalarVariable<"KEY", Hashable>;
@@ -188,8 +188,8 @@ TEST_CASE("an explicit schema argument resolves a bundle schema variable",
 TEST_CASE("a scalar bundle argument resolves a generic bundle node output",
           "[feature:wiring][feature:type-system][definition:aggregate][series:value]"
           "[schema:named][declaration:generic]") {
-    auto allocator = bg::allocator{};
-    const auto value = bg::bundle<concrete_scalar_bundle_schema>(allocator, i64{42});
+    auto allocator = hg::allocator{};
+    const auto value = hg::bundle<concrete_scalar_bundle_schema>(allocator, i64{42});
 
     const auto source = node<schema_type<SCHEMA>, generic_bundle_scalar_source_definition>();
 

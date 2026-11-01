@@ -1,15 +1,15 @@
-#include <bg/evaluation_profiler.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/evaluation_engine.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/evaluation_engine.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/wall_clock.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,7 +21,7 @@
 #include <string>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -45,9 +45,9 @@ struct profiler_source {
 
 TEST_CASE("evaluation profiler retains compact node periods and releases stopped node totals",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    const auto source = hg::node([](Out<TS<i64>> output) { output.set(1); });
 
-    const auto sink = bg::node([](In<TS<i64>>) {});
+    const auto sink = hg::node([](In<TS<i64>>) {});
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -131,7 +131,7 @@ TEST_CASE("evaluation profiler retains compact node periods and releases stopped
 
 TEST_CASE("evaluation profiler excludes nested graph work from parent node checkpoints",
           "[evaluation][profile][feature:profiling][shape:nested]") {
-    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    const auto source = hg::node([](Out<TS<i64>> output) { output.set(1); });
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -165,7 +165,7 @@ TEST_CASE("evaluation profiler excludes nested graph work from parent node check
 
 TEST_CASE("evaluation profiler closes and retains configurable periods",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    const auto source = hg::node([](Out<TS<i64>> output) { output.set(1); });
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -215,7 +215,7 @@ TEST_CASE("evaluation profiler closes and retains configurable periods",
 
 TEST_CASE("evaluation profiler retains fine outer-cycle timing independently of node periods",
           "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    const auto source = hg::node([](Out<TS<i64>> output) { output.set(1); });
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -282,7 +282,7 @@ TEST_CASE("evaluation profiler aligns negative times and validates its configura
     CHECK_THROWS_AS(EvaluationProfiler({.outer_period = std::chrono::microseconds{0}}), std::invalid_argument);
     CHECK_THROWS_AS(EvaluationProfiler({.retained_outer_periods = 0}), std::invalid_argument);
 
-    const auto source = bg::node([](Out<TS<i64>> output) { output.set(1); });
+    const auto source = hg::node([](Out<TS<i64>> output) { output.set(1); });
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -307,7 +307,7 @@ TEST_CASE("evaluation profiler aligns negative times and validates its configura
 
 TEST_CASE("evaluation profiler consumes committed runtime records",
           "[evaluation][profile][feature:profiling][shape:single-node]") {
-    const auto source = bg::node<profiler_source>();
+    const auto source = hg::node<profiler_source>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -339,12 +339,12 @@ TEST_CASE("evaluation profiler consumes committed runtime records",
 }
 
 TEST_CASE("run_graph records a completed profile", "[evaluation][profile][feature:profiling]") {
-    const auto source = bg::node<profiler_source>();
+    const auto source = hg::node<profiler_source>();
     auto profiler = EvaluationProfiler{};
     auto global_state = GlobalState{};
     auto services = ServiceCatalogue{};
 
-    bg::run_graph(
+    hg::run_graph(
         [&] { (void)source(); },
         GraphRunOptions{.global_state = &global_state, .services = &services, .recorder = profiler.recorder()});
 
@@ -409,11 +409,11 @@ TEST_CASE("run_graph records realtime evaluation", "[evaluation][feature:profili
     profiled_realtime_source::global_state = &global_state;
     profiled_realtime_source::stop_source = &stop_source;
 
-    const auto source = bg::node<profiled_realtime_source>();
+    const auto source = hg::node<profiled_realtime_source>();
     auto profiler = EvaluationProfiler{};
     const auto start_time = SystemWallClock::instance().now() - std::chrono::seconds{1};
 
-    bg::run_graph([&] { (void)source(); }, GraphRunOptions{.global_state = &global_state,
+    hg::run_graph([&] { (void)source(); }, GraphRunOptions{.global_state = &global_state,
                                                            .services = &services,
                                                            .recorder = profiler.recorder(),
                                                            .engine = EvaluationEngine::realtime,
@@ -432,12 +432,12 @@ TEST_CASE("run_graph records realtime evaluation", "[evaluation][feature:profili
 }
 
 TEST_CASE("run_graph joins the profile reader after graph failure", "[evaluation][profile][feature:profiling]") {
-    const auto failing = bg::node([](Out<TS<i64>>) { throw std::runtime_error{"graph failure"}; });
+    const auto failing = hg::node([](Out<TS<i64>>) { throw std::runtime_error{"graph failure"}; });
     auto profiler = EvaluationProfiler{};
 
     const auto options = GraphRunOptions{.recorder = profiler.recorder()};
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, options), std::runtime_error);
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, options), std::logic_error);
+    CHECK_THROWS_AS(hg::run_graph([&] { (void)failing(); }, options), std::runtime_error);
+    CHECK_THROWS_AS(hg::run_graph([&] { (void)failing(); }, options), std::logic_error);
 }
 
 struct profiler_failing_after_tick {
@@ -460,10 +460,10 @@ struct profiler_failing_after_tick {
 
 TEST_CASE("run_graph releases compiled metadata after a later-cycle failure",
           "[evaluation][profile][feature:profiling]") {
-    const auto failing = bg::node<profiler_failing_after_tick>();
+    const auto failing = hg::node<profiler_failing_after_tick>();
     auto profiler = EvaluationProfiler{};
 
-    CHECK_THROWS_AS(bg::run_graph([&] { (void)failing(); }, GraphRunOptions{.recorder = profiler.recorder()}),
+    CHECK_THROWS_AS(hg::run_graph([&] { (void)failing(); }, GraphRunOptions{.recorder = profiler.recorder()}),
                     std::runtime_error);
 
     const auto root = profiler.root_graph_id();

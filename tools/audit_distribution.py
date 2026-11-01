@@ -17,18 +17,18 @@ from packaging.utils import canonicalize_name, parse_wheel_filename
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PARTS = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
 WHEEL_FILES = {
-    "bg/__init__.py",
-    "bg/operators.py",
-    "include/bg/bg.hpp",
+    "hg/__init__.py",
+    "hg/operators.py",
+    "include/hg/hg.hpp",
 }
 SDIST_FILES = {
     "CMakeLists.txt",
     "bindings/python/CMakeLists.txt",
-    "bindings/python/python/bg/__init__.py",
+    "bindings/python/python/hg/__init__.py",
     "bindings/python/src/module.cpp",
     "bindings/python/tests/extension_module.cpp",
-    "cmake/bgConfig.cmake.in",
-    "include/bg/bg.hpp",
+    "cmake/hgConfig.cmake.in",
+    "include/hg/hg.hpp",
     "packaging/consumer/CMakeLists.txt",
     "pyproject.toml",
     "src/version.cpp",
@@ -73,15 +73,15 @@ def audit_wheel(path: Path, platform: str | None) -> None:
         if missing:
             raise ValueError("wheel is missing required files: " + ", ".join(sorted(missing)))
 
-        cmake_roots = ("lib/cmake/bg", "lib64/cmake/bg")
+        cmake_roots = ("lib/cmake/hg", "lib64/cmake/hg")
         if not any(
             all(
                 f"{root}/{name}" in paths
-                for name in ("bgConfig.cmake", "bgConfigVersion.cmake", "bgTargets.cmake")
+                for name in ("hgConfig.cmake", "hgConfigVersion.cmake", "hgTargets.cmake")
             )
             for root in cmake_roots
         ):
-            raise ValueError("wheel is missing the BG CMake package under lib or lib64")
+            raise ValueError("wheel is missing the HG CMake package under lib or lib64")
 
         if not any(
             f"{root}/cmake/ddvisitor/ddvisitor-config.cmake" in paths
@@ -89,17 +89,17 @@ def audit_wheel(path: Path, platform: str | None) -> None:
         ):
             raise ValueError("wheel is missing the ddvisitor CMake dependency")
 
-        if not any(name.startswith("bg/_bg") and name.endswith((".so", ".pyd")) for name in paths):
-            raise ValueError("wheel is missing the bg._bg native extension")
+        if not any(name.startswith("hg/_hg") and name.endswith((".so", ".pyd")) for name in paths):
+            raise ValueError("wheel is missing the hg._hg native extension")
 
-        for library in ("bg", "bg_library", "bg_python", "nanobind", "fmt"):
+        for library in ("hg", "hg_library", "hg_python", "nanobind", "fmt"):
             if not any(is_runtime_library(name, library) for name in paths):
                 raise ValueError(f"wheel is missing the native runtime library {library}")
 
         if not any("cmake/fmt/" in name and name.endswith("fmt-config.cmake") for name in paths):
             raise ValueError("wheel is missing the fmt CMake package required by the installed SDK")
         if not any(name.startswith("include/fmt/") for name in paths):
-            raise ValueError("wheel is missing fmt headers required by public BG headers")
+            raise ValueError("wheel is missing fmt headers required by public HG headers")
 
     if expected_tag is not None and expected_tag not in tags:
         raise ValueError(f"wheel has no {expected_tag} tag: {path.name} contains {sorted(tags)}")

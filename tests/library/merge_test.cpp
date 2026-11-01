@@ -1,16 +1,16 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/time_series/tss/tss_output.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/time_series/tss/tss_output.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,8 +20,8 @@
 #include <optional>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -63,7 +63,7 @@ TEST_CASE("merge selects the leftmost valid input that ticks",
           "[feature:operator][feature:merge][series:value][validity:optional]") {
     const auto graph = [](wp<TS<i64>> left, wp<TS<i64>> right) { return operators::merge(left, right); };
 
-    CHECK(bg::run_graph(graph, std::array<std::optional<i64>, 4>{10, std::nullopt, std::nullopt, 30},
+    CHECK(hg::run_graph(graph, std::array<std::optional<i64>, 4>{10, std::nullopt, std::nullopt, 30},
                               std::array<i64, 4>{100, 200, 300, 400})
               .equals<i64>({10, 200, 300, 30}));
 }
@@ -72,7 +72,7 @@ TEST_CASE("merge selects the leftmost input when ordinary inputs tick together",
           "[feature:merge][series:value][transition:update]") {
     const auto graph = [](wp<TS<i64>> left, wp<TS<i64>> right) { return operators::merge(left, right); };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{10, 11, 12}, std::array<i64, 3>{100, 101, 102})
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{10, 11, 12}, std::array<i64, 3>{100, 101, 102})
               .equals<i64>({10, 11, 12}));
 }
 
@@ -80,7 +80,7 @@ TEST_CASE("merge forwards equal ordinary ticks",
           "[feature:merge][series:value][guarantee:ordinary][transition:update]") {
     const auto graph = [](wp<TS<i64>> left, wp<TS<i64>> right) { return operators::merge(left, right); };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{10, 10, 10}, std::array<i64, 3>{100, 100, 100})
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{10, 10, 10}, std::array<i64, 3>{100, 100, 100})
               .equals<i64>({10, 10, 10}));
 }
 
@@ -90,7 +90,7 @@ TEST_CASE("merge copies string values from the selected input",
     const auto left = std::array<std::optional<std::string_view>, 3>{"left", std::nullopt, "left-again"};
     const auto right = std::array<std::string_view, 3>{"right", "right-again", "right-last"};
 
-    CHECK(bg::run_graph(graph, left, right).equals<string>({"left", "right-again", "left-again"}));
+    CHECK(hg::run_graph(graph, left, right).equals<string>({"left", "right-again", "left-again"}));
 }
 
 TEST_CASE("merge preserves a valid scalar value when the selected input invalidates",
@@ -117,7 +117,7 @@ TEST_CASE("merge preserves a valid scalar value when the selected input invalida
         return inspect(step, operators::merge(opt(left(step)), opt(right(step))));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({11'010, 10'010, 11'200}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({11'010, 10'010, 11'200}));
 }
 
 TEST_CASE("merge preserves its last scalar value while inputs are invalid",
@@ -150,7 +150,7 @@ TEST_CASE("merge preserves its last scalar value while inputs are invalid",
         return observe(step, operators::merge(opt(left(step)), opt(right(step))));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({10, 10, 10, 30}));
+    CHECK(hg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({10, 10, 10, 30}));
 }
 
 TEST_CASE("merge does not publish before a scalar input first ticks",
@@ -172,7 +172,7 @@ TEST_CASE("merge does not publish before a scalar input first ticks",
         return observe(step, operators::merge(source(step), never_valid()));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({std::nullopt, 7, 7}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({std::nullopt, 7, 7}));
 }
 
 TEST_CASE("merge rejects incompatible scalar inputs",
@@ -201,7 +201,7 @@ TEST_CASE("merge preserves a single input's guarantee",
         return result.as<TS<i64, TimeSeriesGuarantee::final>>();
     };
 
-    CHECK(bg::run_graph([&] { return graph(source()); }).equals<i64>({10}));
+    CHECK(hg::run_graph([&] { return graph(source()); }).equals<i64>({10}));
 }
 
 TEST_CASE("merge weakens staggered final scalar inputs",
@@ -222,7 +222,7 @@ TEST_CASE("merge weakens staggered final scalar inputs",
         return merged;
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({10, 20, std::nullopt}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({10, 20, std::nullopt}));
 }
 
 TEST_CASE("merge observes the guarantee of referenced scalar inputs",
@@ -247,7 +247,7 @@ TEST_CASE("merge observes the guarantee of referenced scalar inputs",
         return merged;
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({10, 20, std::nullopt}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({10, 20, std::nullopt}));
 }
 
 TEST_CASE("merge weakens staggered final values in fixed TSL inputs",
@@ -273,7 +273,7 @@ TEST_CASE("merge weakens staggered final values in fixed TSL inputs",
         return operators::add(operators::getitem(merged, i64{0}), operators::getitem(merged, i64{1}));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 120, 300}));
+    CHECK(hg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 120, 300}));
 }
 
 TEST_CASE("merge observes contained guarantees through references to fixed TSL inputs",
@@ -304,7 +304,7 @@ TEST_CASE("merge observes contained guarantees through references to fixed TSL i
         return operators::add(merged[0], merged[1]);
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 120, 300}));
+    CHECK(hg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 120, 300}));
 }
 
 TEST_CASE("merge weakens staggered final values in TSB fields",
@@ -331,7 +331,7 @@ TEST_CASE("merge weakens staggered final values in TSB fields",
         return operators::add(merged->left, merged->right);
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 120, 300}));
+    CHECK(hg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 120, 300}));
 }
 
 TEST_CASE("merge weakens final fields independently in a mixed-guarantee TSB",
@@ -355,7 +355,7 @@ TEST_CASE("merge weakens final fields independently in a mixed-guarantee TSB",
         return operators::add(merged->final_value, merged->ordinary_value);
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({11, 22, std::nullopt}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({11, 22, std::nullopt}));
 }
 
 TEST_CASE("merge combines corresponding items in fixed TSL inputs",
@@ -368,7 +368,7 @@ TEST_CASE("merge combines corresponding items in fixed TSL inputs",
         return operators::add(operators::getitem(merged, i64{0}), operators::getitem(merged, i64{1}));
     };
 
-    CHECK(bg::run_graph(graph, std::array<std::optional<i64>, 3>{1, std::nullopt, 3},
+    CHECK(hg::run_graph(graph, std::array<std::optional<i64>, 3>{1, std::nullopt, 3},
                               std::array<i64, 3>{10, 20, 30}, std::array<i64, 3>{100, 200, 300},
                               std::array<i64, 3>{1000, 2000, 3000})
               .equals<i64>({11, 220, 33}));
@@ -390,7 +390,7 @@ TEST_CASE("merge dereferences REF items in fixed TSL inputs",
         return operators::add(merged[0], merged[1]);
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{1, 2, 3}, std::array<i64, 3>{10, 20, 30},
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{1, 2, 3}, std::array<i64, 3>{10, 20, 30},
                               std::array<i64, 3>{100, 200, 300}, std::array<i64, 3>{1000, 2000, 3000})
               .equals<i64>({11, 22, 33}));
 }
@@ -405,7 +405,7 @@ TEST_CASE("merge preserves an empty fixed TSL shape",
         return inspect(operators::merge(empty, empty));
     };
 
-    CHECK(bg::run_graph(graph).equals<i64>({0}));
+    CHECK(hg::run_graph(graph).equals<i64>({0}));
 }
 
 TEST_CASE("merge returns the first empty TSL without adding a wiring node",
@@ -448,7 +448,7 @@ TEST_CASE("merge recursively combines a fixed TSL field inside a TSB",
                               operators::getitem(merged->values, i64{1}));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 2>{0, 1}).equals<i64>({11, 220}));
+    CHECK(hg::run_graph(graph, std::array<i64, 2>{0, 1}).equals<i64>({11, 220}));
 }
 
 TEST_CASE("merge combines corresponding fields in TSB inputs",
@@ -461,7 +461,7 @@ TEST_CASE("merge combines corresponding fields in TSB inputs",
         return operators::add(merged->left, merged->right);
     };
 
-    CHECK(bg::run_graph(graph, std::array<std::optional<i64>, 3>{1, std::nullopt, 3},
+    CHECK(hg::run_graph(graph, std::array<std::optional<i64>, 3>{1, std::nullopt, 3},
                               std::array<i64, 3>{10, 20, 30}, std::array<i64, 3>{100, 200, 300},
                               std::array<i64, 3>{1000, 2000, 3000})
               .equals<i64>({11, 220, 33}));
@@ -512,7 +512,7 @@ TEST_CASE("merge combines TSD values over the union of keys",
         return inspect(step, operators::merge(left_dictionary(step), right_dictionary(step)));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({1, 2, 3, 4}));
+    CHECK(hg::run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<i64>({1, 2, 3, 4}));
     CHECK(snapshots == std::vector<DictionarySnapshot>{{{1, 10}, {2, 20}, {3, 300}},
                                                        {{1, 11}, {2, 20}, {3, 300}, {4, 400}},
                                                        {{1, 11}, {2, 20}, {3, 300}, {4, 400}},
@@ -550,7 +550,7 @@ TEST_CASE("merge publishes a valid dictionary when another input is initially in
         return trigger;
     };
 
-    (void)bg::run_graph(graph, {42});
+    (void)hg::run_graph(graph, {42});
 
     CHECK(direct_merge_reached);
     CHECK(normalized_merge_reached);
@@ -591,7 +591,7 @@ TEST_CASE("merge combines TSS membership and retains keys present in another inp
     });
     const auto graph = [&](wp<TS<i64>> step) { return inspect(operators::merge(left_set(step), right_set(step))); };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, std::nullopt, 2}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, std::nullopt, 2}));
     CHECK(snapshots == std::vector<std::vector<i64>>{{1, 2, 3}, {1}});
 }
 
@@ -620,7 +620,7 @@ TEST_CASE("merge retains a TSS key transferred between inputs in one cycle",
         return inspect(step, operators::merge(left_set(step), right_set(step)));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, 1, 0}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, 1, 0}));
     CHECK(changes == std::vector<bool>{true, false, true});
 }
 
@@ -640,7 +640,7 @@ TEST_CASE("merge keeps TSS output invalid until an input becomes valid",
         return inspect(step, operators::merge(selected, selected));
     };
 
-    const auto actual = bg::run_graph(graph, std::array<i64, 3>{0, 1, 2});
+    const auto actual = hg::run_graph(graph, std::array<i64, 3>{0, 1, 2});
     CAPTURE(actual.size());
     CHECK(actual.size() == 3);
     CHECK(actual.equals<i64>({-1, 101, 100}));
@@ -655,7 +655,7 @@ TEST_CASE("merge publishes a valid empty TSS when an input is valid and empty",
     const auto empty_set = node<empty_set_source>();
     const auto graph = [&] { return inspect(operators::merge(invalid_set(), empty_set())); };
 
-    CHECK(bg::run_graph(graph).equals<i64>({100}));
+    CHECK(hg::run_graph(graph).equals<i64>({100}));
 }
 
 TEST_CASE("merge removes keys from an invalid reference while another TSS remains valid",
@@ -680,7 +680,7 @@ TEST_CASE("merge removes keys from an invalid reference while another TSS remain
         return inspect(step, operators::merge(selected, empty_set()));
     };
 
-    CHECK(bg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, 0, 1}));
+    CHECK(hg::run_graph(graph, std::array<i64, 3>{0, 1, 2}).equals<i64>({1, 0, 1}));
 }
 
 TEST_CASE("merge rejects no inputs and preserves one-input identity behavior",
@@ -688,7 +688,7 @@ TEST_CASE("merge rejects no inputs and preserves one-input identity behavior",
     CHECK_THROWS_AS(testing::test_wiring([] { (void)operators::merge(); }), WiringError);
 
     const auto identity = [](wp<TS<i64>> value) { return operators::merge(value); };
-    CHECK(bg::run_graph(identity, std::array<i64, 2>{4, 5}).equals<i64>({4, 5}));
+    CHECK(hg::run_graph(identity, std::array<i64, 2>{4, 5}).equals<i64>({4, 5}));
 }
 
 TEST_CASE("merge returns one input without adding a wiring node",
@@ -720,5 +720,5 @@ TEST_CASE("merge forwards one input invalidation",
     });
     const auto identity = [&](wp<TS<i64>> step) { return operators::valid(operators::merge(source(step))); };
 
-    CHECK(bg::run_graph(identity, std::array<i64, 3>{0, 1, 2}).equals<bool>({true, false, true}));
+    CHECK(hg::run_graph(identity, std::array<i64, 3>{0, 1, 2}).equals<bool>({true, false, true}));
 }

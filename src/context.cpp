@@ -1,14 +1,14 @@
-#include <bg/graph/context.hpp>
+#include <hg/graph/context.hpp>
 
-#include <bg/graph/details/inherited_time_series_section.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/details/inherited_time_series_section.hpp>
+#include <hg/type/signature.hpp>
 
 #include "thread_local_pointer.hpp"
 
 #include <memory>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 const char inherited_time_series_section_type{};
 
@@ -131,4 +131,4 @@ ContextScopes::~ContextScopes() {
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

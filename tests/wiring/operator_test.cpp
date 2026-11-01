@@ -1,21 +1,21 @@
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node.hpp>
-#include <bg/operator.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/type/guarantee_variable.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node.hpp>
+#include <hg/operator.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/type/guarantee_variable.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -28,8 +28,8 @@
 #include <string>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -123,8 +123,8 @@ TEST_CASE("an operator selects the least generic applicable overload",
         return operation(value, fallback);
     };
 
-    CHECK(bg::run_graph(float_graph, {1.0F, 2.0F}, {10.0F, 20.0F}).equals<float>({1.0F, 2.0F}));
-    CHECK(bg::run_graph(double_graph, {1.0, 2.0}, {10.0, 20.0}).equals<double>({10.0, 20.0}));
+    CHECK(hg::run_graph(float_graph, {1.0F, 2.0F}, {10.0F, 20.0F}).equals<float>({1.0F, 2.0F}));
+    CHECK(hg::run_graph(double_graph, {1.0, 2.0}, {10.0, 20.0}).equals<double>({10.0, 20.0}));
 }
 
 TEST_CASE("operator specificity is independent of overload registration order",
@@ -151,7 +151,7 @@ TEST_CASE("operator specificity is independent of overload registration order",
             const auto add_overload = [&](int index) {
                 switch (index) {
                 case 0:
-                    operation.overload(bg::graph("name"_n = "exact", [&, exact_result](wp<TS<i64, G>>) {
+                    operation.overload(hg::graph("name"_n = "exact", [&, exact_result](wp<TS<i64, G>>) {
                         ++selected[0];
                         return exact_result();
                     }));
@@ -161,13 +161,13 @@ TEST_CASE("operator specificity is independent of overload registration order",
                     break;
                 case 2:
                     operation.overload(
-                        bg::graph("name"_n = "equality", [&, equality_result](wp<TS<EQUALITY_SCALAR, G>>) {
+                        hg::graph("name"_n = "equality", [&, equality_result](wp<TS<EQUALITY_SCALAR, G>>) {
                             ++selected[2];
                             return equality_result();
                         }));
                     break;
                 case 3:
-                    operation.overload(bg::graph("name"_n = "scalar", [&, scalar_result](wp<TS<SCALAR, G>>) {
+                    operation.overload(hg::graph("name"_n = "scalar", [&, scalar_result](wp<TS<SCALAR, G>>) {
                         ++selected[3];
                         return scalar_result();
                     }));
@@ -183,7 +183,7 @@ TEST_CASE("operator specificity is independent of overload registration order",
                 (void)operation("value"_n = value);
                 return operation("value"_n = value);
             };
-            const auto result = bg::run_graph(graph, {1});
+            const auto result = hg::run_graph(graph, {1});
 
             CHECK((result.template equals<i64>({expected_result})));
             for (auto index = std::size_t{}; index < selected.size(); ++index) {
@@ -577,13 +577,13 @@ TEST_CASE("operator prototype names provide keyword aliases for overload paramet
 
 TEST_CASE("an operator reports equally specific overloads as ambiguous", "[feature:operator][feature:wiring]") {
     auto operation = operator_<auto(TS<float>)->TS<float>>{"identity", {"value"}};
-    operation.overload(bg::graph("name"_n = "first", [](wp<TS<float>> value) { return value; }));
-    operation.overload(bg::graph("name"_n = "second", [](wp<TS<float>> value) { return value; }));
+    operation.overload(hg::graph("name"_n = "first", [](wp<TS<float>> value) { return value; }));
+    operation.overload(hg::graph("name"_n = "second", [](wp<TS<float>> value) { return value; }));
 
     const auto graph = [&](wp<TS<float>> value) { return operation(value); };
 
     try {
-        (void)bg::run_graph(graph, {1.0F});
+        (void)hg::run_graph(graph, {1.0F});
         FAIL("expected ambiguous operator wiring");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());
@@ -595,44 +595,44 @@ TEST_CASE("an operator reports equally specific overloads as ambiguous", "[featu
 
 TEST_CASE("operator candidate resolution returns the selected implementation and concrete forms",
           "[feature:operator][feature:wiring]") {
-    auto operation = bg::operator_<auto(bg::TS_T) -> bg::TS_T>{"resolve_candidates", {"value"}};
+    auto operation = hg::operator_<auto(hg::TS_T) -> hg::TS_T>{"resolve_candidates", {"value"}};
     const auto &generic = operation.overload(
-        bg::graph("name"_n = "generic", [](bg::wp<bg::TS<bg::SCALAR>> value) { return value; }));
+        hg::graph("name"_n = "generic", [](hg::wp<hg::TS<hg::SCALAR>> value) { return value; }));
     const auto &exact = operation.overload(
-        bg::graph("name"_n = "exact", [](bg::wp<bg::TS<float>> value) { return value; }));
-    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto all = std::array<const bg::WiringTemplate *, 2>{&generic, &exact};
-    const auto generic_only = std::array<const bg::WiringTemplate *, 1>{&generic};
-    const auto exact_only = std::array<const bg::WiringTemplate *, 1>{&exact};
+        hg::graph("name"_n = "exact", [](hg::wp<hg::TS<float>> value) { return value; }));
+    const auto source = hg::node([](hg::Out<hg::TS<float>>) {});
+    const auto all = std::array<const hg::WiringTemplate *, 2>{&generic, &exact};
+    const auto generic_only = std::array<const hg::WiringTemplate *, 1>{&generic};
+    const auto exact_only = std::array<const hg::WiringTemplate *, 1>{&exact};
 
-    bg::testing::test_wiring([&] {
+    hg::testing::test_wiring([&] {
         const auto value = source();
-        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
-        const auto resolution = operation.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+        const auto arguments = std::array{hg::WiringArgument{static_cast<hg::WiringPoint>(value)}};
+        const auto resolution = operation.resolve_overloads(hg::WiringContext::current().wiring(), arguments,
                                                             nullptr, all);
 
         REQUIRE(resolution.selected);
         CHECK(resolution.selected->implementation == &exact);
-        CHECK(resolution.selected->resolution.signature.output == &bg::TS<float>::type());
+        CHECK(resolution.selected->resolution.signature.output == &hg::TS<float>::type());
         REQUIRE(resolution.selected->argument_forms.size() == 1);
         CHECK(resolution.selected->argument_forms.front() == nullptr);
     });
 
-    bg::testing::test_wiring([&] {
+    hg::testing::test_wiring([&] {
         const auto value = source();
-        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
-        const auto resolution = operation.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+        const auto arguments = std::array{hg::WiringArgument{static_cast<hg::WiringPoint>(value)}};
+        const auto resolution = operation.resolve_overloads(hg::WiringContext::current().wiring(), arguments,
                                                             nullptr, generic_only);
 
         REQUIRE(resolution.selected);
         CHECK(resolution.selected->implementation == &generic);
     });
 
-    const auto integer_source = bg::node([](bg::Out<bg::TS<bg::i64>>) {});
-    bg::testing::test_wiring([&] {
+    const auto integer_source = hg::node([](hg::Out<hg::TS<hg::i64>>) {});
+    hg::testing::test_wiring([&] {
         const auto value = integer_source();
-        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
-        const auto resolution = operation.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+        const auto arguments = std::array{hg::WiringArgument{static_cast<hg::WiringPoint>(value)}};
+        const auto resolution = operation.resolve_overloads(hg::WiringContext::current().wiring(), arguments,
                                                             nullptr, exact_only);
 
         CHECK_FALSE(resolution.selected);
@@ -643,18 +643,18 @@ TEST_CASE("operator candidate resolution returns the selected implementation and
 
 TEST_CASE("operator candidate resolution reports ambiguity and callback failures",
           "[feature:operator][feature:wiring]") {
-    auto ambiguous = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"ambiguous_candidates", {"value"}};
+    auto ambiguous = hg::operator_<auto(hg::TS<float>) -> hg::TS<float>>{"ambiguous_candidates", {"value"}};
     const auto &first = ambiguous.overload(
-        bg::graph("name"_n = "first", [](bg::wp<bg::TS<float>> value) { return value; }));
+        hg::graph("name"_n = "first", [](hg::wp<hg::TS<float>> value) { return value; }));
     const auto &second = ambiguous.overload(
-        bg::graph("name"_n = "second", [](bg::wp<bg::TS<float>> value) { return value; }));
-    const auto source = bg::node([](bg::Out<bg::TS<float>>) {});
-    const auto candidates = std::array<const bg::WiringTemplate *, 2>{&first, &second};
+        hg::graph("name"_n = "second", [](hg::wp<hg::TS<float>> value) { return value; }));
+    const auto source = hg::node([](hg::Out<hg::TS<float>>) {});
+    const auto candidates = std::array<const hg::WiringTemplate *, 2>{&first, &second};
 
-    bg::testing::test_wiring([&] {
+    hg::testing::test_wiring([&] {
         const auto value = source();
-        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
-        const auto resolution = ambiguous.resolve_overloads(bg::WiringContext::current().wiring(), arguments,
+        const auto arguments = std::array{hg::WiringArgument{static_cast<hg::WiringPoint>(value)}};
+        const auto resolution = ambiguous.resolve_overloads(hg::WiringContext::current().wiring(), arguments,
                                                             nullptr, candidates);
 
         CHECK_FALSE(resolution.selected);
@@ -662,24 +662,24 @@ TEST_CASE("operator candidate resolution reports ambiguity and callback failures
         CHECK(resolution.failures.size() == 2);
     });
 
-    auto callback_failure = bg::operator_<auto(bg::TS<float>) -> bg::TS<float>>{"callback_failure", {"value"}};
-    const auto &throws = callback_failure.overload(bg::graph(
+    auto callback_failure = hg::operator_<auto(hg::TS<float>) -> hg::TS<float>>{"callback_failure", {"value"}};
+    const auto &throws = callback_failure.overload(hg::graph(
         "name"_n = "throws",
-        bg::require = [](const bg::WiringArguments &) -> bool { throw std::runtime_error{"requirement failed"}; },
-        [](bg::wp<bg::TS<float>> value) { return value; }));
-    const auto throwing_candidate = std::array<const bg::WiringTemplate *, 1>{&throws};
+        hg::require = [](const hg::WiringArguments &) -> bool { throw std::runtime_error{"requirement failed"}; },
+        [](hg::wp<hg::TS<float>> value) { return value; }));
+    const auto throwing_candidate = std::array<const hg::WiringTemplate *, 1>{&throws};
 
-    bg::testing::test_wiring([&] {
+    hg::testing::test_wiring([&] {
         const auto value = source();
-        const auto arguments = std::array{bg::WiringArgument{static_cast<bg::WiringPoint>(value)}};
+        const auto arguments = std::array{hg::WiringArgument{static_cast<hg::WiringPoint>(value)}};
         try {
-            (void)callback_failure.resolve_overloads(bg::WiringContext::current().wiring(), arguments, nullptr,
+            (void)callback_failure.resolve_overloads(hg::WiringContext::current().wiring(), arguments, nullptr,
                                                      throwing_candidate);
             FAIL("expected a callback failure");
-        } catch (const bg::WiringError &error) {
+        } catch (const hg::WiringError &error) {
             REQUIRE(error.diagnostic());
             REQUIRE_FALSE(error.diagnostic()->candidates.empty());
-            CHECK(error.diagnostic()->candidates.back().stage == bg::WiringFailureStage::callback);
+            CHECK(error.diagnostic()->candidates.back().stage == hg::WiringFailureStage::callback);
         }
     });
 }
@@ -692,7 +692,7 @@ TEST_CASE("opt selects optional inputs and keeps that choice distinct in the cac
         selected = "required";
         return value;
     }));
-    operation.overload(graph("name"_n = "optional", [&](wp<TS<i64>, bg::optional> value) {
+    operation.overload(graph("name"_n = "optional", [&](wp<TS<i64>, hg::optional> value) {
         selected = "optional";
         return value;
     }));
@@ -767,14 +767,14 @@ TEST_CASE("scalar-only overloads prefer presence and keep absent calls distinct 
     const auto optional_first_absent = [&] { return optional_first(std::optional<i64>{}); };
     const auto optional_first_omitted = [&] { return optional_first(); };
 
-    CHECK(bg::run_graph(required_first_graph).equals({11}));
-    CHECK(bg::run_graph(required_first_absent).equals({20}));
-    CHECK(bg::run_graph(required_first_omitted).equals({20}));
-    CHECK(bg::run_graph(required_first_omitted).equals({20}));
-    CHECK(bg::run_graph(required_first_graph).equals({11}));
-    CHECK(bg::run_graph(optional_first_graph).equals({11}));
-    CHECK(bg::run_graph(optional_first_absent).equals({20}));
-    CHECK(bg::run_graph(optional_first_omitted).equals({20}));
+    CHECK(hg::run_graph(required_first_graph).equals({11}));
+    CHECK(hg::run_graph(required_first_absent).equals({20}));
+    CHECK(hg::run_graph(required_first_omitted).equals({20}));
+    CHECK(hg::run_graph(required_first_omitted).equals({20}));
+    CHECK(hg::run_graph(required_first_graph).equals({11}));
+    CHECK(hg::run_graph(optional_first_graph).equals({11}));
+    CHECK(hg::run_graph(optional_first_absent).equals({20}));
+    CHECK(hg::run_graph(optional_first_omitted).equals({20}));
 }
 
 TEST_CASE("a graph can omit an optional scalar parameter",
@@ -784,7 +784,7 @@ TEST_CASE("a graph can omit an optional scalar parameter",
     });
     const auto omitted_graph = [&] { return optional_graph(); };
 
-    CHECK(bg::run_graph(omitted_graph).equals({7}));
+    CHECK(hg::run_graph(omitted_graph).equals({7}));
 }
 
 TEST_CASE("promoted node overloads prefer presence for scalar arguments",
@@ -800,20 +800,20 @@ TEST_CASE("promoted node overloads prefer presence for scalar arguments",
     const auto absent_graph = [&] { return operation(std::optional<i64>{}); };
     const auto omitted_graph = [&] { return operation(); };
 
-    CHECK(bg::run_graph(required_graph).equals({11}));
-    CHECK(bg::run_graph(absent_graph).equals({20}));
-    CHECK(bg::run_graph(omitted_graph).equals({20}));
-    CHECK(bg::run_graph(omitted_graph).equals({20}));
-    CHECK(bg::run_graph(required_graph).equals({11}));
+    CHECK(hg::run_graph(required_graph).equals({11}));
+    CHECK(hg::run_graph(absent_graph).equals({20}));
+    CHECK(hg::run_graph(omitted_graph).equals({20}));
+    CHECK(hg::run_graph(omitted_graph).equals({20}));
+    CHECK(hg::run_graph(required_graph).equals({11}));
 }
 
 TEST_CASE("named omission and scalar presence remain distinct in one root wiring",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
     auto operation = operator_<auto(i64, i64)->TS<i64>>{"named_omission", {"first", "second"}};
-    operation.overload(bg::graph("name"_n = "required_first", [](i64 first, i64 second) {
+    operation.overload(hg::graph("name"_n = "required_first", [](i64 first, i64 second) {
         return operators::const_(100 + first + second).as<TS<i64, TimeSeriesGuarantee::const_>>();
     }));
-    operation.overload(bg::graph("name"_n = "optional_first", [](std::optional<i64> first, i64 second) {
+    operation.overload(hg::graph("name"_n = "optional_first", [](std::optional<i64> first, i64 second) {
         return operators::const_(first.value_or(0) + second).as<TS<i64, TimeSeriesGuarantee::const_>>();
     }));
 
@@ -826,14 +826,14 @@ TEST_CASE("named omission and scalar presence remain distinct in one root wiring
         return add(add(omitted, present), add(omitted_again, present_again));
     };
 
-    CHECK(bg::run_graph(graph).equals({224}));
+    CHECK(hg::run_graph(graph).equals({224}));
 }
 
 TEST_CASE("type specificity precedes scalar presence preference",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
     const auto promoted = node([](int value) { return value + 100; });
 
-    const auto explicit_scalar = bg::graph("name"_n = "optional_scalar", [](std::optional<i64> value) {
+    const auto explicit_scalar = hg::graph("name"_n = "optional_scalar", [](std::optional<i64> value) {
         return operators::const_(value.value_or(0) + 200).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
     auto operation = operator_<auto(i64)->TS<i64>>{"specificity", {"value"}};
@@ -841,7 +841,7 @@ TEST_CASE("type specificity precedes scalar presence preference",
     operation.overload(explicit_scalar);
 
     const auto graph = [&] { return operation(i64{1}); };
-    CHECK(bg::run_graph(graph).equals({201}));
+    CHECK(hg::run_graph(graph).equals({201}));
 }
 
 TEST_CASE("conflicting scalar presence preferences remain ambiguous",
@@ -869,7 +869,7 @@ TEST_CASE("scalar presence and time-series validity preferences share one partia
           "[definition:function]") {
     auto selected = std::string{};
     auto operation = operator_<auto(i64, TS<i64>)->TS<i64>>{"presence_and_validity", {"value", "trigger"}};
-    operation.overload(graph("name"_n = "required_scalar", [&](i64 value, wp<TS<i64>, bg::optional>) {
+    operation.overload(graph("name"_n = "required_scalar", [&](i64 value, wp<TS<i64>, hg::optional>) {
         selected = "required_scalar";
         return operators::const_(value).as<TS<i64, TimeSeriesGuarantee::const_>>();
     }));
@@ -901,7 +901,7 @@ TEST_CASE("a required scalar graph rejects absence before running its body",
           "[feature:operator][feature:wiring][scalar:integer][definition:function]") {
     auto body_calls = 0;
 
-    const auto graph = bg::graph("name"_n = "required_scalar", [&](i64 value) {
+    const auto graph = hg::graph("name"_n = "required_scalar", [&](i64 value) {
         ++body_calls;
         return operators::const_(value).as<TS<i64, TimeSeriesGuarantee::const_>>();
     });
@@ -944,11 +944,11 @@ TEST_CASE("all_valid is preferred over optional for an unmarked input",
           "[feature:operator][feature:wiring][feature:validity][validity:all-valid]") {
     auto operation = operator_<auto(TS_T)->TS_T>{"validity", {"value"}};
     operation.overload(node([](In<TS<i64>, all_valid> value, Out<TS<i64>> output) { output.set(value.value()); }));
-    operation.overload(node([](In<TS<i64>, bg::optional>, Out<TS<i64>> output) { output.set(0); }));
+    operation.overload(node([](In<TS<i64>, hg::optional>, Out<TS<i64>> output) { output.set(0); }));
 
     const auto graph = [&](wp<TS<i64>> value) { return operation(value); };
 
-    CHECK(bg::run_graph(graph, {1, 2}).equals<i64>({1, 2}));
+    CHECK(hg::run_graph(graph, {1, 2}).equals<i64>({1, 2}));
 }
 
 TEST_CASE("required and all_valid overloads are equally specific",
@@ -960,7 +960,7 @@ TEST_CASE("required and all_valid overloads are equally specific",
     const auto graph = [&](wp<TS<i64>> value) { return operation(value); };
 
     try {
-        (void)bg::run_graph(graph, {1});
+        (void)hg::run_graph(graph, {1});
         FAIL("expected required and all_valid overloads to be ambiguous");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());
@@ -978,7 +978,7 @@ TEST_CASE("opt-qualified arguments do not match all_valid inputs",
 
     const auto graph = [&](wp<TS<i64>> value) { return operation(opt(value)); };
 
-    CHECK_THROWS_AS(bg::run_graph(graph, {1}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(graph, {1}), WiringError);
 }
 
 TEST_CASE("type specificity precedes required-input preference",
@@ -989,7 +989,7 @@ TEST_CASE("type specificity precedes required-input preference",
         selected = "required_generic";
         return value;
     }));
-    operation.overload(graph("name"_n = "optional_exact", [&](wp<TS<i64>, bg::optional> value) {
+    operation.overload(graph("name"_n = "optional_exact", [&](wp<TS<i64>, hg::optional> value) {
         selected = "optional_exact";
         return value;
     }));
@@ -1004,9 +1004,9 @@ TEST_CASE("conflicting required-input preferences remain ambiguous",
           "[feature:operator][feature:wiring][feature:validity][validity:optional][series:value]") {
     auto operation = operator_<auto(TS_T, TS_T)->TS_T>{"validity", {"lhs", "rhs"}};
     operation.overload(
-        graph("name"_n = "required_lhs", [](wp<TS<i64>> lhs, wp<TS<i64>, bg::optional> rhs) { return lhs; }));
+        graph("name"_n = "required_lhs", [](wp<TS<i64>> lhs, wp<TS<i64>, hg::optional> rhs) { return lhs; }));
     operation.overload(
-        graph("name"_n = "required_rhs", [](wp<TS<i64>, bg::optional> lhs, wp<TS<i64>> rhs) { return rhs; }));
+        graph("name"_n = "required_rhs", [](wp<TS<i64>, hg::optional> lhs, wp<TS<i64>> rhs) { return rhs; }));
 
     const auto source = node([](Out<TS<i64>>) {});
     try {
@@ -1100,12 +1100,12 @@ TEST_CASE("an opt-qualified argument rejects a required-only overload",
 
 TEST_CASE("an operator reports expected and supplied types for a mismatch", "[feature:operator][feature:wiring]") {
     auto operation = operator_<auto(TS<float>)->TS<float>>{"identity", {"value"}};
-    operation.overload(bg::graph("name"_n = "float_identity", [](wp<TS<float>> value) { return value; }));
+    operation.overload(hg::graph("name"_n = "float_identity", [](wp<TS<float>> value) { return value; }));
 
     const auto graph = [&](wp<TS<double>> value) { return operation(value); };
 
     try {
-        (void)bg::run_graph(graph, {1.0});
+        (void)hg::run_graph(graph, {1.0});
         FAIL("expected unmatched operator wiring");
     } catch (const WiringError &error) {
         REQUIRE(error.diagnostic());

@@ -1,6 +1,6 @@
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -8,7 +8,7 @@
 
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("canceling a time series set addition reclaims its position immediately",
           "[value][tss][series:tss][storage][feature:time-series-storage][transition:addition]") {

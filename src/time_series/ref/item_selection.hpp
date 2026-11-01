@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/time_series/ref/dynamic_reference_input.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/time_series/ref/dynamic_reference_input.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cassert>
@@ -16,7 +16,7 @@
 #include <ranges>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Collection> struct ItemSelection {
     bool queued_for_release() const noexcept { return (state_ & release_queue_index_mask) != 0; }
@@ -487,4 +487,4 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
     bool cycle_callback_registered_{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

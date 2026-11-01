@@ -1,16 +1,16 @@
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
-#include <bg/details/evaluation_scratch.hpp>
-#include <bg/details/periodic_callback_runner.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/details/evaluation_scratch.hpp>
+#include <hg/details/periodic_callback_runner.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class SimulationWallClock final : public WallClock {
@@ -105,4 +105,4 @@ void SimulationEvaluationEngine::run(RuntimeGraph &runtime_graph, EvaluationTime
     stop_graph.release();
 }
 
-} // namespace bg
+} // namespace hg

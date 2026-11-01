@@ -1,19 +1,19 @@
 #include "registration.hpp"
 #include "utf8.hpp"
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/string_builder.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/string_builder.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <unicode/regex.h>
 #include <unicode/stringpiece.h>
@@ -36,7 +36,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 
 struct PreparedRegexPattern {
     std::string text;
@@ -61,9 +61,9 @@ struct PreparedRegexReplacement {
 using PreparedRegexPatternHandle = Opaque<std::shared_ptr<const PreparedRegexPattern>>;
 using PreparedRegexReplacementHandle = Opaque<std::shared_ptr<const PreparedRegexReplacement>>;
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_storage_traits<operators::details::PreparedRegexPatternHandle> {
     using stored_type = std::shared_ptr<const operators::details::PreparedRegexPattern>;
@@ -120,12 +120,12 @@ template <> struct scalar_storage_traits<operators::details::PreparedRegexReplac
     static void destroy(stored_type *value, allocator &) noexcept { std::destroy_at(value); }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"REGEX_G">;
 inline constexpr auto INPUT_G = guarantee_variable<"REGEX_INPUT_G">;
@@ -667,4 +667,4 @@ void register_string_regex_operators() {
     register_overloads<string_regex_overloads>();
 }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

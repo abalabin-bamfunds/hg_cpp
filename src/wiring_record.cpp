@@ -1,18 +1,18 @@
-#include <bg/graph/details/wiring_record.hpp>
+#include <hg/graph/details/wiring_record.hpp>
 
-#include <bg/graph/details/wiring_record_overlay.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
 
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <memory>
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 WiringPoint WiringRecord::point(const WiringRecord &record) noexcept {
     return WiringPoint{record};
@@ -65,9 +65,9 @@ WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
     return parent.record()->wiring().register_item_record(parent, item, std::move(record));
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 bool WiringPoint::has_default_materialisation() const noexcept {
     return record_ != nullptr && record_->has_default_materialisation();
@@ -151,4 +151,4 @@ WiringPoint GraphWiring::materialize(WiringPoint point, const TimeSeriesType &ty
     return result;
 }
 
-} // namespace bg
+} // namespace hg

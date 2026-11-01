@@ -1,12 +1,12 @@
-#include <bg/evaluation_profiler.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph_run_options.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/node.hpp>
-#include <bg/queue_node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph_run_options.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/node.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -19,7 +19,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -105,7 +105,7 @@ TEST_CASE("graph run limits apply through the profiler recorder",
 TEST_CASE("run_graph leaves positions beyond its run limit empty",
           "[evaluation][simulation][feature:simulation][test-graph]") {
     const auto start = time(40);
-    const auto actual = bg::run_graph([](wp<TS<i64>> input) { return input; },
+    const auto actual = hg::run_graph([](wp<TS<i64>> input) { return input; },
                                             GraphRunOptions{.start_time = start, .stop_time = time(42)},
                                             std::array{i64{1}, i64{2}, i64{3}, i64{4}});
 
@@ -115,7 +115,7 @@ TEST_CASE("run_graph leaves positions beyond its run limit empty",
 TEST_CASE("realtime run time ends an idle graph and closes its queue",
           "[evaluation][realtime][feature:realtime][queue][lifecycle]") {
     auto writer = Queue{};
-    const auto queue = bg::queue<TS<i64>>(start = [&](Queue value) { writer = std::move(value); });
+    const auto queue = hg::queue<TS<i64>>(start = [&](Queue value) { writer = std::move(value); });
     const auto before = std::chrono::steady_clock::now();
 
     run_graph([&] { (void)queue(); },

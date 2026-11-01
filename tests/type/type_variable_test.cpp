@@ -1,14 +1,14 @@
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/type_variable.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/type_variable.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <array>
 #include <cstdint>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -54,7 +54,7 @@ TEST_CASE("repeated union declarations select one concrete type",
     const auto signature =
         Signature{util::symbol{"same"},
                   {{util::symbol{"left"}, &KEY_ARGUMENT::type()}, {util::symbol{"right"}, &KEY_ARGUMENT::type()}}};
-    const auto arguments = std::array<const bg::Type *, 2>{&int64_type(), &TS<i64>::type()};
+    const auto arguments = std::array<const hg::Type *, 2>{&int64_type(), &TS<i64>::type()};
 
     CHECK_THROWS_AS(signature.resolve(arguments), TypeResolutionError);
 }
@@ -64,7 +64,7 @@ TEST_CASE("named unions bind outer types independently and share inner variables
     const auto signature = Signature{
         util::symbol{"independent"},
         {{util::symbol{"left"}, &LEFT_KEY_ARGUMENT::type()}, {util::symbol{"right"}, &RIGHT_KEY_ARGUMENT::type()}}};
-    const auto arguments = std::array<const bg::Type *, 2>{&int64_type(), &TS<i64>::type()};
+    const auto arguments = std::array<const hg::Type *, 2>{&int64_type(), &TS<i64>::type()};
     const auto resolution = signature.resolve_with_type_map(arguments);
 
     CHECK(&KEY::type().resolve(resolution.type_map) == &int64_type());
@@ -77,7 +77,7 @@ TEST_CASE("named unions still reject conflicting shared inner mappings",
     const auto signature = Signature{
         util::symbol{"conflicting"},
         {{util::symbol{"left"}, &LEFT_KEY_ARGUMENT::type()}, {util::symbol{"right"}, &RIGHT_KEY_ARGUMENT::type()}}};
-    const auto arguments = std::array<const bg::Type *, 2>{&int64_type(), &TS<float>::type()};
+    const auto arguments = std::array<const hg::Type *, 2>{&int64_type(), &TS<float>::type()};
 
     CHECK_THROWS_AS(signature.resolve(arguments), TypeResolutionError);
 }

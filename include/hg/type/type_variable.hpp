@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/compile_time_string.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/compile_time_string.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <concepts>
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 // Engine and extension descriptor. Graph authors use ScalarVariable, TimeSeriesVariable, or TypeVariable declarations.
 template <typename Category> class TypeVariableType final : public Category, public Variable {
@@ -221,4 +221,4 @@ struct declaration_variable_traits<TypeVariable<Name, Alternatives...>> {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

@@ -1,17 +1,17 @@
 #include "fixed_reference_representation.hpp"
 
-#include <bg/allocator.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <exception>
@@ -21,7 +21,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 enum class FieldMode : std::uint8_t { direct, routed_reference, dereferenced, adapted };
@@ -869,4 +869,4 @@ const ReferenceRepresentationFactory *fixed_collection_reference_representation_
     return &factory;
 }
 
-} // namespace bg::details
+} // namespace hg::details

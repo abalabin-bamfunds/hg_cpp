@@ -1,15 +1,15 @@
-#include <bg/graph/graph_argument.hpp>
+#include <hg/graph/graph_argument.hpp>
 
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -19,7 +19,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class GraphArgumentBoundaryNode final : public NodeTemplate {
@@ -290,4 +290,4 @@ const GraphArgumentType &GraphArgument::type() noexcept {
     return type.get();
 }
 
-} // namespace bg
+} // namespace hg

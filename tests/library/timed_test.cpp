@@ -1,13 +1,13 @@
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -16,8 +16,8 @@
 #include <limits>
 #include <stdexcept>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("last_modified_time reports root input update times",
           "[feature:operator][series:value][transition:update][transition:invalidation]") {
@@ -25,10 +25,10 @@ TEST_CASE("last_modified_time reports root input update times",
     const auto start_time = EvaluationTime{EvaluationTime::duration{100}};
     const auto options = GraphRunOptions{.start_time = start_time};
 
-    CHECK(bg::run_graph(last_modified, options, {1, 1, literal::SKIP, 2})
+    CHECK(hg::run_graph(last_modified, options, {1, 1, literal::SKIP, 2})
               .equals<date_time_t>({start_time, start_time + timedelta_t{1}, std::nullopt,
                                     start_time + timedelta_t{3}}));
-    CHECK(bg::run_graph(last_modified, options, {1, literal::INVALID, literal::SKIP, 2})
+    CHECK(hg::run_graph(last_modified, options, {1, literal::INVALID, literal::SKIP, 2})
               .equals<date_time_t>({start_time, std::nullopt, std::nullopt,
                                     start_time + timedelta_t{3}}));
 }
@@ -42,9 +42,9 @@ TEST_CASE("last_modified_time observes collection and reference changes",
         return operators::last_modified_time(value.as<REF<TS<i64>>>());
     };
 
-    CHECK(bg::run_graph(last_modified_dictionary, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
+    CHECK(hg::run_graph(last_modified_dictionary, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
               .equals<date_time_t>({MIN_DT + timedelta_t{1}, MIN_DT + timedelta_t{2}, MIN_DT + timedelta_t{3}}));
-    CHECK(bg::run_graph(last_modified_reference, {1, 2, 3})
+    CHECK(hg::run_graph(last_modified_reference, {1, 2, 3})
               .equals<date_time_t>({MIN_DT + timedelta_t{1}, MIN_DT + timedelta_t{2}, MIN_DT + timedelta_t{3}}));
 }
 
@@ -56,12 +56,12 @@ TEST_CASE("elapsed reports intervals between valid input changes and resets on i
     const auto start_time = EvaluationTime{EvaluationTime::duration{100}};
     const auto options = GraphRunOptions{.start_time = start_time};
 
-    CHECK(bg::run_graph(elapsed, options,
+    CHECK(hg::run_graph(elapsed, options,
                         {1, 1, literal::SKIP, 2, literal::INVALID, literal::SKIP, 3, 4})
               .equals<timedelta_t>({std::nullopt, timedelta_t{1}, std::nullopt, timedelta_t{2}, std::nullopt,
                                     std::nullopt, std::nullopt, timedelta_t{1}}));
-    CHECK(bg::run_graph(elapsed, {literal::INVALID}).equals<timedelta_t>({std::nullopt}));
-    CHECK(bg::run_graph(elapsed_dictionary, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
+    CHECK(hg::run_graph(elapsed, {literal::INVALID}).equals<timedelta_t>({std::nullopt}));
+    CHECK(hg::run_graph(elapsed_dictionary, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
               .equals<timedelta_t>({std::nullopt, timedelta_t{1}, timedelta_t{1}}));
 }
 
@@ -69,7 +69,7 @@ TEST_CASE("elapsed validity resets through invalidation and revalidation",
           "[feature:operator][transition:invalidation][transition:revalidation]") {
     const auto valid_elapsed = [](wp<TS<i64>> value) { return operators::valid(operators::elapsed(value)); };
 
-    CHECK(bg::run_graph(valid_elapsed, {1, 2, literal::INVALID, 3, 4})
+    CHECK(hg::run_graph(valid_elapsed, {1, 2, literal::INVALID, 3, 4})
               .equals<bool>({false, true, false, std::nullopt, true}));
 }
 
@@ -77,16 +77,16 @@ TEST_CASE("timeout publishes true after an input event and does not schedule on 
           "[feature:operator][feature:timed-scheduling][transition:update]") {
     const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
 
-    CHECK(bg::run_graph(timeout, {1}).equals<bool>({std::nullopt, std::nullopt, true}));
-    CHECK(bg::run_graph(timeout, {literal::SKIP, literal::SKIP}).equals<bool>({std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(timeout, {1}).equals<bool>({std::nullopt, std::nullopt, true}));
+    CHECK(hg::run_graph(timeout, {literal::SKIP, literal::SKIP}).equals<bool>({std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("timeout restarts on equal events and preserves true through later expiries",
           "[feature:operator][feature:timed-scheduling][transition:update]") {
     const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
 
-    CHECK(bg::run_graph(timeout, {1, 1}).equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
-    CHECK(bg::run_graph(timeout, {1, literal::SKIP, literal::SKIP, 2})
+    CHECK(hg::run_graph(timeout, {1, 1}).equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
+    CHECK(hg::run_graph(timeout, {1, literal::SKIP, literal::SKIP, 2})
               .equals<bool>({std::nullopt, std::nullopt, true, std::nullopt, std::nullopt, true}));
 }
 
@@ -94,7 +94,7 @@ TEST_CASE("timeout restarts on input invalidation",
           "[feature:operator][feature:timed-scheduling][transition:invalidation]") {
     const auto timeout = [](wp<TS<i64>> value) { return operators::timeout(value, timedelta_t{2}); };
 
-    CHECK(bg::run_graph(timeout, {1, literal::INVALID, literal::SKIP})
+    CHECK(hg::run_graph(timeout, {1, literal::INVALID, literal::SKIP})
               .equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
 }
 
@@ -120,7 +120,7 @@ TEST_CASE("timeout restarts rather than publishing when an event coincides with 
     const auto source = node<timeout_coincident_source>();
     const auto graph = [&] { return operators::timeout(source(), timedelta_t{2}); };
 
-    CHECK(bg::run_graph(graph).equals<bool>({std::nullopt, std::nullopt, std::nullopt, std::nullopt, true}));
+    CHECK(hg::run_graph(graph).equals<bool>({std::nullopt, std::nullopt, std::nullopt, std::nullopt, true}));
 }
 
 TEST_CASE("timeout observes collection and reference events",
@@ -133,9 +133,9 @@ TEST_CASE("timeout observes collection and reference events",
         return operators::timeout(value.as<REF<TS<i64>>>(), timedelta_t{2});
     };
 
-    CHECK(bg::run_graph(timeout_dictionary, {{{1, 10}}, {{1, 20}}})
+    CHECK(hg::run_graph(timeout_dictionary, {{{1, 10}}, {{1, 20}}})
               .equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
-    CHECK(bg::run_graph(timeout_reference, {1, 2})
+    CHECK(hg::run_graph(timeout_reference, {1, 2})
               .equals<bool>({std::nullopt, std::nullopt, std::nullopt, true}));
 }
 
@@ -148,8 +148,8 @@ TEST_CASE("timeout timers stop and restart with a nested graph branch",
         return switch_(selector, cases{case_(i64{1}, timeout), case_(i64{0}, passthrough)}, value);
     };
 
-    CHECK(bg::run_graph(selected, {1, 0}, {10, 20}).equals<bool>({std::nullopt, false}));
-    CHECK(bg::run_graph(selected, {1, 0, 1}, {10, 20, 30})
+    CHECK(hg::run_graph(selected, {1, 0}, {10, 20}).equals<bool>({std::nullopt, false}));
+    CHECK(hg::run_graph(selected, {1, 0, 1}, {10, 20, 30})
               .equals<bool>({std::nullopt, false, std::nullopt, std::nullopt, true}));
 }
 
@@ -189,8 +189,8 @@ TEST_CASE("time observation operators handle const inputs",
     const auto start_time = EvaluationTime{EvaluationTime::duration{100}};
     const auto options = GraphRunOptions{.start_time = start_time};
 
-    CHECK(bg::run_graph(last_modified, options).equals<date_time_t>({start_time}));
-    CHECK(bg::run_graph(elapsed, options).equals<timedelta_t>({std::nullopt}));
+    CHECK(hg::run_graph(last_modified, options).equals<date_time_t>({start_time}));
+    CHECK(hg::run_graph(elapsed, options).equals<timedelta_t>({std::nullopt}));
 }
 
 TEST_CASE("delay publishes each retained input event after its duration",
@@ -201,9 +201,9 @@ TEST_CASE("delay publishes each retained input event after its duration",
         return operators::valid(operators::delay(value, timedelta_t{2}));
     };
 
-    CHECK(bg::run_graph(delayed, {1, 2, literal::INVALID, 4})
+    CHECK(hg::run_graph(delayed, {1, 2, literal::INVALID, 4})
               .equals<i64>({std::nullopt, std::nullopt, 1, 2, std::nullopt, 4}));
-    CHECK(bg::run_graph(delayed_valid, {1, literal::INVALID, literal::SKIP, 4})
+    CHECK(hg::run_graph(delayed_valid, {1, literal::INVALID, literal::SKIP, 4})
               .equals<bool>({false, std::nullopt, true, false, std::nullopt, true}));
 }
 
@@ -213,7 +213,7 @@ TEST_CASE("delay starts with an unbound reference input",
 
     const auto delayed = [&] { return operators::delay(source(), timedelta_t{1}); };
 
-    CHECK(bg::run_graph(delayed).equals<i64>({std::nullopt}));
+    CHECK(hg::run_graph(delayed).equals<i64>({std::nullopt}));
 }
 
 struct changing_timed_target {
@@ -235,7 +235,7 @@ TEST_CASE("delay preserves separate equal ticks",
           "[feature:operator][feature:timed-scheduling][series:value][transition:update]") {
     const auto delayed_equal = [](wp<TS<i64>> value) { return operators::delay(value, timedelta_t{2}); };
 
-    CHECK(bg::run_graph(delayed_equal, {1, 1}).equals<i64>({std::nullopt, std::nullopt, 1, 1}));
+    CHECK(hg::run_graph(delayed_equal, {1, 1}).equals<i64>({std::nullopt, std::nullopt, 1, 1}));
 }
 
 TEST_CASE("delay replays dictionary deltas",
@@ -244,7 +244,7 @@ TEST_CASE("delay replays dictionary deltas",
         return operators::sum_(operators::delay(value, timedelta_t{2}));
     };
 
-    CHECK(bg::run_graph(delayed_sum, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
+    CHECK(hg::run_graph(delayed_sum, {{{1, 10}}, {{1, 20}}, {{1, literal::REMOVE}}})
               .equals<i64>({std::nullopt, std::nullopt, 10, 20, 0}));
 }
 
@@ -253,7 +253,7 @@ TEST_CASE("delay replays set membership changes",
     const auto delayed_set_sum = [](wp<TSS<i64>> value) {
         return operators::sum_(operators::delay(value, timedelta_t{2}));
     };
-    CHECK(bg::run_graph(
+    CHECK(hg::run_graph(
               delayed_set_sum,
               {{1, 2}, {3}, {literal::REMOVED(1), 4},
                {literal::REMOVED(2), literal::REMOVED(3), literal::REMOVED(4)}})
@@ -267,7 +267,7 @@ TEST_CASE("delay replays fixed-list ticks",
     const auto delayed_list = [&](wp<TSL<TS<i64>, 2>> value) {
         return sum_list(operators::delay(value, timedelta_t{2}));
     };
-    CHECK(bg::run_graph(delayed_list, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}})
+    CHECK(hg::run_graph(delayed_list, {{{0, 1}, {1, 10}}, {{0, 2}, {1, 20}}})
               .equals<i64>({std::nullopt, std::nullopt, 11, 22}));
 }
 
@@ -287,7 +287,7 @@ TEST_CASE("delay retains target ticks in a fixed list of references",
         return observe(delayed_values);
     };
 
-    CHECK(bg::run_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
+    CHECK(hg::run_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
 }
 
 struct invalidating_set_for_delay {
@@ -328,7 +328,7 @@ TEST_CASE("delay propagates invalidation and revalidation through a fixed list o
         return observe(operators::delay(list, timedelta_t{1}));
     };
 
-    CHECK(bg::run_graph(delayed).equals<bool>({std::nullopt, true, false, true}));
+    CHECK(hg::run_graph(delayed).equals<bool>({std::nullopt, true, false, true}));
 }
 
 template <template <typename, auto...> typename Field> struct TimedPair {
@@ -343,7 +343,7 @@ TEST_CASE("delay replays bundle ticks", "[feature:operator][feature:timed-schedu
         const auto value = bundle<TimedPair>("left"_n = left, "right"_n = right);
         return observe_bundle(operators::delay(value, timedelta_t{2}));
     };
-    CHECK(bg::run_graph(delayed_bundle, {1, 2}, {10, 20})
+    CHECK(hg::run_graph(delayed_bundle, {1, 2}, {10, 20})
               .equals<i64>({std::nullopt, std::nullopt, 11, 22}));
 }
 
@@ -368,7 +368,7 @@ TEST_CASE("delay retains target ticks in a bundle of references",
         return observe(delayed_values);
     };
 
-    CHECK(bg::run_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
+    CHECK(hg::run_graph(delayed, {10, 20, 30}).equals<i64>({std::nullopt, std::nullopt, 10, 20, 30}));
 }
 
 TEST_CASE("delay zero preserves the input type and negative delay fails during wiring",
@@ -398,7 +398,7 @@ TEST_CASE("delay follows reference retargets and target ticks",
         return operators::delay(select(use_constant, changing_target(), constant_target), timedelta_t{1});
     };
 
-    CHECK(bg::run_graph(delayed, std::array{false, false, true, true})
+    CHECK(hg::run_graph(delayed, std::array{false, false, true, true})
               .equals<i64>({std::nullopt, 10, 20, 100}));
 }
 
@@ -413,7 +413,7 @@ TEST_CASE("delay replays an invalid TSS reference target as removals",
         return operators::sum_(operators::delay(select(cycle, populated, invalid), timedelta_t{1}));
     };
 
-    CHECK(bg::run_graph(delayed, {0, 1, 2}, {{1}, literal::SKIP, {2}}, {})
+    CHECK(hg::run_graph(delayed, {0, 1, 2}, {{1}, literal::SKIP, {2}}, {})
               .equals<i64>({std::nullopt, 1, 0, 3}));
 }
 
@@ -430,7 +430,7 @@ TEST_CASE("delay replays an invalid TSD reference target as removals",
         return operators::sum_(operators::delay(select(cycle, populated, invalid), timedelta_t{1}));
     };
 
-    CHECK(bg::run_graph(delayed, {0, 1, 2}, {{{1, 10}}, literal::SKIP, {{1, 20}}}, {})
+    CHECK(hg::run_graph(delayed, {0, 1, 2}, {{{1, 10}}, literal::SKIP, {{1, 20}}}, {})
               .equals<i64>({std::nullopt, 10, 0, 20}));
 }
 
@@ -443,7 +443,7 @@ TEST_CASE("delay replays TSS membership changes when a reference selects another
         return operators::sum_(operators::delay(select(use_second, first, second), timedelta_t{1}));
     };
 
-    CHECK(bg::run_graph(delayed_sum, {false, true}, {{1, 2}, literal::SKIP}, {{3, 4}, literal::SKIP})
+    CHECK(hg::run_graph(delayed_sum, {false, true}, {{1, 2}, literal::SKIP}, {{3, 4}, literal::SKIP})
               .equals<i64>({std::nullopt, 3, 7}));
 }
 
@@ -459,7 +459,7 @@ TEST_CASE("delay replays TSD key changes when a reference selects another valid 
         return operators::sum_(operators::delay(select(use_second, first, second), timedelta_t{1}));
     };
 
-    CHECK(bg::run_graph(delayed_sum, {false, true}, {{{1, 10}}, literal::SKIP},
+    CHECK(hg::run_graph(delayed_sum, {false, true}, {{{1, 10}}, literal::SKIP},
                               {{{2, 20}}, literal::SKIP})
               .equals<i64>({std::nullopt, 10, 20}));
 }
@@ -478,7 +478,7 @@ TEST_CASE("delay retains target-only updates from a contained string reference",
         return operators::delay(bind_reference(bind, value), timedelta_t{2});
     };
 
-    CHECK(bg::run_graph(delayed, {true, literal::SKIP, literal::SKIP}, {"first", "second", literal::SKIP})
+    CHECK(hg::run_graph(delayed, {true, literal::SKIP, literal::SKIP}, {"first", "second", literal::SKIP})
               .equals({literal::SKIP, literal::SKIP, {{1, "first"}}, {{1, "second"}}}));
 }
 
@@ -511,7 +511,7 @@ TEST_CASE("delay retains dereferenced TSD values inside a TSD",
         return sum(operators::delay(select_dictionary(choose_second, first, second), timedelta_t{1}));
     };
 
-    CHECK(bg::run_graph(delayed_sum, {false, true}, {{{2, 10}}, literal::SKIP}, {})
+    CHECK(hg::run_graph(delayed_sum, {false, true}, {{{2, 10}}, literal::SKIP}, {})
               .equals<i64>({std::nullopt, 10, 0}));
 }
 
@@ -557,12 +557,12 @@ TEST_CASE("delay replays removals from an invalid TSS inside a TSD",
         return removed_count(select_set(choose_second, first, second));
     };
 
-    CHECK(bg::run_graph(current_sum, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}), ticks({}))
+    CHECK(hg::run_graph(current_sum, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}), ticks({}))
               .equals<i64>({1, -1, 3}));
-    CHECK(bg::run_graph(current_removed_count, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}),
+    CHECK(hg::run_graph(current_removed_count, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}),
                         ticks({}))
               .equals<i64>({0, 1, 0}));
-    const auto result = bg::run_graph(delayed_sum, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}),
+    const auto result = hg::run_graph(delayed_sum, ticks({false, true, false}), ticks({{1}, literal::SKIP, {2}}),
                                       ticks({}));
     CHECK(result.equals<i64>({std::nullopt, 1, -1, 3}));
 }
@@ -581,7 +581,7 @@ TEST_CASE("throttle follows reference retargets and target ticks",
         return operators::throttle(selected, timedelta_t{1});
     };
 
-    CHECK(bg::run_graph(throttled, std::array{false, false, true, true})
+    CHECK(hg::run_graph(throttled, std::array{false, false, true, true})
               .equals<i64>({10, 20, 100, std::nullopt}));
 }
 
@@ -622,7 +622,7 @@ TEST_CASE("delay reports evaluation-time overflow",
           "[feature:operator][feature:timed-scheduling][scalar:evaluation-time]") {
     const auto delayed = [](wp<TS<i64>> value) { return operators::delay(value, timedelta_t::max()); };
 
-    CHECK_THROWS_AS(bg::run_graph(delayed, {1}), std::overflow_error);
+    CHECK_THROWS_AS(hg::run_graph(delayed, {1}), std::overflow_error);
 }
 
 TEST_CASE("schedule supports delayed and immediate starts and finite tick limits",
@@ -632,18 +632,18 @@ TEST_CASE("schedule supports delayed and immediate starts and finite tick limits
     const auto omitted_initial_delay = [] { return operators::schedule(timedelta_t{1}, "max_ticks"_n = i64{2}); };
     const auto empty = [] { return operators::schedule(timedelta_t{1}, true, i64{0}); };
 
-    CHECK(bg::run_graph(delayed).equals<bool>({std::nullopt, true, true}));
-    CHECK(bg::run_graph(immediate).equals<bool>({true, true, true}));
-    CHECK(bg::run_graph(omitted_initial_delay).equals<bool>({std::nullopt, true, true}));
-    CHECK(bg::run_graph(empty).equals<bool>({std::nullopt}));
+    CHECK(hg::run_graph(delayed).equals<bool>({std::nullopt, true, true}));
+    CHECK(hg::run_graph(immediate).equals<bool>({true, true, true}));
+    CHECK(hg::run_graph(omitted_initial_delay).equals<bool>({std::nullopt, true, true}));
+    CHECK(hg::run_graph(empty).equals<bool>({std::nullopt}));
 }
 
 TEST_CASE("schedule validates its period, limit, and due-time range",
           "[feature:operator][feature:wiring][feature:timed-scheduling][scalar:evaluation-time]") {
-    CHECK_THROWS_AS(bg::run_graph([] { return operators::schedule(timedelta_t{}, true, 1); }), WiringError);
-    CHECK_THROWS_AS(bg::run_graph([] { return operators::schedule(timedelta_t{1}, true, i64{-1}); }),
+    CHECK_THROWS_AS(hg::run_graph([] { return operators::schedule(timedelta_t{}, true, 1); }), WiringError);
+    CHECK_THROWS_AS(hg::run_graph([] { return operators::schedule(timedelta_t{1}, true, i64{-1}); }),
                     WiringError);
-    CHECK_THROWS_AS(bg::run_graph([] { return operators::schedule(timedelta_t::max(), true, i64{1}); }),
+    CHECK_THROWS_AS(hg::run_graph([] { return operators::schedule(timedelta_t::max(), true, i64{1}); }),
                     std::overflow_error);
 }
 
@@ -654,8 +654,8 @@ TEST_CASE("throttle publishes the first event and coalesces later events",
         return operators::throttle(value, timedelta_t{2}, true);
     };
 
-    CHECK(bg::run_graph(immediate, {1, 2, 3, 4}).equals<i64>({1, std::nullopt, 3, std::nullopt, 4}));
-    CHECK(bg::run_graph(delayed_first, {1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 3}));
+    CHECK(hg::run_graph(immediate, {1, 2, 3, 4}).equals<i64>({1, std::nullopt, 3, std::nullopt, 4}));
+    CHECK(hg::run_graph(delayed_first, {1, 2, 3}).equals<i64>({std::nullopt, std::nullopt, 3}));
 }
 
 TEST_CASE("throttle applies timing to invalidation and publishes current-cycle changes",
@@ -665,14 +665,14 @@ TEST_CASE("throttle applies timing to invalidation and publishes current-cycle c
     };
     const auto throttled = [](wp<TS<i64>> value) { return operators::throttle(value, timedelta_t{2}, false); };
 
-    CHECK(bg::run_graph(valid_throttled, {1, literal::INVALID, literal::SKIP, literal::SKIP})
+    CHECK(hg::run_graph(valid_throttled, {1, literal::INVALID, literal::SKIP, literal::SKIP})
               .equals<bool>({true, std::nullopt, false, std::nullopt}));
-    CHECK(bg::run_graph(throttled, {1, literal::INVALID, 3}).equals<i64>({1, std::nullopt, 3}));
+    CHECK(hg::run_graph(throttled, {1, literal::INVALID, 3}).equals<i64>({1, std::nullopt, 3}));
 
     const auto delayed_first_valid = [](wp<TS<i64>> value) {
         return operators::valid(operators::throttle(value, timedelta_t{2}, true));
     };
-    CHECK(bg::run_graph(delayed_first_valid,
+    CHECK(hg::run_graph(delayed_first_valid,
                               {1, literal::SKIP, literal::SKIP, literal::INVALID, literal::SKIP})
               .equals<bool>({false, std::nullopt, true, std::nullopt, false}));
 }
@@ -683,7 +683,7 @@ TEST_CASE("throttle reconciles collection state at publication time",
         return operators::sum_(operators::throttle(value, timedelta_t{2}, false));
     };
 
-    CHECK(bg::run_graph(throttled_sum, {{{1, 10}}, {{1, literal::REMOVE}}})
+    CHECK(hg::run_graph(throttled_sum, {{{1, 10}}, {{1, literal::REMOVE}}})
               .equals<i64>({10, std::nullopt, 0}));
 }
 
@@ -701,7 +701,7 @@ TEST_CASE("throttle validates its period, guarantee, and due-time range",
     const auto overflowing = [](wp<TS<i64>> value) {
         return operators::throttle(value, timedelta_t::max(), false);
     };
-    CHECK_THROWS_AS(bg::run_graph(overflowing, {1}), std::overflow_error);
+    CHECK_THROWS_AS(hg::run_graph(overflowing, {1}), std::overflow_error);
 }
 
 TEST_CASE("a nested timed source stops with its selected graph",
@@ -715,7 +715,7 @@ TEST_CASE("a nested timed source stops with its selected graph",
                              case_(DEFAULT, [] { return operators::const_(false).as<TS<bool>>(); })});
     };
 
-    CHECK(bg::run_graph(selected_schedule, {1, 0, 0})
+    CHECK(hg::run_graph(selected_schedule, {1, 0, 0})
               .equals<bool>({std::nullopt, false, std::nullopt}));
 }
 
@@ -731,7 +731,7 @@ TEST_CASE("resample samples on its schedule and stops with its switch branch",
             .as<TS<i64>>();
     };
 
-    CHECK(bg::run_graph(select,
+    CHECK(hg::run_graph(select,
                               {1, 1, 1, 1, 1, 1, 1, 1, 0},
                               {10, 20, 30, literal::INVALID, literal::SKIP, 50, literal::SKIP, 60, 70})
               .equals<i64>({std::nullopt, std::nullopt, 30, std::nullopt, std::nullopt, std::nullopt, 50,
@@ -748,7 +748,7 @@ TEST_CASE("resample samples on its schedule and stops with its switch branch",
                                       value);
         return operators::sum_(selected).as<TS<i64>>();
     };
-    CHECK(bg::run_graph(select_dictionary,
+    CHECK(hg::run_graph(select_dictionary,
                               {1, 1, 1, 1, 1, 0},
                               {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, literal::REMOVE}, {3, 30}},
                                {{1, literal::REMOVE}, {4, 40}}, literal::SKIP, literal::SKIP})
@@ -763,7 +763,7 @@ TEST_CASE("resample samples on its schedule and stops with its switch branch",
             switch_(selector, cases{case_(i64{1}, resample_set), case_(i64{0}, passthrough_set)}, value);
         return operators::sum_(selected).as<TS<i64>>();
     };
-    CHECK(bg::run_graph(select_set,
+    CHECK(hg::run_graph(select_set,
                               {1, 1, 1, 1, 1, 0},
                               {{1, 2}, {3}, {literal::REMOVED(1), 4}, {literal::REMOVED(3), 5},
                                literal::SKIP, literal::SKIP})
@@ -772,7 +772,7 @@ TEST_CASE("resample samples on its schedule and stops with its switch branch",
 
 TEST_CASE("resample validates its period",
           "[feature:operator][feature:wiring][feature:timed-scheduling]") {
-    CHECK_THROWS_AS(bg::run_graph(
+    CHECK_THROWS_AS(hg::run_graph(
                         [] { return operators::resample(operators::const_(i64{1}), timedelta_t{}); }),
                     WiringError);
 }

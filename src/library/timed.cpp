@@ -1,18 +1,18 @@
 #include "registration.hpp"
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -23,7 +23,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
 inline constexpr auto TIME_INPUT_G = guarantee_variable<"TIME_INPUT_G">;
@@ -420,4 +420,4 @@ struct timed_overloads {
 
 void register_timed_operators() { register_overloads<timed_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

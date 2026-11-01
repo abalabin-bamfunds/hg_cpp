@@ -1,4 +1,4 @@
-#include <bg/util/adaptive_set.hpp>
+#include <hg/util/adaptive_set.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

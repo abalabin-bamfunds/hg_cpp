@@ -1,4 +1,4 @@
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include "counting_memory_resource.hpp"
 
@@ -6,7 +6,7 @@
 
 #include <stdexcept>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

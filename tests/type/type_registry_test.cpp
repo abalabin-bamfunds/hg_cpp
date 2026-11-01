@@ -1,14 +1,14 @@
-#include <bg/graph/graph_argument.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/type/guarantee_variable.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/type/guarantee_variable.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,7 +23,7 @@
 #include <thread>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 static_assert(noexcept(int_type()));
 static_assert(noexcept(TypeRegistry::register_static(int_type())));
@@ -33,7 +33,7 @@ namespace {
 class RegistryTestType final : public ScalarType {
   public:
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
 };
 
 const RegistryTestType &concurrent_registration_type() {
@@ -116,14 +116,14 @@ namespace {
 
 class NestedRegistryTestType final : public ScalarType {
   public:
-    explicit NestedRegistryTestType(const bg::Type *dependency = nullptr) : dependency_{dependency} {}
+    explicit NestedRegistryTestType(const hg::Type *dependency = nullptr) : dependency_{dependency} {}
 
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const TypeMap &) const override { return *this; }
-    const bg::Type *dependency() const noexcept { return dependency_; }
+    const hg::Type &resolve(const TypeMap &) const override { return *this; }
+    const hg::Type *dependency() const noexcept { return dependency_; }
 
   private:
-    const bg::Type *dependency_;
+    const hg::Type *dependency_;
 };
 
 } // namespace
@@ -212,13 +212,13 @@ TEST_CASE("registry membership covers primitive, generic, composed, graph, and s
     CHECK(TypeRegistry::instance().contains(list));
     CHECK(TypeRegistry::instance().contains(time_series));
 
-    const auto parameters = std::array<const bg::Type *, 1>{&int_type()};
+    const auto parameters = std::array<const hg::Type *, 1>{&int_type()};
     const auto &graph = graph_argument_type(parameters, nullptr);
     CHECK(TypeRegistry::instance().contains(graph));
     CHECK(TypeRegistry::instance().contains(GraphArgument::type()));
 
     const auto &schema =
-        bg::schema(util::symbol{"RegistrySchema"}, std::monostate{}, nullptr, std::span<const SchemaField>{});
+        hg::schema(util::symbol{"RegistrySchema"}, std::monostate{}, nullptr, std::span<const SchemaField>{});
     CHECK(TypeRegistry::instance().contains(schema));
 }
 

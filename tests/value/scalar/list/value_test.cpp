@@ -1,8 +1,8 @@
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +13,7 @@
 #include <string_view>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a scalar list owns its items", "[value][scalar][list][scalar:list][feature:scalar-collection]") {
     auto source = std::vector{1.0F, 2.0F};

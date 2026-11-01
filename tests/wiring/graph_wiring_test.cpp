@@ -1,21 +1,21 @@
-#include <bg/graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/context.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/declaration.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include "../value/scalar/test_scalar_provider.hpp"
 
@@ -32,7 +32,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -221,8 +221,8 @@ TEST_CASE("wiring point reference annotations check guarantee compatibility",
         CHECK_NOTHROW((wp<FINAL_REFERENCE>{final}));
         CHECK_NOTHROW((wp<VARIABLE_REFERENCE>{final}));
 
-        auto optional = wp<REF<TS<float>>, bg::optional>{ordinary}.as<TS<float>>();
-        STATIC_CHECK(std::same_as<decltype(optional), wp<TS<float>, bg::optional>>);
+        auto optional = wp<REF<TS<float>>, hg::optional>{ordinary}.as<TS<float>>();
+        STATIC_CHECK(std::same_as<decltype(optional), wp<TS<float>, hg::optional>>);
         CHECK(&optional.type() == &ordinary.type());
     });
 }
@@ -485,7 +485,7 @@ TEST_CASE("wiring does not reuse calls with an unhashable scalar", "[graph_wirin
 
 TEST_CASE("unregistered C++ values bind to exact opaque scalar parameters",
           "[graph_wiring][feature:wiring][scalar:opaque][lifetime:retained]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto source = node<unregistered_opaque_wiring_node>();
     const auto pointer_source = node<unregistered_opaque_pointer_wiring_node>();
@@ -773,7 +773,7 @@ TEST_CASE("runtime node templates resolve scalar and selected time-series Union 
 
 TEST_CASE("invoke_node captures the intended template while importing context",
           "[graph_wiring][feature:wiring]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto target = node([](In<TS<float>, "value"_n, context>, Out<TS<bool>>) {});
 

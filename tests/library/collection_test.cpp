@@ -1,18 +1,18 @@
-#include <bg/library.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/switch.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/library.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/switch.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include "../utils/counting_memory_resource.hpp"
 
@@ -28,20 +28,20 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("len_ of a TSS follows key membership", "[feature:operator][series:tss][scalar:i64][shape:single-node]") {
     const auto graph = [](wp<TSS<i64>> value) { return operators::len_("value"_n = value); };
 
-    CHECK(bg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
+    CHECK(hg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}}).equals<i64>({1, 1}));
 }
 
 TEST_CASE("keys_where_true follows Boolean dictionary items",
           "[feature:operator][series:tsd][series:tss][scalar:boolean][transition:update][transition:removal]") {
     const auto graph = [](wp<TSD<i64, TS<bool>>> mask) { return operators::keys_where_true(mask); };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{1, true}, {2, false}}, {{1, false}, {2, true}}, {{1, literal::INVALID}},
                 {{2, literal::REMOVE}}, {{1, true}}});
 
@@ -52,8 +52,8 @@ TEST_CASE("keys_ projects dictionary membership without copying item updates",
           "[feature:operator][series:tsd][series:tss][transition:addition][transition:removal]") {
     const auto graph = [](wp<TSD<i64, TS<i64>>> values) { return operators::keys_(values); };
 
-    const auto actual = bg::run_graph(
-        graph, bg::input<TSD<i64, TS<i64>>>(
+    const auto actual = hg::run_graph(
+        graph, hg::input<TSD<i64, TS<i64>>>(
                    {{}, {{1, 10}, {2, 20}}, {{1, 11}}, {{3, 30}, {2, literal::REMOVE}},
                     {{1, literal::REMOVE}, {3, literal::REMOVE}}}));
 
@@ -71,13 +71,13 @@ TEST_CASE("keys_(valid_items) follows item validity and dictionary validity",
         return operators::valid(operators::keys_(valid_items(current)));
     };
 
-    const auto input = bg::input<TSD<i64, TS<i64>>>(
+    const auto input = hg::input<TSD<i64, TS<i64>>>(
         {{{1, literal::INVALID}}, {{1, 10}}, {{2, literal::INVALID}}, {{1, literal::INVALID}},
          {{1, literal::REMOVE}}, {{3, 30}}, literal::SKIP, {{4, 40}}});
-    CHECK(bg::run_graph(graph, input)
+    CHECK(hg::run_graph(graph, input)
               .equals({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, literal::SKIP, {3}, literal::SKIP, {4}}));
-    CHECK(bg::run_graph(validity_graph, bg::input<TS<bool>>({true, false, true}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP}))
+    CHECK(hg::run_graph(validity_graph, hg::input<TS<bool>>({true, false, true}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP}))
               .equals<bool>({true, false, true}));
 }
 
@@ -99,12 +99,12 @@ TEST_CASE("keys_ reconciles scalar dictionary membership and values_ preserves d
         return sum_list(operators::values_(dictionary));
     };
 
-    CHECK(bg::run_graph(keys, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}})
+    CHECK(hg::run_graph(keys, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}})
               .equals({{1, 2}, {3, literal::REMOVED(1)}, {literal::REMOVED(2), literal::REMOVED(3)}}));
-    CHECK(bg::run_graph(keys, bg::input<TS<Dict<i64, i64>>>({{}, {}, {{1, 7}}, {{1, 7}}}))
+    CHECK(hg::run_graph(keys, hg::input<TS<Dict<i64, i64>>>({{}, {}, {{1, 7}}, {{1, 7}}}))
               .equals({{}, literal::SKIP, {1}, literal::SKIP}));
-    CHECK(bg::run_graph(value_count, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}}).equals<i64>({2, 2, 0}));
-    CHECK(bg::run_graph(value_sum, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}}).equals<i64>({14, 14, 0}));
+    CHECK(hg::run_graph(value_count, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}}).equals<i64>({2, 2, 0}));
+    CHECK(hg::run_graph(value_sum, {{{1, 7}, {2, 7}}, {{2, 7}, {3, 7}}, {}}).equals<i64>({14, 14, 0}));
 }
 
 TEST_CASE("values_ snapshots valid TSD items and tracks distinct values incrementally",
@@ -127,13 +127,13 @@ TEST_CASE("values_ snapshots valid TSD items and tracks distinct values incremen
     const auto distinct_values = [](wp<TSD<i64, TS<i64>>> dictionary) {
         return operators::values_[type<TSS<i64>>](dictionary);
     };
-    const auto input = bg::input<TSD<i64, TS<i64>>>(
+    const auto input = hg::input<TSD<i64, TS<i64>>>(
         {{{1, 10}, {2, 10}, {3, 20}}, {{1, 20}, {3, 10}}, {{2, 20}}, {{3, literal::REMOVE}},
          {{1, literal::REMOVE}, {2, literal::REMOVE}}});
 
-    CHECK(bg::run_graph(value_count, input).equals<i64>({3, 3, 3, 2, 0}));
-    CHECK(bg::run_graph(value_sum, input).equals<i64>({40, 40, 50, 40, 0}));
-    CHECK(bg::run_graph(distinct_values, input)
+    CHECK(hg::run_graph(value_count, input).equals<i64>({3, 3, 3, 2, 0}));
+    CHECK(hg::run_graph(value_sum, input).equals<i64>({40, 40, 50, 40, 0}));
+    CHECK(hg::run_graph(distinct_values, input)
               .equals({{10, 20}, literal::SKIP, literal::SKIP, {literal::REMOVED(10)},
                        {literal::REMOVED(20)}}));
 }
@@ -151,14 +151,14 @@ TEST_CASE("values_ handles TSD item and root validity transitions",
             selected, dictionary, operators::nothing[type<TSD<i64, TS<i64>>>]());
         return operators::values_[type<TSS<i64>>](current);
     };
-    const auto selection = bg::input<TS<bool>>({true, true, true, true, true, false, true});
-    const auto dictionary = bg::input<TSD<i64, TS<i64>>>(
+    const auto selection = hg::input<TS<bool>>({true, true, true, true, true, false, true});
+    const auto dictionary = hg::input<TSD<i64, TS<i64>>>(
         {{{1, 10}, {2, 10}}, {{1, literal::INVALID}}, {{2, literal::INVALID}}, {{1, 10}},
          {{1, literal::REMOVE}}, literal::SKIP, {}});
 
-    CHECK(bg::run_graph(value_count, selection, dictionary).equals<i64>(
+    CHECK(hg::run_graph(value_count, selection, dictionary).equals<i64>(
               {2, 1, 0, 1, 0, std::nullopt, 0}));
-    CHECK(bg::run_graph(distinct_values, selection, dictionary)
+    CHECK(hg::run_graph(distinct_values, selection, dictionary)
               .equals({{10}, literal::SKIP, {literal::REMOVED(10)}, {10}, {literal::REMOVED(10)},
                        literal::INVALID, {}}));
 }
@@ -184,12 +184,12 @@ TEST_CASE("values_ follows a selected dictionary reference when its target chang
                            .as<TSS<i64>>());
     };
 
-    const auto condition = bg::input<TS<bool>>({true, false, true});
-    const auto first = bg::input<TSD<i64, TS<i64>>>({{{1, 10}}});
-    const auto second = bg::input<TSD<i64, TS<i64>>>({{{1, 100}}});
-    CHECK(bg::run_graph(graph, condition, first, second)
+    const auto condition = hg::input<TS<bool>>({true, false, true});
+    const auto first = hg::input<TSD<i64, TS<i64>>>({{{1, 10}}});
+    const auto second = hg::input<TSD<i64, TS<i64>>>({{{1, 100}}});
+    CHECK(hg::run_graph(graph, condition, first, second)
               .equals<i64>({10, 100, 10}));
-    CHECK(bg::run_graph(distinct_graph, condition, first, second).equals<i64>({10, 100, 10}));
+    CHECK(hg::run_graph(distinct_graph, condition, first, second).equals<i64>({10, 100, 10}));
 }
 
 TEST_CASE("values_ adapts dictionary references and follows item invalidation and revalidation",
@@ -205,9 +205,9 @@ TEST_CASE("values_ adapts dictionary references and follows item invalidation an
         return operators::values_[type<TSS<i64>>](make_references(value));
     };
 
-    const auto input = bg::input<TS<i64>>({10, literal::INVALID, 20});
-    CHECK(bg::run_graph(count_values, input).equals<i64>({1, 0, 1}));
-    CHECK(bg::run_graph(distinct_values, input).equals({{10}, {literal::REMOVED(10)}, {20}}));
+    const auto input = hg::input<TS<i64>>({10, literal::INVALID, 20});
+    CHECK(hg::run_graph(count_values, input).equals<i64>({1, 0, 1}));
+    CHECK(hg::run_graph(distinct_values, input).equals({{10}, {literal::REMOVED(10)}, {20}}));
 }
 
 TEST_CASE("values_ retains owned string values across dictionary updates",
@@ -221,10 +221,10 @@ TEST_CASE("values_ retains owned string values across dictionary updates",
     const auto first = std::string{"a distinct string value that does not fit in a small string buffer"};
     const auto second = std::string{"another distinct string value that does not fit in a small string buffer"};
 
-    CHECK(bg::run_graph(graph, bg::input<TS<Dict<i64, string>>>({{{1, "first"}}, {{1, "updated"}}, {}}))
+    CHECK(hg::run_graph(graph, hg::input<TS<Dict<i64, string>>>({{{1, "first"}}, {{1, "updated"}}, {}}))
               .equals<string>({"first", "updated", ""}));
-    const auto actual = bg::run_graph(
-        distinct_graph, bg::input<TSD<i64, TS<string>>>({{{1, first}, {2, first}}, {{1, second}},
+    const auto actual = hg::run_graph(
+        distinct_graph, hg::input<TSD<i64, TS<string>>>({{{1, first}, {2, first}}, {{1, second}},
                                                           {{2, literal::REMOVE}}, {{1, literal::REMOVE}}}));
     CHECK(actual.equals({{first}, {second}, {literal::REMOVED(first)}, {literal::REMOVED(second)}}));
 }
@@ -269,14 +269,14 @@ TEST_CASE("values_ propagates guarantees and rejects incompatible explicit outpu
         CHECK(&values.type() == &TSS<i64, TimeSeriesGuarantee::final>::type());
     };
 
-    CHECK(bg::run_graph(scalar_values, bg::input<TS<Dict<i64, i64>>>({{{1, 10}}})).equals({{10}}));
-    CHECK_THROWS_AS(bg::run_graph(wrong_scalar_values, bg::input<TS<Dict<i64, i64>>>({{{1, 10}}})),
+    CHECK(hg::run_graph(scalar_values, hg::input<TS<Dict<i64, i64>>>({{{1, 10}}})).equals({{10}}));
+    CHECK_THROWS_AS(hg::run_graph(wrong_scalar_values, hg::input<TS<Dict<i64, i64>>>({{{1, 10}}})),
                     WiringError);
-    CHECK_THROWS_AS(bg::run_graph(wrong_tsd_list, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
-    CHECK_THROWS_AS(bg::run_graph(wrong_tsd_set, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
-    CHECK_THROWS_AS(bg::run_graph(stronger_tsd_list, bg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
-    const auto nested_list_input = bg::input<TSD<i64, TS<List<i64>>>>({{{1, {10, 20}}}});
-    CHECK(bg::run_graph(non_hashable_values, nested_list_input).equals<i64>({1}));
+    CHECK_THROWS_AS(hg::run_graph(wrong_tsd_list, hg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(wrong_tsd_set, hg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(stronger_tsd_list, hg::input<TSD<i64, TS<i64>>>({{{1, 10}}})), WiringError);
+    const auto nested_list_input = hg::input<TSD<i64, TS<List<i64>>>>({{{1, {10, 20}}}});
+    CHECK(hg::run_graph(non_hashable_values, nested_list_input).equals<i64>({1}));
     testing::test_wiring(final_list);
     testing::test_wiring(ordinary_list);
     testing::test_wiring(final_set);
@@ -296,15 +296,15 @@ TEST_CASE("index_of accepts scalar and time-series needles for lists and fixed T
     const auto tsl_series = [](wp<TSL<TS<i64>, 3>> values, wp<TS<i64>> item) {
         return operators::index_of(values, item);
     };
-    const auto lists = bg::input<TS<List<i64>>>({{1, 2, 2}, {3, 2}, {}});
-    const auto tsl = bg::input<TSL<TS<i64>, 3>>(
+    const auto lists = hg::input<TS<List<i64>>>({{1, 2, 2}, {3, 2}, {}});
+    const auto tsl = hg::input<TSL<TS<i64>, 3>>(
         {{{0, 10}, {1, literal::INVALID}, {2, 20}}, {{0, 20}, {2, 20}},
          {{0, literal::INVALID}, {1, 10}, {2, literal::INVALID}}});
 
-    CHECK(bg::run_graph(list_scalar, lists).equals<i64>({1, 1, -1}));
-    CHECK(bg::run_graph(list_series, lists, input<TS<i64>>({2, 3, 1})).equals<i64>({1, 0, -1}));
-    CHECK(bg::run_graph(tsl_scalar, tsl).equals<i64>({2, 0, -1}));
-    CHECK(bg::run_graph(tsl_series, tsl, input<TS<i64>>({20, 10, 1})).equals<i64>({2, -1, -1}));
+    CHECK(hg::run_graph(list_scalar, lists).equals<i64>({1, 1, -1}));
+    CHECK(hg::run_graph(list_series, lists, input<TS<i64>>({2, 3, 1})).equals<i64>({1, 0, -1}));
+    CHECK(hg::run_graph(tsl_scalar, tsl).equals<i64>({2, 0, -1}));
+    CHECK(hg::run_graph(tsl_series, tsl, input<TS<i64>>({20, 10, 1})).equals<i64>({2, -1, -1}));
 }
 
 TEST_CASE("len_ and is_empty accept valid TSD items",
@@ -314,33 +314,33 @@ TEST_CASE("len_ and is_empty accept valid TSD items",
     const auto physical_length = [](wp<TSD<i64, TS<i64>>> values) { return operators::len_(values); };
     const auto physical_empty = [](wp<TSD<i64, TS<i64>>> values) { return operators::is_empty(values); };
 
-    const auto input = bg::input<TSD<i64, TS<i64>>>(
+    const auto input = hg::input<TSD<i64, TS<i64>>>(
         {{{1, 10}, {2, literal::INVALID}}, {{2, 20}}, {{1, literal::INVALID}}, {{3, 30}},
          {{1, literal::REMOVE}, {2, literal::REMOVE}, {3, literal::REMOVE}}});
-    CHECK(bg::run_graph(length, input).equals<i64>({1, 2, 1, 2, 0}));
-    CHECK(bg::run_graph(empty, input).equals<bool>({false, false, false, false, true}));
-    CHECK(bg::run_graph(physical_length, input).equals<i64>({2, std::nullopt, std::nullopt, 3, 0}));
-    CHECK(bg::run_graph(physical_empty, input).equals<bool>({false, std::nullopt, std::nullopt, false, true}));
+    CHECK(hg::run_graph(length, input).equals<i64>({1, 2, 1, 2, 0}));
+    CHECK(hg::run_graph(empty, input).equals<bool>({false, false, false, false, true}));
+    CHECK(hg::run_graph(physical_length, input).equals<i64>({2, std::nullopt, std::nullopt, 3, 0}));
+    CHECK(hg::run_graph(physical_empty, input).equals<bool>({false, std::nullopt, std::nullopt, false, true}));
 }
 
 TEST_CASE("valid-item collection queries ignore value-only updates",
           "[feature:operator][series:tsd][input-guarantee:valid-items][transition:update]") {
     const auto length = [](wp<TSD<i64, TS<i64>>> values) { return operators::len_(valid_items(values)); };
     const auto empty = [](wp<TSD<i64, TS<i64>>> values) { return operators::is_empty(valid_items(values)); };
-    const auto input = bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, 11}}, {{1, 12}}});
+    const auto input = hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, {{1, 11}}, {{1, 12}}});
 
-    CHECK(bg::run_graph(length, input).equals<i64>({1, std::nullopt, std::nullopt}));
-    CHECK(bg::run_graph(empty, input).equals<bool>({false, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(length, input).equals<i64>({1, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(empty, input).equals<bool>({false, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("TSD query results retain scalar types for string items",
           "[feature:operator][series:tsd][scalar:i64][scalar:boolean][scalar:string]") {
     const auto length = [](wp<TSD<i64, TS<string>>> values) { return operators::len_(valid_items(values)); };
     const auto empty = [](wp<TSD<i64, TS<string>>> values) { return operators::is_empty(valid_items(values)); };
-    const auto input = bg::input<TSD<i64, TS<string>>>({{{1, "one"}, {2, literal::INVALID}}, {{2, "two"}}});
+    const auto input = hg::input<TSD<i64, TS<string>>>({{{1, "one"}, {2, literal::INVALID}}, {{2, "two"}}});
 
-    CHECK(bg::run_graph(length, input).equals<i64>({1, 2}));
-    CHECK(bg::run_graph(empty, input).equals<bool>({false, false}));
+    CHECK(hg::run_graph(length, input).equals<i64>({1, 2}));
+    CHECK(hg::run_graph(empty, input).equals<bool>({false, false}));
 }
 
 TEST_CASE("TSD set operators select keys from physical membership",
@@ -358,16 +358,16 @@ TEST_CASE("TSD set operators select keys from physical membership",
         return operators::keys_(lhs ^ rhs);
     };
 
-    const auto lhs = bg::input<TSD<i64, TS<i64>>>(
+    const auto lhs = hg::input<TSD<i64, TS<i64>>>(
         {{{1, 10}, {2, 20}}, {{1, 11}, {3, 30}, {2, literal::REMOVE}}, {{4, 40}}});
-    const auto rhs = bg::input<TSD<i64, TS<i64>>>(
+    const auto rhs = hg::input<TSD<i64, TS<i64>>>(
         {{{2, 200}, {3, 300}}, {{2, 201}, {4, 400}}, {{3, literal::REMOVE}}});
 
-    CHECK(bg::run_graph(intersection, lhs, rhs)
+    CHECK(hg::run_graph(intersection, lhs, rhs)
               .equals({{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}}));
-    CHECK(bg::run_graph(difference, lhs, rhs).equals({{1}, literal::SKIP, {3}}));
-    CHECK(bg::run_graph(union_, lhs, rhs).equals({{1, 2, 3}, {4}, literal::SKIP}));
-    CHECK(bg::run_graph(symmetric_difference, lhs, rhs)
+    CHECK(hg::run_graph(difference, lhs, rhs).equals({{1}, literal::SKIP, {3}}));
+    CHECK(hg::run_graph(union_, lhs, rhs).equals({{1, 2, 3}, {4}, literal::SKIP}));
+    CHECK(hg::run_graph(symmetric_difference, lhs, rhs)
               .equals({{1, 3}, {2, 4, literal::REMOVED(3)}, {3, literal::REMOVED(4)}}));
 }
 
@@ -390,22 +390,22 @@ TEST_CASE("TSD set operators use valid-item membership and gate invalid roots",
         return operators::valid(valid_items(current_lhs) ^ rhs);
     };
 
-    const auto lhs = bg::input<TSD<i64, TS<i64>>>(
+    const auto lhs = hg::input<TSD<i64, TS<i64>>>(
         {{{1, 10}, {2, literal::INVALID}, {3, 30}}, {{2, 20}}, {{1, literal::INVALID}},
          {{2, literal::REMOVE}}, {{4, 40}}});
-    const auto rhs = bg::input<TSD<i64, TS<i64>>>(
+    const auto rhs = hg::input<TSD<i64, TS<i64>>>(
         {{{2, 200}, {3, 300}}, {{1, 100}}, {{3, literal::REMOVE}}, {{5, 500}}, literal::SKIP});
 
-    CHECK(bg::run_graph(intersection, lhs, rhs)
+    CHECK(hg::run_graph(intersection, lhs, rhs)
               .equals({{3}, {1, 2}, {literal::REMOVED(1), literal::REMOVED(3)}, {literal::REMOVED(2)},
                        literal::SKIP}));
-    CHECK(bg::run_graph(difference, lhs, rhs)
+    CHECK(hg::run_graph(difference, lhs, rhs)
               .equals({{1}, {literal::REMOVED(1)}, {3}, literal::SKIP, {4}}));
-    CHECK(bg::run_graph(union_, lhs, rhs)
+    CHECK(hg::run_graph(union_, lhs, rhs)
               .equals({{1, 2, 3}, literal::SKIP, literal::SKIP, {5}, {4}}));
-    CHECK(bg::run_graph(validity, bg::input<TS<bool>>({true, false, true, false}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
-                        bg::input<TSD<i64, TS<i64>>>({{{2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}))
+    CHECK(hg::run_graph(validity, hg::input<TS<bool>>({true, false, true, false}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+                        hg::input<TSD<i64, TS<i64>>>({{{2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}))
               .equals<bool>({true, false, true, false}));
 }
 
@@ -424,17 +424,17 @@ TEST_CASE("TSD set operators preserve valid empty roots and filter invalid left 
         return operators::valid((valid_items(lhs) | valid_items(rhs))[i64{1}]);
     };
 
-    CHECK(bg::run_graph(valid_empty, bg::input<TSD<i64, TS<i64>>>({{}}),
-                        bg::input<TSD<i64, TS<i64>>>({{}}))
+    CHECK(hg::run_graph(valid_empty, hg::input<TSD<i64, TS<i64>>>({{}}),
+                        hg::input<TSD<i64, TS<i64>>>({{}}))
               .equals<bool>({true}));
-    CHECK(bg::run_graph(physical_left, bg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
+    CHECK(hg::run_graph(physical_left, hg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
               .equals<bool>({false}));
-    CHECK(bg::run_graph(filtered_left, bg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
+    CHECK(hg::run_graph(filtered_left, hg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
               .equals<bool>({true}));
-    CHECK(bg::run_graph(both_filtered, bg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
+    CHECK(hg::run_graph(both_filtered, hg::input<TSD<i64, TS<i64>>>({{{1, literal::INVALID}}}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}}))
               .equals<bool>({true}));
 }
 
@@ -489,10 +489,10 @@ TEST_CASE("TSD reference union follows a retarget with unchanged keys",
         return operators::sum_(lhs | operators::if_then_else(select_first, first, second));
     };
 
-    CHECK(bg::run_graph(sum, bg::input<TS<bool>>({true, false}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP}),
-                        bg::input<TSD<i64, TS<i64>>>({{{2, 20}}, literal::SKIP}),
-                        bg::input<TSD<i64, TS<i64>>>({{{2, 200}}, literal::SKIP}))
+    CHECK(hg::run_graph(sum, hg::input<TS<bool>>({true, false}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP}),
+                        hg::input<TSD<i64, TS<i64>>>({{{2, 20}}, literal::SKIP}),
+                        hg::input<TSD<i64, TS<i64>>>({{{2, 200}}, literal::SKIP}))
               .equals<i64>({30, 210}));
 }
 
@@ -509,12 +509,12 @@ TEST_CASE("TSD set operators support reference and nested items",
         return operators::keys_(lhs | rhs);
     };
 
-    CHECK(bg::run_graph(reference_sum, bg::input<TS<i64>>({10, 11}),
-                        bg::input<TS<i64>>({100, 200}))
+    CHECK(hg::run_graph(reference_sum, hg::input<TS<i64>>({10, 11}),
+                        hg::input<TS<i64>>({100, 200}))
               .equals<i64>({10, 11}));
-    CHECK(bg::run_graph(nested_keys,
-                        bg::input<TSD<i64, TSD<i64, TS<i64>>>>({{{1, {{2, 20}}}}, {{2, {{3, 30}}}}}),
-                        bg::input<TSD<i64, TSD<i64, TS<i64>>>>({{{3, {{4, 40}}}}, literal::SKIP}))
+    CHECK(hg::run_graph(nested_keys,
+                        hg::input<TSD<i64, TSD<i64, TS<i64>>>>({{{1, {{2, 20}}}}, {{2, {{3, 30}}}}}),
+                        hg::input<TSD<i64, TSD<i64, TS<i64>>>>({{{3, {{4, 40}}}}, literal::SKIP}))
               .equals({{1, 3}, {2}}));
 }
 
@@ -547,14 +547,14 @@ TEST_CASE("keys_ follows a selected dictionary reference through switching and i
         return operators::valid(operators::keys_(operators::if_then_else(condition, left, right)));
     };
 
-    const auto actual = bg::run_graph(
-        graph, bg::input<TS<bool>>({true, true, false, literal::INVALID, true}),
-        bg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
-        bg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
-    const auto validity = bg::run_graph(
-        valid_graph, bg::input<TS<bool>>({true, true, false, literal::INVALID, true}),
-        bg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
-        bg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
+    const auto actual = hg::run_graph(
+        graph, hg::input<TS<bool>>({true, true, false, literal::INVALID, true}),
+        hg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        hg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
+    const auto validity = hg::run_graph(
+        valid_graph, hg::input<TS<bool>>({true, true, false, literal::INVALID, true}),
+        hg::input<TSD<i64, TS<i64>>>({{}, {{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        hg::input<TSD<i64, TS<i64>>>({{}, literal::SKIP, {{8, 80}}, literal::SKIP, literal::SKIP}));
 
     CHECK(actual.equals({{}, {1, 2}, {8, literal::REMOVED(1), literal::REMOVED(2)}, literal::INVALID, {1, 2}}));
     CHECK(validity.equals<bool>({true, std::nullopt, std::nullopt, false, true}));
@@ -572,14 +572,14 @@ TEST_CASE("keys_ follows an initially invalid selected dictionary as it becomes 
         return operators::valid(operators::keys_(operators::if_then_else(condition, left, right)));
     };
 
-    const auto actual = bg::run_graph(
-        graph, bg::input<TS<bool>>({true, false, false, false}),
-        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
-        bg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
-    const auto validity = bg::run_graph(
-        valid_graph, bg::input<TS<bool>>({true, false, false, false}),
-        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
-        bg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
+    const auto actual = hg::run_graph(
+        graph, hg::input<TS<bool>>({true, false, false, false}),
+        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        hg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
+    const auto validity = hg::run_graph(
+        valid_graph, hg::input<TS<bool>>({true, false, false, false}),
+        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP}),
+        hg::input<TSD<i64, TS<i64>>>({literal::SKIP, literal::SKIP, {}, {{8, 80}}}));
 
     CHECK(actual.equals({{1}, literal::INVALID, {}, {8}}));
     CHECK(validity.equals<bool>({true, false, true, std::nullopt}));
@@ -597,7 +597,7 @@ TEST_CASE("keys_ preserves the dictionary key-set guarantee",
         return keys;
     };
 
-    CHECK(bg::run_graph(graph).equals({{1}}));
+    CHECK(hg::run_graph(graph).equals({{1}}));
 }
 
 TEST_CASE("keys_where_true follows invalidation and revalidation of a referenced mask item",
@@ -612,8 +612,8 @@ TEST_CASE("keys_where_true follows invalidation and revalidation of a referenced
         return operators::keys_where_true(make_mask(first, second));
     };
 
-    const auto actual = bg::run_graph(graph, bg::input<TS<bool>>({true, literal::INVALID, true}),
-                                      bg::input<TS<bool>>({false, false, false}));
+    const auto actual = hg::run_graph(graph, hg::input<TS<bool>>({true, literal::INVALID, true}),
+                                      hg::input<TS<bool>>({false, false, false}));
 
     CHECK(actual.equals({{1}, {literal::REMOVED(1)}, {1}}));
 }
@@ -631,9 +631,9 @@ TEST_CASE("keys_where_true clears its result when the mask reference becomes inv
         return operators::keys_where_true(select_mask(choose_valid, mask, invalid_mask()));
     };
 
-    const auto actual = bg::run_graph(
-        graph, bg::input<TS<bool>>({false, true, false, true}),
-        bg::input<TSD<i64, TS<bool>>>({{{1, true}}, literal::SKIP, literal::SKIP, literal::SKIP}));
+    const auto actual = hg::run_graph(
+        graph, hg::input<TS<bool>>({false, true, false, true}),
+        hg::input<TSD<i64, TS<bool>>>({{{1, true}}, literal::SKIP, literal::SKIP, literal::SKIP}));
 
     CHECK(actual.equals({literal::SKIP, {1}, {literal::REMOVED(1)}, {1}}));
 }
@@ -776,7 +776,7 @@ TEST_CASE("len_ of a fixed TSL is a wiring-time constant",
         return operators::len_("value"_n = tsl(values));
     };
 
-    CHECK(bg::run_graph(graph).equals<i64>({3}));
+    CHECK(hg::run_graph(graph).equals<i64>({3}));
 
     auto wiring = GraphWiring{};
     auto result = WiringPoint{};
@@ -809,14 +809,14 @@ TEST_CASE("len_ of a fixed TSB is a wiring-time constant",
         return operators::len_("value"_n = values);
     };
 
-    CHECK(bg::run_graph(graph).equals<i64>({2}));
+    CHECK(hg::run_graph(graph).equals<i64>({2}));
 }
 
 TEST_CASE("len_ does not turn an invalid TSS into a valid empty set",
           "[feature:operator][series:tss][scalar:i64][validity:required][transition:first-tick]") {
     const auto graph = [](wp<TSS<i64>> values) { return operators::len_("value"_n = values); };
 
-    CHECK(bg::run_graph(graph, {literal::SKIP, {}}).equals<i64>({std::nullopt, 0}));
+    CHECK(hg::run_graph(graph, {literal::SKIP, {}}).equals<i64>({std::nullopt, 0}));
 }
 
 TEST_CASE("contains_ on a TSS queries the current key set",
@@ -825,7 +825,7 @@ TEST_CASE("contains_ on a TSS queries the current key set",
         return operators::contains_("collection"_n = collection, "key"_n = i64{1});
     };
 
-    CHECK(bg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}, {1}}).equals<bool>({true, false, true}));
+    CHECK(hg::run_graph(graph, {{1}, {2, literal::REMOVED(1)}, {1}}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("contains_ distinguishes an invalid TSS from a valid empty TSS",
@@ -834,7 +834,7 @@ TEST_CASE("contains_ distinguishes an invalid TSS from a valid empty TSS",
         return operators::contains_("collection"_n = collection, "key"_n = i64{1});
     };
 
-    CHECK(bg::run_graph(graph, {literal::SKIP, {}}).equals<bool>({std::nullopt, false}));
+    CHECK(hg::run_graph(graph, {literal::SKIP, {}}).equals<bool>({std::nullopt, false}));
 }
 
 TEST_CASE("contains_ on a TSS accepts a time-series key",
@@ -843,7 +843,7 @@ TEST_CASE("contains_ on a TSS accepts a time-series key",
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    CHECK(bg::run_graph(graph, {{1}, {2}}, {1, 2}).equals<bool>({true, true}));
+    CHECK(hg::run_graph(graph, {{1}, {2}}, {1, 2}).equals<bool>({true, true}));
 }
 
 TEST_CASE("contains_ on a TSD distinguishes key presence from valid item presence",
@@ -855,9 +855,9 @@ TEST_CASE("contains_ on a TSD distinguishes key presence from valid item presenc
     const auto valid_item_contains = [](wp<TSD<i64, TS<i64>>> collection) {
         return operators::contains_("collection"_n = valid_items(collection), "key"_n = i64{7});
     };
-    CHECK(bg::run_graph(physical, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+    CHECK(hg::run_graph(physical, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
               .equals<bool>({true, std::nullopt, std::nullopt}));
-    CHECK(bg::run_graph(valid_item_contains, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
+    CHECK(hg::run_graph(valid_item_contains, {{{7, 70}}, {{7, literal::INVALID}}, {{7, 71}}})
               .equals<bool>({true, false, true}));
 }
 
@@ -882,10 +882,10 @@ TEST_CASE("valid-item TSD membership uses REF item validity, not target validity
             return observe(make_dictionary(command, target_value));
         };
         Definition::evaluation_count = 0;
-        auto actual = bg::run_graph(
+        auto actual = hg::run_graph(
             graph,
-            bg::input<TS<i64>>({literal::INVALID, i64{10}, i64{20}, literal::INVALID, literal::INVALID, i64{30}}),
-            bg::input<TS<i64>>({0, 3, 3, 1, 2, 3}));
+            hg::input<TS<i64>>({literal::INVALID, i64{10}, i64{20}, literal::INVALID, literal::INVALID, i64{30}}),
+            hg::input<TS<i64>>({0, 3, 3, 1, 2, 3}));
         return std::pair{std::move(actual), Definition::evaluation_count};
     };
 
@@ -907,7 +907,7 @@ TEST_CASE("an aggregate can bind a dynamic reference and dynamic value input tog
         return observe(values, keys, key, i64{0});
     };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}, {{1, 10}}},
+    const auto actual = hg::run_graph(graph, {{{1, 10}}, {{1, 10}}, {{1, 10}}},
                                             {{1}, {literal::REMOVED(1)}, {1}}, {1, 1, 1});
 
     CHECK(actual.equals<bool>({true, false, true}));
@@ -922,7 +922,7 @@ TEST_CASE("a TSD membership binding ignores unrelated keys and item updates",
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
     Definition::evaluation_count = 0;
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{7, 70}}, {{8, 80}}, {{7, literal::INVALID}}, {{7, literal::REMOVE}}, {{7, 71}}, {{8, 81}}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, std::nullopt, false, true, std::nullopt}));
@@ -978,7 +978,7 @@ TEST_CASE("TSD membership supports shared consumers and release followed by rebi
         return observe(collection, key, first_active, second_active);
     };
 
-    const auto actual = bg::run_graph(graph,
+    const auto actual = hg::run_graph(graph,
                                             {{{7, 70}}, {{7, 70}}, {{7, 70}}, {{7, literal::REMOVE}},
                                              literal::SKIP, literal::SKIP, {{7, 71}}},
                                             {7, 7, 7, 7, 7, 7, 7},
@@ -995,7 +995,7 @@ TEST_CASE("a failed dynamic membership subscription preserves the previous bindi
 
     const auto graph = [&](wp<TSD<i64, TS<i64>>> collection) { return observe(collection); };
 
-    CHECK(bg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(graph, {{{7, 70}}, {{7, literal::REMOVE}}}).equals<bool>({true, false}));
 }
 
 TEST_CASE("absent TSD membership key churn releases unused descriptors while the graph is alive",
@@ -1057,7 +1057,7 @@ TEST_CASE("valid-item TSD membership observes selected item validity only",
     const auto graph = [&](wp<TSD<i64, TS<i64>>> input) { return observe(input); };
     Definition::evaluation_count = 0;
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {{{7, 70}}, {{8, 80}}, {{7, literal::INVALID}}, {{8, 81}}, {{7, 71}}});
 
     CHECK(actual.equals<bool>({true, std::nullopt, false, std::nullopt, true}));
@@ -1071,7 +1071,7 @@ TEST_CASE("contains_ on a TSD handles an invalid and revalidated time-series key
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    const auto actual = bg::run_graph(graph, {{{7, 70}}, {{7, 70}}, {{7, 70}}}, {7, literal::INVALID, 7});
+    const auto actual = hg::run_graph(graph, {{{7, 70}}, {{7, 70}}, {{7, 70}}}, {7, literal::INVALID, 7});
 
     CHECK(actual.equals({true, literal::INVALID, true}));
 }
@@ -1082,7 +1082,7 @@ TEST_CASE("contains_ accepts an unchanged ordinary time-series key",
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    const auto actual = bg::run_graph(graph, {{{7, 70}}, {{7, 70}}}, {7, 7});
+    const auto actual = hg::run_graph(graph, {{{7, 70}}, {{7, 70}}}, {7, 7});
 
     CHECK(actual.equals<bool>({true, true}));
 }
@@ -1093,7 +1093,7 @@ TEST_CASE("contains_ follows a time-series key through absent-key churn",
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    const auto actual = bg::run_graph(graph,
+    const auto actual = hg::run_graph(graph,
                                             {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP,
                                              literal::SKIP, literal::SKIP},
                                             {8, 9, 8, 7, 9, 7});
@@ -1110,7 +1110,7 @@ TEST_CASE("contains_ follows a selected TSD reference when membership is unchang
         return operators::contains_("collection"_n = selected, "key"_n = i64{7});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         graph, {true, false, true, false, true, false, true},
         {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
          {{7, literal::REMOVE}}},
@@ -1147,7 +1147,7 @@ TEST_CASE("contains_ follows a stable nested TSD reference when its backing chan
         return operators::contains_("collection"_n = observed, "key"_n = i64{7});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, {false, true, false, true}, {{{7, 70}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {{}, literal::SKIP, literal::SKIP, literal::SKIP});
 
@@ -1178,7 +1178,7 @@ TEST_CASE("TSD membership resubscribes when its switch branch is recreated",
     };
 
     Definition::evaluation_count = 0;
-    const auto actual = bg::run_graph(tested, {1, 2, 1, 2, 1}, {10, 20, 30, 40, 50});
+    const auto actual = hg::run_graph(tested, {1, 2, 1, 2, 1}, {10, 20, 30, 40, 50});
 
     CHECK(actual.equals<bool>({true, false, true, false, true}));
     CHECK(Definition::evaluation_count == 3);
@@ -1189,10 +1189,10 @@ TEST_CASE("is_empty observes required and optional TSS membership",
           "[transition:first-tick][transition:invalidation][transition:revalidation]") {
     const auto required = [](wp<TSS<i64>> values) { return operators::is_empty(values); };
     const auto optional = [](wp<TSS<i64>> values) { return operators::is_empty(opt(values)); };
-    CHECK(bg::run_graph(required, bg::input<TSS<i64>>(
+    CHECK(hg::run_graph(required, hg::input<TSS<i64>>(
                                            {literal::SKIP, {}, {1}, {literal::REMOVED(1)}}))
               .equals<bool>({std::nullopt, true, false, true}));
-    CHECK(bg::run_graph(optional, bg::input<TSS<i64>>(
+    CHECK(hg::run_graph(optional, hg::input<TSS<i64>>(
                                            {literal::SKIP, {}, {1}, {literal::REMOVED(1)}}))
               .equals<bool>({std::nullopt, true, false, true}));
 }
@@ -1203,12 +1203,12 @@ TEST_CASE("TSS equality accounts for simultaneous membership changes",
     const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs == rhs; };
     const auto not_equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return operators::ne(lhs, rhs); };
 
-    const auto equal_result = bg::run_graph(
-        equal, bg::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
-        bg::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
-    const auto not_equal_result = bg::run_graph(
-        not_equal, bg::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
-        bg::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
+    const auto equal_result = hg::run_graph(
+        equal, hg::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
+        hg::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
+    const auto not_equal_result = hg::run_graph(
+        not_equal, hg::input<TSS<i64>>({{1}, {2}, {3}, {literal::REMOVED(2)}}),
+        hg::input<TSS<i64>>({{1}, {3}, {2}, {literal::REMOVED(2)}}));
     CHECK(equal_result.equals<bool>({true, false, true, true}));
     CHECK(not_equal_result.equals<bool>({false, true, false, false}));
 }
@@ -1217,11 +1217,11 @@ TEST_CASE("TSS equality preserves mismatch counts across same-cycle key changes"
           "[feature:operator][series:tss][scalar:i64][transition:addition][transition:removal]") {
     const auto equal = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs == rhs; };
 
-    CHECK(bg::run_graph(
+    CHECK(hg::run_graph(
               equal,
-              bg::input<TSS<i64>>({{}, {1}, {2}, {literal::REMOVED(1)}, {literal::REMOVED(2)}, {2},
+              hg::input<TSS<i64>>({{}, {1}, {2}, {literal::REMOVED(1)}, {literal::REMOVED(2)}, {2},
                                         {literal::REMOVED(2)}, literal::SKIP, {3}}),
-              bg::input<TSS<i64>>({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, {2}, literal::SKIP,
+              hg::input<TSS<i64>>({{}, {1}, literal::SKIP, {literal::REMOVED(1)}, {2}, literal::SKIP,
                                         {literal::REMOVED(2)}, {3}, literal::SKIP}))
               .equals<bool>({true, true, false, false, false, true, true, false, true}));
 }
@@ -1233,10 +1233,10 @@ TEST_CASE("TSS equality reconciles after required input invalidation",
         return operators::if_then_else(condition, never_valid, values) == values;
     };
 
-    const auto result = bg::run_graph(
-        equal, bg::input<TS<bool>>({false, true, true, false}),
-        bg::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
-        bg::input<TSS<i64>>({{1}, {1}, {2}, {2}}));
+    const auto result = hg::run_graph(
+        equal, hg::input<TS<bool>>({false, true, true, false}),
+        hg::input<TSS<i64>>({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
+        hg::input<TSS<i64>>({{1}, {1}, {2}, {2}}));
     CHECK(result.equals<bool>({true, std::nullopt, std::nullopt, true}));
 }
 
@@ -1247,8 +1247,8 @@ TEST_CASE("optional TSS equality treats invalid inputs as empty with ordinary ou
         return operators::eq("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
     };
 
-    CHECK(bg::run_graph(equal, bg::input<TSS<i64>>({literal::SKIP, {}, {1}}),
-                              bg::input<TSS<i64>>({{}, {}, {2}}))
+    CHECK(hg::run_graph(equal, hg::input<TSS<i64>>({literal::SKIP, {}, {1}}),
+                              hg::input<TSS<i64>>({{}, {}, {2}}))
               .equals<bool>({true, true, false}));
 }
 
@@ -1282,8 +1282,8 @@ TEST_CASE("TSS equality preserves required guarantees and weakens optional guara
         return required;
     };
 
-    CHECK(bg::run_graph(check_final).equals<bool>({true}));
-    CHECK(bg::run_graph(check_deduplicated, {1, 2}, {1, 3}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(check_final).equals<bool>({true}));
+    CHECK(hg::run_graph(check_deduplicated, {1, 2}, {1, 3}).equals<bool>({true, false}));
 }
 
 TEST_CASE("TSS set operators publish only changes to their result",
@@ -1292,28 +1292,28 @@ TEST_CASE("TSS set operators publish only changes to their result",
     const auto intersection = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs & rhs; };
     const auto difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs - rhs; };
     const auto symmetric_difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs ^ rhs; };
-    CHECK(bg::run_graph(set_union,
-                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(hg::run_graph(set_union,
+                              hg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              hg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1, 2, 3}, literal::SKIP, literal::SKIP, literal::SKIP}));
-    CHECK(bg::run_graph(intersection,
-                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(hg::run_graph(intersection,
+                              hg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              hg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{2}, {3, literal::REMOVED(2)}, {2, literal::REMOVED(3)}, {literal::REMOVED(2)}}));
-    CHECK(bg::run_graph(difference,
-                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(hg::run_graph(difference,
+                              hg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              hg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1}, {2, literal::REMOVED(1)}, {3, literal::REMOVED(2)}, literal::SKIP}));
-    CHECK(bg::run_graph(symmetric_difference,
-                              bg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
+    CHECK(hg::run_graph(symmetric_difference,
+                              hg::input<TSS<i64>>({{1, 2}, {3, literal::REMOVED(1)}, literal::SKIP,
                                                         {literal::REMOVED(2)}}),
-                              bg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
+                              hg::input<TSS<i64>>({{2, 3}, {1, literal::REMOVED(2)}, {2, literal::REMOVED(3)},
                                                         literal::SKIP}))
               .equals({{1, 3}, {2, literal::REMOVED(3)}, {3, literal::REMOVED(2)}, {2}}));
 }
@@ -1324,21 +1324,21 @@ TEST_CASE("TSS set operations handle same-cycle additions, removals, and key mov
     const auto intersection = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs & rhs; };
     const auto difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs - rhs; };
     const auto symmetric_difference = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return lhs ^ rhs; };
-    CHECK(bg::run_graph(set_union, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-                              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+    CHECK(hg::run_graph(set_union, hg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              hg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
                                                         {literal::REMOVED(3)}}))
               .equals({{1}, {2}, {3, literal::REMOVED(2)}, literal::SKIP}));
-    CHECK(bg::run_graph(intersection, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-                              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+    CHECK(hg::run_graph(intersection, hg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              hg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
                                                         {literal::REMOVED(3)}}))
               .equals({{}, {2}, {literal::REMOVED(2)}, literal::SKIP}));
-    CHECK(bg::run_graph(difference, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-                              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
+    CHECK(hg::run_graph(difference, hg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+                              hg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)},
                                                         {literal::REMOVED(3)}}))
               .equals({{1}, literal::SKIP, literal::SKIP, {3}}));
-    CHECK(bg::run_graph(
-              symmetric_difference, bg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
-              bg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)}, {literal::REMOVED(3)}}))
+    CHECK(hg::run_graph(
+              symmetric_difference, hg::input<TSS<i64>>({{1}, {2}, {literal::REMOVED(2)}, {3}}),
+              hg::input<TSS<i64>>({{}, {2}, {3, literal::REMOVED(2)}, {literal::REMOVED(3)}}))
               .equals({{1}, literal::SKIP, {3}, literal::SKIP}));
 }
 
@@ -1379,9 +1379,9 @@ TEST_CASE("TSS set operators propagate guarantees and weaken optional inputs",
         return result;
     };
 
-    CHECK(bg::run_graph(check_final).equals({{1, 2}}));
-    CHECK(bg::run_graph(check_deduplicated).equals({{1, 2}}));
-    CHECK(bg::run_graph(check_const).equals({{2}}));
+    CHECK(hg::run_graph(check_final).equals({{1, 2}}));
+    CHECK(hg::run_graph(check_deduplicated).equals({{1, 2}}));
+    CHECK(hg::run_graph(check_const).equals({{2}}));
 }
 
 TEST_CASE("TSS set operations accept erased wiring points and treat optional invalid sets as empty",
@@ -1391,16 +1391,16 @@ TEST_CASE("TSS set operations accept erased wiring points and treat optional inv
     const auto difference = [](wp<> lhs, wp<> rhs) {
         return operators::sub("lhs"_n = opt(lhs), "rhs"_n = opt(rhs));
     };
-    CHECK(bg::run_graph(set_union, bg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
-                              bg::input<TSS<i64>>({{1}, {2}}))
+    CHECK(hg::run_graph(set_union, hg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              hg::input<TSS<i64>>({{1}, {2}}))
               .equals({literal::SKIP, {1, 2}}));
-    CHECK(bg::run_graph(difference, bg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
-                              bg::input<TSS<i64>>({{1}, {2}}))
+    CHECK(hg::run_graph(difference, hg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              hg::input<TSS<i64>>({{1}, {2}}))
               .equals({{}, literal::SKIP}));
 
     const auto one_optional = [](wp<TSS<i64>> lhs, wp<TSS<i64>> rhs) { return opt(lhs) | rhs; };
-    CHECK(bg::run_graph(one_optional, bg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
-                              bg::input<TSS<i64>>({{1}, {2}}))
+    CHECK(hg::run_graph(one_optional, hg::input<TSS<i64>>({literal::SKIP, {1, 2}}),
+                              hg::input<TSS<i64>>({{1}, {2}}))
               .equals({{1}, {2}}));
 }
 
@@ -1417,7 +1417,7 @@ TEST_CASE("TSS set operations invalidate while a required reference is invalid",
         return select(phase, populated, invalid) | rhs;
     };
 
-    CHECK(bg::run_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP},
+    CHECK(hg::run_graph(graph, {0, 1, 2, 3}, {{1}, literal::SKIP, literal::SKIP, literal::SKIP},
                               {literal::SKIP},
                               {{2}, {3, literal::REMOVED(2)}, {4, literal::REMOVED(3)}, literal::SKIP})
               .equals({{1, 2}, literal::INVALID, literal::SKIP, {1, 4}}));
@@ -1447,16 +1447,16 @@ TEST_CASE("optional TSS set operations remove an invalid reference contribution"
         return opt(selected) ^ rhs;
     };
 
-    CHECK(bg::run_graph(set_union, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+    CHECK(hg::run_graph(set_union, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
                               {{2}, literal::SKIP, literal::SKIP})
               .equals({{1, 2}, {literal::REMOVED(1)}, {1}}));
-    CHECK(bg::run_graph(intersection, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+    CHECK(hg::run_graph(intersection, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
                               {{2}, literal::SKIP, literal::SKIP})
               .equals({{2}, {literal::REMOVED(2)}, {2}}));
-    CHECK(bg::run_graph(difference, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
+    CHECK(hg::run_graph(difference, {true, false, true}, {{1, 2}, literal::SKIP, literal::SKIP}, {},
                               {{2}, literal::SKIP, literal::SKIP})
               .equals({{1}, {literal::REMOVED(1)}, {1}}));
-    CHECK(bg::run_graph(symmetric_difference, {true, false, true},
+    CHECK(hg::run_graph(symmetric_difference, {true, false, true},
                               {{1, 2}, literal::SKIP, literal::SKIP}, {}, {{2}, literal::SKIP, literal::SKIP})
               .equals({{1}, {2, literal::REMOVED(1)}, {1, literal::REMOVED(2)}}));
 }
@@ -1468,7 +1468,7 @@ TEST_CASE("TSS set operations do not publish when a valid reference selects equa
         return operators::if_then_else(condition, first, second) | rhs;
     };
 
-    CHECK(bg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{1}, literal::SKIP},
+    CHECK(hg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{1}, literal::SKIP},
                               {{2}, literal::SKIP})
               .equals({{1, 2}, literal::SKIP}));
 }
@@ -1480,7 +1480,7 @@ TEST_CASE("TSS set operations include the old target's same-cycle change when a 
         return lhs | operators::if_then_else(condition, old_target, new_target);
     };
 
-    CHECK(bg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, {3, literal::REMOVED(2)}},
+    CHECK(hg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, {3, literal::REMOVED(2)}},
                               {{3}, literal::SKIP})
               .equals({{1, 2}, {3, literal::REMOVED(2)}}));
 }
@@ -1492,7 +1492,7 @@ TEST_CASE("TSS set operations do not replay a stale old-target delta when a refe
         return lhs | operators::if_then_else(condition, old_target, new_target);
     };
 
-    CHECK(bg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, literal::SKIP},
+    CHECK(hg::run_graph(graph, {true, false}, {{1}, literal::SKIP}, {{2}, literal::SKIP},
                               {{3}, literal::SKIP})
               .equals({{1, 2}, {3, literal::REMOVED(2)}}));
 }
@@ -1503,9 +1503,9 @@ TEST_CASE("TSS equality sees same-cycle removals from a sampled previous target"
         return operators::if_then_else(condition, old_target, new_target) == new_target;
     };
 
-    CHECK(bg::run_graph(graph, ticks({true, false}),
-                              bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
-                              bg::input<TSS<i64>>({{3}, literal::SKIP}))
+    CHECK(hg::run_graph(graph, ticks({true, false}),
+                              hg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
+                              hg::input<TSS<i64>>({{3}, literal::SKIP}))
               .equals<bool>({false, true}));
 }
 
@@ -1513,7 +1513,7 @@ TEST_CASE("TSS set operators support string keys",
           "[feature:operator][series:tss][scalar:string][transition:addition][transition:removal]") {
     const auto graph = [](wp<TSS<string>> lhs, wp<TSS<string>> rhs) { return lhs | rhs; };
 
-    CHECK(bg::run_graph(graph, {{"alpha", "beta"}, {literal::REMOVED("alpha"), "gamma"}}, {{"beta"}})
+    CHECK(hg::run_graph(graph, {{"alpha", "beta"}, {literal::REMOVED("alpha"), "gamma"}}, {{"beta"}})
               .equals({{"alpha", "beta"}, {"gamma", literal::REMOVED("alpha")}}));
 }
 
@@ -1523,7 +1523,7 @@ TEST_CASE("contains_ does not reevaluate when unrelated TSS keys change",
         return operators::contains_("collection"_n = collection, "key"_n = i64{1});
     };
 
-    CHECK(bg::run_graph(graph, {{2}, {3}, {4}, {1}, {5}, {literal::REMOVED(1)}, {6}})
+    CHECK(hg::run_graph(graph, {{2}, {3}, {4}, {1}, {5}, {literal::REMOVED(1)}, {6}})
               .equals<bool>({false, std::nullopt, std::nullopt, true, std::nullopt, false, std::nullopt}));
 }
 
@@ -1547,7 +1547,7 @@ TEST_CASE("mapped contains_ branches share an outer TSS and release removed subs
         return result[i64{7}];
     };
 
-    (void)bg::run_graph(tested, {{7, 8}, {}, {}, {literal::REMOVED(7)}, {}, {7}},
+    (void)hg::run_graph(tested, {{7, 8}, {}, {}, {literal::REMOVED(7)}, {}, {7}},
                               {{7}, {9}, {literal::REMOVED(7)}, {}, {7}, {}});
 
     const auto expected_evaluations = std::array<std::size_t, 2>{3, 1};
@@ -1561,7 +1561,7 @@ TEST_CASE("contains_ follows a time-series key through invalidation and revalida
         return operators::contains_("collection"_n = collection, "key"_n = key);
     };
 
-    CHECK(bg::run_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, {1, literal::INVALID, 2})
+    CHECK(hg::run_graph(graph, {{1, 2}, {1, 2}, {1, 2}}, {1, literal::INVALID, 2})
               .equals({true, literal::INVALID, true}));
 }
 
@@ -1573,11 +1573,11 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         return operators::contains_("collection"_n = selected, "key"_n = i64{1});
     };
 
-    CHECK(bg::run_graph(query, {true, false, literal::INVALID, true, true, true},
+    CHECK(hg::run_graph(query, {true, false, literal::INVALID, true, true, true},
                               {{1}, {2}, {3}, {1}, {1}, {1}}, {{2}, {2}, {3}, {3}, {3}, {3}})
               .equals({true, false, literal::INVALID, true, literal::SKIP, literal::SKIP}));
 
-    CHECK(bg::run_graph(
+    CHECK(hg::run_graph(
               query, {true, true, true}, {literal::SKIP, literal::SKIP, literal::SKIP}, {{1}, {1}, {1}})
               .equals({literal::SKIP, literal::SKIP, literal::SKIP}));
 
@@ -1585,7 +1585,7 @@ TEST_CASE("contains_ follows a selected TSS reference through retargeting and in
         const auto selected = operators::if_then_else(condition, left, right);
         return operators::valid(operators::contains_("collection"_n = selected, "key"_n = i64{1}));
     };
-    CHECK(bg::run_graph(observe_validity,
+    CHECK(hg::run_graph(observe_validity,
                               {true, false, literal::INVALID, true, true, true},
                               {{1}, {2}, {3}, {1}, {1}, {1}}, {{2}, {2}, {3}, {3}, {3}, {3}})
               .equals({true, literal::SKIP, false, true, literal::SKIP, literal::SKIP}));
@@ -1599,7 +1599,7 @@ TEST_CASE("contains_ propagates a final TSS guarantee",
         return result;
     };
 
-    CHECK(bg::run_graph(graph).equals<bool>({true}));
+    CHECK(hg::run_graph(graph).equals<bool>({true}));
 }
 
 TEST_CASE("contains_ combines a final TSS with an ordinary time-series key",
@@ -1610,7 +1610,7 @@ TEST_CASE("contains_ combines a final TSS with an ordinary time-series key",
         return result;
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3}).equals<bool>({true, true, false}));
+    CHECK(hg::run_graph(graph, {1, 2, 3}).equals<bool>({true, true, false}));
 }
 
 TEST_CASE("contains_ propagates TSD collection and key guarantees",
@@ -1687,10 +1687,10 @@ TEST_CASE("len_ forwards equal sizes for ordinary inputs and suppresses them for
         return operators::len_("value"_n = deduplicated_set(step));
     };
 
-    CHECK(bg::run_graph(ordinary,
+    CHECK(hg::run_graph(ordinary,
                               {{1, 2}, {literal::REMOVED(1), 3}, {literal::REMOVED(3), 1}})
               .equals<i64>({2, 2, 2}));
-    CHECK(bg::run_graph(deduplicated, {0, 1, 2}).equals<i64>({2, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(deduplicated, {0, 1, 2}).equals<i64>({2, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("len_ and contains_ query scalar time-series lists",
@@ -1703,9 +1703,9 @@ TEST_CASE("len_ and contains_ query scalar time-series lists",
         return operators::contains_("collection"_n = values, "key"_n = key);
     };
 
-    CHECK(bg::run_graph(length, {{1, 2, 3}, {}}).equals<i64>({3, 0}));
-    CHECK(bg::run_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
-    CHECK(bg::run_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
+    CHECK(hg::run_graph(length, {{1, 2, 3}, {}}).equals<i64>({3, 0}));
+    CHECK(hg::run_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
+    CHECK(hg::run_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
               .equals<bool>({true, true, false}));
 }
 
@@ -1719,9 +1719,9 @@ TEST_CASE("len_ and contains_ query scalar time-series sets",
         return operators::contains_("collection"_n = values, "key"_n = key);
     };
 
-    CHECK(bg::run_graph(length, {{1, 2, 3}, {2, 3}}).equals<i64>({3, 2}));
-    CHECK(bg::run_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
-    CHECK(bg::run_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
+    CHECK(hg::run_graph(length, {{1, 2, 3}, {2, 3}}).equals<i64>({3, 2}));
+    CHECK(hg::run_graph(contains, {{1, 2, 3}, {1, 3}, {}}).equals<bool>({true, false, false}));
+    CHECK(hg::run_graph(contains_key_series, {{1, 2, 3}, {1, 3}, {}}, {2, 3, 1})
               .equals<bool>({true, true, false}));
 }
 
@@ -1735,9 +1735,9 @@ TEST_CASE("len_ and contains_ query scalar time-series dictionaries",
         return operators::contains_("collection"_n = values, "key"_n = key);
     };
 
-    CHECK(bg::run_graph(length, {{{1, 10}, {2, 20}}, {{2, 20}}}).equals<i64>({2, 1}));
-    CHECK(bg::run_graph(contains, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}).equals<bool>({true, false, false}));
-    CHECK(bg::run_graph(contains_key_series, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}, {2, 1, 3})
+    CHECK(hg::run_graph(length, {{{1, 10}, {2, 20}}, {{2, 20}}}).equals<i64>({2, 1}));
+    CHECK(hg::run_graph(contains, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}).equals<bool>({true, false, false}));
+    CHECK(hg::run_graph(contains_key_series, {{{1, 10}, {2, 20}}, {{1, 10}}, {}}, {2, 1, 3})
               .equals<bool>({true, true, false}));
 }
 
@@ -1756,8 +1756,8 @@ TEST_CASE("len_ and contains_ query strings and symbols without copying text",
     const auto symbols = std::array{symbol{"alphabet"}, symbol{"gamma"}};
     const auto symbol_items = std::array{symbol{"pha"}, symbol{"am"}};
 
-    CHECK(bg::run_graph(string_length, strings).equals<i64>({4, 3}));
-    CHECK(bg::run_graph(symbol_length, symbols).equals<i64>({8, 5}));
-    CHECK(bg::run_graph(string_contains, strings, string_items).equals<bool>({true, false}));
-    CHECK(bg::run_graph(symbol_contains, symbols, symbol_items).equals<bool>({true, true}));
+    CHECK(hg::run_graph(string_length, strings).equals<i64>({4, 3}));
+    CHECK(hg::run_graph(symbol_length, symbols).equals<i64>({8, 5}));
+    CHECK(hg::run_graph(string_contains, strings, string_items).equals<bool>({true, false}));
+    CHECK(hg::run_graph(symbol_contains, symbols, symbol_items).equals<bool>({true, true}));
 }

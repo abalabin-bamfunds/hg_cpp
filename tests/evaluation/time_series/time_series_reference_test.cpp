@@ -1,24 +1,24 @@
-#include <bg/graph.hpp>
-#include <bg/graph/dynamic_node_subscriber_storage.hpp>
-#include <bg/graph/dynamic_subscribers.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_provider.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_storage.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/dynamic_node_subscriber_storage.hpp>
+#include <hg/graph/dynamic_subscribers.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_storage.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -33,11 +33,11 @@
 #include <ranges>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct alignas(64) WideProviderKeyStorage {
     int number{};
@@ -373,7 +373,7 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed target",
     reference_pass::evaluation_count = 0;
     const auto graph = [&] { return pass(source()); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
@@ -401,8 +401,8 @@ TEST_CASE("a missing TSD root converts to and from item references before becomi
         return observe_value(select(select_live, live, missing));
     };
 
-    CHECK(bg::run_graph(graph, bg::input<TS<bool>>({false, true, false}),
-                        bg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP}))
+    CHECK(hg::run_graph(graph, hg::input<TS<bool>>({false, true, false}),
+                        hg::input<TSD<i64, TS<i64>>>({{{1, 10}}, literal::SKIP, literal::SKIP}))
               .equals<i64>({std::nullopt, 10, std::nullopt}));
 }
 
@@ -429,7 +429,7 @@ TEST_CASE("a generated reference value stays stable while its target changes",
         return read(forward(tsl(source())));
     };
 
-    CHECK(bg::run_graph(graph).equals({10, 20, std::nullopt, 30}));
+    CHECK(hg::run_graph(graph).equals({10, 20, std::nullopt, 30}));
     CHECK(reference_evaluations == 1);
     CHECK(target_evaluations == 4);
 }
@@ -465,7 +465,7 @@ TEST_CASE("an ordinary reference can retarget a value input between stronger tar
         return output;
     };
 
-    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
+    const auto actual = hg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<double>({1.0, 2.0, 1.0, 2.0}));
 }
@@ -497,7 +497,7 @@ TEST_CASE("a deduplicated reference retarget samples equal constant values",
         return read(select(use_second, first(), second()));
     };
 
-    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
+    const auto actual = hg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<double>({4.0, 4.0, 4.0, 4.0}));
 }
@@ -530,7 +530,7 @@ TEST_CASE("a dereferenced list uses the requested runtime type when guarantees d
         return read(pass(values));
     };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals<i64>({3}));
     const auto &target_list_type = dynamic_cast<const TimeSeriesListType &>(*target_type);
@@ -561,7 +561,7 @@ TEST_CASE("a materialized free TSL samples retargeted ordinary references",
         return read(values);
     };
 
-    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
+    const auto actual = hg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals({4, 7, 4, 7}));
 }
@@ -600,7 +600,7 @@ TEST_CASE("an ordinary list reference samples the selected list with final items
         return read(select(use_second, first, second));
     };
 
-    const auto actual = bg::run_graph(graph, std::array{false, true, false, true});
+    const auto actual = hg::run_graph(graph, std::array{false, true, false, true});
 
     CHECK(actual.equals<i64>({10, 20, 10, 20}));
 }
@@ -635,7 +635,7 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
         return compare(item, bundle<DictionaryBundle>(item));
     };
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}},
+    const auto actual = hg::run_graph(graph, {{{1, 10}}, {{1, 10}}}, {{{2, 20}}, {{2, 20}}},
                                                 {false, true});
 
     CHECK(actual.equals({true, true}));
@@ -679,7 +679,7 @@ TEST_CASE("a nested graph releases its sampled reference change when it stops",
         return combine(nested(inner, run, selected), inspect(selected));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         outer, {{{1, 10}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {{{2, 20}}, literal::SKIP, literal::SKIP, literal::SKIP},
         {false, literal::SKIP, true, false}, {true, true, false, true});
@@ -701,7 +701,7 @@ TEST_CASE("a default reference output does not schedule subscribers for the same
         return input;
     };
 
-    const auto actual = bg::run_graph(graph, std::array{1, 2, 3});
+    const auto actual = hg::run_graph(graph, std::array{1, 2, 3});
 
     CHECK(actual.equals({1, 2, 3}));
     CHECK(evaluations == 1);
@@ -740,7 +740,7 @@ TEST_CASE("an ordinary reference republishes ticks without changing its derefere
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
     const auto actual =
-        bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, ticks({literal::SKIP, i64{1}, literal::SKIP}),
+        hg::run_graph(graph, GraphRunOptions{.start_time = start_time}, ticks({literal::SKIP, i64{1}, literal::SKIP}),
                       ticks({literal::SKIP, literal::SKIP, i64{1}}));
 
     const auto expected = std::initializer_list<std::optional<ReferenceObservation>>{
@@ -1450,7 +1450,7 @@ TEST_CASE("changing a reference samples its target",
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
 
-    const auto actual = bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+    const auto actual = hg::run_graph(graph, GraphRunOptions{.start_time = start_time});
 
     CHECK(actual.equals<Observation>({
         Observation{10, start_time, start_time},
@@ -1479,13 +1479,13 @@ TEST_CASE("a dereferenced reference reports the transition of the selected value
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
-                  bg::input<TS<i64>>({10, literal::INVALID, literal::SKIP, literal::SKIP, 12, literal::INVALID}),
-                  bg::input<TS<i64>>({literal::INVALID, literal::SKIP, literal::SKIP, 20, literal::SKIP,
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  hg::input<TS<i64>>({10, literal::INVALID, literal::SKIP, literal::SKIP, 12, literal::INVALID}),
+                  hg::input<TS<i64>>({literal::INVALID, literal::SKIP, literal::SKIP, 20, literal::SKIP,
                                       literal::SKIP}),
-                  bg::input<TS<i64>>({40, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
+                  hg::input<TS<i64>>({40, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
                                       literal::SKIP}),
-                  bg::input<TS<i64>>({0, 2, 1, 2, 0, 1}));
+                  hg::input<TS<i64>>({0, 2, 1, 2, 0, 1}));
 
     const auto time = [&](int cycle) { return start_time + std::chrono::microseconds{cycle - 1}; };
     const auto expected = std::vector<ReferenceObservation>{
@@ -1571,7 +1571,7 @@ TEST_CASE("reference outputs retain independent cycle-start validity across rebi
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}});
 
     REQUIRE(previously_valid.size() == 3);
     REQUIRE(previously_invalid.size() == 3);
@@ -1627,8 +1627,8 @@ TEST_CASE("a newly added reference dictionary item observes the binding time",
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
-                  bg::input<TS<i64>>({10, 11, literal::SKIP}), bg::input<TS<i64>>({1, 1, 2}));
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  hg::input<TS<i64>>({10, 11, literal::SKIP}), hg::input<TS<i64>>({1, 1, 2}));
 
     REQUIRE(observations.size() == 1);
     CHECK(observations[0].valid);
@@ -1661,7 +1661,7 @@ TEST_CASE("a graph-first dictionary of references propagates target invalidation
     const auto graph = [&] { observe(store(target())); };
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
 
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time});
 
     REQUIRE(observations.size() == 3);
     CHECK(observations[0] == ReferenceObservation{true, true, true, false, 10, start_time});
@@ -1692,8 +1692,8 @@ TEST_CASE("a passive dictionary of references reads the latest target state on a
     const auto graph = [&](wp<TS<i64>> trigger) { observe(store(target()), trigger); };
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
 
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
-                  bg::input<TS<i64>>({1, literal::SKIP, 2, literal::SKIP, 3}));
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                  hg::input<TS<i64>>({1, literal::SKIP, 2, literal::SKIP, 3}));
 
     REQUIRE(observations.size() == 3);
     CHECK(observations[0].valid);
@@ -1761,7 +1761,7 @@ TEST_CASE("a reference dictionary item replacement, removal, and re-addition kee
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}, i64{3}});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}, i64{3}});
 
     REQUIRE(observations.size() == 4);
     CHECK(observations[0].contains);
@@ -1810,7 +1810,7 @@ TEST_CASE("an adapted reference to a list of references observes the target item
         observe_item(selected);
     };
 
-    bg::run_graph(graph, std::array{i64{0}, i64{1}});
+    hg::run_graph(graph, std::array{i64{0}, i64{1}});
 
     REQUIRE_FALSE(raw_list_states.empty());
     REQUIRE(raw_list_states.size() == 2);
@@ -1895,7 +1895,7 @@ TEST_CASE("a reference input switches from direct to adapted and back to direct 
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}, i64{2}});
 
     REQUIRE(observations.size() == 3);
     CHECK(observations[0].valid);
@@ -1969,9 +1969,9 @@ TEST_CASE("a passive dereferenced input observes its current target",
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    const auto actual = bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
-                                      bg::input<TS<i64>>({0, 1, literal::SKIP}),
-                                      bg::input<TS<i64>>({0, 1, 2}));
+    const auto actual = hg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+                                      hg::input<TS<i64>>({0, 1, literal::SKIP}),
+                                      hg::input<TS<i64>>({0, 1, 2}));
 
     CHECK(actual.equals({10, 20, 20}));
     REQUIRE(observations.size() == 3);
@@ -2006,7 +2006,7 @@ TEST_CASE("a dynamic dereferenced input rebinds while passive",
         return value(select(trigger, left(), right()), trigger);
     };
 
-    CHECK(bg::run_graph(graph).equals({10, 20}));
+    CHECK(hg::run_graph(graph).equals({10, 20}));
 }
 
 TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
@@ -2019,7 +2019,7 @@ TEST_CASE("dynamic reference input unbinding reports one invalidation cycle",
         return unbind(collection, trigger);
     };
 
-    CHECK(bg::run_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
+    CHECK(hg::run_graph(graph, {{{0, 10}}, {{0, 20}}}, {0, 1}).equals({true, false}));
 }
 
 namespace {
@@ -2053,7 +2053,7 @@ TEST_CASE("changing a reference to an invalid target invalidates required consum
     const auto forward = node<required_reference_forward>();
     const auto graph = [&] { return forward(select(condition(), left(), right())); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt}));
 }
@@ -2279,7 +2279,7 @@ TEST_CASE("a native bundle adapts direct and referenced fields through its refer
         return observe(bundle.as<REF<TSB<SCHEMA>>>());
     };
 
-    CHECK(bg::run_graph(graph, {1, 2, 3, 4}).equals({110, 220, std::nullopt, 430}));
+    CHECK(hg::run_graph(graph, {1, 2, 3, 4}).equals({110, 220, std::nullopt, 430}));
     CHECK(evaluations == 4);
 }
 
@@ -2333,7 +2333,7 @@ TEST_CASE("a reference to a bundle keeps the validity of each sampled field",
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    CHECK(bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}})
+    CHECK(hg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}})
               .equals({100, 200}));
     const auto expected = std::vector<ReferenceObservation>{
         {false, true, false, false, 0, start_time},
@@ -2382,7 +2382,7 @@ TEST_CASE("sampling invalid bundle references updates a nested fixed-list item",
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time}, std::array{i64{0}, i64{1}});
 
     REQUIRE(observations.size() == 2);
     for (auto index = std::size_t{}; index < observations.size(); ++index) {
@@ -2413,7 +2413,7 @@ TEST_CASE("a revalidated fixed-list reference resubscribes to the same target",
         return observe(collection.as<REF<TSL<TS<i64>, 2>>>());
     };
 
-    CHECK(bg::run_graph(graph).equals({10, -1, -1, 10, 20}));
+    CHECK(hg::run_graph(graph).equals({10, -1, -1, 10, 20}));
 }
 
 TEST_CASE("a revalidated fixed-list reference samples an unchanged TSS target as a first update",
@@ -2435,7 +2435,7 @@ TEST_CASE("a revalidated fixed-list reference samples an unchanged TSS target as
         return observe(collection.as<REF<TSL<TSS<i64>, 2>>>());
     };
 
-    CHECK(bg::run_graph(graph).equals({1, -1, -1, 1}));
+    CHECK(hg::run_graph(graph).equals({1, -1, -1, 1}));
 }
 
 TEST_CASE("a nested fixed-TSL reference propagates delayed TSS invalidation and revalidation",
@@ -2455,7 +2455,7 @@ TEST_CASE("a nested fixed-TSL reference propagates delayed TSS invalidation and 
         return observe(nested);
     };
 
-    CHECK(bg::run_graph(graph).equals({true, false, true}));
+    CHECK(hg::run_graph(graph).equals({true, false, true}));
 }
 
 TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
@@ -2469,7 +2469,7 @@ TEST_CASE("a dereferenced input subscribes directly to a fixed collection item",
     const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return pass(first(source)); };
     reference_pass::evaluation_count = 0;
 
-    const auto actual = bg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = hg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(reference_pass::evaluation_count == 1);
     CHECK(actual.equals({10, 20}));
@@ -2484,7 +2484,7 @@ TEST_CASE("a fixed collection can pass through a reference",
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return value(pass(source)); };
 
-    const auto actual = bg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = hg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -2498,7 +2498,7 @@ TEST_CASE("a generic fixed collection input uses the referenced target runtime_t
 
     const auto graph = [&](wp<TSL<TS<i64>, 2>> source) { return value(pass(source)); };
 
-    const auto actual = bg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
+    const auto actual = hg::run_graph(graph, {{{0, 10}}, {{0, 20}}});
 
     CHECK(actual.equals({10, 20}));
 }
@@ -2599,7 +2599,7 @@ TEST_CASE("a dereferenced list reference selects the current target runtime_type
     const auto second_free_item = std::vector{20, 40, 60};
 
     const auto result =
-        bg::run_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
+        hg::run_graph(graph, condition, first_owned, second_owned, first_free_item, second_free_item);
 
     CHECK(result.equals({3, 60, 11}));
     REQUIRE(runtime_types.size() == 3);
@@ -2756,7 +2756,7 @@ TEST_CASE("a reference stored in a fixed collection item updates its consumer",
                                    Out<REF<TS<i64>>> output) { output.copy(input[0]); });
     const auto graph = [&] { return first(list(source())); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({10, 20, std::nullopt, 30}));
 }
@@ -2785,7 +2785,7 @@ TEST_CASE("nested fixed collection adaptation propagates reference updates and v
         return sum(outer);
     };
 
-    CHECK(bg::run_graph(graph).equals({20, 40, std::nullopt, 60}));
+    CHECK(hg::run_graph(graph).equals({20, 40, std::nullopt, 60}));
 }
 
 TEST_CASE("nested fixed collection adaptation propagates a reference item retarget",
@@ -2813,7 +2813,7 @@ TEST_CASE("nested fixed collection adaptation propagates a reference item retarg
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    CHECK(bg::run_graph(graph, GraphRunOptions{.start_time = start_time}).equals({10, 20}));
+    CHECK(hg::run_graph(graph, GraphRunOptions{.start_time = start_time}).equals({10, 20}));
     CHECK(evaluations == 2);
     REQUIRE(observations.size() == 2);
     CHECK(observations[0].valid);
@@ -2849,7 +2849,7 @@ TEST_CASE("nested fixed collection adaptation propagates reference item validity
         return observe(reference);
     };
 
-    CHECK(bg::run_graph(graph).equals({30, -1, 30}));
+    CHECK(hg::run_graph(graph).equals({30, -1, 30}));
     CHECK(evaluations == 3);
 }
 
@@ -2890,7 +2890,7 @@ TEST_CASE("a reference-adapted fixed collection keeps cycle-start validity durin
     const auto graph = [&] { observe(pair(first(), second())); };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time});
 
     const auto final_observation = std::ranges::find_if(
         observations | std::views::reverse,
@@ -2922,7 +2922,7 @@ TEST_CASE("a free fixed collection publishes one validity transition for same-cy
     const auto graph = [&] { observe(tsl(first(), second())); };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    bg::run_graph(graph, GraphRunOptions{.start_time = start_time});
+    hg::run_graph(graph, GraphRunOptions{.start_time = start_time});
 
     const auto final_observation = std::ranges::find_if(
         observations | std::views::reverse, [&](const auto &observation) {
@@ -2990,7 +2990,7 @@ TEST_CASE("sampling an outer reference updates each nested fixed-list item",
     };
 
     const auto start_time = MIN_DT + std::chrono::microseconds{1};
-    const auto actual = bg::run_graph(graph, GraphRunOptions{.start_time = start_time},
+    const auto actual = hg::run_graph(graph, GraphRunOptions{.start_time = start_time},
                                       std::array{i64{0}, i64{1}, i64{0}});
     CHECK(actual.equals({999, -80, 999}));
     const auto expected = std::vector<Observation>{
@@ -3046,7 +3046,7 @@ TEST_CASE("same-cycle target changes reach a selected native fixed-list item",
         return read(value_reference[i64{1}]);
     };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({10, 20}));
     CHECK(evaluations == 2);
@@ -3116,7 +3116,7 @@ TEST_CASE("reference invalidation unbinds and revalidation resamples consumers",
     });
     const auto graph = [&] { return observe(reference(source())); };
 
-    const auto actual = bg::run_graph(graph);
+    const auto actual = hg::run_graph(graph);
 
     CHECK(actual.equals({10, std::nullopt, 10}));
     REQUIRE(observations.size() == 3);
@@ -3141,7 +3141,7 @@ TEST_CASE("an initially unbound TSL reference permits optional nested item acces
     });
     const auto graph = [&] { observe(unbound(), trigger()); };
 
-    bg::run_graph(graph);
+    hg::run_graph(graph);
 
     REQUIRE(observations.size() == 1);
     CHECK(observations[0] == std::array{false, false, false, false, false, true, true});
@@ -3161,7 +3161,7 @@ TEST_CASE("an initially unbound TSB reference permits optional field item access
     });
     const auto graph = [&] { observe(wp<TSB<NestedReferenceBundle>>{unbound()}, trigger()); };
 
-    bg::run_graph(graph);
+    hg::run_graph(graph);
 
     REQUIRE(observations.size() == 1);
     CHECK(observations[0] == std::array{false, false, false, true, false});
@@ -3200,15 +3200,15 @@ TEST_CASE("a sampled TSS output includes a same-cycle change to the previous tar
         return select(condition, old_target, new_target);
     };
 
-    const auto same_cycle_change = bg::run_graph(
-        graph, bg::input<TS<bool>>({true, false}),
-        bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
-        bg::input<TSS<i64>>({{3}, literal::SKIP}));
+    const auto same_cycle_change = hg::run_graph(
+        graph, hg::input<TS<bool>>({true, false}),
+        hg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}}),
+        hg::input<TSS<i64>>({{3}, literal::SKIP}));
     CHECK(same_cycle_change.equals({{2}, {3, literal::REMOVED(2)}}));
 
-    const auto stale_change = bg::run_graph(
-        graph, bg::input<TS<bool>>({true, true, false}),
-        bg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
-        bg::input<TSS<i64>>({{3}, literal::SKIP, literal::SKIP}));
+    const auto stale_change = hg::run_graph(
+        graph, hg::input<TS<bool>>({true, true, false}),
+        hg::input<TSS<i64>>({{2}, {3, literal::REMOVED(2)}, literal::SKIP}),
+        hg::input<TSS<i64>>({{3}, literal::SKIP, literal::SKIP}));
     CHECK(stale_change.equals({{2}, {3, literal::REMOVED(2)}, {}}));
 }

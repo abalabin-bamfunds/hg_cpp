@@ -1,10 +1,10 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers_string.hpp>
@@ -13,8 +13,8 @@
 #include <cstdint>
 #include <string_view>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 namespace {
 
@@ -49,7 +49,7 @@ TEST_CASE("a late inherited provider resolves a root requirement during compilat
         return output;
     };
 
-    CHECK(bg::run_graph(tested, {7}).equals({7}));
+    CHECK(hg::run_graph(tested, {7}).equals({7}));
 }
 
 TEST_CASE("a late inherited provider crosses a nested graph boundary",
@@ -73,7 +73,7 @@ TEST_CASE("a late inherited provider crosses a nested graph boundary",
         return output;
     };
 
-    CHECK(bg::run_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
+    CHECK(hg::run_graph(tested, {7, 11}, {true, true}).equals({7, 11}));
 }
 
 TEST_CASE("a named context requirement cannot be provided after wiring",

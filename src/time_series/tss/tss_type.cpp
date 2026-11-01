@@ -1,12 +1,12 @@
-#include <bg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
 
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/symbol.hpp>
 
 #include "../../type/type_registration.hpp"
 
@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTimeSeriesSetType final : public TimeSeriesSetType {
@@ -107,4 +107,4 @@ const TimeSeriesSetType &time_series_set_type(const ScalarType &item_type, TimeS
     return type;
 }
 
-} // namespace bg
+} // namespace hg

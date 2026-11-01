@@ -1,17 +1,17 @@
-#include <bg/mesh.hpp>
+#include <hg/mesh.hpp>
 
-#include <bg/graph/details/mesh_node.hpp>
-#include <bg/graph/details/scoped_wiring_template.hpp>
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/mesh/details/default_mesh_wiring.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_variable.hpp>
+#include <hg/graph/details/mesh_node.hpp>
+#include <hg/graph/details/scoped_wiring_template.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/mesh/details/default_mesh_wiring.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_variable.hpp>
 
 #include "thread_local_pointer.hpp"
 
@@ -22,7 +22,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 util::thread_local_pointer &active_mesh_selection_wiring() {
@@ -198,9 +198,9 @@ std::optional<WiringPoint> DefaultMeshWiring::wire() const {
     return call.output;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 operator_<auto(GRAPH_T, TSB<details::MESH_POSITIONAL>, TSB<details::MESH_NAMED>)->TS_T,
           details::mesh_operator_implementation>
@@ -215,4 +215,4 @@ const auto register_default_mesh_overloads = [] {
 }();
 
 } // namespace
-} // namespace bg
+} // namespace hg

@@ -1,23 +1,23 @@
-#include <bg/map.hpp>
+#include <hg/map.hpp>
 
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map/details/default_map_wiring.hpp>
-#include <bg/map/details/map_node.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_variable.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map/details/default_map_wiring.hpp>
+#include <hg/map/details/map_node.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_variable.hpp>
 
 #include <algorithm>
 #include <ranges>
@@ -25,7 +25,7 @@
 #include <string>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class MapCallResolver {
@@ -288,9 +288,9 @@ std::optional<WiringPoint> DefaultMapWiring::wire() const {
     return call.output;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 namespace {
 
 Signature default_map_signature(bool output) {
@@ -370,4 +370,4 @@ const auto register_default_map_overloads = [] {
 
 } // namespace
 
-} // namespace bg
+} // namespace hg

@@ -1,25 +1,25 @@
 #include "registration.hpp"
 
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/scalar/bundle/scalar.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/set/scalar.hpp>
-#include <bg/scalar/dict/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/util/hash_set.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/scalar/bundle/scalar.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/set/scalar.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsb/tsb_output.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/util/hash_set.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <array>
 #include <cstddef>
@@ -32,10 +32,10 @@
 #include <utility>
 #include <vector>
 
-namespace bg::operators::details {
+namespace hg::operators::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"CONVERSION_G">;
 using KEY = ScalarVariable<"CONVERSION_KEY", Hashable>;
@@ -50,7 +50,7 @@ template <template <typename, auto...> typename Field>
 using SERIES_SCHEMA = BundleSchemaVariableDeclaration<"CONVERSION_SERIES_SCHEMA", Field>;
 struct conversion_overloads {
     static const TimeSeriesType *requested_result(const WiringArguments &arguments) {
-        const auto *mapping = arguments.type_map().find(::bg::details::type_parameter<CONVERT_RESULT>());
+        const auto *mapping = arguments.type_map().find(::hg::details::type_parameter<CONVERT_RESULT>());
         const auto *requested_mapping = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
         return requested_mapping == nullptr || *requested_mapping == nullptr
                    ? nullptr
@@ -441,4 +441,4 @@ struct conversion_overloads {
 
 void register_conversion_operators() { register_overloads<conversion_overloads>(); }
 
-} // namespace bg::operators::details
+} // namespace hg::operators::details

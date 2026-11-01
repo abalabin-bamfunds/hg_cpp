@@ -1,9 +1,9 @@
 #include "service_test_helpers.hpp"
 
-#include <bg/service_feedback.hpp>
-#include <bg/testing/test_wiring.hpp>
+#include <hg/service_feedback.hpp>
+#include <hg/testing/test_wiring.hpp>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("subscription services deduplicate requests and return values by key",
           "[feature:service][series:tss][series:tsd]") {
@@ -44,7 +44,7 @@ TEST_CASE("subscription services deduplicate requests and return values by key",
         (void)service(key);
         return service(key);
     };
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {0});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {0});
 
     CHECK(actual.equals<float>({7.0F}));
     CHECK(log.sizes == std::vector<std::size_t>{1});
@@ -71,7 +71,7 @@ TEST_CASE("feedback subscription wrapper delays requests into its nested impleme
         (void)tick;
         return service(key_source(3));
     };
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested, GraphRunOptions{.services = &catalogue}, {0});
     CHECK(actual.equals<i64>({std::nullopt, 30}));
 }
@@ -138,7 +138,7 @@ TEST_CASE("subscription service clients inside map branches update one root requ
         return mapped[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -185,7 +185,7 @@ TEST_CASE("subscription service request bindings cross nested graph boundaries",
         return inner(key_source(3));
     };
 
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &logged_catalogue}, {0}).equals<i64>({3}));
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &logged_catalogue}, {0}).equals<i64>({3}));
     CHECK(log.sizes == std::vector<std::size_t>{1});
     CHECK(log.added == std::vector<std::size_t>{1});
 }
@@ -229,7 +229,7 @@ TEST_CASE("subscription service clients inside mesh branches update one root req
         return mapped[i64{1}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue});
 
     CHECK(actual.equals<i64>({4}));
     CHECK(log.sizes == std::vector<std::size_t>{2});
@@ -261,7 +261,7 @@ TEST_CASE("subscription service multiplicity includes scalar parameters",
         return sum(first, second);
     };
 
-    CHECK(bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<float>({9.0F}));
+    CHECK(hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {0}).equals<float>({9.0F}));
 }
 
 TEST_CASE("removing a map branch removes its subscription request",
@@ -312,7 +312,7 @@ TEST_CASE("removing a map branch removes its subscription request",
         return mapped[i64{5}];
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {false, true});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {false, true});
 
     CHECK(actual.equals<i64>({7, std::nullopt}));
     CHECK(log.sizes == std::vector<std::size_t>{1, 0});
@@ -345,7 +345,7 @@ TEST_CASE("response-producing subscription clients inside a map reject dependenc
 
     auto diagnostic = std::string{};
     try {
-        (void)bg::run_graph(tested, GraphRunOptions{.services = &catalogue});
+        (void)hg::run_graph(tested, GraphRunOptions{.services = &catalogue});
     } catch (const std::exception &error) {
         diagnostic = error.what();
     }
@@ -397,7 +397,7 @@ TEST_CASE("subscription request keys compare complete hierarchical scalar values
         return input;
     };
 
-    const auto actual = bg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1});
+    const auto actual = hg::run_graph(tested, GraphRunOptions{.services = &catalogue}, {1});
 
     CHECK(actual.equals<i64>({1}));
     CHECK(log.sizes.back() == 1);

@@ -1,12 +1,12 @@
-#include <bg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
 
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/variable.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/variable.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -14,7 +14,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg {
+namespace hg {
 namespace {
 
 class ResolvedTimeSeriesBundleType final : public TimeSeriesBundleType {
@@ -64,7 +64,7 @@ const Schema &schema_with_minimum_guarantee(const Schema &schema, TimeSeriesGuar
     }
 
     const auto *base = schema.base() == nullptr ? nullptr : &schema_with_minimum_guarantee(*schema.base(), guarantee);
-    return bg::schema(schema.name(), schema.identity(), base, fields, schema.direct_metadata());
+    return hg::schema(schema.name(), schema.identity(), base, fields, schema.direct_metadata());
 }
 
 } // namespace
@@ -155,7 +155,7 @@ const TimeSeriesType &TimeSeriesBundleType::reference_free_type() const {
             return source;
         }
 
-        return bg::schema(source.name(), source.identity(), base, fields, source.direct_metadata());
+        return hg::schema(source.name(), source.identity(), base, fields, source.direct_metadata());
     };
 
     const auto &schema = rewrite_schema(rewrite_schema, this->schema());
@@ -223,7 +223,7 @@ const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Sche
                 fields.push_back({field.name, common_field_type, field.optional});
             }
 
-            return &bg::schema(declaration.name(), declaration.identity(), common_base, fields,
+            return &hg::schema(declaration.name(), declaration.identity(), common_base, fields,
                                declaration.direct_metadata());
         };
 
@@ -260,7 +260,7 @@ const Schema *TimeSeriesBundleType::common_schema(const Schema &left, const Sche
         fields.push_back({left_field.name, common_field_type, false});
     }
 
-    return &bg::schema(left.name(), left.identity(), common_base, fields, left.direct_metadata());
+    return &hg::schema(left.name(), left.identity(), common_base, fields, left.direct_metadata());
 }
 
 const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descriptor,
@@ -273,7 +273,7 @@ const Schema &TimeSeriesBundleType::limit_schema_guarantees(const Schema &descri
     }
 
     const auto *base = descriptor.base() == nullptr ? nullptr : &limit_schema_guarantees(*descriptor.base(), limit);
-    return bg::schema(descriptor.name(), descriptor.identity(), base, fields, descriptor.direct_metadata());
+    return hg::schema(descriptor.name(), descriptor.identity(), base, fields, descriptor.direct_metadata());
 }
 
 bool TimeSeriesBundleType::do_match(const Type &supplied, TypeMap &type_map) const {
@@ -374,4 +374,4 @@ const TimeSeriesBundleType &time_series_bundle_type(const Schema &schema, TimeSe
     return type;
 }
 
-} // namespace bg
+} // namespace hg

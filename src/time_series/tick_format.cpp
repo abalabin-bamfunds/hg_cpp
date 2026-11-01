@@ -1,24 +1,24 @@
-#include <bg/scalar/format.hpp>
-#include <bg/time_series/tick_format.hpp>
-#include <bg/time_series/tick_format_operations.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/time_series/tick_format.hpp>
+#include <hg/time_series/tick_format_operations.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <cstddef>
 #include <functional>
 #include <string>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 template <typename... Arguments>
@@ -346,4 +346,4 @@ void format_serialized_tick_payload(const TimeSeriesType &type, bool valid, cons
     format_serialized_payload(type, reader, context);
 }
 
-} // namespace bg
+} // namespace hg

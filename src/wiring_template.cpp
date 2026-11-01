@@ -1,20 +1,20 @@
-#include <bg/graph/wiring_template.hpp>
+#include <hg/graph/wiring_template.hpp>
 
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
-#include <bg/graph/details/wiring_record_overlay.hpp>
-#include <bg/graph/details/wiring_materialisation.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/type/details/resolver_type_resolution_error.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
+#include <hg/graph/details/wiring_materialisation.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/type/details/resolver_type_resolution_error.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <algorithm>
 #include <exception>
 #include <string>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 WiringTemplate::~WiringTemplate() = default;
 
@@ -171,4 +171,4 @@ std::optional<WiringPoint> WiringTemplate::invoke_impl(GraphWiring &wiring,
                            committed.descriptors, path_name);
 }
 
-} // namespace bg
+} // namespace hg

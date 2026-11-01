@@ -1,26 +1,26 @@
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/util/static_storage.hpp>
 
-#include <bg/node/details/output_factory.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/time_series/queue_operations.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/time_series/queue_operations.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
 #include <limits>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 template <> TimeSeriesDispatch<TimeSeriesTickOperations> &
 TimeSeriesDispatch<TimeSeriesTickOperations>::instance() noexcept {
@@ -163,7 +163,7 @@ class QueueMessageCodec {
     template <typename T> void write_raw(const T &value) {
         static_assert(std::is_trivially_copyable_v<T>);
         if (writer_ != nullptr) {
-            bg::details::write_bytes(*writer_, value);
+            hg::details::write_bytes(*writer_, value);
         }
         projection_.write_bytes(sizeof(T));
     }
@@ -1151,4 +1151,4 @@ bool QueueMessageWriter::write(const literal::TimeSeriesLiteral &literal) {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

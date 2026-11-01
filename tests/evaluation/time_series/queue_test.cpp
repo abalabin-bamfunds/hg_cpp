@@ -1,12 +1,12 @@
-#include <bg/queue.hpp>
-#include <bg/details/engine_wakeup.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/buffer.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/queue.hpp>
+#include <hg/details/engine_wakeup.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/buffer.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -21,7 +21,7 @@
 #include <stdexcept>
 #include <thread>
 
-using namespace bg;
+using namespace hg;
 namespace {
 
 bool wait_for_notification(details::EngineWakeup &wakeup) {

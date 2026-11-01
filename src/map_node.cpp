@@ -1,18 +1,18 @@
-#include <bg/map/details/map_node.hpp>
+#include <hg/map/details/map_node.hpp>
 
-#include <bg/allocator.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/map/details/map_node_definition.hpp>
-#include <bg/map/details/map_runtime.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/time_series/ref/ref_output.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/map/details/map_node_definition.hpp>
+#include <hg/map/details/map_runtime.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/time_series/ref/ref_output.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
 
 #include <optional>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 class MapRuntimeState;
@@ -178,4 +178,4 @@ std::unique_ptr<NodeTemplate> make_map_node(MapGraphWiring wiring, const Resolve
         DefaultMapNodeDefinition{std::move(wiring), outer_signature});
 }
 
-} // namespace bg::details
+} // namespace hg::details

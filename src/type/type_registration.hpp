@@ -2,7 +2,7 @@
 
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class ScalarType;
 class ResolvedHierarchicalScalarType;
@@ -42,4 +42,4 @@ class SemanticTypeRegistration {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

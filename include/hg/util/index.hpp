@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/byte_copy.hpp>
+#include <hg/util/byte_copy.hpp>
 
 #include <algorithm>
 #include <array>
@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 inline constexpr auto dynamic_index_extent = std::numeric_limits<std::uint32_t>::max();
 
@@ -55,7 +55,7 @@ template <typename Index> class index_iterator {
     bool operator==(const index_iterator &) const noexcept = default;
 
   private:
-    template <std::uint32_t> friend class bg::util::index;
+    template <std::uint32_t> friend class hg::util::index;
 
     static constexpr auto bits_per_word = std::uint32_t{64};
 
@@ -646,4 +646,4 @@ template <std::uint32_t Extent> class index {
 static_assert(sizeof(index<>) == sizeof(void *));
 static_assert(byte_copy_initializable<index<>>);
 
-} // namespace bg::util
+} // namespace hg::util

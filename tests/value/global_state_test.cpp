@@ -1,4 +1,4 @@
-#include <bg/global_state.hpp>
+#include <hg/global_state.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -6,7 +6,7 @@
 #include <cstdint>
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("global state owns inserted scalar values",
           "[global_state][scalar][feature:global-state][transition:addition]") {

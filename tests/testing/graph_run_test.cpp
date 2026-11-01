@@ -1,11 +1,11 @@
-#include <bg/graph.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/evaluation_engine.hpp>
-#include <bg/evaluation_profiler.hpp>
-#include <bg/global_state.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/evaluation_engine.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/global_state.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

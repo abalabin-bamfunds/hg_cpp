@@ -1,15 +1,15 @@
-#include <bg/graph.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/map/details/map_node.hpp>
-#include <bg/nested.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/map/details/map_node.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -22,8 +22,8 @@
 #include <optional>
 #include <vector>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("map applies a graph to a TSD item",
           "[feature:map][feature:nested-graph][series:tsd][shape:nested]"
@@ -34,7 +34,7 @@ TEST_CASE("map applies a graph to a TSD item",
         return map([&](auto value) { return increment(value); }, values)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(graph, {{{1, 2}}});
+    const auto actual = hg::run_graph(graph, {{{1, 2}}});
 
     CHECK(actual.equals({3}));
 }
@@ -63,7 +63,7 @@ TEST_CASE("map keeps branch state independent and resets it after removal",
         return copy(map([&](wp<TS<i64>> value) { return branch(value); }, values));
     };
 
-    const auto actual = bg::run_graph(graph,
+    const auto actual = hg::run_graph(graph,
                                             {{{1, 10}, {2, 20}},
                                              {{1, 11}},
                                              {{1, literal::REMOVE}},
@@ -477,7 +477,7 @@ TEST_CASE("map starts and stops one inner graph repeatedly",
         return mapped[i64{1}];
     };
 
-    const auto actual = bg::run_graph(graph, {1, 2, -1, 3, -1, 4});
+    const auto actual = hg::run_graph(graph, {1, 2, -1, 3, -1, 4});
 
     CHECK(actual.equals<i64>({2, 3, std::nullopt, 4, std::nullopt, 5}));
 }
@@ -497,7 +497,7 @@ TEST_CASE("mapped target ticks evaluate only the selected inner graph",
     };
     AddKey::evaluations.fill(0);
 
-    const auto actual = bg::run_graph(graph, {{{1, 10}, {2, 20}}, {{2, 20}}});
+    const auto actual = hg::run_graph(graph, {{{1, 10}, {2, 20}}, {{2, 20}}});
 
     CHECK(actual.equals<i64>({22, 22}));
     CHECK(AddKey::evaluations == std::array<std::size_t, 3>{0, 1, 2});
@@ -517,7 +517,7 @@ TEST_CASE("map evaluates more inner graphs than the ready bitmap inline capacity
     };
     MapSink::values.clear();
 
-    const auto result = bg::run_graph(graph, std::array{7});
+    const auto result = hg::run_graph(graph, std::array{7});
 
     CHECK(result.equals<i64>({7}));
     CHECK(MapSink::values.size() == 100);
@@ -533,7 +533,7 @@ TEST_CASE("map publishes a fixed output reference before its target first become
     };
     CaptureReferenceValidity::validity.clear();
 
-    const auto actual = bg::run_graph(graph, {{{1, 5}}});
+    const auto actual = hg::run_graph(graph, {{{1, 5}}});
 
     REQUIRE_FALSE(CaptureReferenceValidity::validity.empty());
     CHECK(CaptureReferenceValidity::validity.front());
@@ -593,7 +593,7 @@ TEST_CASE("map uses the union of mapped dictionary key sets and binds missing va
         return wire_union_map(left_values, right_values)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(graph, std::array{1, -1, -1, 4}, std::array{-1, 2, -1, 3});
+    const auto actual = hg::run_graph(graph, std::array{1, -1, -1, 4}, std::array{-1, 2, -1, 3});
 
     CHECK(actual.equals<i64>({1, 2, std::nullopt, 7}));
 }
@@ -603,7 +603,7 @@ TEST_CASE("map uses a TSS key set for a source graph",
           "[transition:addition][transition:removal]") {
     const auto graph = [&](wp<TSS<i64>> keys) { return wire_source_map(keys)[i64{1}]; };
 
-    const auto actual = bg::run_graph(graph, {{1}, {literal::REMOVED(1)}, {1}});
+    const auto actual = hg::run_graph(graph, {{1}, {literal::REMOVED(1)}, {1}});
 
     CHECK(actual.equals<i64>({1, std::nullopt, 1}));
 }
@@ -613,7 +613,7 @@ TEST_CASE("map uses a selected TSD key set for a source graph",
           "[transition:addition][transition:removal]") {
     const auto graph = [&](wp<TSD<i64, TS<i64>>> keys) { return wire_source_map(keys)[i64{1}]; };
 
-    const auto actual = bg::run_graph(graph, {{{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}});
+    const auto actual = hg::run_graph(graph, {{{1, 0}}, {{1, literal::REMOVE}}, {{1, 0}}});
 
     CHECK(actual.equals<i64>({1, std::nullopt, 1}));
 }
@@ -639,7 +639,7 @@ TEST_CASE("a sink map evaluates one inner graph for each live key",
     };
     MapSink::values.clear();
 
-    const auto actual = bg::run_graph(graph, std::array{1, 2, -1, 3});
+    const auto actual = hg::run_graph(graph, std::array{1, 2, -1, 3});
 
     CHECK(actual.equals<i64>({1, 2, 1, 3}));
     CHECK(MapSink::values == std::vector{1, 2, 3});
@@ -661,7 +661,7 @@ TEST_CASE("a pass-through reference replacement updates each running map inner g
         return wire_pass_through_map(mapped, factor)[i64{1}];
     };
 
-    const auto actual = bg::run_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
+    const auto actual = hg::run_graph(graph, std::array{1, 2, 3}, std::array{true, false, true});
 
     CHECK(actual.equals<i64>({11, 202, 33}));
 }
@@ -677,7 +677,7 @@ TEST_CASE("a map inner graph reports timed work through the map owner",
         return wire_delayed_map(make_values(target(value)))[i64{1}];
     };
 
-    const auto actual = bg::run_graph(graph, std::array{5});
+    const auto actual = hg::run_graph(graph, std::array{5});
 
     CHECK(actual.equals<i64>({std::nullopt, std::nullopt, 5}));
 }
@@ -697,7 +697,7 @@ TEST_CASE("map schedules the next scheduled time after one inner graph becomes d
     };
     VariableDelay::evaluations.clear();
 
-    const auto actual = bg::run_graph(graph, {{{1, 2}, {2, 4}}});
+    const auto actual = hg::run_graph(graph, {{{1, 2}, {2, 4}}});
 
     CHECK(VariableDelay::evaluations == std::vector{2, 4});
     REQUIRE(actual[actual.size() - 1]);
@@ -726,7 +726,7 @@ TEST_CASE("a map consumes and produces TSD references across two nested graph bo
     };
 
     const auto actual =
-        bg::run_graph(outer, std::array{1, 2, 3, 4, 5}, std::array{true, true, false, true, true});
+        hg::run_graph(outer, std::array{1, 2, 3, 4, 5}, std::array{true, true, false, true, true});
 
     CHECK(actual.equals<i64>({2, 3, std::nullopt, 5, 6}));
 }

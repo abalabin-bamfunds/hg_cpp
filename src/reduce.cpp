@@ -1,18 +1,18 @@
-#include <bg/reduce.hpp>
+#include <hg/reduce.hpp>
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/reduce/details/default_reduce_wiring.hpp>
-#include <bg/reduce/details/reduce_node.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/reduce/details/default_reduce_wiring.hpp>
+#include <hg/reduce/details/reduce_node.hpp>
 #include "time_series/ref/ref_node.hpp"
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <memory>
 #include <optional>
@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 const TimeSeriesType &dictionary_type(const WiringArgument &argument) {
@@ -147,9 +147,9 @@ std::optional<WiringPoint> DefaultReduceWiring::wire() const {
     return invocation.output;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 namespace {
 
 Signature default_reduce_signature() {
@@ -212,4 +212,4 @@ const auto register_default_reduce = [] {
 }();
 
 } // namespace
-} // namespace bg
+} // namespace hg

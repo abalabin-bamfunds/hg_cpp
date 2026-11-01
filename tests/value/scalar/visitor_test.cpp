@@ -1,4 +1,4 @@
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/value.hpp>
 
 #include "test_scalar_provider.hpp"
 
@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("a scalar visitor identifies a scalar value", "[value][scalar][visitor][feature:visitor][scalar:i64]") {
     const auto value = ScalarValue{42};
@@ -82,7 +82,7 @@ TEST_CASE("a scalar visitor identifies each collection type",
 TEST_CASE("a scalar visitor selects every built-in type by its type index",
           "[feature:visitor][scalar:byte][scalar:bytes][scalar:boolean][scalar:i64][scalar:floating-point]"
           "[scalar:evaluation-time][scalar:timedelta][scalar:string][scalar:symbol]") {
-    const auto byte = ScalarValue{bg::byte{0x2a}};
+    const auto byte = ScalarValue{hg::byte{0x2a}};
     const auto boolean = ScalarValue{true};
     const auto integer = ScalarValue{i64{42}};
     const auto floating_point = ScalarValue{42.0};

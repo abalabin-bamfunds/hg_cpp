@@ -1,13 +1,13 @@
 #include "../../utils/counting_memory_resource.hpp"
 
-#include <bg/global_state.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/runtime_type.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/runtime_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -24,7 +24,7 @@
 #include <string>
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -43,7 +43,7 @@ TEST_CASE("bundle constructs an empty hierarchical scalar", "[feature:scalar-api
 namespace {
 
 template <template <typename, auto...> typename Field> struct Instrument {
-    Field<bg::symbol> symbol;
+    Field<hg::symbol> symbol;
     Field<double, optional> price;
 };
 
@@ -184,7 +184,7 @@ TEST_CASE("bundle construction outside an allocation context requires an allocat
 
 TEST_CASE("bundle constructs a hierarchical scalar from positional and named arguments",
           "[feature:scalar-api][scalar:hierarchical][schema:named][validity:optional]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto value = bundle<Instrument>(bundle_allocator, "price"_n = 12.5, "symbol"_n = symbol{"ABC"});
     const auto view = value.view();
@@ -196,7 +196,7 @@ TEST_CASE("bundle constructs a hierarchical scalar from positional and named arg
 
 TEST_CASE("bundle constructs a list of tuples directly from a span of pairs",
           "[feature:scalar-api][scalar:hierarchical][scalar:list][scalar:tuple][schema:named]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto value = [&] {
         const auto source = std::array{std::pair{std::string{"content-type"}, std::string{"text/plain"}},
@@ -219,7 +219,7 @@ TEST_CASE("bundle constructs a list of tuples directly from a span of pairs",
 
 TEST_CASE("bundle borrows an owning scalar from a named argument",
           "[feature:scalar-api][scalar:hierarchical][schema:named][ownership:source]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     auto named = "value"_n = ScalarValue<i64>{73};
     const auto value = bundle<UnrelatedRecord>(bundle_allocator, named);
@@ -229,10 +229,10 @@ TEST_CASE("bundle borrows an owning scalar from a named argument",
 
 TEST_CASE("bundle rolls back a partially constructed list of tuples",
           "[feature:scalar-storage][scalar:hierarchical][scalar:list][scalar:tuple][exception:rollback]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     auto memory = counting_memory_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     const auto source = std::array{std::pair{std::string{"content-type"}, 17}};
     const auto headers = std::span<const std::pair<std::string, int>>{source};
 
@@ -249,7 +249,7 @@ TEST_CASE("bundle list construction avoids an intermediate list value",
 
     const auto direct_allocations = [&] {
         auto memory = counting_memory_resource{};
-        auto allocator = bg::allocator{memory};
+        auto allocator = hg::allocator{memory};
         const auto value = bundle<HeaderBatch>(allocator, headers);
         CHECK(scalar_cast<List<Tuple<string, string>>>(value.view()[0]).size() == 3);
         return memory.allocations();
@@ -257,7 +257,7 @@ TEST_CASE("bundle list construction avoids an intermediate list value",
 
     const auto copied_allocations = [&] {
         auto memory = counting_memory_resource{};
-        auto allocator = bg::allocator{memory};
+        auto allocator = hg::allocator{memory};
         const auto source_list = ScalarValue<List<Tuple<string, string>>>{headers, allocator};
         const auto value = bundle<HeaderBatch>(allocator, source_list.view());
         CHECK(scalar_cast<List<Tuple<string, string>>>(value.view()[0]).size() == 3);
@@ -269,7 +269,7 @@ TEST_CASE("bundle list construction avoids an intermediate list value",
 
 TEST_CASE("bundle uses inherited logical field order and permits omitted optional fields",
           "[feature:scalar-api][scalar:hierarchical][schema:named][binding:covariant][validity:optional]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto value = bundle<Equity>(bundle_allocator, "symbol"_n = symbol{"ABC"}, "lot_size"_n = 100);
     const auto view = value.view();
@@ -282,7 +282,7 @@ TEST_CASE("bundle uses inherited logical field order and permits omitted optiona
 
 TEST_CASE("bundle constructs nested and recursive hierarchical scalars",
           "[feature:scalar-api][scalar:hierarchical][schema:named][shape:nested][validity:optional]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto instrument = bundle<Instrument>(bundle_allocator, symbol{"ABC"});
     const auto position = bundle<Position>(bundle_allocator, instrument.view());
@@ -298,7 +298,7 @@ TEST_CASE("bundle constructs nested and recursive hierarchical scalars",
 
 TEST_CASE("bundle rejects invalid field assignments",
           "[feature:scalar-api][scalar:hierarchical][schema:named][validity:required]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto integer = ScalarValue{i64{1}};
 
@@ -313,7 +313,7 @@ TEST_CASE("bundle rejects invalid field assignments",
 TEST_CASE("bundle releases explicit allocator storage after failed construction",
           "[feature:scalar-storage][feature:finalization][scalar:hierarchical][storage:variable]") {
     auto memory = counting_memory_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     const auto incompatible = ScalarValue{i64{1}};
 
     CHECK_THROWS_AS(bundle<Instrument>(allocator, symbol{"ABC"}, incompatible), std::invalid_argument);
@@ -449,7 +449,7 @@ TEST_CASE("generic bundle declarations retain ownership through lists and dictio
     auto generic_dictionary = std::optional<ScalarValue<Dict<i64, Bundle<SCHEMA>>>>{};
     auto derived_type = static_cast<const ScalarType *>(nullptr);
     {
-        using namespace bg::literals;
+        using namespace hg::literals;
 
         const auto equity = bundle<Equity>(bundle_allocator, symbol{"ABC"}, "lot_size"_n = i64{100});
         derived_type = &equity.type();
@@ -482,7 +482,7 @@ TEST_CASE("a runtime schema constructs a bundle with optional and nested fields"
         SchemaField{util::symbol{"values"}, &cpp_scalar_type<List<i64>>(), false},
         SchemaField{util::symbol{"comment"}, &cpp_scalar_type<symbol>(), true},
     };
-    const auto &schema = bg::schema(util::symbol{"RuntimeValues"}, new_runtime_schema_id(), nullptr, fields);
+    const auto &schema = hg::schema(util::symbol{"RuntimeValues"}, new_runtime_schema_id(), nullptr, fields);
     auto result = std::optional<ScalarValue<Bundle<SCHEMA>>>{};
 
     {
@@ -514,7 +514,7 @@ TEST_CASE("runtime bundle construction rejects invalid field counts values and s
         SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>(), false},
         SchemaField{util::symbol{"comment"}, &cpp_scalar_type<symbol>(), true},
     };
-    const auto &schema = bg::schema(util::symbol{"RuntimeRequired"}, new_runtime_schema_id(), nullptr, fields);
+    const auto &schema = hg::schema(util::symbol{"RuntimeRequired"}, new_runtime_schema_id(), nullptr, fields);
     const auto integer = ScalarValue<i64>{42};
     const auto text = ScalarValue<symbol>{symbol{"wrong type"}};
     const auto integer_view = integer.view();
@@ -540,7 +540,7 @@ TEST_CASE("runtime bundle construction rejects invalid field counts values and s
         SchemaField{util::symbol{"value"}, &cpp_scalar_type<SCALAR>(), false},
     };
     const auto &unresolved_schema =
-        bg::schema(util::symbol{"RuntimeUnresolved"}, new_runtime_schema_id(), nullptr, unresolved_fields);
+        hg::schema(util::symbol{"RuntimeUnresolved"}, new_runtime_schema_id(), nullptr, unresolved_fields);
     CHECK_THROWS_WITH(hierarchical_scalar_type(unresolved_schema),
                       "a hierarchical scalar schema requires resolved scalar fields");
 }
@@ -569,7 +569,7 @@ TEST_CASE("a collection retains hierarchical fields until its final release",
           "[value][feature:finalization][scalar:list][scalar:hierarchical][storage:variable]"
           "[transition:lifecycle]") {
     auto memory = counting_memory_resource{};
-    auto allocator = bg::allocator{memory};
+    auto allocator = hg::allocator{memory};
     auto destruction_count = 0;
     auto retained = std::optional<ScalarValue<List<Bundle<FinalizableRecord>>>>{};
     {
@@ -596,7 +596,7 @@ TEST_CASE("a hierarchical scalar keeps its allocation owner alive",
           "[value][feature:scalar-storage][scalar:hierarchical][storage:variable]") {
     auto memory = counting_memory_resource{};
     {
-        auto allocator = bg::allocator{memory};
+        auto allocator = hg::allocator{memory};
         const auto value = bundle<Instrument>(allocator, symbol{"ABC"});
 
         CHECK(value.view().present(0));
@@ -667,7 +667,7 @@ TEST_CASE("a hierarchical scalar destroys its fields after its final release",
 
 TEST_CASE("a hierarchical bundle retains a named scalar field through construction",
           "[value][feature:scalar-storage][scalar:hierarchical][schema:named][lifetime:retained]") {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     auto owner = std::make_shared<int>(7);
     auto lifetime = std::weak_ptr<int>{owner};

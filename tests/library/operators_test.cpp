@@ -1,14 +1,14 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/library.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/testing/test_wiring.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/library.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/testing/test_wiring.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -20,8 +20,8 @@
 #include <optional>
 #include <stdexcept>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("nothing is a final typed output without a runtime node",
           "[feature:operator][feature:graph-compilation][series:value][guarantee:final]") {
@@ -37,7 +37,7 @@ TEST_CASE("nothing is a final typed output without a runtime node",
     CHECK(compiled.node_count() == 0);
     CHECK(compiled.runtime_storage_size() == 0);
 
-    const auto direct_output = bg::run_graph([] { return operators::nothing[type<TS<i64>>](); });
+    const auto direct_output = hg::run_graph([] { return operators::nothing[type<TS<i64>>](); });
     CHECK(direct_output.equals<i64>({std::nullopt}));
 
     const auto sink = node([](In<TS<i64>, optional>) {});
@@ -58,13 +58,13 @@ TEST_CASE("nothing composes with default and conditional selection",
           "[feature:operator][feature:graph-compilation][series:value][guarantee:final]"
           "[feature:wiring][feature:validity][feature:reference]") {
     const auto defaulted = [] { return operators::default_(operators::nothing[type<TS<i64>>](), i64{42}); };
-    CHECK(bg::run_graph(defaulted).equals<i64>({42}));
+    CHECK(hg::run_graph(defaulted).equals<i64>({42}));
 
     const auto observe = node([](In<TS<i64>, optional> value) { return value.valid(); });
     const auto selected = [&](wp<TS<bool>> condition, wp<TS<i64>> value) {
         return observe(operators::if_then_else(condition, value, operators::nothing[type<TS<i64>>]()));
     };
-    CHECK(bg::run_graph(selected, {true, false, true}, {10, 20, 30}).equals<bool>({true, false, true}));
+    CHECK(hg::run_graph(selected, {true, false, true}, {10, 20, 30}).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("i64 bitwise operators support scalar, mixed, and time-series operands",
@@ -91,19 +91,19 @@ TEST_CASE("i64 bitwise operators support scalar, mixed, and time-series operands
     constexpr auto lhs = std::array<i64, 4>{-1, minimum, maximum, 0b1010};
     constexpr auto rhs = std::array<i64, 4>{0b0101, -1, 1, 0b1100};
 
-    CHECK(bg::run_graph(scalar_and).equals<i64>({0b0101}));
-    CHECK(bg::run_graph(scalar_invert).equals<i64>({maximum}));
-    CHECK(bg::run_graph(bit_and, lhs, rhs).equals<i64>({0b0101, minimum, 1, 0b1000}));
-    CHECK(bg::run_graph(bit_or, lhs, rhs).equals<i64>({-1, -1, maximum, 0b1110}));
-    CHECK(bg::run_graph(bit_xor, lhs, rhs).equals<i64>({-6, maximum, maximum - 1, 0b0110}));
-    CHECK(bg::run_graph(invert, {-1, minimum, maximum, 0b1010})
+    CHECK(hg::run_graph(scalar_and).equals<i64>({0b0101}));
+    CHECK(hg::run_graph(scalar_invert).equals<i64>({maximum}));
+    CHECK(hg::run_graph(bit_and, lhs, rhs).equals<i64>({0b0101, minimum, 1, 0b1000}));
+    CHECK(hg::run_graph(bit_or, lhs, rhs).equals<i64>({-1, -1, maximum, 0b1110}));
+    CHECK(hg::run_graph(bit_xor, lhs, rhs).equals<i64>({-6, maximum, maximum - 1, 0b0110}));
+    CHECK(hg::run_graph(invert, {-1, minimum, maximum, 0b1010})
               .equals<i64>({0, maximum, minimum, -11}));
-    CHECK(bg::run_graph(scalar_left, {0b0101, minimum}).equals<i64>({0b0101, minimum}));
-    CHECK(bg::run_graph(scalar_right, {0b0101, minimum}).equals<i64>({0b0101, minimum}));
-    CHECK(bg::run_graph(deduplicated_invert, {5, 5, 6}).equals<i64>({-6, std::nullopt, -7}));
-    CHECK(bg::run_graph(ordinary_zero_and, {1, 2, 3}).equals<i64>({0, 0, 0}));
-    CHECK(bg::run_graph(deduplicated_zero_and, {1, 1, 2}).equals<i64>({0, std::nullopt, std::nullopt}));
-    CHECK(bg::run_graph(bit_and, {7, literal::INVALID, 8}, {3, literal::SKIP, literal::SKIP})
+    CHECK(hg::run_graph(scalar_left, {0b0101, minimum}).equals<i64>({0b0101, minimum}));
+    CHECK(hg::run_graph(scalar_right, {0b0101, minimum}).equals<i64>({0b0101, minimum}));
+    CHECK(hg::run_graph(deduplicated_invert, {5, 5, 6}).equals<i64>({-6, std::nullopt, -7}));
+    CHECK(hg::run_graph(ordinary_zero_and, {1, 2, 3}).equals<i64>({0, 0, 0}));
+    CHECK(hg::run_graph(deduplicated_zero_and, {1, 1, 2}).equals<i64>({0, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(bit_and, {7, literal::INVALID, 8}, {3, literal::SKIP, literal::SKIP})
               .equals<i64>({3, std::nullopt, 0}));
 
     const auto ordinary_source = node([](Out<TS<i64>>) {});
@@ -124,7 +124,7 @@ TEST_CASE("i64 bitwise operators support scalar, mixed, and time-series operands
     });
 
     const auto set_union = [](wp<TSS<i64>> left, wp<TSS<i64>> right) { return left | right; };
-    CHECK(bg::run_graph(set_union, {{1, 2}}, {{2, 3}}).equals({{1, 2, 3}}));
+    CHECK(hg::run_graph(set_union, {{1, 2}}, {{2, 3}}).equals({{1, 2, 3}}));
 }
 
 TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic",
@@ -146,23 +146,23 @@ TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic
     const auto lhs = std::array<i64, 4>{-7, 7, -7, 7};
     const auto rhs = std::array<i64, 4>{3, -3, -3, 3};
 
-    CHECK(bg::run_graph(integer_division, lhs, rhs)
+    CHECK(hg::run_graph(integer_division, lhs, rhs)
               .equals<double>({-7.0 / 3.0, -7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0}));
-    CHECK(bg::run_graph(cxx_integer_division, lhs, rhs)
+    CHECK(hg::run_graph(cxx_integer_division, lhs, rhs)
               .equals<double>({-7.0 / 3.0, -7.0 / 3.0, 7.0 / 3.0, 7.0 / 3.0}));
-    CHECK(bg::run_graph(cxx_scalar_left_division, {3, -3})
+    CHECK(hg::run_graph(cxx_scalar_left_division, {3, -3})
               .equals<double>({-7.0 / 3.0, -7.0 / -3.0}));
-    CHECK(bg::run_graph(floor_division, lhs, rhs).equals<i64>({-3, -3, 2, 2}));
-    CHECK(bg::run_graph(modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
-    CHECK(bg::run_graph(cxx_modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
-    CHECK(bg::run_graph(cxx_scalar_left_modulo, {3, -3}).equals<i64>({2, -1}));
+    CHECK(hg::run_graph(floor_division, lhs, rhs).equals<i64>({-3, -3, 2, 2}));
+    CHECK(hg::run_graph(modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
+    CHECK(hg::run_graph(cxx_modulo, lhs, rhs).equals<i64>({2, -2, -1, 1}));
+    CHECK(hg::run_graph(cxx_scalar_left_modulo, {3, -3}).equals<i64>({2, -1}));
 
     const auto mixed_division = [](wp<TS<i64>> value) { return operators::div(value, 2.0); };
     const auto optional_division = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(opt(lhs), rhs); };
     const auto optional_modulo = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::mod(opt(lhs), rhs); };
-    CHECK_THROWS_AS(bg::run_graph(mixed_division, {7}), WiringError);
-    CHECK_THROWS_AS(bg::run_graph(optional_division, lhs, rhs), WiringError);
-    CHECK_THROWS_AS(bg::run_graph(optional_modulo, lhs, rhs), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(mixed_division, {7}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(optional_division, lhs, rhs), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(optional_modulo, lhs, rhs), WiringError);
 
     const auto min_over_negative_one = [] { return operators::div(std::numeric_limits<i64>::min(), i64{-1}); };
     const auto floor_min_over_negative_one = [] {
@@ -171,10 +171,10 @@ TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic
     const auto modulo_min_over_negative_one = [] {
         return operators::mod(std::numeric_limits<i64>::min(), i64{-1});
     };
-    CHECK(bg::run_graph(min_over_negative_one)
+    CHECK(hg::run_graph(min_over_negative_one)
               .equals<double>({static_cast<double>(std::uint64_t{1} << 63)}));
-    CHECK(bg::run_graph(floor_min_over_negative_one).equals<i64>({std::numeric_limits<i64>::min()}));
-    CHECK(bg::run_graph(modulo_min_over_negative_one).equals<i64>({0}));
+    CHECK(hg::run_graph(floor_min_over_negative_one).equals<i64>({std::numeric_limits<i64>::min()}));
+    CHECK(hg::run_graph(modulo_min_over_negative_one).equals<i64>({0}));
 
     const auto divide_by_zero = [] { return operators::div(i64{1}, i64{0}); };
     const auto floor_divide_by_zero = [] { return operators::floordiv(i64{1}, i64{0}); };
@@ -182,18 +182,18 @@ TEST_CASE("numeric division, floor division, and modulo follow signed arithmetic
     const auto divide_by_negative_zero = [] { return operators::div(1.0, -0.0); };
     const auto floor_divide_by_negative_zero = [] { return operators::floordiv(1.0, -0.0); };
     const auto modulo_by_negative_zero = [] { return operators::mod(1.0, -0.0); };
-    CHECK_THROWS_AS(bg::run_graph(divide_by_zero), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(floor_divide_by_zero), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(modulo_by_zero), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(divide_by_negative_zero), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(floor_divide_by_negative_zero), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(modulo_by_negative_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(divide_by_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(floor_divide_by_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(modulo_by_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(divide_by_negative_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(floor_divide_by_negative_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(modulo_by_negative_zero), std::domain_error);
 }
 
 TEST_CASE("floating division preserves signed zero",
           "[feature:operator][series:value][scalar:floating-point]") {
     const auto divide = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::div(lhs, rhs); };
-    const auto result = bg::run_graph(divide, {-7.0, -0.0, 0.0}, {2.0, 2.0, -2.0});
+    const auto result = hg::run_graph(divide, {-7.0, -0.0, 0.0}, {2.0, 2.0, -2.0});
 
     REQUIRE(result.equals<double>({-3.5, -0.0, -0.0}));
     CHECK(std::signbit(scalar_cast<double>(result[1]->view()).value()));
@@ -228,7 +228,7 @@ TEST_CASE("integer division converts its operands to binary64",
         864691128455135232,
     };
 
-    const auto result = bg::run_graph(divide, lhs, rhs);
+    const auto result = hg::run_graph(divide, lhs, rhs);
     REQUIRE(result.equals<double>({1.0, 1.0 + std::ldexp(1.0, -51), 3002399751580330.5,
                                    std::ldexp(1.0, 54), std::ldexp(1.0, 63), std::ldexp(1.0, 63),
                                    std::ldexp(1.0, -63), -0.0, 0.03125000000000001}));
@@ -242,8 +242,8 @@ TEST_CASE("floating floor division preserves Python quotient and modulo rules",
     const auto lhs = std::array{1.0, -1.0, 1.0, -1.0};
     const auto rhs = std::array{0.1, 0.1, -0.1, -0.1};
 
-    CHECK(bg::run_graph(floor_division, lhs, rhs).equals<double>({9.0, -10.0, -10.0, 9.0}));
-    const auto result = bg::run_graph(modulo, lhs, rhs);
+    CHECK(hg::run_graph(floor_division, lhs, rhs).equals<double>({9.0, -10.0, -10.0, 9.0}));
+    const auto result = hg::run_graph(modulo, lhs, rhs);
     CHECK(result.equals<double>({std::fmod(1.0, 0.1), 0.1 - std::fmod(1.0, 0.1),
                                  -0.1 + std::fmod(1.0, 0.1), -std::fmod(1.0, 0.1)}));
 }
@@ -253,19 +253,19 @@ TEST_CASE("power preserves numeric result types",
     const auto integer_power = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::pow(lhs, rhs); };
     const auto floating_power = [](wp<TS<double>> lhs, wp<TS<double>> rhs) { return operators::pow(lhs, rhs); };
 
-    CHECK(bg::run_graph(integer_power, std::array<i64, 3>{2, -2, 3}, std::array<i64, 3>{10, 3, 0})
+    CHECK(hg::run_graph(integer_power, std::array<i64, 3>{2, -2, 3}, std::array<i64, 3>{10, 3, 0})
               .equals<i64>({1024, -8, 1}));
     const auto wrapping_power = [] { return operators::pow(i64{2}, i64{63}); };
-    CHECK(bg::run_graph(wrapping_power).equals<i64>({std::numeric_limits<i64>::min()}));
-    CHECK(bg::run_graph(floating_power, std::array{2.0, -2.0}, std::array{3.0, 4.0})
+    CHECK(hg::run_graph(wrapping_power).equals<i64>({std::numeric_limits<i64>::min()}));
+    CHECK(hg::run_graph(floating_power, std::array{2.0, -2.0}, std::array{3.0, 4.0})
               .equals<double>({8.0, 16.0}));
 
     const auto negative_integer_exponent = [] { return operators::pow(i64{2}, i64{-1}); };
     const auto zero_to_negative_power = [] { return operators::pow(0.0, -1.0); };
     const auto complex_power = [] { return operators::pow(-2.0, 0.5); };
-    CHECK_THROWS_AS(bg::run_graph(negative_integer_exponent), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(zero_to_negative_power), std::domain_error);
-    CHECK_THROWS_AS(bg::run_graph(complex_power), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(negative_integer_exponent), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(zero_to_negative_power), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(complex_power), std::domain_error);
 }
 
 TEST_CASE("round uses numeric scaling and ties-to-even",
@@ -274,16 +274,16 @@ TEST_CASE("round uses numeric scaling and ties-to-even",
     const auto round_whole = [](wp<TS<double>> value) { return operators::round(value); };
     const auto round_scalar = [] { return operators::round(2.675, 2); };
 
-    CHECK(bg::run_graph(round_scalar).equals<double>({2.68}));
-    CHECK(bg::run_graph(round_value, std::array{2.675, 1.125, 1.375, -1.125, -1.375},
+    CHECK(hg::run_graph(round_scalar).equals<double>({2.68}));
+    CHECK(hg::run_graph(round_value, std::array{2.675, 1.125, 1.375, -1.125, -1.375},
                               std::array<i64, 5>{2, 2, 2, 2, 2})
               .equals<double>({2.68, 1.12, 1.38, -1.12, -1.38}));
-    CHECK(bg::run_graph(round_whole, std::array{2.5, 3.5, -2.5, -3.5}).equals<double>({2.0, 4.0, -2.0, -4.0}));
-    CHECK(bg::run_graph(round_value, std::array{25.0, 35.0, -25.0, -35.0, 250.0, 350.0},
+    CHECK(hg::run_graph(round_whole, std::array{2.5, 3.5, -2.5, -3.5}).equals<double>({2.0, 4.0, -2.0, -4.0}));
+    CHECK(hg::run_graph(round_value, std::array{25.0, 35.0, -25.0, -35.0, 250.0, 350.0},
                               std::array<i64, 6>{-1, -1, -1, -1, -2, -2})
               .equals<double>({20.0, 40.0, -20.0, -40.0, 200.0, 400.0}));
 
-    const auto largest_digits = bg::run_graph(
+    const auto largest_digits = hg::run_graph(
         round_value, std::array{1.25, -1.25},
         std::array<i64, 2>{std::numeric_limits<i64>::max(), std::numeric_limits<i64>::min()});
     REQUIRE(largest_digits.size() == 2);
@@ -292,7 +292,7 @@ TEST_CASE("round uses numeric scaling and ties-to-even",
     CHECK(std::signbit(scalar_cast<double>(largest_digits[1]->view()).value()));
 
     const auto infinity = std::numeric_limits<double>::infinity();
-    const auto nonfinite = bg::run_graph(round_value, std::array{infinity, -infinity,
+    const auto nonfinite = hg::run_graph(round_value, std::array{infinity, -infinity,
                                                                        std::numeric_limits<double>::quiet_NaN()},
                                                std::array<i64, 3>{2, -1, 0});
     REQUIRE(nonfinite.size() == 3);
@@ -300,7 +300,7 @@ TEST_CASE("round uses numeric scaling and ties-to-even",
     CHECK(std::isinf(scalar_cast<double>(nonfinite[1]->view()).value()));
     CHECK(std::isnan(scalar_cast<double>(nonfinite[2]->view()).value()));
 
-    const auto signed_zero = bg::run_graph(round_value, std::array{-0.0, -0.1, 0.1},
+    const auto signed_zero = hg::run_graph(round_value, std::array{-0.0, -0.1, 0.1},
                                                   std::array<i64, 3>{2, 0, 0});
     REQUIRE(signed_zero.size() == 3);
     CHECK(std::signbit(scalar_cast<double>(signed_zero[0]->view()).value()));
@@ -308,7 +308,7 @@ TEST_CASE("round uses numeric scaling and ties-to-even",
     CHECK_FALSE(std::signbit(scalar_cast<double>(signed_zero[2]->view()).value()));
 
     const auto subnormal = std::numeric_limits<double>::denorm_min();
-    const auto high_precision = bg::run_graph(round_value, std::array{1.23e-310, subnormal, subnormal},
+    const auto high_precision = hg::run_graph(round_value, std::array{1.23e-310, subnormal, subnormal},
                                                      std::array<i64, 3>{310, 323, 324});
     REQUIRE(high_precision.size() == 3);
     CHECK(scalar_cast<double>(high_precision[0]->view()).value() == 1e-310);
@@ -316,9 +316,9 @@ TEST_CASE("round uses numeric scaling and ties-to-even",
     CHECK(scalar_cast<double>(high_precision[2]->view()).value() == subnormal);
 
     const auto largest_value = std::numeric_limits<double>::max();
-    CHECK(bg::run_graph(round_value, std::array{largest_value}, std::array<i64, 1>{308})
+    CHECK(hg::run_graph(round_value, std::array{largest_value}, std::array<i64, 1>{308})
               .equals<double>({largest_value}));
-    CHECK_THROWS_AS(bg::run_graph(round_value, std::array{1.5e308}, std::array<i64, 1>{-308}),
+    CHECK_THROWS_AS(hg::run_graph(round_value, std::array{1.5e308}, std::array<i64, 1>{-308}),
                     std::overflow_error);
 }
 
@@ -330,10 +330,10 @@ TEST_CASE("convert maps a full target type and permits collection overloads",
     };
     const auto to_integer = [](wp<TS<double>> value) { return operators::convert[type<TS<i64>>](value); };
     const auto convert_without_target = [](wp<TS<i64>> value) { return operators::convert(value); };
-    CHECK(bg::run_graph(to_double, std::array<i64, 2>{2, -3}).equals<double>({2.0, -3.0}));
-    CHECK(bg::run_graph(to_integer_from_integer, std::array<i64, 2>{2, -3}).equals<i64>({2, -3}));
-    CHECK(bg::run_graph(to_integer, std::array{2.9, -2.9}).equals<i64>({2, -2}));
-    CHECK_THROWS_AS(bg::run_graph(convert_without_target, std::array<i64, 1>{7}), WiringError);
+    CHECK(hg::run_graph(to_double, std::array<i64, 2>{2, -3}).equals<double>({2.0, -3.0}));
+    CHECK(hg::run_graph(to_integer_from_integer, std::array<i64, 2>{2, -3}).equals<i64>({2, -3}));
+    CHECK(hg::run_graph(to_integer, std::array{2.9, -2.9}).equals<i64>({2, -2}));
+    CHECK_THROWS_AS(hg::run_graph(convert_without_target, std::array<i64, 1>{7}), WiringError);
 
     const auto target_matches = [](const WiringArguments &arguments, const Type &target) {
         const auto *mapping = arguments.type_map().find(details::type_parameter<operators::CONVERT_RESULT>());
@@ -403,7 +403,7 @@ TEST_CASE("convert maps a full target type and permits collection overloads",
     const auto stronger_target = [](wp<TS<i64>> value) {
         return operators::convert[type<TS<i64, TimeSeriesGuarantee::const_>>](value);
     };
-    CHECK_THROWS_AS(bg::run_graph(stronger_target, std::array<i64, 1>{7}), WiringError);
+    CHECK_THROWS_AS(hg::run_graph(stronger_target, std::array<i64, 1>{7}), WiringError);
 }
 
 TEST_CASE("conversion and division preserve resolved time-series guarantees",
@@ -486,7 +486,7 @@ TEST_CASE("conversion revalidates after an invalid input and emits equal values"
         return operators::convert[type<TS<double>>](source(value, invalidate));
     };
 
-    CHECK(bg::run_graph(convert, std::array<i64, 4>{1, 1, 1, 1}, std::array{false, true, false, false})
+    CHECK(hg::run_graph(convert, std::array<i64, 4>{1, 1, 1, 1}, std::array{false, true, false, false})
               .equals<double>({1.0, std::nullopt, 1.0, 1.0}));
 }
 
@@ -494,13 +494,13 @@ TEST_CASE("numeric conversion checks i64 boundaries and non-finite values",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto to_integer = [](wp<TS<double>> value) { return operators::convert[type<TS<i64>>](value); };
     const auto minimum = -std::ldexp(1.0, 63);
-    CHECK(bg::run_graph(to_integer, std::array{minimum}).equals<i64>({std::numeric_limits<i64>::min()}));
-    CHECK_THROWS_AS(bg::run_graph(to_integer, std::array{std::ldexp(1.0, 63)}), std::overflow_error);
-    CHECK_THROWS_AS(bg::run_graph(to_integer, std::array{std::numeric_limits<double>::infinity()}),
+    CHECK(hg::run_graph(to_integer, std::array{minimum}).equals<i64>({std::numeric_limits<i64>::min()}));
+    CHECK_THROWS_AS(hg::run_graph(to_integer, std::array{std::ldexp(1.0, 63)}), std::overflow_error);
+    CHECK_THROWS_AS(hg::run_graph(to_integer, std::array{std::numeric_limits<double>::infinity()}),
                     std::overflow_error);
-    CHECK_THROWS_AS(bg::run_graph(to_integer, std::array{-std::numeric_limits<double>::infinity()}),
+    CHECK_THROWS_AS(hg::run_graph(to_integer, std::array{-std::numeric_limits<double>::infinity()}),
                     std::overflow_error);
-    CHECK_THROWS_AS(bg::run_graph(to_integer, std::array{std::numeric_limits<double>::quiet_NaN()}),
+    CHECK_THROWS_AS(hg::run_graph(to_integer, std::array{std::numeric_limits<double>::quiet_NaN()}),
                     std::domain_error);
 }
 
@@ -513,8 +513,8 @@ TEST_CASE("subtraction handles values and timestamp differences",
     const auto timestamps = std::array{MIN_DT + timedelta_t{10}, MIN_DT + timedelta_t{4}};
     const auto rhs = std::array{MIN_DT + timedelta_t{3}, MIN_DT + timedelta_t{9}};
 
-    CHECK(bg::run_graph(integer_difference, std::array<i64, 3>{5, 3, -2}).equals<i64>({2, 0, -5}));
-    CHECK(bg::run_graph(timestamp_difference, timestamps, rhs)
+    CHECK(hg::run_graph(integer_difference, std::array<i64, 3>{5, 3, -2}).equals<i64>({2, 0, -5}));
+    CHECK(hg::run_graph(timestamp_difference, timestamps, rhs)
               .equals<timedelta_t>({timedelta_t{7}, timedelta_t{-5}}));
 }
 
@@ -524,10 +524,10 @@ TEST_CASE("multiplication accepts scalar and time-series values",
     const auto scalar_left = [](wp<TS<i64>> value) { return i64{3} * value; };
     const auto constant = [] { return operators::mul(i64{6}, i64{7}); };
 
-    CHECK(bg::run_graph(multiply, std::array<i64, 3>{2, -3, 0}, std::array<i64, 3>{4, 2, 10})
+    CHECK(hg::run_graph(multiply, std::array<i64, 3>{2, -3, 0}, std::array<i64, 3>{4, 2, 10})
               .equals<i64>({8, -6, 0}));
-    CHECK(bg::run_graph(scalar_left, std::array<i64, 2>{-2, 5}).equals<i64>({-6, 15}));
-    CHECK(bg::run_graph(constant).equals<i64>({42}));
+    CHECK(hg::run_graph(scalar_left, std::array<i64, 2>{-2, 5}).equals<i64>({-6, 15}));
+    CHECK(hg::run_graph(constant).equals<i64>({42}));
 
     auto wiring = GraphWiring{};
     {
@@ -544,7 +544,7 @@ TEST_CASE("Boolean operators calculate scalar-only calls",
           "[feature:operator][feature:wiring][series:value][scalar:boolean][shape:source]") {
     const auto constant = [] { return operators::and_(true, false); };
 
-    CHECK(bg::run_graph(constant).equals<bool>({false}));
+    CHECK(hg::run_graph(constant).equals<bool>({false}));
 
     auto wiring = GraphWiring{};
     {
@@ -563,8 +563,8 @@ TEST_CASE("scalar-only unary and comparison operators publish once at startup",
     const auto negate = [](wp<TS<bool>>) { return operators::neg(i64{3}); };
     const auto compare = [](wp<TS<bool>>) { return operators::lt(i64{2}, i64{3}); };
 
-    CHECK(bg::run_graph(negate, ticks).equals<i64>({-3, std::nullopt, std::nullopt}));
-    CHECK(bg::run_graph(compare, ticks).equals<bool>({true, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(negate, ticks).equals<i64>({-3, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(compare, ticks).equals<bool>({true, std::nullopt, std::nullopt}));
 }
 
 TEST_CASE("optional scalar arithmetic uses presence matching",
@@ -574,9 +574,9 @@ TEST_CASE("optional scalar arithmetic uses presence matching",
     const auto multiply_absent = [](wp<TS<bool>>) { return operators::mul(std::optional<i64>{}, i64{3}); };
     const auto add_present = [](wp<TS<bool>>) { return operators::add(std::optional<i64>{2}, i64{3}); };
 
-    CHECK(bg::run_graph(add_absent, ticks).equals<i64>({3, std::nullopt, std::nullopt}));
-    CHECK(bg::run_graph(multiply_absent, ticks).equals<i64>({3, std::nullopt, std::nullopt}));
-    CHECK(bg::run_graph(add_present, ticks).equals<i64>({5, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(add_absent, ticks).equals<i64>({3, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(multiply_absent, ticks).equals<i64>({3, std::nullopt, std::nullopt}));
+    CHECK(hg::run_graph(add_present, ticks).equals<i64>({5, std::nullopt, std::nullopt}));
 
     testing::test_wiring([&] {
         const auto absent = operators::add(std::optional<i64>{}, i64{3});
@@ -596,18 +596,18 @@ TEST_CASE("integer multiplication and unary operations wrap at signed boundaries
     const auto absolute = [](wp<TS<i64>> value) { return operators::abs(value); };
     const auto integer_values = std::array{I64_MIN, I64_MAX, i64{-2}, i64{2}};
 
-    CHECK(bg::run_graph(multiply, std::array{I64_MIN}).equals<i64>({I64_MIN}));
-    CHECK(bg::run_graph(multiply_optional, std::array{I64_MAX}, std::array<i64, 1>{2})
+    CHECK(hg::run_graph(multiply, std::array{I64_MIN}).equals<i64>({I64_MIN}));
+    CHECK(hg::run_graph(multiply_optional, std::array{I64_MAX}, std::array<i64, 1>{2})
               .equals<i64>({-2}));
-    CHECK(bg::run_graph(negate, integer_values).equals<i64>({I64_MIN, -I64_MAX, 2, -2}));
-    CHECK(bg::run_graph(absolute, integer_values).equals<i64>({I64_MIN, I64_MAX, 2, 2}));
+    CHECK(hg::run_graph(negate, integer_values).equals<i64>({I64_MIN, -I64_MAX, 2, -2}));
+    CHECK(hg::run_graph(absolute, integer_values).equals<i64>({I64_MIN, I64_MAX, 2, 2}));
 
     const auto negate_duration = [](wp<TS<timedelta_t>> value) { return operators::neg(value); };
     const auto absolute_duration = [](wp<TS<timedelta_t>> value) { return operators::abs(value); };
     const auto duration_values = std::array{timedelta_t::min(), timedelta_t::max()};
-    CHECK(bg::run_graph(negate_duration, duration_values)
+    CHECK(hg::run_graph(negate_duration, duration_values)
               .equals<timedelta_t>({timedelta_t::min(), timedelta_t{-timedelta_t::max().count()}}));
-    CHECK(bg::run_graph(absolute_duration, duration_values)
+    CHECK(hg::run_graph(absolute_duration, duration_values)
               .equals<timedelta_t>({timedelta_t::min(), timedelta_t::max()}));
 
     const auto scalar_add = [] { return operators::add(std::numeric_limits<i64>::max(), i64{1}); };
@@ -615,11 +615,11 @@ TEST_CASE("integer multiplication and unary operations wrap at signed boundaries
     const auto scalar_multiply = [] { return operators::mul(std::numeric_limits<i64>::min(), i64{-1}); };
     const auto scalar_negate = [] { return operators::neg(std::numeric_limits<i64>::min()); };
     const auto scalar_absolute = [] { return operators::abs(std::numeric_limits<i64>::min()); };
-    CHECK(bg::run_graph(scalar_add).equals<i64>({I64_MIN}));
-    CHECK(bg::run_graph(scalar_subtract).equals<i64>({I64_MAX}));
-    CHECK(bg::run_graph(scalar_multiply).equals<i64>({I64_MIN}));
-    CHECK(bg::run_graph(scalar_negate).equals<i64>({I64_MIN}));
-    CHECK(bg::run_graph(scalar_absolute).equals<i64>({I64_MIN}));
+    CHECK(hg::run_graph(scalar_add).equals<i64>({I64_MIN}));
+    CHECK(hg::run_graph(scalar_subtract).equals<i64>({I64_MAX}));
+    CHECK(hg::run_graph(scalar_multiply).equals<i64>({I64_MIN}));
+    CHECK(hg::run_graph(scalar_negate).equals<i64>({I64_MIN}));
+    CHECK(hg::run_graph(scalar_absolute).equals<i64>({I64_MIN}));
 }
 
 TEST_CASE("optional multiplication substitutes one for invalid operands",
@@ -649,7 +649,7 @@ TEST_CASE("optional multiplication substitutes one for invalid operands",
     const auto rhs = std::array{4.0, 4.0, 4.0, 4.0};
     const auto invalidate_rhs = std::array{false, false, false, false};
 
-    CHECK(bg::run_graph(multiply, lhs, invalidate_lhs, rhs, invalidate_rhs).equals<double>({8.0, 4.0, 4.0, 12.0}));
+    CHECK(hg::run_graph(multiply, lhs, invalidate_lhs, rhs, invalidate_rhs).equals<double>({8.0, 4.0, 4.0, 12.0}));
 }
 
 TEST_CASE("comparisons and named Boolean operators return Boolean time series",
@@ -683,27 +683,27 @@ TEST_CASE("comparisons and named Boolean operators return Boolean time series",
     const auto erased_or_scalar_right = [](wp<TS<bool>> value) { return wp<>{value} || false; };
     const auto erased_or_scalar_left = [](wp<TS<bool>> value) { return true || wp<>{value}; };
 
-    CHECK(bg::run_graph(less_than, std::array<i64, 3>{1, 3, 2}, std::array<i64, 3>{2, 2, 2})
+    CHECK(hg::run_graph(less_than, std::array<i64, 3>{1, 3, 2}, std::array<i64, 3>{2, 2, 2})
               .equals<bool>({true, false, false}));
-    CHECK(bg::run_graph(equal, std::array<i64, 3>{2, 3, 2}).equals<bool>({true, false, true}));
-    CHECK(bg::run_graph(both, std::array{true, true, false}, std::array{true, false, false})
+    CHECK(hg::run_graph(equal, std::array<i64, 3>{2, 3, 2}).equals<bool>({true, false, true}));
+    CHECK(hg::run_graph(both, std::array{true, true, false}, std::array{true, false, false})
               .equals<bool>({true, false, false}));
-    CHECK(bg::run_graph(either, std::array{true, false}, std::array{false, false}).equals<bool>({true, false}));
-    CHECK(bg::run_graph(negate, std::array{true, false}).equals<bool>({false, true}));
-    CHECK(bg::run_graph(and_scalar_right, std::array{true, false}).equals<bool>({true, false}));
-    CHECK(bg::run_graph(and_scalar_left, std::array{true, false}).equals<bool>({false, false}));
-    CHECK(bg::run_graph(or_scalar_right, std::array{true, false}).equals<bool>({true, false}));
-    CHECK(bg::run_graph(or_scalar_left, std::array{true, false}).equals<bool>({true, true}));
-    CHECK(bg::run_graph(erased_not, std::array{true, false}).equals<bool>({false, true}));
-    CHECK(bg::run_graph(erased_and, std::array{true, false}, std::array{true, false})
+    CHECK(hg::run_graph(either, std::array{true, false}, std::array{false, false}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(negate, std::array{true, false}).equals<bool>({false, true}));
+    CHECK(hg::run_graph(and_scalar_right, std::array{true, false}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(and_scalar_left, std::array{true, false}).equals<bool>({false, false}));
+    CHECK(hg::run_graph(or_scalar_right, std::array{true, false}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(or_scalar_left, std::array{true, false}).equals<bool>({true, true}));
+    CHECK(hg::run_graph(erased_not, std::array{true, false}).equals<bool>({false, true}));
+    CHECK(hg::run_graph(erased_and, std::array{true, false}, std::array{true, false})
               .equals<bool>({true, false}));
-    CHECK(bg::run_graph(erased_or, std::array{true, false}, std::array{false, false})
+    CHECK(hg::run_graph(erased_or, std::array{true, false}, std::array{false, false})
               .equals<bool>({true, false}));
-    CHECK(bg::run_graph(erased_and_scalar_right, std::array{true, false}).equals<bool>({true, false}));
-    CHECK(bg::run_graph(erased_and_scalar_left, std::array{true, false}).equals<bool>({false, false}));
-    CHECK(bg::run_graph(erased_or_scalar_right, std::array{true, false}).equals<bool>({true, false}));
-    CHECK(bg::run_graph(erased_or_scalar_left, std::array{true, false}).equals<bool>({true, true}));
-    CHECK(bg::run_graph(named_and, std::array{true, false}, std::array{true, true})
+    CHECK(hg::run_graph(erased_and_scalar_right, std::array{true, false}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(erased_and_scalar_left, std::array{true, false}).equals<bool>({false, false}));
+    CHECK(hg::run_graph(erased_or_scalar_right, std::array{true, false}).equals<bool>({true, false}));
+    CHECK(hg::run_graph(erased_or_scalar_left, std::array{true, false}).equals<bool>({true, true}));
+    CHECK(hg::run_graph(named_and, std::array{true, false}, std::array{true, true})
               .equals<bool>({true, false}));
 }
 
@@ -720,12 +720,12 @@ TEST_CASE("symbol equality handles scalar, mixed, and time-series inputs",
     const auto values = std::array{symbol{}, symbol{""}, symbol{"bid"}};
     const auto same_or_different = std::array{symbol{""}, symbol{""}, symbol{"ask"}};
 
-    CHECK(bg::run_graph(scalar_equal).equals<bool>({false}));
-    CHECK(bg::run_graph(scalar_not_equal).equals<bool>({true}));
-    CHECK(bg::run_graph(mixed_equal, values).equals<bool>({false, true, false}));
-    CHECK(bg::run_graph(mixed_not_equal, values).equals<bool>({true, false, true}));
-    CHECK(bg::run_graph(series_equal, values, same_or_different).equals<bool>({false, true, false}));
-    CHECK(bg::run_graph(series_not_equal, values, same_or_different).equals<bool>({true, false, true}));
+    CHECK(hg::run_graph(scalar_equal).equals<bool>({false}));
+    CHECK(hg::run_graph(scalar_not_equal).equals<bool>({true}));
+    CHECK(hg::run_graph(mixed_equal, values).equals<bool>({false, true, false}));
+    CHECK(hg::run_graph(mixed_not_equal, values).equals<bool>({true, false, true}));
+    CHECK(hg::run_graph(series_equal, values, same_or_different).equals<bool>({false, true, false}));
+    CHECK(hg::run_graph(series_not_equal, values, same_or_different).equals<bool>({true, false, true}));
 }
 
 TEST_CASE("required Boolean operators wait for every valid input",
@@ -764,10 +764,10 @@ TEST_CASE("required Boolean operators wait for every valid input",
     const auto valid = std::array{false, false, false};
     const auto invalid_then_valid = std::array{false, true, false};
 
-    CHECK(bg::run_graph(conjunction, std::array{false, false, false}, valid,
+    CHECK(hg::run_graph(conjunction, std::array{false, false, false}, valid,
                               std::array{true, true, true}, invalid_then_valid)
               .equals<bool>({true, false, true}));
-    CHECK(bg::run_graph(disjunction, std::array{true, true, true}, valid,
+    CHECK(hg::run_graph(disjunction, std::array{true, true, true}, valid,
                               std::array{false, false, false}, invalid_then_valid)
               .equals<bool>({true, false, true}));
 }
@@ -787,8 +787,8 @@ TEST_CASE("generic equality compares compound time-series values",
     const auto lhs = std::array{Quote{.quantity = 2, .price = 3.5}, Quote{.quantity = 2, .price = 3.5}};
     const auto rhs = std::array{Quote{.quantity = 2, .price = 3.5}, Quote{.quantity = 3, .price = 3.5}};
 
-    CHECK(bg::run_graph(series_equal, bg::input<TS<Quote>>({lhs[0], lhs[1]}),
-                              bg::input<TS<Quote>>({rhs[0], rhs[1]}))
+    CHECK(hg::run_graph(series_equal, hg::input<TS<Quote>>({lhs[0], lhs[1]}),
+                              hg::input<TS<Quote>>({rhs[0], rhs[1]}))
               .equals<bool>({true, false}));
 }
 

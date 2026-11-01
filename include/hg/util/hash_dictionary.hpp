@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/util/details/hash_key_table.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/util/details/hash_key_table.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::util {
+namespace hg::util {
 
 // Stores stable-address keys and values in separate typed columns that share occupied positions.
 // The caller must use one memory resource for all storage changes and release storage before destruction.
@@ -288,4 +288,4 @@ class hash_dictionary {
     sparse_bunch<Value> values_;
 };
 
-} // namespace bg::util
+} // namespace hg::util

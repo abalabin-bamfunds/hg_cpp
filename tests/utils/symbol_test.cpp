@@ -1,11 +1,11 @@
-#include <bg/util/compile_time_string.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/util/compile_time_string.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
 #include <string_view>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 

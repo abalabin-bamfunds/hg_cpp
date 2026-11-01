@@ -1,8 +1,8 @@
-#include <bg/type/schema.hpp>
+#include <hg/type/schema.hpp>
 
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include "type_registration.hpp"
 
@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace {
 
 void cache_reserved_schema(const Schema &schema);
@@ -228,7 +228,7 @@ const Schema &Schema::resolve(const TypeMap &type_map) const {
     }
 
     const auto *resolved_base = base_ == nullptr ? nullptr : &base_->resolve(type_map);
-    return bg::schema(name_, identity_, resolved_base, fields, direct_metadata_);
+    return hg::schema(name_, identity_, resolved_base, fields, direct_metadata_);
 }
 
 RuntimeSchemaId new_runtime_schema_id() {
@@ -260,4 +260,4 @@ const Schema &anonymous_schema(std::span<const SchemaField> fields, SchemaMetada
     return schema(util::symbol{""}, std::monostate{}, nullptr, fields, std::move(metadata));
 }
 
-} // namespace bg
+} // namespace hg

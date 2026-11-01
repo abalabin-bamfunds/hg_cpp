@@ -1,19 +1,19 @@
-#include <bg/map/details/map_node_definition.hpp>
+#include <hg/map/details/map_node_definition.hpp>
 
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 namespace {
 
 struct MapNodeIdentity {
@@ -235,4 +235,4 @@ void MapNodeDefinition::validate() const {
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

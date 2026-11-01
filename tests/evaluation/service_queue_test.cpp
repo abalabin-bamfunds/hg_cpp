@@ -1,14 +1,14 @@
 #include "service_test_helpers.hpp"
 
-#include <bg/queue_node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/run_graph.hpp>
 
 #include <chrono>
 #include <stop_token>
 #include <thread>
 #include <utility>
 
-using namespace bg;
+using namespace hg;
 
 TEST_CASE("service requests dispatch to a worker and queued replies reach the client",
           "[evaluation][feature:service][feature:realtime][queue][concurrency]") {

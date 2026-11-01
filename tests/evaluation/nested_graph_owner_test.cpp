@@ -1,10 +1,10 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/runtime_graph_scheduling.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/graph/runtime_graph_scheduling.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -60,7 +60,7 @@ struct InnerNode {
 };
 
 CompiledGraph make_owner_graph() {
-    const auto node = bg::node<OwnerNode>();
+    const auto node = hg::node<OwnerNode>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -71,7 +71,7 @@ CompiledGraph make_owner_graph() {
 }
 
 CompiledGraph make_inner_graph(int delay) {
-    const auto node = bg::node<InnerNode>();
+    const auto node = hg::node<InnerNode>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};

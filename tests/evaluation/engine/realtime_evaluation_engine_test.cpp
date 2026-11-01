@@ -1,14 +1,14 @@
-#include <bg/details/engine_wakeup.hpp>
-#include <bg/periodic_callback.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/queue_node.hpp>
-#include <bg/realtime_evaluation_engine.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/details/engine_wakeup.hpp>
+#include <hg/periodic_callback.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/realtime_evaluation_engine.hpp>
+#include <hg/wall_clock.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-using namespace bg;
+using namespace hg;
 
 namespace {
 
@@ -310,8 +310,8 @@ bool wait_for(std::condition_variable &changed, std::mutex &mutex, Predicate pre
 }
 
 struct ProbeGraph {
-    decltype(bg::node<RealtimeProbe>()) probe = bg::node<RealtimeProbe>();
-    decltype(bg::node<DownstreamSink>()) sink = bg::node<DownstreamSink>();
+    decltype(hg::node<RealtimeProbe>()) probe = hg::node<RealtimeProbe>();
+    decltype(hg::node<DownstreamSink>()) sink = hg::node<DownstreamSink>();
     GraphWiring wiring;
 
     ProbeGraph() {
@@ -323,11 +323,11 @@ struct ProbeGraph {
 
 struct QueueGraph {
     inline static constexpr auto start_queue = [](Queue writer) { QueueState::set(std::move(writer)); };
-    using QueueNode = decltype(bg::queue<TS<i64>>(bg::start = start_queue));
+    using QueueNode = decltype(hg::queue<TS<i64>>(hg::start = start_queue));
 
-    QueueNode queue = bg::queue<TS<i64>>(bg::start = start_queue);
-    decltype(bg::node<QueueSink>()) queue_sink = bg::node<QueueSink>();
-    decltype(bg::node<RealtimeProbe>()) probe = bg::node<RealtimeProbe>();
+    QueueNode queue = hg::queue<TS<i64>>(hg::start = start_queue);
+    decltype(hg::node<QueueSink>()) queue_sink = hg::node<QueueSink>();
+    decltype(hg::node<RealtimeProbe>()) probe = hg::node<RealtimeProbe>();
     GraphWiring wiring;
 
     QueueGraph() {
@@ -449,8 +449,8 @@ TEST_CASE("an aggregate node can receive queue messages through its runtime cont
     QueueState::reset();
     QueueSink::values.clear();
     auto wiring = GraphWiring{};
-    const auto source = bg::node<AggregateQueueSource>();
-    const auto sink = bg::node<QueueSink>();
+    const auto source = hg::node<AggregateQueueSource>();
+    const auto sink = hg::node<QueueSink>();
     {
         auto context = WiringContext{wiring};
         sink(source());
@@ -484,13 +484,13 @@ TEST_CASE("a conflicting standard queue message waits through a dynamically resc
     QueueState::reset();
     QueueChainSink::reset();
     auto writes_accepted = false;
-    const auto queue = bg::queue<TS<i64>>(bg::start = [&](Queue writer) {
+    const auto queue = hg::queue<TS<i64>>(hg::start = [&](Queue writer) {
         writes_accepted =
             writer.write(::literal::TimeSeriesLiteral(i64{1})) && writer.write(::literal::TimeSeriesLiteral(i64{2}));
         QueueState::set(std::move(writer));
     });
 
-    const auto sink = bg::node<QueueChainSink>();
+    const auto sink = hg::node<QueueChainSink>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -813,9 +813,9 @@ TEST_CASE("realtime evaluation failure stops the graph and closes retained queue
     RealtimeProbe::reset();
     QueueState::reset();
     RealtimeProbe::throw_on_evaluation = true;
-    const auto queue = bg::queue<TS<i64>>(bg::start = [](Queue writer) { QueueState::set(std::move(writer)); });
+    const auto queue = hg::queue<TS<i64>>(hg::start = [](Queue writer) { QueueState::set(std::move(writer)); });
 
-    const auto probe = bg::node<RealtimeProbe>();
+    const auto probe = hg::node<RealtimeProbe>();
     auto wiring = GraphWiring{};
     {
         auto context = WiringContext{wiring};
@@ -837,7 +837,7 @@ TEST_CASE("realtime evaluation failure stops the graph and closes retained queue
 
 TEST_CASE("engine wakeup handles native clock range boundaries",
           "[coverage-exempt][realtime][wakeup]") {
-    auto wakeup = bg::details::EngineWakeup{};
+    auto wakeup = hg::details::EngineWakeup{};
     const auto wait_for_wakeup = [&wakeup](auto deadline) {
         const auto retry_deadline = std::chrono::steady_clock::now() + std::chrono::seconds{3};
         do {
@@ -863,7 +863,7 @@ TEST_CASE("engine wakeup handles native clock range boundaries",
 TEST_CASE("realtime startup failure closes queue admission",
           "[evaluation][realtime][feature:realtime][feature:lifecycle][failure][queue][feature:time-series-storage]") {
     QueueState::reset();
-    const auto queue = bg::queue<TS<i64>>(bg::start = [](Queue writer) {
+    const auto queue = hg::queue<TS<i64>>(hg::start = [](Queue writer) {
         QueueState::set(std::move(writer));
         throw std::runtime_error{"realtime queue startup failure"};
     });

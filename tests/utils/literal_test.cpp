@@ -1,4 +1,4 @@
-#include <bg/literal/literal.hpp>
+#include <hg/literal/literal.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 

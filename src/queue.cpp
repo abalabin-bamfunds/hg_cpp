@@ -1,18 +1,18 @@
-#include <bg/queue.hpp>
+#include <hg/queue.hpp>
 
-#include <bg/allocator.hpp>
-#include <bg/details/engine_wakeup.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/buffer.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/details/engine_wakeup.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/buffer.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <atomic>
 #include <limits>
 #include <memory_resource>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 class QueueWriteGate {
   public:
@@ -59,9 +59,9 @@ class QueueWriteGate {
     EngineWakeup *wakeup_;
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 Queue::Queue(std::shared_ptr<details::QueueWriteGate> gate,
              std::unique_ptr<details::QueueMessageWriter> writer) noexcept
@@ -131,4 +131,4 @@ void QueueControl::close() noexcept {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg
