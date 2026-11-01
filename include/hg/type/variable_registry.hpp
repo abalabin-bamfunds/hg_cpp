@@ -12,6 +12,9 @@ namespace hg {
 
 class HG_EXPORT VariableRegistry {
   public:
+    VariableRegistry(const VariableRegistry &) = delete;
+    VariableRegistry &operator=(const VariableRegistry &) = delete;
+
     static VariableRegistry &instance() noexcept;
 
     template <typename T>

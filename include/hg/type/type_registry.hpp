@@ -46,6 +46,9 @@ class HG_EXPORT TypeRegistry {
     };
 
   public:
+    TypeRegistry(const TypeRegistry &) = delete;
+    TypeRegistry &operator=(const TypeRegistry &) = delete;
+
     static TypeRegistry &instance() noexcept;
 
     // Registration runs on one thread, including during evaluation. Factories must return a new descriptor and
