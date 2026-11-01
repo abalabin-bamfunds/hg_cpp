@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/wiring_point.hpp>
-#include <bg/operators.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/operators.hpp>
 
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename TimeSeries, auto... Properties>
 template <typename Key>
@@ -13,4 +13,4 @@ auto wp<TimeSeries, Properties...>::operator[](Key &&key) const {
     return operators::getitem(*this, std::forward<Key>(key));
 }
 
-} // namespace bg
+} // namespace hg

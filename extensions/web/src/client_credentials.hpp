@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/web/types.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/web/types.hpp>
 
 #include <cstddef>
 #include <ranges>
 #include <string_view>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
 enum class ClientAuthMethod { unsupported, anonymous, basic, digest, negotiate, ntlm, bearer, headers };
 
@@ -43,4 +43,4 @@ inline bool valid_bearer_token(std::string_view value) noexcept {
 
 inline bool contains_nul(std::string_view value) noexcept { return value.find('\0') != std::string_view::npos; }
 
-} // namespace bg::web::details
+} // namespace hg::web::details

@@ -1,11 +1,11 @@
-#include <bg/frame/tsc.hpp>
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <algorithm>
 #include <array>
@@ -20,10 +20,10 @@
 #include <type_traits>
 #include <vector>
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <cell_type T> struct SumState {
     explicit SumState(allocator memory) : memory_{memory}, changed_ids_{&memory.memory_resource()} {}
@@ -295,4 +295,4 @@ const auto registered = [] {
 }();
 
 } // namespace
-} // namespace bg::frame
+} // namespace hg::frame

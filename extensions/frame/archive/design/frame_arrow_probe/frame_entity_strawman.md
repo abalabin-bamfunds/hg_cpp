@@ -2,7 +2,7 @@
 
 Status: strawman for discussion. Entity names and API spellings below are
 proposed names, not approved terminology or compilable C++. This makes the
-[I/O proposal](frame_io_api_proposal.md) concrete. It assumes BG's existing
+[I/O proposal](frame_io_api_proposal.md) concrete. It assumes HG's existing
 evaluation, invalidation, publication, and reference machinery.
 The [working note](frame_design_note.md) records the current previous-cell and
 expression contracts. The [implementation plan](frame_implementation_plan.md)
@@ -107,7 +107,7 @@ TSF<SCHEMA> backing {
     column sources[schema.size]
     MembershipChanges membership
     IdSet modified[schema.size]
-    BG update state for the frame and each column child
+    HG update state for the frame and each column child
 }
 
 TSC<T> backing {
@@ -115,7 +115,7 @@ TSC<T> backing {
     column source
     MembershipChanges owned_or_shared_membership
     IdSet modified
-    BG update state
+    HG update state
 }
 ```
 
@@ -169,12 +169,12 @@ defines the current direction. Its concrete API and journal remain open.
 The mapping has three parts:
 
 ```text
-BG operator overloads:  semantic input types -> semantic result type
+HG operator overloads:  semantic input types -> semantic result type
 Runtime types:         actual backing data -> logical access and batches
 Kernel implementation: typed batches -> result batches or reduction
 ```
 
-A kernel does not require a new BG runtime type for every operation. Runtime
+A kernel does not require a new HG runtime type for every operation. Runtime
 types describe data. Operation handlers implement arithmetic, predicates,
 reductions, and other kernels.
 
@@ -206,7 +206,7 @@ sources without requiring an extra Arrow-table-specific frame runtime.
 
 An owning scalar copied from live mutable backing acquires stable storage.
 An Arrow-backed owner can retain compatible immutable buffers. This follows
-BG's existing `Scalar`/`ScalarValue` ownership distinction.
+HG's existing `Scalar`/`ScalarValue` ownership distinction.
 
 ### Batch and kernel boundary
 
@@ -239,7 +239,7 @@ columns do not need identical chunk boundaries. ID lookup and runtime dispatch
 occur per batch where possible. Resolved implementations can be cached while
 the relevant runtime types and operation options remain unchanged.
 
-BG operator overloads resolve operations such as
+HG operator overloads resolve operations such as
 `add(Column<double>, Column<double>) -> Column<double>`. A typed kernel then
 consumes the batch descriptors. A TSC node determines affected IDs and invokes
 that same kernel on those rows. Arrow compute is an optional implementation
@@ -291,7 +291,7 @@ In<TSF<SCHEMA>>
     batches<fields...>(ids) -> aligned { ids, column batches... }
 ```
 
-Public typed field access should use BG's schema conventions; `column<field>`
+Public typed field access should use HG's schema conventions; `column<field>`
 is shorthand here. Runtime name lookup can return an erased column view.
 Scalar positions and time-series IDs are separate arguments. An ID batch
 request selects live rows; a missing row is not a null cell.
@@ -367,7 +367,7 @@ unchanged. A parent-column writer provides only cell writes.
 
 These are short node-body sketches. An annotation such as `[view]` selects
 the writer capability; it is not C++ syntax. Initial evaluation and rebuilding
-use all current rows. Later evaluations use current changes. BG handles output
+use all current rows. Later evaluations use current changes. HG handles output
 publication after the node finishes.
 
 ### Owning source with an optional business key

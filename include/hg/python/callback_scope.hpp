@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace bg::python {
+namespace hg::python {
 
 class CallbackLifetime {
   public:
@@ -41,4 +41,4 @@ class CallbackScope {
     std::uint64_t generation_;
 };
 
-} // namespace bg::python
+} // namespace hg::python

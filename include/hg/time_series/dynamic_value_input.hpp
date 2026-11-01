@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/graph/output_notification.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/time_series_state.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/time_series_state.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 class RuntimeGraph;
@@ -59,4 +59,4 @@ static_assert(sizeof(DynamicValueInputStorage) == 2 * sizeof(void *));
 static_assert(std::is_trivially_copyable_v<DynamicValueInputStorage>);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

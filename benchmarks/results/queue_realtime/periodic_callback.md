@@ -7,7 +7,7 @@ Eight-cycle polling reduces the median paired callback cost from 32.395 to
 
 The comparison uses GCC 14.3, `-O3 -DNDEBUG`, no LTO, and CPU affinity 0 on the
 same VM as the [queue and real-time baseline](README.md). Both executables use
-the same benchmark source and candidate shared libbg for common runtime code.
+the same benchmark source and candidate shared libhg for common runtime code.
 Each executable defines its simulation engine: the baseline uses the engine
 and callback runner from `06f12da7`; the candidate uses `9473d53d`.
 
@@ -39,7 +39,7 @@ counters. Cgroup CPU pressure `some` increases by 0.291–1.339 ms during each
 The [raw comparison](../periodic_callback_overhead/9473d53d89440ff11d9b6aca49f8cf62bdbb07d2-timer-ab.json)
 preserves source snapshots, exact build and run commands, binary and library
 hashes, all samples, and environment counters. The paired workloads can be run
-with `taskset -c 0 build/benchmark/benchmarks/bg_queue_realtime_benchmark --timer-only`;
+with `taskset -c 0 build/benchmark/benchmarks/hg_queue_realtime_benchmark --timer-only`;
 build instructions are in [queue_realtime.md](../../queue_realtime.md).
 
 ## Clock-read isolation
@@ -91,8 +91,8 @@ states the timing tradeoff. Callback state remains local to the engine run.
 preserve the investigation. All sample checksums match the no-poll control.
 
 ```sh
-c++ -std=c++23 -O3 -DNDEBUG -pthread -Iinclude benchmarks/periodic_callback_overhead_experiment.cpp -o build/benchmark/benchmarks/bg_periodic_callback_overhead_experiment
-build/benchmark/benchmarks/bg_periodic_callback_overhead_experiment
+c++ -std=c++23 -O3 -DNDEBUG -pthread -Iinclude benchmarks/periodic_callback_overhead_experiment.cpp -o build/benchmark/benchmarks/hg_periodic_callback_overhead_experiment
+build/benchmark/benchmarks/hg_periodic_callback_overhead_experiment
 ```
 
 `--quick` reduces the sample count and iterations. The Linux coarse-clock case

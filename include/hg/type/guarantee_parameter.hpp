@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/type/guarantee_variable.hpp>
+#include <hg/type/guarantee_variable.hpp>
 
 #include <optional>
 #include <variant>
 
-namespace bg {
+namespace hg {
 
 class GuaranteeParameter {
   public:
@@ -38,4 +38,4 @@ class GuaranteeParameter {
     std::variant<std::monostate, TimeSeriesGuarantee, const GuaranteeVariable *> value_;
 };
 
-} // namespace bg
+} // namespace hg

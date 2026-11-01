@@ -1,8 +1,8 @@
 # Compaction proposal
 
 Status: explicit compaction and its tests are implemented. Automatic scheduling
-is deferred until representative BG pipelines demonstrate enough consumer
-savings to justify maintenance. BG's invocation-end callback API is available;
+is deferred until representative HG pipelines demonstrate enough consumer
+savings to justify maintenance. HG's invocation-end callback API is available;
 frame storage does not register automatic maintenance.
 
 For future automatic scheduling, mutations collect cheap statistics; storage assesses final
@@ -82,7 +82,7 @@ returns complete. Returning pending with active callbacks is an evaluation
 error. Registrations do not need to survive suspension.
 
 The callback API must define owner cancellation and failure cleanup. No
-frame-specific policy belongs in BG core.
+frame-specific policy belongs in HG core.
 
 ## Removal lifetime
 
@@ -189,7 +189,7 @@ object lifetimes.
 
 Previously completed runs remain committed if preparation of a later run fails. Logical
 values, row order, and deltas remain unchanged; cached proofs use the revision
-check above. The exception follows BG's normal evaluation failure behavior.
+check above. The exception follows HG's normal evaluation failure behavior.
 This avoids a second full table or a whole-table rollback mechanism.
 
 Choose destinations within the initialized physical mapping range. Mapping
@@ -230,6 +230,6 @@ IDs or discard removal-cycle information.
 
 Implemented mechanics: storage-owned manual compaction preserves row order,
 supports movement in either direction, and uses revision-checked cached proofs.
-The BG invocation-end callback API is available for storage registration.
+The HG invocation-end callback API is available for storage registration.
 Automatic scheduling remains deferred. The [benchmark](benchmarks/compaction.md)
 records the maintenance and consumer costs measured so far.

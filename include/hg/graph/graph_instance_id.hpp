@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 struct GraphInstanceId {
     std::uint64_t value{};
@@ -31,4 +31,4 @@ class GraphInstanceIdAllocator {
     static GraphInstanceId reserve_ids(std::uint64_t count);
 };
 
-} // namespace bg
+} // namespace hg

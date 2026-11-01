@@ -1,28 +1,28 @@
 #pragma once
 
-#include <bg/graph_run_input.hpp>
-#include <bg/graph_run_options.hpp>
-#include <bg/graph_run_result.hpp>
-#include <bg/details/graph_run.hpp>
-#include <bg/graph.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/literal_operations.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/operators.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/time_series/literal_operations.hpp>
+#include <hg/graph_run_input.hpp>
+#include <hg/graph_run_options.hpp>
+#include <hg/graph_run_result.hpp>
+#include <hg/details/graph_run.hpp>
+#include <hg/graph.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/literal_operations.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/operators.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/time_series/literal_operations.hpp>
 
 #include <algorithm>
 #include <concepts>
@@ -37,7 +37,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -1069,7 +1069,7 @@ template <typename Input> void GraphRunArguments::append(Input &&input) {
 }
 
 template <typename OutputScalar, typename Invoke, typename PopulateArguments>
-GraphRunResult<OutputScalar> run_graph_with_arguments(const bg::Signature &signature,
+GraphRunResult<OutputScalar> run_graph_with_arguments(const hg::Signature &signature,
                                                       const GraphRunOptions &options,
                                                       Invoke &&invoke, PopulateArguments &&populate_arguments) {
     auto arguments = GraphRunArguments{signature};
@@ -1092,7 +1092,7 @@ GraphRunResult<OutputScalar> run_graph_with_arguments(const bg::Signature &signa
 }
 
 template <typename OutputScalar, typename Invoke, typename... Inputs>
-GraphRunResult<OutputScalar> run_graph_target(const bg::Signature &signature, const GraphRunOptions &options,
+GraphRunResult<OutputScalar> run_graph_target(const hg::Signature &signature, const GraphRunOptions &options,
                                               Invoke &&invoke, Inputs &&...inputs) {
     if (sizeof...(Inputs) > signature.parameter_count() && !signature.has_variadic_parameters()) {
         throw std::invalid_argument{"run_graph input count exceeds the graph signature"};
@@ -1108,7 +1108,7 @@ GraphRunResult<OutputScalar> run_graph_target(const bg::Signature &signature, co
 
 template <typename OutputScalar, typename Invoke, std::ranges::contiguous_range InputRange>
     requires graph_run_descriptor_range_v<InputRange>
-GraphRunResult<OutputScalar> run_graph_descriptor_range_target(const bg::Signature &signature,
+GraphRunResult<OutputScalar> run_graph_descriptor_range_target(const hg::Signature &signature,
                                                                 const GraphRunOptions &options, Invoke &&invoke,
                                                                 const InputRange &inputs) {
     const auto input_count = std::ranges::size(inputs);
@@ -1140,7 +1140,7 @@ auto run_graph_bound_target(const Graph &graph, const GraphRunOptions &options, 
             std::forward<Inputs>(inputs)...);
     } else {
         using FunctionInfo = details::graph_function<Graph>;
-        auto graph_template = bg::graph(graph);
+        auto graph_template = hg::graph(graph);
         return run_graph_target<typename FunctionInfo::output_scalar>(
             graph_template.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
@@ -1163,7 +1163,7 @@ auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunO
             inputs);
     } else {
         using FunctionInfo = details::graph_function<Graph>;
-        auto graph_template = bg::graph(graph);
+        auto graph_template = hg::graph(graph);
         return run_graph_descriptor_range_target<typename FunctionInfo::output_scalar>(
             graph_template.signature(), options,
             [&](std::span<const WiringArgument> arguments) {
@@ -1177,7 +1177,7 @@ auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunO
 
 // Wire an explicitly typed input while a run_graph callback has an active WiringContext.
 // Its tick storage and borrowed sources must survive the enclosing run_graph evaluation.
-inline WiringPoint graph_run_input(const GraphRunLiteralInput &input BG_LIFETIMEBOUND) {
+inline WiringPoint graph_run_input(const GraphRunLiteralInput &input HG_LIFETIMEBOUND) {
     if (input.time_series_type == nullptr) {
         throw std::invalid_argument{"graph_run_input requires an explicit time-series type"};
     }
@@ -1316,4 +1316,4 @@ auto run_graph(const Graph &graph, const GraphRunOptions &options) {
     return details::run_graph_bound_target(graph, options);
 }
 
-} // namespace bg
+} // namespace hg

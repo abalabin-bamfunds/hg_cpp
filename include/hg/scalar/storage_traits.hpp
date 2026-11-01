@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/builtins.hpp>
-#include <bg/scalar/details/bytes_storage.hpp>
-#include <bg/scalar/details/string_storage.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/string.hpp>
-#include <bg/scalar/struct/declaration.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/scalar/details/bytes_storage.hpp>
+#include <hg/scalar/details/string_storage.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/string.hpp>
+#include <hg/scalar/struct/declaration.hpp>
 
 #include <concepts>
 #include <algorithm>
@@ -20,12 +20,12 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class ScalarData;
 
 namespace details {
-using ScalarData = ::bg::ScalarData;
+using ScalarData = ::hg::ScalarData;
 }
 
 // Defines the canonical C++ storage, read view, intrinsic operations, and lifecycle for a scalar declaration.
@@ -283,4 +283,4 @@ template <typename T> inline constexpr bool scalar_storage_supports_alternative_
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

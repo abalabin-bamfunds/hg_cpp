@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/scalar/details/handle_traits.hpp>
-#include <bg/scalar/details/collection_storage.hpp>
-#include <bg/scalar/set/type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/handle_traits.hpp>
+#include <hg/scalar/details/collection_storage.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <memory>
 
-namespace bg {
+namespace hg {
 
 template <typename T> struct scalar_storage_traits<Set<T>> {
     using ItemTraits = scalar_storage_traits<T>;
@@ -89,13 +89,13 @@ template <typename T> struct scalar_storage_traits<Set<T>> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct scalar_handle_traits<Set<T>> {
     static constexpr bool supports_equality = scalar_handle_traits<T>::supports_equality;
     static constexpr bool supports_hash = scalar_handle_traits<T>::supports_hash;
 };
 
-} // namespace bg::details
+} // namespace hg::details

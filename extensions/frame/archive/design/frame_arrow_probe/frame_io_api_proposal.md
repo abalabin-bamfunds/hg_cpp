@@ -1,9 +1,9 @@
 # Frame and column input/output API proposal
 
-Status: discussion proposal, not an approved BG design or implementation.
+Status: discussion proposal, not an approved HG design or implementation.
 Names and signatures below describe the intended contract; they are not
 compilable C++. This proposal builds on the [frame working note](frame_design_note.md)
-and the [column kernel proposal](column_kernel_type_proposal.md). Existing BG
+and the [column kernel proposal](column_kernel_type_proposal.md). Existing HG
 contracts are in the [scalar API](../../docs/scalar-api.md),
 [node API](../../docs/node-api.md), and [evaluation design](../../docs/evaluation.md).
 The [framework and comparative review](frame_api_review.md) explains the
@@ -66,7 +66,7 @@ auto cell = price.cell(position);                // optional borrowed Scalar<dou
 ```
 
 The exact C++ spelling of typed field selection and nullable cells remains
-open. Typed field access should follow BG's shared schema model. A bit-packed
+open. Typed field access should follow HG's shared schema model. A bit-packed
 Boolean or decoded dictionary cell may need callback-scoped access or a typed
 read; the optional borrowed scalar above is not yet a complete layout-neutral
 cell API. A null cell, a removed row, and an invalid time series are distinct.
@@ -83,7 +83,7 @@ requires freezing or copy-on-write.
 
 ## Time series inputs
 
-Both new time series provide BG's `valid()`, `modified()`, and
+Both new time series provide HG's `valid()`, `modified()`, and
 `last_updated()`. Their additional input contract is:
 
 | Input | Current value | Row information |
@@ -143,8 +143,8 @@ rebuilds after a gap or resampling and applies a delta only to its matching
 base while that delta is available in the current cycle. Once change records
 are cleared, reading a newer publication requires a rebuild even if its base
 token matches. Tokens distinguish logical-series incarnations, including selections
-in the same row domain. This requires integration with BG reference sampling;
-it is not an existing BG API.
+in the same row domain. This requires integration with HG reference sampling;
+it is not an existing HG API.
 
 `changed` combines added and modified live rows. The discussion found no need
 for a mandatory distinction between them. A node can compare IDs with its
@@ -161,7 +161,7 @@ set alone can describe a larger rectangle of cells than actually changed.
 The proposed delta describes the completed update: a changed ID identifies
 a live row, and a removed ID identifies a row absent from the current value.
 The two sets are disjoint. An add followed by removal in one invocation may
-leave an empty delta while still publishing an accepted mutation, as BG
+leave an empty delta while still publishing an accepted mutation, as HG
 already permits for collection time series. ID reuse must not make an old
 removal and a new row ambiguous in the same cycle.
 Removed IDs must belong to the preceding published membership. A transient
@@ -278,8 +278,8 @@ to this runtime type. Consumers continue to use `In<TSF<SCHEMA>>`.
 
 An Arrow-backed `ScalarValue<Frame<SCHEMA>>` can retain compatible Arrow
 buffers. A borrowed Arrow view of `Scalar<Frame<SCHEMA>>` has the same short
-lifetime as its BG source. An Arrow table that escapes the invocation must
-retain immutable buffers. Export from BG sparse storage may share fixed-width
+lifetime as its HG source. An Arrow table that escapes the invocation must
+retain immutable buffers. Export from HG sparse storage may share fixed-width
 value buffers while allocating chunk descriptors or validity bitmaps. A
 selected view can share contiguous selected runs; a scattered mask may need
 many chunks or a gather. String and symbol conversion may also copy. Neither
@@ -288,7 +288,7 @@ many chunks or a gather. String and symbol conversion may also copy. Neither
 ## Decisions needed before implementation
 
 1. Confirm invalidation and activity rules for borrowed outputs, including
-   source removal and all BG time series guarantees.
+   source removal and all HG time series guarantees.
 2. Define publication continuity and reference resampling in the input API.
 3. Define row identity reuse, shared membership/order, and computed TSC writers.
 4. Specify direct owner subscriptions and previous-cell access; compare capture

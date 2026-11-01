@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/wiring_template.hpp>
-#include <bg/service.hpp>
-#include <bg/web/export.hpp>
-#include <bg/web/types.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/service.hpp>
+#include <hg/web/export.hpp>
+#include <hg/web/types.hpp>
 
 #include <chrono>
 #include <cstddef>
 #include <memory>
 
-namespace bg::web {
+namespace hg::web {
 
 struct WebSocketClientOptions {
     std::chrono::milliseconds handshake_timeout{std::chrono::seconds{30}};
@@ -21,6 +21,6 @@ inline const auto websocket_client =
         "websocket_client", {"request"}};
 
 // Builds a request/reply service implementation for binary ws:// connections.
-BG_WEB_EXPORT std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptions options = {});
+HG_WEB_EXPORT std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptions options = {});
 
-} // namespace bg::web
+} // namespace hg::web

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/index.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/index.hpp>
 
 #include <cstddef>
 #include <cstdint>
 
-namespace bg::details {
+namespace hg::details {
 
 template <std::size_t Size> class fixed_time_series_list_changes {
   public:
@@ -69,4 +69,4 @@ struct time_series_list_storage {
 static_assert(util::byte_copy_initializable<time_series_list_storage>);
 static_assert(sizeof(time_series_list_storage) == 24);
 
-} // namespace bg::details
+} // namespace hg::details

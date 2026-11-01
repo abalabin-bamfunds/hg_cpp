@@ -1,14 +1,14 @@
-#include <bg/python/input_view.hpp>
+#include <hg/python/input_view.hpp>
 
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsl/tsl_input.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsl/tsl_input.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
 
 #include "delta.hpp"
 
@@ -23,7 +23,7 @@
 namespace nb = nanobind;
 using namespace nanobind::literals;
 
-namespace bg::python {
+namespace hg::python {
 namespace {
 
 nb::object scalar_value(const In<TS<SCALAR>> &input, const PythonScalarConversions &conversions) {
@@ -1569,4 +1569,4 @@ void ReferenceValue::check_lifetime() const {
     }
 }
 
-} // namespace bg::python
+} // namespace hg::python

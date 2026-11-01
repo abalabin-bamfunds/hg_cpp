@@ -1,7 +1,7 @@
-#include <bg/frame/expression.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/util/symbol.hpp>
 
 #include "operand_type.hpp"
 #include "mixed_expression.hpp"
@@ -14,10 +14,10 @@
 #include <string>
 #include <string_view>
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field>
 using LEFT_EXPRESSION = BundleSchemaVariableDeclaration<"FRAME_ARITHMETIC_LEFT_EXPRESSION", Field>;
@@ -156,7 +156,7 @@ void convert_operands(std::span<const row_id_t> rows, const ColumnOperandBatch<S
 
 template <cell_type TARGET>
 bool requests_target(const WiringArguments &arguments) {
-    const auto *mapping = arguments.type_map().find(::bg::details::type_parameter<operators::CONVERT_RESULT>());
+    const auto *mapping = arguments.type_map().find(::hg::details::type_parameter<operators::CONVERT_RESULT>());
     const auto *mapped_type = mapping == nullptr ? nullptr : std::get_if<const Type *>(mapping);
     return mapped_type != nullptr && *mapped_type != nullptr && TSC<TARGET>::type().accepts(**mapped_type);
 }
@@ -230,4 +230,4 @@ const auto registered = [] {
 }();
 
 } // namespace
-} // namespace bg::frame
+} // namespace hg::frame

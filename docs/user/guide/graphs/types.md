@@ -1,12 +1,12 @@
 # Types and connections
 
 A connection is valid when the output type satisfies the receiving parameter.
-BG checks connections while constructing the graph, before processing input values.
+HG checks connections while constructing the graph, before processing input values.
 
 ## Concrete value types
 
 Plain annotations describe the values used by a calculation. Python `int` maps to
-BG's signed 64-bit integer; examples use `i64` for the corresponding C++ value.
+HG's signed 64-bit integer; examples use `i64` for the corresponding C++ value.
 
 | Python | C++ | Value |
 | --- | --- | --- |
@@ -27,7 +27,7 @@ The graph function connects outputs; a node receives their current values:
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def correct(reading: int) -> int:
@@ -57,14 +57,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto correct = node([](i64 reading) {
@@ -96,7 +96,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -124,8 +124,8 @@ an explicit conversion to floating point.
 :sync: python
 
 ```python
-from bg import TS, graph, run_graph
-from bg.operators import convert
+from hg import TS, graph, run_graph
+from hg.operators import convert
 
 @graph
 def scaled(reading: int) -> float:
@@ -149,13 +149,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto scaled(wp<TS<i64>> reading) {
@@ -180,7 +180,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

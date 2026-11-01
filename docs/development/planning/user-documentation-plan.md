@@ -30,9 +30,9 @@ additional contracts and link back to the pattern.
 
 ### 1. Getting started
 
-#### 1.1 BG overview
+#### 1.1 HG overview
 
-- What BG computes and where a computation graph is useful.
+- What HG computes and where a computation graph is useful.
 - Retained intermediate results and dependency tracking reduce recalculation.
 - Nodes, connections, inputs, and outputs, shown in code and a small diagram.
 - Graph construction and graph evaluation, in one short explanation.

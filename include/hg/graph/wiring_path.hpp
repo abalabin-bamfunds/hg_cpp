@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/util/symbol.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <string>
 #include <type_traits>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 struct WiringPath {
     const WiringPath *parent;
@@ -35,4 +35,4 @@ struct WiringPath {
 
 static_assert(std::is_trivially_destructible_v<WiringPath>);
 
-} // namespace bg
+} // namespace hg

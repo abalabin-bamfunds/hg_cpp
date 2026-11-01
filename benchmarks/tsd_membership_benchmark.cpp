@@ -1,12 +1,12 @@
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -20,8 +20,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 template <template <typename> typename Field> struct BenchmarkInputs {
     Field<TSD<i64, TS<i64>>> collection;

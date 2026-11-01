@@ -1,12 +1,12 @@
 #include "delta.hpp"
 
-#include <bg/python/object.hpp>
+#include <hg/python/object.hpp>
 
 #include <stdexcept>
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 namespace {
 
 struct DeltaTypes {
@@ -86,4 +86,4 @@ nb::object make_set_delta(nb::handle added, nb::handle removed) {
     return type.get()(added, removed);
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details

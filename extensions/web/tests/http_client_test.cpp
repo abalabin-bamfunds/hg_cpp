@@ -1,17 +1,17 @@
-#include <bg/graph.hpp>
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/queue_node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/web/http_client.hpp>
-#include <bg/web/http_server.hpp>
-#include <bg/web/auth.hpp>
-#include <bg/web/client_auth.hpp>
+#include <hg/graph.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/web/http_client.hpp>
+#include <hg/web/http_server.hpp>
+#include <hg/web/auth.hpp>
+#include <hg/web/client_auth.hpp>
 
 #include "../src/client_source.hpp"
 #include "../src/client_runtime.hpp"
@@ -32,9 +32,9 @@
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/generators/catch_generators.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::web;
 
 namespace {
 
@@ -148,7 +148,7 @@ TEST_CASE("HTTP client runtime handles Basic and Negotiate authentication", "[fe
         [&] {
             (void)route();
             const auto port = http_server();
-            const auto source = bg::web::details::client_source(HttpClientOptions{});
+            const auto source = hg::web::details::client_source(HttpClientOptions{});
             submit(port, source->runtime);
             collect(source->replies);
         },
@@ -188,7 +188,7 @@ TEST_CASE("HTTP client runtime rejects a base-only authentication value", "[feat
 
     run_graph(
         [&] {
-            const auto source = bg::web::details::client_source(HttpClientOptions{});
+            const auto source = hg::web::details::client_source(HttpClientOptions{});
             submit(source->runtime);
             collect(source->replies);
         },
@@ -509,9 +509,9 @@ TEST_CASE("Latin-1 HTTP header values convert to UTF-8", "[feature:http]") {
         expected.push_back(static_cast<char>(0x80 | (character & 0x3f)));
     }
 
-    CHECK(bg::web::details::latin1_header_value_as_utf8(latin1) == expected);
+    CHECK(hg::web::details::latin1_header_value_as_utf8(latin1) == expected);
     auto converted = latin1;
-    bg::web::details::convert_latin1_header_value_as_utf8(converted);
+    hg::web::details::convert_latin1_header_value_as_utf8(converted);
     CHECK(converted == expected);
 }
 
@@ -519,7 +519,7 @@ TEST_CASE("Latin-1 HTTP header conversion preserves ASCII and empty values", "[f
     auto empty = std::string{};
     const auto empty_data = empty.data();
     const auto empty_capacity = empty.capacity();
-    bg::web::details::convert_latin1_header_value_as_utf8(empty);
+    hg::web::details::convert_latin1_header_value_as_utf8(empty);
     CHECK(empty.empty());
     CHECK(empty.data() == empty_data);
     CHECK(empty.capacity() == empty_capacity);
@@ -527,7 +527,7 @@ TEST_CASE("Latin-1 HTTP header conversion preserves ASCII and empty values", "[f
     auto ascii = std::string{"plain ASCII header value"};
     const auto ascii_data = ascii.data();
     const auto ascii_capacity = ascii.capacity();
-    bg::web::details::convert_latin1_header_value_as_utf8(ascii);
+    hg::web::details::convert_latin1_header_value_as_utf8(ascii);
     CHECK(ascii == "plain ASCII header value");
     CHECK(ascii.data() == ascii_data);
     CHECK(ascii.capacity() == ascii_capacity);
@@ -537,9 +537,9 @@ TEST_CASE("Latin-1 HTTP header conversion preserves mixed ASCII and non-ASCII by
     const auto latin1 = std::string{static_cast<char>(0x80)} + "A" + static_cast<char>(0xff);
     const auto expected = std::string{"\xc2\x80" "A" "\xc3\xbf"};
 
-    CHECK(bg::web::details::latin1_header_value_as_utf8(latin1) == expected);
+    CHECK(hg::web::details::latin1_header_value_as_utf8(latin1) == expected);
     auto converted = latin1;
-    bg::web::details::convert_latin1_header_value_as_utf8(converted);
+    hg::web::details::convert_latin1_header_value_as_utf8(converted);
     CHECK(converted == expected);
 }
 

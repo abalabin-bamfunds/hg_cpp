@@ -1,18 +1,18 @@
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/map.hpp>
-#include <bg/map_argument.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/web/http_server.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/map.hpp>
+#include <hg/map_argument.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/tsb_output.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/web/http_server.hpp>
 
 #include "http_server_internal.hpp"
 #include "runtime_logging.hpp"
@@ -26,10 +26,10 @@
 #include <utility>
 #include <vector>
 
-namespace bg::web {
+namespace hg::web {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct ServerSource {
     Scalar<Opaque<ServerOptions>> options;
@@ -652,4 +652,4 @@ wp<> details::wire_websocket_handler(std::string_view path, const WiringTemplate
     return wp<>{output};
 }
 
-} // namespace bg::web
+} // namespace hg::web

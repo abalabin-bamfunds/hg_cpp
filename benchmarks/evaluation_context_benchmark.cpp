@@ -1,11 +1,11 @@
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -21,15 +21,15 @@
 
 namespace {
 
-constexpr auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
+constexpr auto start_time = hg::MIN_DT + std::chrono::microseconds{1};
 constexpr auto construction_count = std::size_t{1'000'000};
 constexpr auto evaluation_cycle_count = std::size_t{200'000};
 constexpr auto sample_count = std::size_t{9};
 
 struct ContextConstructionNode {
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(hg::EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         for (auto index = std::size_t{}; index < construction_count; ++index) {
             auto child = context->child(context->runtime_graph(), nullptr);
             construction_checksum += static_cast<std::uint64_t>(
@@ -43,9 +43,9 @@ struct ContextConstructionNode {
 struct TimeReadNode {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(hg::EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         ++evaluation_count;
         time_checksum += static_cast<std::uint64_t>(context->evaluation_time().time_since_epoch().count());
         if (evaluation_count < evaluation_cycle_count) {
@@ -60,15 +60,15 @@ struct TimeReadNode {
 struct ScalarOutputNode {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Out<bg::TS<bg::i64>> output;
+    hg::Out<hg::TS<hg::i64>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(hg::EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         ++evaluation_count;
         const auto time = context->evaluation_time().time_since_epoch().count();
         time_checksum += static_cast<std::uint64_t>(time);
-        output.set(static_cast<bg::i64>(time));
+        output.set(static_cast<hg::i64>(time));
         if (evaluation_count < evaluation_cycle_count) {
             context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
         }
@@ -81,39 +81,39 @@ struct ScalarOutputNode {
 struct NestedEvaluationNode {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(hg::EvaluationContext *context) const {
         evaluator->bind_owner(context->runtime_graph(), context->node_index());
         child_graph.emplace(*child_compiled_graph, context->runtime_graph().allocation(), *evaluator, 0);
         auto child = context->child(*child_graph, nullptr);
         child_graph->start(child);
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         auto child = context->child(*child_graph, nullptr);
         if (!child_graph->evaluate(child)) {
             std::terminate();
         }
     }
 
-    void stop(bg::EvaluationContext *context) const noexcept {
+    void stop(hg::EvaluationContext *context) const noexcept {
         auto child = context->child(*child_graph, nullptr);
         child_graph->stop(child);
         child_graph->finalize(child);
     }
 
-    inline static bg::RuntimeGraphEvaluator *evaluator{};
-    inline static std::optional<bg::RuntimeGraph> child_graph;
-    inline static const bg::CompiledGraph *child_compiled_graph{};
+    inline static hg::RuntimeGraphEvaluator *evaluator{};
+    inline static std::optional<hg::RuntimeGraph> child_graph;
+    inline static const hg::CompiledGraph *child_compiled_graph{};
 };
 
 [[nodiscard]] auto compile_graph(auto node_call) {
-    auto wiring = bg::GraphWiring{};
+    auto wiring = hg::GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = hg::WiringContext{wiring};
         node_call();
     }
     wiring.finalize();
-    return bg::CompiledGraph{wiring};
+    return hg::CompiledGraph{wiring};
 }
 
 template <typename Function>
@@ -139,15 +139,15 @@ void report(std::string_view name, const std::vector<std::int64_t> &samples, std
               << " checksum=" << checksum << '\n';
 }
 
-void benchmark_context_construction(const bg::CompiledGraph &compiled) {
+void benchmark_context_construction(const hg::CompiledGraph &compiled) {
     auto samples = std::vector<std::int64_t>{};
     std::uint64_t expected_checksum{};
     for (auto sample_index = std::size_t{}; sample_index < sample_count; ++sample_index) {
-        auto global_state = bg::GlobalState{};
-        auto runtime_graph = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = hg::GlobalState{};
+        auto runtime_graph = hg::RuntimeGraph{compiled, global_state};
         ContextConstructionNode::construction_checksum = 0;
         const auto [elapsed, checksum] = measure([&] {
-            bg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
+            hg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
             return ContextConstructionNode::construction_checksum;
         });
         const auto expected_sample_checksum =
@@ -162,21 +162,21 @@ void benchmark_context_construction(const bg::CompiledGraph &compiled) {
            "construction");
 }
 
-void benchmark_nested_evaluation(const bg::CompiledGraph &parent_compiled,
-                                 const bg::CompiledGraph &child_compiled) {
+void benchmark_nested_evaluation(const hg::CompiledGraph &parent_compiled,
+                                 const hg::CompiledGraph &child_compiled) {
     auto samples = std::vector<std::int64_t>{};
     std::uint64_t expected_checksum{};
     for (auto sample_index = std::size_t{}; sample_index < sample_count; ++sample_index) {
-        auto global_state = bg::GlobalState{};
-        auto evaluator = std::make_unique<bg::RuntimeGraphEvaluator>();
+        auto global_state = hg::GlobalState{};
+        auto evaluator = std::make_unique<hg::RuntimeGraphEvaluator>();
         NestedEvaluationNode::evaluator = evaluator.get();
-        auto parent_graph = bg::RuntimeGraph{parent_compiled, global_state};
+        auto parent_graph = hg::RuntimeGraph{parent_compiled, global_state};
         NestedEvaluationNode::child_compiled_graph = &child_compiled;
         NestedEvaluationNode::child_graph.reset();
         TimeReadNode::evaluation_count = 0;
         TimeReadNode::time_checksum = 0;
         const auto [elapsed, checksum] = measure([&] {
-            bg::SimulationEvaluationEngine{}.run(parent_graph, start_time);
+            hg::SimulationEvaluationEngine{}.run(parent_graph, start_time);
             return TimeReadNode::time_checksum;
         });
         if (TimeReadNode::evaluation_count != evaluation_cycle_count) {
@@ -199,16 +199,16 @@ void benchmark_nested_evaluation(const bg::CompiledGraph &parent_compiled,
            "cycle");
 }
 
-void benchmark_flat_evaluation(const bg::CompiledGraph &compiled) {
+void benchmark_flat_evaluation(const hg::CompiledGraph &compiled) {
     auto samples = std::vector<std::int64_t>{};
     std::uint64_t expected_checksum{};
     for (auto sample_index = std::size_t{}; sample_index < sample_count; ++sample_index) {
-        auto global_state = bg::GlobalState{};
-        auto runtime_graph = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = hg::GlobalState{};
+        auto runtime_graph = hg::RuntimeGraph{compiled, global_state};
         TimeReadNode::evaluation_count = 0;
         TimeReadNode::time_checksum = 0;
         const auto [elapsed, checksum] = measure([&] {
-            bg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
+            hg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
             return TimeReadNode::time_checksum;
         });
         if (TimeReadNode::evaluation_count != evaluation_cycle_count) {
@@ -229,16 +229,16 @@ void benchmark_flat_evaluation(const bg::CompiledGraph &compiled) {
            "cycle");
 }
 
-void benchmark_scalar_output(const bg::CompiledGraph &compiled) {
+void benchmark_scalar_output(const hg::CompiledGraph &compiled) {
     auto samples = std::vector<std::int64_t>{};
     std::uint64_t expected_checksum{};
     for (auto sample_index = std::size_t{}; sample_index < sample_count; ++sample_index) {
-        auto global_state = bg::GlobalState{};
-        auto runtime_graph = bg::RuntimeGraph{compiled, global_state};
+        auto global_state = hg::GlobalState{};
+        auto runtime_graph = hg::RuntimeGraph{compiled, global_state};
         ScalarOutputNode::evaluation_count = 0;
         ScalarOutputNode::time_checksum = 0;
         const auto [elapsed, checksum] = measure([&] {
-            bg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
+            hg::SimulationEvaluationEngine{}.run(runtime_graph, start_time);
             return ScalarOutputNode::time_checksum;
         });
         if (ScalarOutputNode::evaluation_count != evaluation_cycle_count) {
@@ -276,25 +276,25 @@ int main() {
 #else
     std::cout << " build=debug";
 #endif
-    std::cout << " sizeof_EvaluationContext=" << sizeof(bg::EvaluationContext)
-              << " sizeof_GlobalEvaluationContext=" << sizeof(bg::GlobalEvaluationContext)
-              << " sizeof_RuntimeGraphEvaluator=" << sizeof(bg::RuntimeGraphEvaluator)
-              << " sizeof_RuntimeGraph=" << sizeof(bg::RuntimeGraph)
+    std::cout << " sizeof_EvaluationContext=" << sizeof(hg::EvaluationContext)
+              << " sizeof_GlobalEvaluationContext=" << sizeof(hg::GlobalEvaluationContext)
+              << " sizeof_RuntimeGraphEvaluator=" << sizeof(hg::RuntimeGraphEvaluator)
+              << " sizeof_RuntimeGraph=" << sizeof(hg::RuntimeGraph)
               << " construction_count=" << construction_count
               << " evaluation_cycle_count=" << evaluation_cycle_count
               << " samples=" << sample_count << '\n';
 
-    auto construction_node = bg::node<ContextConstructionNode>();
+    auto construction_node = hg::node<ContextConstructionNode>();
     const auto construction_graph = compile_graph([&] { construction_node(); });
     benchmark_context_construction(construction_graph);
 
-    auto time_read_node = bg::node<TimeReadNode>();
+    auto time_read_node = hg::node<TimeReadNode>();
     const auto child_graph = compile_graph([&] { time_read_node(); });
     benchmark_flat_evaluation(child_graph);
-    auto scalar_output_node = bg::node<ScalarOutputNode>();
+    auto scalar_output_node = hg::node<ScalarOutputNode>();
     const auto scalar_output_graph = compile_graph([&] { scalar_output_node(); });
     benchmark_scalar_output(scalar_output_graph);
-    auto nested_node = bg::node<NestedEvaluationNode>();
+    auto nested_node = hg::node<NestedEvaluationNode>();
     const auto parent_graph = compile_graph([&] { nested_node(); });
     benchmark_nested_evaluation(parent_graph, child_graph);
 }

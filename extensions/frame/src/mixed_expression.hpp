@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/frame/expression.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/overload.hpp>
-#include <bg/schema/reflection.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/overload.hpp>
+#include <hg/schema/reflection.hpp>
 
 #include <array>
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 
 using MIXED_NUMERIC_SCALAR = ScalarVariable<"FRAME_MIXED_NUMERIC_SCALAR", i64, double, Expression>;
 using MIXED_BOOLEAN_SCALAR = ScalarVariable<"FRAME_MIXED_BOOLEAN_SCALAR", bool, Expression>;
@@ -133,4 +133,4 @@ template <auto &Operator, ExpressionOperation Operation> struct MixedUnaryOverlo
     overload<Operator> not_impl{graph<MixedUnaryGraph<Operation>>()};
 };
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T, auto... Properties> struct time_series_type_traits<TS<T, Properties...>> {
     using semantic_type = TimeSeriesValueType;
@@ -42,4 +42,4 @@ template <typename T, auto... Properties> struct declaration_variable_traits<TS<
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

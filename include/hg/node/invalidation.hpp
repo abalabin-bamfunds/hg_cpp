@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/evaluation_function.hpp>
+#include <hg/graph/evaluation_function.hpp>
 
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 enum class InvalidationMode : std::uint8_t {
     invalidate_output,
@@ -21,4 +21,4 @@ struct PreserveOutput {};
 
 inline constexpr PreserveOutput preserve_output;
 
-} // namespace bg
+} // namespace hg

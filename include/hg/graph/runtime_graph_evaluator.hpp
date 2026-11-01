@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_scheduling.hpp>
-#include <bg/schedule_handle.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_scheduling.hpp>
+#include <hg/schedule_handle.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cstddef>
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 struct GlobalEvaluationContext;
@@ -74,4 +74,4 @@ class RuntimeGraphEvaluator {
 
 static_assert(sizeof(RuntimeGraphEvaluator) == 5 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

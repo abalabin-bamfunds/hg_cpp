@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/time_series/details/type_access.hpp>
-#include <bg/time_series/guarantee_variable.hpp>
-#include <bg/type/time_series_guarantee.hpp>
-#include <bg/util/compile_time_string.hpp>
+#include <hg/time_series/details/type_access.hpp>
+#include <hg/time_series/guarantee_variable.hpp>
+#include <hg/type/time_series_guarantee.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <concepts>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename Variable, auto Guarantee>
 struct TimeSeriesVariableWithGuarantee
@@ -41,4 +41,4 @@ concept time_series_variable = is_time_series_variable<std::remove_cv_t<T>>::val
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

@@ -1,6 +1,6 @@
 #include "dict_view.hpp"
 
-#include <bg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
 
 #include <nanobind/stl/tuple.h>
 
@@ -10,7 +10,7 @@
 namespace nb = nanobind;
 using namespace nanobind::literals;
 
-namespace bg::python {
+namespace hg::python {
 
 namespace {
 
@@ -180,4 +180,4 @@ void bind_dict_view(nb::module_ &module) {
     abc.attr("Mapping").attr("register")(module.attr("Dict"));
 }
 
-} // namespace bg::python
+} // namespace hg::python

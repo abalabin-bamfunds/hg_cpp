@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/bytes.hpp>
-#include <bg/scalar/bundle/type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/string.hpp>
-#include <bg/scalar/tuple/type.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/scalar/bytes.hpp>
+#include <hg/scalar/bundle/type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/string.hpp>
+#include <hg/scalar/tuple/type.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
-namespace bg::web {
+namespace hg::web {
 
 template <template <typename, auto...> typename Field> struct HttpPeer {
     Field<string> address;
@@ -120,4 +120,4 @@ using BinaryWebSocketServerRequest = WebSocketServerRequest<bytes>::template sch
 template <template <typename, auto...> typename Field>
 using BinaryWebSocketResponse = WebSocketResponse<bytes>::template schema<Field>;
 
-} // namespace bg::web
+} // namespace hg::web

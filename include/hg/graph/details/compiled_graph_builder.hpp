@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class CompiledGraph;
 class GraphWiring;
@@ -18,4 +18,4 @@ std::shared_ptr<const CompiledGraph> compile_graph(const GraphWiring &wiring, al
                                                    std::span<std::size_t> node_indices);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

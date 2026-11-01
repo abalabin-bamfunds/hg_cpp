@@ -4,7 +4,7 @@
 #include <chrono>
 #include <semaphore>
 
-namespace bg::details {
+namespace hg::details {
 
 // Coalesces concurrent notifications for one engine thread. After every wake, the caller rechecks queue readiness
 // and stop state. wait_until() can fail spuriously. A successful wait resets the latch with an acquire exchange so it
@@ -58,4 +58,4 @@ class EngineWakeup {
     std::atomic<bool> pending_{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

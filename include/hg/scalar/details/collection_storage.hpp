@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/storage_traits.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/storage_traits.hpp>
 
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Source>
 concept scalar_data_source = requires(const Source &source) { scalar_data(source); };
@@ -33,4 +33,4 @@ void replace_collection_storage(scalar_stored_t<Collection> &destination,
     Traits::destroy(replacement, memory);
 }
 
-} // namespace bg::details
+} // namespace hg::details

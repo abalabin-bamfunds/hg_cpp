@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/graph/node.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/node/input.hpp>
-#include <bg/node/output.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/node/input.hpp>
+#include <hg/node/output.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 class NodeInvocationParameter {
   public:
@@ -167,12 +167,12 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
                                                         node_->output_runtime_type(), *context_);
     }
 
-    template <typename Input, std::size_t ControlledInputIndex = ::bg::ControlledInput::no_control>
+    template <typename Input, std::size_t ControlledInputIndex = ::hg::ControlledInput::no_control>
     Input input(std::size_t parameter_index) const {
         const auto runtime_node = Node{*node_, runtime_storage_};
         auto *activity = static_cast<bool *>(nullptr);
         if constexpr (Input::dynamic_activity) {
-            if constexpr (ControlledInputIndex == ::bg::ControlledInput::no_control) {
+            if constexpr (ControlledInputIndex == ::hg::ControlledInput::no_control) {
                 const auto controlled_inputs = node_->controlled_inputs();
                 if (controlled_inputs.empty()) {
                     throw std::logic_error{
@@ -248,4 +248,4 @@ template <typename CompiledData = void, typename State = void> class NodeInvocat
     EvaluationContext *context_;
 };
 
-} // namespace bg
+} // namespace hg

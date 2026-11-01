@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/scalar/details/type_access.hpp>
-#include <bg/util/compile_time_string.hpp>
+#include <hg/scalar/details/type_access.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <concepts>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> struct scalar_declaration_traits;
 
@@ -61,4 +61,4 @@ inline constexpr bool scalar_variable_supports_hash =
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

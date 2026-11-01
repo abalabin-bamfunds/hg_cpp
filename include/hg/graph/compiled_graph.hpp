@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/compiled_node.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/details/compiled_storage_header.hpp>
-#include <bg/graph/details/scheduling_info.hpp>
-#include <bg/graph/wiring_path.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/compiled_node.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/details/compiled_storage_header.hpp>
+#include <hg/graph/details/scheduling_info.hpp>
+#include <hg/graph/wiring_path.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include <optional>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class CompiledGraphBuilder;
@@ -203,4 +203,4 @@ class CompiledGraph {
 
 static_assert(sizeof(CompiledGraph) == 32);
 
-} // namespace bg
+} // namespace hg

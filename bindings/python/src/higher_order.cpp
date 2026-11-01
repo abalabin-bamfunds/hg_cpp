@@ -3,17 +3,17 @@
 #include "python_wiring_error.hpp"
 #include "wiring_argument.hpp"
 
-#include <bg/dispatch.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/mesh.hpp>
-#include <bg/mesh/details/default_mesh_wiring.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/python/graph_definition.hpp>
-#include <bg/python/wiring_point.hpp>
-#include <bg/switch.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/dispatch.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/mesh.hpp>
+#include <hg/mesh/details/default_mesh_wiring.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/python/graph_definition.hpp>
+#include <hg/python/wiring_point.hpp>
+#include <hg/switch.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
@@ -29,7 +29,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 namespace {
 
 class PythonArguments {
@@ -92,7 +92,7 @@ class PythonDispatchTemplate final : public WiringTemplate {
 
     std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature signature, const WiringArguments &arguments,
                                     std::span<const WiringArgument> supplied) const override {
-        return bg::details::wire_dispatch(wiring, *signature_, signature_->has_output(), signature.output,
+        return hg::details::wire_dispatch(wiring, *signature_, signature_->has_output(), signature.output,
                                           *signature_, supplied, implementations_, resolver_, arguments.type_map(), {});
     }
 
@@ -116,7 +116,7 @@ nb::object wire_map(const PythonGraphDefinition &function, nb::sequence position
     auto arguments = PythonArguments{wiring, memory}.map_arguments(positional, named);
 
     return wiring_result(static_cast<WiringPoint>(
-        bg::map(static_cast<const WiringTemplate &>(function), std::span<const MapArgument>{arguments})));
+        hg::map(static_cast<const WiringTemplate &>(function), std::span<const MapArgument>{arguments})));
 }
 
 nb::object wire_mesh(const PythonGraphDefinition &function, nb::sequence positional, nb::sequence named,
@@ -127,13 +127,13 @@ nb::object wire_mesh(const PythonGraphDefinition &function, nb::sequence positio
     auto arguments = PythonArguments{wiring, memory}.map_arguments(positional, named);
 
     if (name) {
-        auto metadata = bg::details::named_argument<"name", std::string>{std::move(*name)};
-        return wiring_result(static_cast<WiringPoint>(bg::mesh(
+        auto metadata = hg::details::named_argument<"name", std::string>{std::move(*name)};
+        return wiring_result(static_cast<WiringPoint>(hg::mesh(
             std::move(metadata), static_cast<const WiringTemplate &>(function),
             std::span<const MapArgument>{arguments})));
     }
     return wiring_result(static_cast<WiringPoint>(
-        bg::mesh(static_cast<const WiringTemplate &>(function), std::span<const MapArgument>{arguments})));
+        hg::mesh(static_cast<const WiringTemplate &>(function), std::span<const MapArgument>{arguments})));
 }
 
 nb::object wire_mesh_dependency(nb::handle key, const std::string &name) {
@@ -142,7 +142,7 @@ nb::object wire_mesh_dependency(nb::handle key, const std::string &name) {
     auto memory = allocator{temporary_memory};
     auto argument = PythonArguments{wiring, memory}.argument(key);
 
-    return wiring_result(bg::details::mesh_dependency_selection(std::move(argument), name));
+    return wiring_result(hg::details::mesh_dependency_selection(std::move(argument), name));
 }
 
 nb::object wire_switch(const PythonWiringPoint &key, nb::sequence case_values, nb::sequence positional,
@@ -173,7 +173,7 @@ nb::object wire_switch(const PythonWiringPoint &key, nb::sequence case_values, n
 
     auto arguments = builder.ordinary_arguments(positional, named);
     return wiring_result(static_cast<WiringPoint>(
-        bg::switch_(key.argument(wiring), std::span<const SwitchCaseArgument>{cases},
+        hg::switch_(key.argument(wiring), std::span<const SwitchCaseArgument>{cases},
                     std::span<const WiringArgument>{arguments})));
 }
 
@@ -236,4 +236,4 @@ void bind_higher_order(nb::module_ &module) {
     module.def("_dispatch", &wire_dispatch);
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details

@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/node/output_declaration_traits.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/util/byte_copy.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/node/output_declaration_traits.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/util/byte_copy.hpp>
 
 #include <concepts>
 #include <memory>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Definition, typename = void> struct node_compiled_data {
     using type = void;
@@ -44,9 +44,9 @@ concept runtime_signature_node = requires(const Definition &definition) {
     { Definition::start(invocation) } -> std::same_as<void>;
 });
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <details::runtime_signature_node Definition, typename... TypeParameters>
 class RuntimeSignatureNodeTemplate final
@@ -413,4 +413,4 @@ class RuntimeSignatureNodeTemplate final
     Definition definition_;
 };
 
-} // namespace bg
+} // namespace hg

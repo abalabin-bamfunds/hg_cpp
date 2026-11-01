@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/export.hpp>
-#include <bg/time_series/dispatch.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/export.hpp>
+#include <hg/time_series/dispatch.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <fmt/format.h>
 
-namespace bg {
+namespace hg {
 
 // Register operations before formatting begins on concurrent threads. The callback receives borrowed input or
 // payload data and a format context that remain valid only for the duration of the call. Serialized callbacks start
@@ -22,7 +22,7 @@ struct TimeSeriesTickFormatOperations {
     SerializedFormat serialized{};
 };
 
-template <> BG_EXPORT TimeSeriesDispatch<TimeSeriesTickFormatOperations> &
+template <> HG_EXPORT TimeSeriesDispatch<TimeSeriesTickFormatOperations> &
 TimeSeriesDispatch<TimeSeriesTickFormatOperations>::instance() noexcept;
 
-} // namespace bg
+} // namespace hg

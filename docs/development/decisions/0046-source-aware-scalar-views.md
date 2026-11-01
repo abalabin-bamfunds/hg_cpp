@@ -10,8 +10,8 @@ runtime used by a typed owning copy.
 This supports compatible runtime representations whose C++ read layouts
 differ from the provider's declared view.
 
-If the selected copy runtime is the source runtime, BG uses the existing
-actual-runtime copy or shared-retain path. Otherwise, BG constructs the
+If the selected copy runtime is the source runtime, HG uses the existing
+actual-runtime copy or shared-retain path. Otherwise, HG constructs the
 selected runtime from the source, which must be compatible with it. Providers
 without these hooks retain existing scalar copy and read behavior.
 

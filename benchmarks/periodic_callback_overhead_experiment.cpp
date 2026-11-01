@@ -1,4 +1,4 @@
-#include <bg/details/periodic_callback_runner.hpp>
+#include <hg/details/periodic_callback_runner.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -103,8 +103,8 @@ int main(int argc, char **argv) {
         return run_cycles(cycles, [&] { (void)(Clock::now() < deadline); });
     });
 
-    auto callback = bg::PeriodicCallback{.callback = [] {}, .interval = std::chrono::hours{24}};
-    auto callback_runner = bg::details::PeriodicCallbackRunner{callback};
+    auto callback = hg::PeriodicCallback{.callback = [] {}, .interval = std::chrono::hours{24}};
+    auto callback_runner = hg::details::PeriodicCallbackRunner{callback};
     callback_runner.run_now();
     report("periodic_runner_each_cycle", samples, [&] {
         return run_cycles(cycles, [&] { callback_runner.run_if_due(); });

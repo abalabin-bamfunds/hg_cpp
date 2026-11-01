@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/scalar/bundle/storage_traits.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/struct/runtime_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/bundle/storage_traits.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/struct/runtime_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <array>
 #include <exception>
@@ -20,7 +20,7 @@
 #include <tuple>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T, typename Base> class CppScalarRuntimeTypeBase : public Base {
     using Traits = scalar_storage_traits<T>;
@@ -331,9 +331,9 @@ class CppScalarRuntimeType<Opaque<T>> final : public CppScalarRuntimeTypeBase<Op
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -413,4 +413,4 @@ extern template const ScalarRuntimeType &cpp_scalar_runtime_type<string>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<bytes>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<symbol>();
 
-} // namespace bg
+} // namespace hg

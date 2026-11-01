@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/index.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/index.hpp>
 
 #include <cstdint>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 struct time_series_bundle_storage {
     static constexpr bool supports_byte_copy_initialization = true;
@@ -20,4 +20,4 @@ struct time_series_bundle_storage {
 static_assert(util::byte_copy_initializable<time_series_bundle_storage>);
 static_assert(sizeof(time_series_bundle_storage) == 24);
 
-} // namespace bg::details
+} // namespace hg::details

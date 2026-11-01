@@ -1,11 +1,11 @@
 #include "format.hpp"
 #include "tick_codec.hpp"
 
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/time_series/tick_operations.hpp>
-#include <bg/time_series/tick_serializer.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/time_series/tick_operations.hpp>
+#include <hg/time_series/tick_serializer.hpp>
 #include <algorithm>
 #include <cstdint>
 #include <optional>
@@ -16,7 +16,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 namespace {
 
 template <typename... Arguments>
@@ -98,7 +98,7 @@ void format_frame(const FrameReadStorage &storage, fmt::format_context &context)
 
 void format_frame_scalar(Scalar<> value, fmt::format_context &context) {
     const auto &runtime = static_cast<const FrameScalarRuntimeType &>(value.runtime_type());
-    format_frame(runtime.read_storage(bg::details::scalar_data(value)), context);
+    format_frame(runtime.read_storage(hg::details::scalar_data(value)), context);
 }
 
 template <cell_type Cell> void format_live_column_values(const In<TSC<Cell>> &input, fmt::format_context &context) {
@@ -289,18 +289,18 @@ void format_serialized_column(const TimeSeriesType &type, util::buffer_reader &r
     write(context, "{{");
     auto first = true;
     for (;;) {
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation == bg::details::TickOperation::end)
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation == hg::details::TickOperation::end)
             break;
         const auto id = reader.read_raw<row_id_t>();
         if (!first)
             write(context, ", ");
         first = false;
         write(context, "{}: ", id);
-        if (header.operation == bg::details::TickOperation::remove)
+        if (header.operation == hg::details::TickOperation::remove)
             write(context, "REMOVE");
-        else if (header.operation == bg::details::TickOperation::add ||
-                 header.operation == bg::details::TickOperation::tick)
+        else if (header.operation == hg::details::TickOperation::add ||
+                 header.operation == hg::details::TickOperation::tick)
             format_serialized_cell(reader, cell_type, context);
         else
             throw fmt::format_error{"invalid TSC tick operation"};
@@ -310,27 +310,27 @@ void format_serialized_column(const TimeSeriesType &type, util::buffer_reader &r
 
 void format_serialized_frame(const TimeSeriesType &, util::buffer_reader &reader,
                              fmt::format_context &context) {
-    const auto *schema = reader.read_raw<const bg::Schema *>();
+    const auto *schema = reader.read_raw<const hg::Schema *>();
     static_cast<void>(reader.read_raw<std::uintptr_t>());
     tick_codec::skip_changed_columns(reader);
     const auto &layout = native_frame_layout(*schema);
     write(context, "{{");
     auto first = true;
     for (;;) {
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation == bg::details::TickOperation::end)
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation == hg::details::TickOperation::end)
             break;
         auto change = tick_codec::read_change(reader, *schema, layout, header);
         if (!first)
             write(context, ", ");
         first = false;
         write(context, "{}: ", change.id);
-        if (change.operation == bg::details::TickOperation::remove) {
+        if (change.operation == hg::details::TickOperation::remove) {
             write(context, "REMOVE");
             continue;
         }
-        if (change.operation != bg::details::TickOperation::add &&
-            change.operation != bg::details::TickOperation::tick)
+        if (change.operation != hg::details::TickOperation::add &&
+            change.operation != hg::details::TickOperation::tick)
             throw fmt::format_error{"invalid TSF tick operation"};
 
         write(context, "{{");
@@ -352,7 +352,7 @@ void format_serialized_frame(const TimeSeriesType &, util::buffer_reader &reader
         };
         for (auto key_position = std::size_t{}; key_position != layout.key_fields.size(); ++key_position)
             format_key_at(key_position);
-        if (change.operation == bg::details::TickOperation::add) {
+        if (change.operation == hg::details::TickOperation::add) {
             for (auto index = std::size_t{}; index != schema->field_count(); ++index) {
                 if (std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
                     format_cell_at(index);
@@ -394,4 +394,4 @@ void register_frame_tick_format_type(const TimeSeriesType &type) {
                                              .serialized = &format_serialized_frame}));
 }
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details

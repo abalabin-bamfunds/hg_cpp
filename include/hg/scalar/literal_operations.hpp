@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/scalar/dispatch.hpp>
+#include <hg/export.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/scalar/dispatch.hpp>
 
-namespace bg {
+namespace hg {
 
 struct ScalarLiteralOperations {
     // The callback constructs an uninitialized destination. It must destroy partial state before throwing. The
@@ -12,7 +12,7 @@ struct ScalarLiteralOperations {
     void (*construct)(const literal::ScalarLiteral &, const ScalarRuntimeType &, void *, allocator &);
 };
 
-template <> BG_EXPORT ScalarDispatch<ScalarLiteralOperations> &
+template <> HG_EXPORT ScalarDispatch<ScalarLiteralOperations> &
 ScalarDispatch<ScalarLiteralOperations>::instance() noexcept;
 
-} // namespace bg
+} // namespace hg

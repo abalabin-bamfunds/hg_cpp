@@ -1,23 +1,23 @@
 # Binary WebSocket connections
 
 WebSocket connects a graph to a persistent stream of binary messages. The current API
-is C++ only. Build the [web extension](index.md#web), link `bg::web` and `bg::library`, and use the
+is C++ only. Build the [web extension](index.md#web), link `hg::web` and `hg::library`, and use the
 realtime engine.
 
 ## Serving a connection
 
 `websocket_handler(path, graph)` registers a route on the HTTP listener. The handler
 receives `TSB<BinaryWebSocketServerRequest>` and returns
-`TSB<BinaryWebSocketResponse>`. Include `<bg/web/http_server.hpp>`.
+`TSB<BinaryWebSocketResponse>`. Include `<hg/web/http_server.hpp>`.
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/http_server.hpp>
+#include <hg/library.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/http_server.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::web;
 
 // Construct the handshake response once before wiring.
 auto memory = allocator{};
@@ -55,7 +55,7 @@ handlers and response bundles with extra outputs follow the HTTP handler pattern
 
 ## Connecting as a client
 
-Include `<bg/web/websocket_client.hpp>`. Register `websocket_client_impl()` in the
+Include `<hg/web/websocket_client.hpp>`. Register `websocket_client_impl()` in the
 service catalogue, then connect a request bundle to `websocket_client`:
 
 ```cpp

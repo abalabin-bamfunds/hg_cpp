@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/frame/frame.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
 
 #include <algorithm>
 #include <optional>
@@ -13,7 +13,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 
 using FrameLiteralCell = std::variant<std::optional<bool>, std::optional<i64>, std::optional<double>,
                                       std::optional<std::string_view>, std::optional<symbol>>;
@@ -60,11 +60,11 @@ inline std::string_view read_literal_field_name(const literal::ScalarLiteral &va
     return value.visit(
         [](const literal::ScalarLiteralItem &item) {
             return item.visit_scalar([](auto *source) -> std::string_view {
-                const auto &data = bg::details::scalar_data(*source);
+                const auto &data = hg::details::scalar_data(*source);
                 if (std::addressof(data.type()) == std::addressof(cpp_scalar_type<string>()))
-                    return bg::details::scalar_data_value<string>(data);
+                    return hg::details::scalar_data_value<string>(data);
                 if (std::addressof(data.type()) == std::addressof(cpp_scalar_type<symbol>()))
-                    return bg::details::scalar_data_value<symbol>(data).text();
+                    return hg::details::scalar_data_value<symbol>(data).text();
                 throw std::invalid_argument{"frame field name must be a string or symbol"};
             }).value();
         },
@@ -78,13 +78,13 @@ template <cell_type T> std::optional<cell_value_t<T>> read_literal_cell(const li
     value.visit(
         [&](const literal::ScalarLiteralItem &item) {
             item.visit_scalar([&](auto *source) {
-                const auto &data = bg::details::scalar_data(*source);
+                const auto &data = hg::details::scalar_data(*source);
                 if (const auto *sentinel = literal::Sentinel::from(data);
                     sentinel != nullptr && *sentinel == NULL_VALUE)
                     return;
                 if (std::addressof(data.type()) != std::addressof(cpp_scalar_type<T>()))
                     throw std::invalid_argument{"frame cell type does not match the requested cell type"};
-                result.emplace(bg::details::scalar_data_value<T>(data));
+                result.emplace(hg::details::scalar_data_value<T>(data));
             });
         },
         [](std::span<const literal::ScalarLiteral>) {
@@ -101,7 +101,7 @@ inline void read_frame_literal_cell(const literal::ScalarLiteral &literal, const
 }
 
 inline std::vector<const literal::ScalarLiteral *>
-read_named_frame_fields(const literal::ScalarLiteral &value, const bg::Schema &schema,
+read_named_frame_fields(const literal::ScalarLiteral &value, const hg::Schema &schema,
                         const NativeFrameLayout &layout, bool key_fields_only) {
     const auto entries = value.visit(
         [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
@@ -111,7 +111,7 @@ read_named_frame_fields(const literal::ScalarLiteral &value, const bg::Schema &s
 
     auto fields = std::vector<const literal::ScalarLiteral *>(schema.field_count(), nullptr);
     for (const auto &entry : entries) {
-        const auto pair = bg::details::scalar_literal::pair(
+        const auto pair = hg::details::scalar_literal::pair(
             entry, "frame row literal entries must contain a field name and value");
         const auto field_name = read_literal_field_name(*pair.first);
         const auto *field = schema.find(symbol{field_name});
@@ -149,4 +149,4 @@ inline std::vector<KeyValue> read_literal_key(std::span<const literal::ScalarLit
     return key;
 }
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details

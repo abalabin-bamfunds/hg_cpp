@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/graph/output_notification.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesRuntimeType;
 
@@ -88,4 +88,4 @@ static_assert(sizeof(ReferenceInputSubscriber) == 2 * sizeof(void *));
 static_assert(sizeof(ReferenceInputNotificationSubscriber) == 4 * sizeof(void *));
 
 } // namespace details
-} // namespace bg
+} // namespace hg

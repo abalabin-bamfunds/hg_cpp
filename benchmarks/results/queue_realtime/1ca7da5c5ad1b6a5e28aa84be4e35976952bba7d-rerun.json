@@ -5,16 +5,16 @@
   "platform": "Linux-6.12.68-92.122.amzn2023.x86_64-x86_64-with-glibc2.34",
   "cgroup_path": "/sys/fs/cgroup/kubepods.slice/kubepods-podc6c057dd_9b77_40b6_b300_d20a5533637b.slice/cri-containerd-32a91c60ee2714654feb2b3e23f2e4cdde2381a88bbbc4e1697528fc1382180e.scope",
   "queue_benchmark_source_commit": "10481b3a2404aa11cacdd7e286df6f68b1c8f43c",
-  "libbg_sha256": "74df789b7e9c5ae3c2e84ccdefffbda339354bf4da55f3eda8a288c401ca4f8a",
+  "libhg_sha256": "74df789b7e9c5ae3c2e84ccdefffbda339354bf4da55f3eda8a288c401ca4f8a",
   "runs": [
     {
-      "binary": "bg_queue_realtime_benchmark",
+      "binary": "hg_queue_realtime_benchmark",
       "repetition": 1,
       "command": [
         "taskset",
         "-c",
         "0-3",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_queue_realtime_benchmark"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_queue_realtime_benchmark"
       ],
       "sha256": "dd8785a96a258740436e5545c66e7e000c3857157aec6363cde72ecb6311d984",
       "returncode": 0,
@@ -45,13 +45,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_queue_realtime_benchmark",
+      "binary": "hg_queue_realtime_benchmark",
       "repetition": 2,
       "command": [
         "taskset",
         "-c",
         "0-3",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_queue_realtime_benchmark"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_queue_realtime_benchmark"
       ],
       "sha256": "dd8785a96a258740436e5545c66e7e000c3857157aec6363cde72ecb6311d984",
       "returncode": 0,
@@ -82,13 +82,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_queue_realtime_benchmark",
+      "binary": "hg_queue_realtime_benchmark",
       "repetition": 3,
       "command": [
         "taskset",
         "-c",
         "0-3",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_queue_realtime_benchmark"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_queue_realtime_benchmark"
       ],
       "sha256": "dd8785a96a258740436e5545c66e7e000c3857157aec6363cde72ecb6311d984",
       "returncode": 0,
@@ -119,13 +119,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_wakeup_latency_control",
+      "binary": "hg_wakeup_latency_control",
       "repetition": 1,
       "command": [
         "taskset",
         "-c",
         "0-3",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_wakeup_latency_control"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_wakeup_latency_control"
       ],
       "sha256": "ed496a6f0053f7e8ddd5ed376dee54cdd9bea18533959a3fe8a7efaef1e808e4",
       "returncode": 0,
@@ -156,13 +156,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_wakeup_latency_control",
+      "binary": "hg_wakeup_latency_control",
       "repetition": 2,
       "command": [
         "taskset",
         "-c",
         "0-3",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_wakeup_latency_control"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_wakeup_latency_control"
       ],
       "sha256": "ed496a6f0053f7e8ddd5ed376dee54cdd9bea18533959a3fe8a7efaef1e808e4",
       "returncode": 0,
@@ -193,13 +193,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_wakeup_latency_control",
+      "binary": "hg_wakeup_latency_control",
       "repetition": 3,
       "command": [
         "taskset",
         "-c",
         "0-3",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_wakeup_latency_control"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_wakeup_latency_control"
       ],
       "sha256": "ed496a6f0053f7e8ddd5ed376dee54cdd9bea18533959a3fe8a7efaef1e808e4",
       "returncode": 0,
@@ -230,13 +230,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_runtime_scheduling_benchmark",
+      "binary": "hg_runtime_scheduling_benchmark",
       "repetition": 1,
       "command": [
         "taskset",
         "-c",
         "0",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_runtime_scheduling_benchmark"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_runtime_scheduling_benchmark"
       ],
       "sha256": "9d54cf49ad470dd9b6a68cb495052d37584c087da8ba89cf38f0e0a3f1f173de",
       "returncode": 0,
@@ -267,13 +267,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_runtime_scheduling_benchmark",
+      "binary": "hg_runtime_scheduling_benchmark",
       "repetition": 2,
       "command": [
         "taskset",
         "-c",
         "0",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_runtime_scheduling_benchmark"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_runtime_scheduling_benchmark"
       ],
       "sha256": "9d54cf49ad470dd9b6a68cb495052d37584c087da8ba89cf38f0e0a3f1f173de",
       "returncode": 0,
@@ -304,13 +304,13 @@
       "stderr": ""
     },
     {
-      "binary": "bg_runtime_scheduling_benchmark",
+      "binary": "hg_runtime_scheduling_benchmark",
       "repetition": 3,
       "command": [
         "taskset",
         "-c",
         "0",
-        "/home/abalabin/_bg/.lanes/push-write-context/build/benchmark/benchmarks/bg_runtime_scheduling_benchmark"
+        "/home/abalabin/_hg/.lanes/push-write-context/build/benchmark/benchmarks/hg_runtime_scheduling_benchmark"
       ],
       "sha256": "9d54cf49ad470dd9b6a68cb495052d37584c087da8ba89cf38f0e0a3f1f173de",
       "returncode": 0,

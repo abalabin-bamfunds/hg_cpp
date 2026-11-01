@@ -16,8 +16,8 @@ A graph function connects calculations. `const_` supplies a fixed graph value;
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import const_
+from hg import graph, run_graph
+from hg.operators import const_
 
 
 @graph
@@ -43,13 +43,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 
 auto example() {
     return const_(18);
@@ -73,7 +73,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -100,8 +100,8 @@ literals, such as `18 + 2`, runs while the graph function executes.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import const_
+from hg import graph, run_graph
+from hg.operators import const_
 
 
 @graph
@@ -129,13 +129,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 
 auto display_temperature() {
     const auto reading = const_(18);
@@ -161,7 +161,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -186,8 +186,8 @@ function adds its calculations to the same graph.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import const_
+from hg import graph, run_graph
+from hg.operators import const_
 
 
 @graph
@@ -219,13 +219,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 
 auto calibrated_temperature(int reading, int offset) {
     return const_(reading) + offset;
@@ -254,7 +254,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -279,7 +279,7 @@ and `SKIP` in C++ mean that the input has no update at that position.
 :sync: python
 
 ```python
-from bg import graph, run_graph
+from hg import graph, run_graph
 
 
 @graph
@@ -311,12 +311,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
+using namespace hg;
 
 auto calibrated_temperature(wp<TS<i64>> reading, int offset) {
     return reading + offset;
@@ -347,7 +347,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -374,8 +374,8 @@ current value; both input calculations remain part of the graph.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import const_, if_then_else
+from hg import graph, run_graph
+from hg.operators import const_, if_then_else
 
 
 @graph
@@ -403,13 +403,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 
 auto capped_temperature(wp<TS<i64>> reading) {
     const auto calibrated = reading + 2;
@@ -435,7 +435,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -461,7 +461,7 @@ on those values during evaluation.
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def correct(reading: int) -> int:
@@ -491,14 +491,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto correct = node([](i64 reading) {
@@ -530,7 +530,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

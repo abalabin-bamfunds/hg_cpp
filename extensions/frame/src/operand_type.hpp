@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/frame/column.hpp>
-#include <bg/frame/expression.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/frame/column.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <memory>
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 
 inline bool is_column_expression(const Type &type, const ScalarType &result_type) {
     const auto *time_series = type_cast<TimeSeriesType>(&type);
@@ -54,4 +54,4 @@ inline bool is_operand(const Type &type, const ScalarType &value_type) {
     return scalar != nullptr && std::addressof(scalar->value_type()) == std::addressof(value_type);
 }
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details

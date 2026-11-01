@@ -1,10 +1,10 @@
-# bg
+# hg
 
-`bg` is a C++23 engine for forward propagation through computational graphs.
+`hg` is a C++23 engine for forward propagation through computational graphs.
 
 ## User guide
 
-Start with the [BG documentation](docs/user/index.md). The opening chapters use
+Start with the [HG documentation](docs/user/index.md). The opening chapters use
 plain value types and introduce graphs through matching Python and C++
 examples.
 
@@ -42,7 +42,7 @@ The project requires CMake 3.31 or newer, Ninja, Catch2 3, and a C++23 compiler.
 CMake downloads pinned `ddvisitor`, `tpack`, and Quill releases during configuration.
 
 After installation, CMake consumers can use
-`find_package(bg CONFIG REQUIRED)` and link to `bg::bg`.
+`find_package(hg CONFIG REQUIRED)` and link to `hg::hg`.
 
 ## Python bindings
 
@@ -51,22 +51,22 @@ Python environment selected by CMake, then configure and build with:
 
 ```sh
 python -m pip install nanobind pytest
-cmake --preset dev -DBG_BUILD_PYTHON=ON -DBUILD_TESTING=ON
+cmake --preset dev -DHG_BUILD_PYTHON=ON -DBUILD_TESTING=ON
 cmake --build --preset dev
 ctest --test-dir build/dev --output-on-failure -R '^python_tests$'
 ```
 
-This builds the `bg::python` CMake target and the Python package in
-`build/dev/bindings/python`. Installed CMake consumers can link `bg::python`;
-request it with `find_package(bg COMPONENTS python REQUIRED)`. Consumers that
-use only `bg::bg` do not require Python or nanobind. See [Python
+This builds the `hg::python` CMake target and the Python package in
+`build/dev/bindings/python`. Installed CMake consumers can link `hg::python`;
+request it with `find_package(hg COMPONENTS python REQUIRED)`. Consumers that
+use only `hg::hg` do not require Python or nanobind. See [Python
 integration](docs/development/design/python.md) for the implemented API and package details. The
 `test` optional dependency in `pyproject.toml` installs pytest. To build a
 wheel, install `scikit-build-core` and run `python -m pip wheel .`.
 
 ## Layout
 
-- `include/bg/` — public C++ headers
+- `include/hg/` — public C++ headers
 - `src/` — C++ implementation
 - `tests/` — Catch2 unit tests
 - `bindings/python/` — optional Python extension

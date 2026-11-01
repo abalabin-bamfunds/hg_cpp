@@ -1,10 +1,10 @@
-#include <bg/frame/frame.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/frame/literal.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/frame/literal.hpp>
 #include "format.hpp"
-#include <bg/type/type_registry.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/scope_exit.hpp>
 #include "tick_codec.hpp"
 #include "queue_operations.hpp"
 
@@ -16,7 +16,7 @@
 #include <unordered_map>
 #include <variant>
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
 const ScalarRuntimeType &default_frame_scalar_runtime_type(const ScalarType &type) {
@@ -64,16 +64,16 @@ FrameSeriesKey frame_series_key(const SchemaType &schema, const GuaranteeParamet
     throw std::invalid_argument{"a frame time series requires a guarantee"};
 }
 
-constexpr auto frame_key_metadata_name = std::string_view{"bg.frame.key"};
+constexpr auto frame_key_metadata_name = std::string_view{"hg.frame.key"};
 
-std::vector<std::size_t> frame_key_fields(const bg::Schema &schema) {
+std::vector<std::size_t> frame_key_fields(const hg::Schema &schema) {
     const auto *metadata = schema.metadata().find(frame_key_metadata_name);
     if (metadata == nullptr)
         return {};
-    if (std::addressof(metadata->type()) != std::addressof(cpp_scalar_type<bg::List<bg::string>>()))
+    if (std::addressof(metadata->type()) != std::addressof(cpp_scalar_type<hg::List<hg::string>>()))
         throw std::invalid_argument{"frame key metadata must be a List<string>"};
 
-    const auto names = bg::Scalar<bg::List<bg::string>>::from(metadata->runtime_type(), metadata->data());
+    const auto names = hg::Scalar<hg::List<hg::string>>::from(metadata->runtime_type(), metadata->data());
     if (names.empty())
         throw std::invalid_argument{"frame key metadata must name at least one column"};
 
@@ -86,7 +86,7 @@ std::vector<std::size_t> frame_key_fields(const bg::Schema &schema) {
         const auto *field = schema.find(util::symbol{name});
         if (field == nullptr)
             throw std::invalid_argument{"frame key metadata names a missing column"};
-        if (field->type->is_resolved() && field->type != std::addressof(cpp_scalar_type<bg::i64>()) &&
+        if (field->type->is_resolved() && field->type != std::addressof(cpp_scalar_type<hg::i64>()) &&
             field->type != std::addressof(cpp_scalar_type<string>()) &&
             field->type != std::addressof(cpp_scalar_type<symbol>()))
             throw std::invalid_argument{"frame key columns must have i64, string, or symbol cell types"};
@@ -397,16 +397,16 @@ void NativeFrameStorage::replay_copy_tick(util::buffer_reader &reader, Evaluatio
     };
 
     for (;;) {
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation == bg::details::TickOperation::end)
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation == hg::details::TickOperation::end)
             break;
-        if (header.operation != bg::details::TickOperation::add &&
-            header.operation != bg::details::TickOperation::tick &&
-            header.operation != bg::details::TickOperation::remove)
+        if (header.operation != hg::details::TickOperation::add &&
+            header.operation != hg::details::TickOperation::tick &&
+            header.operation != hg::details::TickOperation::remove)
             throw std::invalid_argument{"invalid frame tick operation"};
 
         auto change = details::tick_codec::read_change(reader, *layout_->schema, *layout_, header);
-        if (header.operation == bg::details::TickOperation::remove) {
+        if (header.operation == hg::details::TickOperation::remove) {
             const auto *destination_id = copied_rows_.find(change.id);
             if (destination_id == nullptr)
                 continue;
@@ -416,7 +416,7 @@ void NativeFrameStorage::replay_copy_tick(util::buffer_reader &reader, Evaluatio
             continue;
         }
 
-        if (header.operation == bg::details::TickOperation::add) {
+        if (header.operation == hg::details::TickOperation::add) {
             if (copied_rows_.contains(change.id))
                 throw std::logic_error{"frame tick added an active row ID"};
             auto values = std::vector<const void *>{};
@@ -453,9 +453,9 @@ const details::NativeFrameLayout &details::native_frame_layout(const SchemaType 
         return *found->second;
 
     validate_frame_schema(schema);
-    const auto *concrete = dynamic_cast<const bg::Schema *>(std::addressof(schema));
+    const auto *concrete = dynamic_cast<const hg::Schema *>(std::addressof(schema));
     if (concrete == nullptr || !concrete->is_resolved())
-        throw std::invalid_argument{"TSF native storage requires a resolved BG schema"};
+        throw std::invalid_argument{"TSF native storage requires a resolved HG schema"};
 
     auto layout = std::make_unique<NativeFrameLayout>();
     layout->schema = concrete;
@@ -745,4 +745,4 @@ bool FrameScalarRuntimeType::equals_same_type(const void *value, const ScalarDat
     return equals(ScalarDataMode::stored_view, reinterpret_cast<std::uintptr_t>(value), other);
 }
 
-} // namespace bg::frame
+} // namespace hg::frame

@@ -17,11 +17,11 @@ struct add_state {
 };
 
 struct add {
-    bg::In<bg::TS<float>> lhs;
-    bg::In<bg::TS<float>> rhs;
+    hg::In<hg::TS<float>> lhs;
+    hg::In<hg::TS<float>> rhs;
     float scale;
-    bg::State<add_state> state;
-    bg::Out<bg::TS<float>> output;
+    hg::State<add_state> state;
+    hg::Out<hg::TS<float>> output;
 
     void evaluate() const noexcept {
         ++state->evaluation_count;
@@ -29,7 +29,7 @@ struct add {
     }
 };
 
-inline const auto add_node = bg::node<add>();
+inline const auto add_node = hg::node<add>();
 ```
 
 `node()` creates the node template. `NodeTemplate` is its polymorphic interface.
@@ -66,7 +66,7 @@ nested contexts.
 Equal calls to an output-producing node reuse one wired node by default. An
 aggregate or runtime-signature definition can disable this with
 `static constexpr bool deduplicate_wiring = false`. A callable definition uses
-`bg::deduplicate_wiring = false` as a `node()` option.
+`hg::deduplicate_wiring = false` as a `node()` option.
 
 An aggregate node that creates a queue with `context->runtime_graph().make_queue(context->node_index())` declares
 `static constexpr bool uses_queue = true` so the evaluator processes queue messages for the node.
@@ -77,9 +77,9 @@ A callable can declare the invocation views directly. This form keeps a small
 node definition local to its use:
 
 ```cpp
-const auto add = bg::node(
-    [](bg::In<bg::TS<bg::i64>, "value"_n> value, int amount,
-       bg::Out<bg::TS<bg::i64>> output) {
+const auto add = hg::node(
+    [](hg::In<hg::TS<hg::i64>, "value"_n> value, int amount,
+       hg::Out<hg::TS<hg::i64>> output) {
         output.set(*value + amount);
     });
 ```
@@ -98,14 +98,14 @@ Aggregate nodes declare defaults in a nested `defaults` aggregate.
 `Queue`. Graph code supplies the callback's scalar parameters:
 
 ```cpp
-const auto updates = bg::queue<bg::TSD<bg::util::symbol, bg::TS<double>>>(
-    bg::start = [](bg::Queue queue, bg::util::symbol topic) {
+const auto updates = hg::queue<hg::TSD<hg::util::symbol, hg::TS<double>>>(
+    hg::start = [](hg::Queue queue, hg::util::symbol topic) {
         subscribe(topic, std::move(queue));
     },
-    bg::stop = [](bg::util::symbol topic) noexcept { unsubscribe(topic); },
-    bg::mode = bg::QueueMode::elide);
+    hg::stop = [](hg::util::symbol topic) noexcept { unsubscribe(topic); },
+    hg::mode = hg::QueueMode::elide);
 
-auto output = updates(bg::util::symbol{"prices"});
+auto output = updates(hg::util::symbol{"prices"});
 ```
 
 The start callback returns `void` and declares exactly one `Queue` parameter by
@@ -118,19 +118,19 @@ through that handle return `false` because graph shutdown has closed admission.
 Stop scalar parameters match start scalar parameters by canonical scalar type.
 An optional start scalar requires an optional stop scalar. Each match must be
 unique unless selected explicitly. Use
-`bg::start.bind<"a"_n, "topic"_n>(callback)` to name the start scalar parameters.
-`bg::stop.bind<1>(callback)` selects zero-based scalar position 1;
-`bg::stop.bind<"topic"_n>(callback)` selects its name. Selectors follow callback
+`hg::start.bind<"a"_n, "topic"_n>(callback)` to name the start scalar parameters.
+`hg::stop.bind<1>(callback)` selects zero-based scalar position 1;
+`hg::stop.bind<"topic"_n>(callback)` selects its name. Selectors follow callback
 scalar order, cover every scalar parameter, and exclude injected parameters.
-`_n` comes from `bg::literals`.
+`_n` comes from `hg::literals`.
 
 Use a semantic time series type for a runtime output declaration:
 
 ```cpp
-const auto updates = bg::queue(
-    bg::start = [](bg::Queue queue) { subscribe(std::move(queue)); },
-    bg::output_type = my_type,
-    bg::mode = bg::QueueMode::elide);
+const auto updates = hg::queue(
+    hg::start = [](hg::Queue queue) { subscribe(std::move(queue)); },
+    hg::output_type = my_type,
+    hg::mode = hg::QueueMode::elide);
 ```
 
 The mode defaults to `QueueMode::standard`. The declaration also accepts eliding
@@ -189,7 +189,7 @@ storage.
 A callable or aggregate node can declare a parameter with its plain C++ type:
 
 ```cpp
-const auto add = bg::node([](bg::i64 lhs, bg::i64 rhs) { return lhs + rhs; });
+const auto add = hg::node([](hg::i64 lhs, hg::i64 rhs) { return lhs + rhs; });
 ```
 
 Wiring classifies each parameter from its graph-code argument:
@@ -224,15 +224,15 @@ with an `Out<>` parameter returns `void`.
 Only resolved time series inputs create graph dependencies and subscriptions or
 participate in validity gating. Scalars remain immutable shared wired-node data.
 A callable node with only scalar parameters runs in the first cycle by default.
-An explicit `bg::schedule_on_start = false` disables that evaluation. Aggregate
+An explicit `hg::schedule_on_start = false` disables that evaluation. Aggregate
 and runtime-signature nodes retain their declared scheduling behavior.
 
 `schedule_on_start` requests one initial evaluation in the first cycle. It does
 not call `start()` and does not make a node active in later cycles. An aggregate
 or runtime-signature definition declares `static constexpr bool
 schedule_on_start = true`. A callable definition uses
-`bg::schedule_on_start = true` as a `node()` option, together with
-`bg::eval = callable`. The runtime-signature form
+`hg::schedule_on_start = true` as a `node()` option, together with
+`hg::eval = callable`. The runtime-signature form
 can provide `schedule_on_start() const` or
 `schedule_on_start(const ResolvedSignature &) const`. The resolved-signature
 form lets the definition request initial evaluation based on the concrete input
@@ -312,12 +312,12 @@ reset or destroyed.
 time series. Wiring requires its graph-code argument to be a time series:
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-inline const auto value_or_zero = bg::node(
+inline const auto value_or_zero = hg::node(
     "value_or_zero",
-    [](bg::In<bg::TS<float>,
-              bg::optional,
+    [](hg::In<hg::TS<float>,
+              hg::optional,
               "value"_n> value) noexcept {
         return value.valid() ? *value : 0.0F;
     });
@@ -327,7 +327,7 @@ Activity defaults to `active`. Validity defaults to `required`. The common form
 is therefore:
 
 ```cpp
-bg::In<bg::TS<float>, "value"_n>
+hg::In<hg::TS<float>, "value"_n>
 ```
 
 A call can supply `opt(point)` to require an optional parameter. A `required`
@@ -339,7 +339,7 @@ define how overload selection uses this distinction.
 to be valid before each scheduled evaluation attempt:
 
 ```cpp
-bg::In<bg::TSL<bg::TS<bg::i64>, 2>, bg::all_valid> values;
+hg::In<hg::TSL<hg::TS<hg::i64>, 2>, hg::all_valid> values;
 ```
 
 It uses the same invalidation behavior as `required`. The
@@ -404,11 +404,11 @@ constraint passes.
 A node can preserve its output by setting the `on_invalidation` named argument:
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-inline const auto hold = bg::node(
+inline const auto hold = hg::node(
     "hold",
-    "on_invalidation"_n = bg::preserve_output,
+    "on_invalidation"_n = hg::preserve_output,
     [](float value) noexcept {
         return value;
     });
@@ -417,7 +417,7 @@ inline const auto hold = bg::node(
 The named argument can instead provide a function:
 
 ```cpp
-inline const auto fallback = bg::node(
+inline const auto fallback = hg::node(
     "fallback",
     "on_invalidation"_n = []() noexcept {
         return 0.0F;
@@ -432,7 +432,7 @@ can request `EvaluationContext`, `In<>` views, scalars, private state, and the
 output. Producing no output change preserves the current output.
 
 An aggregate node declares `void on_invalidation() const` for this function. It
-can instead set `static constexpr auto on_invalidation = bg::preserve_output`.
+can instead set `static constexpr auto on_invalidation = hg::preserve_output`.
 
 `_n` creates a compile-time named argument. Unknown and repeated names are
 compile errors.
@@ -476,12 +476,12 @@ A function uses `Out<TS_T>` when it must apply multiple or type-specific output
 modifications. The `Out` parameter is last, and the function returns `void`.
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-inline const auto copy_prices = bg::node(
+inline const auto copy_prices = hg::node(
     "copy_prices",
-    [](bg::In<bg::TSD<bg::string, bg::TS<float>>, "values"_n> values,
-       bg::Out<bg::TSD<bg::string, bg::TS<float>>> output) {
+    [](hg::In<hg::TSD<hg::string, hg::TS<float>>, "values"_n> values,
+       hg::Out<hg::TSD<hg::string, hg::TS<float>>> output) {
         output.copy_tick(values);
     });
 ```
@@ -500,21 +500,21 @@ A definition can select its output runtime type from wiring arguments. An aggreg
 declares a static hook:
 
 ```cpp
-static const bg::TimeSeriesRuntimeType &
-output_runtime_type(const bg::WiringArguments &arguments);
+static const hg::TimeSeriesRuntimeType &
+output_runtime_type(const hg::WiringArguments &arguments);
 ```
 
-A callable supplies `bg::output_runtime_type = callback` together with
-`bg::eval = callable`. A runtime-signature definition supplies
+A callable supplies `hg::output_runtime_type = callback` together with
+`hg::eval = callable`. A runtime-signature definition supplies
 `output_runtime_type(const WiringArguments &) const`.
 
-BG calls the hook after selecting the overload and resolving its signature,
+HG calls the hook after selecting the overload and resolving its signature,
 before recording the node call. The hook replaces output-trait runtime selection
 for that call. Its result must remain alive while the graph uses it, have the
 resolved output's exact semantic type, and implement the declared `Out` interface.
 The hook must return the same runtime type for the same node definition and wiring
-arguments. BG uses the existing node-call identity for deduplication.
-BG reports a semantic type mismatch during wiring. Compilation stores the selected
+arguments. HG uses the existing node-call identity for deduplication.
+HG reports a semantic type mismatch during wiring. Compilation stores the selected
 runtime type and uses it for output allocation and `Out` construction, including
 concrete outputs. Evaluation uses it without calling the hook again. Outputs that
 use direct access to a fixed layout retain that layout requirement and direct
@@ -574,7 +574,7 @@ Owning scalar copies retained by downstream nodes preserve their previous values
 immutable storage remains alive until its last owner releases it.
 
 `Out::apply(const literal::TimeSeriesLiteral&)` consumes a borrowed time series
-delta. `<bg/literal/time_series_literal.hpp>` defines this carrier as
+delta. `<hg/literal/time_series_literal.hpp>` defines this carrier as
 an alias of `literal::ScalarLiteral`. Leaves carry scalar sources, including
 [sentinel instructions](scalar-api.md#sentinels). The receiving output
 interprets the update.

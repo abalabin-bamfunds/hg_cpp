@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/export.hpp>
+#include <hg/export.hpp>
 
 #include <fmt/format.h>
 
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::logging {
+namespace hg::logging {
 
 enum class Level { trace, debug, info, warning, error, critical, off };
 
@@ -25,15 +25,15 @@ struct Config {
     bool utc{false};
 };
 
-BG_EXPORT void initialize(Config config = {});
-BG_EXPORT void set_level(Level value);
-BG_EXPORT Level level() noexcept;
-BG_EXPORT bool enabled(Level value) noexcept;
-BG_EXPORT void flush();
+HG_EXPORT void initialize(Config config = {});
+HG_EXPORT void set_level(Level value);
+HG_EXPORT Level level() noexcept;
+HG_EXPORT bool enabled(Level value) noexcept;
+HG_EXPORT void flush();
 
 namespace details {
 
-BG_EXPORT void submit(Level value, std::move_only_function<std::string()> format);
+HG_EXPORT void submit(Level value, std::function<std::string()> format);
 
 template <typename T> auto snapshot_argument(T &&value) {
     using Value = std::remove_cvref_t<T>;
@@ -71,9 +71,9 @@ template <Level VALUE, typename... Args> void log(fmt::format_string<Args...> pa
 }
 
 } // namespace details
-} // namespace bg::logging
+} // namespace hg::logging
 
-namespace bg::log {
+namespace hg::log {
 
 template <typename... Args> void trace(fmt::format_string<Args...> pattern, Args &&...args) {
     logging::details::log<logging::Level::trace>(pattern, std::forward<Args>(args)...);
@@ -99,46 +99,46 @@ template <typename... Args> void critical(fmt::format_string<Args...> pattern, A
     logging::details::log<logging::Level::critical>(pattern, std::forward<Args>(args)...);
 }
 
-} // namespace bg::log
+} // namespace hg::log
 
-#define BG_LOG_TRACE(...)                                                                                             \
+#define HG_LOG_TRACE(...)                                                                                             \
     do {                                                                                                               \
-        if (::bg::logging::enabled(::bg::logging::Level::trace)) {                                                     \
-            ::bg::log::trace(__VA_ARGS__);                                                                             \
+        if (::hg::logging::enabled(::hg::logging::Level::trace)) {                                                     \
+            ::hg::log::trace(__VA_ARGS__);                                                                             \
         }                                                                                                              \
     } while (false)
 
-#define BG_LOG_DEBUG(...)                                                                                             \
+#define HG_LOG_DEBUG(...)                                                                                             \
     do {                                                                                                               \
-        if (::bg::logging::enabled(::bg::logging::Level::debug)) {                                                     \
-            ::bg::log::debug(__VA_ARGS__);                                                                             \
+        if (::hg::logging::enabled(::hg::logging::Level::debug)) {                                                     \
+            ::hg::log::debug(__VA_ARGS__);                                                                             \
         }                                                                                                              \
     } while (false)
 
-#define BG_LOG_INFO(...)                                                                                              \
+#define HG_LOG_INFO(...)                                                                                              \
     do {                                                                                                               \
-        if (::bg::logging::enabled(::bg::logging::Level::info)) {                                                      \
-            ::bg::log::info(__VA_ARGS__);                                                                              \
+        if (::hg::logging::enabled(::hg::logging::Level::info)) {                                                      \
+            ::hg::log::info(__VA_ARGS__);                                                                              \
         }                                                                                                              \
     } while (false)
 
-#define BG_LOG_WARNING(...)                                                                                           \
+#define HG_LOG_WARNING(...)                                                                                           \
     do {                                                                                                               \
-        if (::bg::logging::enabled(::bg::logging::Level::warning)) {                                                   \
-            ::bg::log::warning(__VA_ARGS__);                                                                           \
+        if (::hg::logging::enabled(::hg::logging::Level::warning)) {                                                   \
+            ::hg::log::warning(__VA_ARGS__);                                                                           \
         }                                                                                                              \
     } while (false)
 
-#define BG_LOG_ERROR(...)                                                                                             \
+#define HG_LOG_ERROR(...)                                                                                             \
     do {                                                                                                               \
-        if (::bg::logging::enabled(::bg::logging::Level::error)) {                                                     \
-            ::bg::log::error(__VA_ARGS__);                                                                             \
+        if (::hg::logging::enabled(::hg::logging::Level::error)) {                                                     \
+            ::hg::log::error(__VA_ARGS__);                                                                             \
         }                                                                                                              \
     } while (false)
 
-#define BG_LOG_CRITICAL(...)                                                                                          \
+#define HG_LOG_CRITICAL(...)                                                                                          \
     do {                                                                                                               \
-        if (::bg::logging::enabled(::bg::logging::Level::critical)) {                                                  \
-            ::bg::log::critical(__VA_ARGS__);                                                                          \
+        if (::hg::logging::enabled(::hg::logging::Level::critical)) {                                                  \
+            ::hg::log::critical(__VA_ARGS__);                                                                          \
         }                                                                                                              \
     } while (false)

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -12,7 +12,7 @@
 #include <span>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 class CompiledGraph;
 class EvaluationContext;
@@ -67,4 +67,4 @@ class NestedGraph {
 
 static_assert(std::is_trivially_copyable_v<NestedGraph>);
 
-} // namespace bg
+} // namespace hg

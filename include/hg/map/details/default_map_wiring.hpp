@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/map/details/map_graph_argument.hpp>
-#include <bg/map/details/map_node.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/map/details/map_call.hpp>
+#include <hg/map/details/map_graph_argument.hpp>
+#include <hg/map/details/map_node.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/map/details/map_call.hpp>
 
 #include <memory>
 #include <optional>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class WiringTemplate;
 
@@ -29,4 +29,4 @@ GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedM
                                        bool preserve_named_arguments, const TypeMap &type_map);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

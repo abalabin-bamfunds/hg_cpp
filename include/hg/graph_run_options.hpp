@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/evaluation_profiler.hpp>
-#include <bg/evaluation_engine.hpp>
-#include <bg/periodic_callback.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/global_state.hpp>
-#include <bg/service_catalogue.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/evaluation_engine.hpp>
+#include <hg/periodic_callback.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/global_state.hpp>
+#include <hg/service_catalogue.hpp>
 
 #include <optional>
 #include <stop_token>
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 
 struct GraphRunOptions {
     GlobalState *global_state{};
@@ -50,4 +50,4 @@ struct GraphRunOptions {
     }
 };
 
-} // namespace bg
+} // namespace hg

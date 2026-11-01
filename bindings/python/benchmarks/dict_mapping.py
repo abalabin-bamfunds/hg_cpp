@@ -3,7 +3,7 @@
 Run from the repository root with:
 
     PYTHONPATH=build/python313/bindings/python \
-      /home/abalabin/miniforge3/envs/bg-build/bin/python \
+      /home/abalabin/miniforge3/envs/hg-build/bin/python \
       bindings/python/benchmarks/dict_mapping.py
 
 The build should use CMAKE_BUILD_TYPE=Release. Access timings are taken inside
@@ -23,8 +23,8 @@ import sys
 import time
 from collections.abc import Callable, Mapping
 
-import bg
-from bg._bg import _dict_view_layout
+import hg
+from hg._hg import _dict_view_layout
 
 
 def timed(function: Callable[[], object], repeats: int, rounds: int = 7) -> float:
@@ -95,22 +95,22 @@ def access_metrics(mapping: Mapping[int, int], size: int, repeats: int) -> dict[
 
 
 def make_lazy_graph(size: int, repeats: int, measurements: dict[str, float]):
-    @bg.node
+    @hg.node
     def access(values: dict[int, int], trigger: int) -> int:
         if not measurements:
             measurements.update(access_metrics(values, size, repeats))
         return trigger
 
-    @bg.graph
-    def graph(data: bg.TS[dict[int, int]], trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(data: hg.TS[dict[int, int]], trigger: hg.TS[int]) -> hg.TS[int]:
         return access(data, trigger)
 
     return graph
 
 
 def make_eager_graph(size: int, repeats: int, measurements: dict[str, float]):
-    @bg.compute_node
-    def access(data: bg.TS[dict[int, int]], trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def access(data: hg.TS[dict[int, int]], trigger: hg.TS[int]) -> hg.TS[int]:
         if "scalar_to_python_dict_ns" not in measurements:
             values = data.value
             measurements["scalar_to_python_dict_ns"] = timed(lambda: data.value, 1)
@@ -119,8 +119,8 @@ def make_eager_graph(size: int, repeats: int, measurements: dict[str, float]):
             )
         return trigger.value
 
-    @bg.graph
-    def graph(data: bg.TS[dict[int, int]], trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(data: hg.TS[dict[int, int]], trigger: hg.TS[int]) -> hg.TS[int]:
         return access(data, trigger)
 
     return graph
@@ -132,11 +132,11 @@ def benchmark_size(size: int, repeats: int) -> list[tuple[str, float, str]]:
 
     lazy_metrics: dict[str, float] = {}
     lazy_graph = make_lazy_graph(size, repeats, lazy_metrics)
-    bg.run_graph(lazy_graph, [values], [0])
+    hg.run_graph(lazy_graph, [values], [0])
 
     eager_metrics: dict[str, float] = {}
     eager_graph = make_eager_graph(size, repeats, eager_metrics)
-    bg.run_graph(eager_graph, [values], [0])
+    hg.run_graph(eager_graph, [values], [0])
 
     result = []
     result.extend((f"python_dict_{name}", value, "ns/op") for name, value in python_metrics.items())

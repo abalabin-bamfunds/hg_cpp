@@ -1,7 +1,7 @@
-#include <bg/frame/expression.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/util/symbol.hpp>
 
 #include "operand_type.hpp"
 #include "mixed_expression.hpp"
@@ -9,10 +9,10 @@
 #include <functional>
 #include <string_view>
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field>
 using LEFT_EXPRESSION = BundleSchemaVariableDeclaration<"FRAME_COMPARISON_LEFT_EXPRESSION", Field>;
@@ -127,4 +127,4 @@ const auto registered = [] {
 }();
 
 } // namespace
-} // namespace bg::frame
+} // namespace hg::frame

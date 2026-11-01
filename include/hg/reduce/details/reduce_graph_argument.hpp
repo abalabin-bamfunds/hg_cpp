@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
 
 #include <array>
 #include <cstddef>
 #include <memory>
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class CompiledGraph;
@@ -49,4 +49,4 @@ ReduceGraphArgumentWiring build_reduce_graph_argument_wiring(const WiringTemplat
                                                               bool item_runtime_type_is_fixed = true);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

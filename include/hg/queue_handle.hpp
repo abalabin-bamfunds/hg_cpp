@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/literal/time_series_literal.hpp>
+#include <hg/literal/time_series_literal.hpp>
 
 #include <memory>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 class QueueMessageWriter;
@@ -39,4 +39,4 @@ class Queue {
     std::unique_ptr<details::QueueMessageWriter> writer_;
 };
 
-} // namespace bg
+} // namespace hg

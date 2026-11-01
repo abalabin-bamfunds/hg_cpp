@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/feedback.hpp>
-#include <bg/graph/details/graph_signature.hpp>
-#include <bg/graph/graph_template.hpp>
-#include <bg/graph/service.hpp>
-#include <bg/nested.hpp>
-#include <bg/operators.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/with_signature.hpp>
+#include <hg/feedback.hpp>
+#include <hg/graph/details/graph_signature.hpp>
+#include <hg/graph/graph_template.hpp>
+#include <hg/graph/service.hpp>
+#include <hg/nested.hpp>
+#include <hg/operators.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/with_signature.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -18,7 +18,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <template <typename, auto...> typename Field>
 using SERVICE_FEEDBACK_POSITIONAL = BundleSchemaVariableDeclaration<"SERVICE_FEEDBACK_POSITIONAL", Field>;
@@ -28,9 +28,9 @@ using SERVICE_FEEDBACK_NAMED = BundleSchemaVariableDeclaration<"SERVICE_FEEDBACK
 
 using SERVICE_FEEDBACK_OUTPUT = TimeSeriesVariable<"SERVICE_FEEDBACK_OUTPUT">;
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <typename Implementation>
     requires std::derived_from<std::remove_cvref_t<Implementation>, WiringTemplate> &&
@@ -106,4 +106,4 @@ template <typename Implementation>
     return with_signature(std::move(wrapper), graph->signature());
 }
 
-} // namespace bg
+} // namespace hg

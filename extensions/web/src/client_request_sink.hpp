@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/http_client.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/http_client.hpp>
 
 #include "client_runtime.hpp"
 #include "runtime_logging.hpp"
@@ -15,9 +15,9 @@
 #include <optional>
 #include <utility>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct ClientRequestSink {
     In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_id;
@@ -109,4 +109,4 @@ struct ClientRequestSink {
 
 inline const auto client_request_sink = node<ClientRequestSink>();
 
-} // namespace bg::web::details
+} // namespace hg::web::details

@@ -55,8 +55,8 @@ accounts for another 33.2% inclusively: it allocates and fills a temporary
 validity bitmap by checking every cell, then discards it because all cells are
 valid. Arrow's complete `CallFunction("sum", ...)` accounts for 0.98% inclusively.
 
-See [native batch traversal](../../../include/bg/frame/column.hpp) and
-[Arrow export](../../../include/bg/frame/arrow.hpp).
+See [native batch traversal](../../../include/hg/frame/column.hpp) and
+[Arrow export](../../../include/hg/frame/arrow.hpp).
 
 ### Scattered selection makes Arrow object and chunk overhead dominant
 
@@ -90,7 +90,7 @@ kernels account for 0.97% in self cost. This explains why membership-changing
 updates cost much more than predicate updates that preserve membership.
 
 See `rebuild_selected_order` and `clear_selected_order` in
-[view storage](../../../include/bg/frame/frame.hpp).
+[view storage](../../../include/hg/frame/frame.hpp).
 
 ### Threshold changes miss the native traversal path
 
@@ -113,8 +113,8 @@ each visit 90,000 rows.
 
 `selected_order_dirty` starts true whenever a full predicate rebuild is requested.
 This causes the final order rebuild independently of actual membership changes.
-See [filter binding](../../../include/bg/frame/frame.hpp),
-[column alignment](../../../include/bg/frame/column.hpp), and
+See [filter binding](../../../include/hg/frame/frame.hpp),
+[column alignment](../../../include/hg/frame/column.hpp), and
 [expression evaluation](../../../src/column_expression.cpp).
 
 ### Payload-only updates remain incremental
@@ -155,17 +155,17 @@ overload: toggling all `evaluate` overloads would also toggle nested calls.
 
 ```sh
 mkdir -p build/frame-profile-2026-10-22
-BG_FRAME_EVALUATE='_ZN2bg12RuntimeGraph8evaluateENSt6chrono10time_pointINS1_3_V212system_clockENS1_8durationIlSt5ratioILl1ELl1000000EEEEEEPKNS_17RuntimeGraphInputE'
+HG_FRAME_EVALUATE='_ZN2hg12RuntimeGraph8evaluateENSt6chrono10time_pointINS1_3_V212system_clockENS1_8durationIlSt5ratioILl1ELl1000000EEEEEEPKNS_17RuntimeGraphInputE'
 valgrind --tool=callgrind --demangle=no --collect-atstart=no \
-  --toggle-collect="$BG_FRAME_EVALUATE" --dump-after="$BG_FRAME_EVALUATE" \
+  --toggle-collect="$HG_FRAME_EVALUATE" --dump-after="$HG_FRAME_EVALUATE" \
   --callgrind-out-file=build/frame-profile-2026-10-22/expression.callgrind \
   --log-file=build/frame-profile-2026-10-22/expression.valgrind.log \
-  build/tsf-row-release-arrow-off/bg_frame_expression_benchmark \
+  build/tsf-row-release-arrow-off/hg_frame_expression_benchmark \
   --report build/frame-profile-2026-10-22/expression.instrumented.md \
   --csv build/frame-profile-2026-10-22/expression.instrumented.csv
 ```
 
-For Arrow, use `build/tsf-row-release-arrow-on/bg_frame_arrow_benchmark` and
+For Arrow, use `build/tsf-row-release-arrow-on/hg_frame_arrow_benchmark` and
 replace the `expression` output prefix with `arrow`. Instrumented report timings
 are excluded from the results above. Raw profiles remain in the lane's ignored
 `build/frame-profile-2026-10-22` directory.

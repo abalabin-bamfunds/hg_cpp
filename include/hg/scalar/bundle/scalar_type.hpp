@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/optionality.hpp>
-#include <bg/scalar/declaration.hpp>
-#include <bg/scalar/bundle/type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/type/schema_variable_instance.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/symbol.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/optionality.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/scalar/bundle/type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/type/schema_variable_instance.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/symbol.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <array>
 #include <concepts>
@@ -22,7 +22,7 @@
 #include <typeinfo>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class List;
 template <typename T> class Set;
@@ -236,9 +236,9 @@ auto hierarchical_scalar_fields(std::index_sequence<Index...>) {
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
-const bg::Schema &cpp_hierarchical_scalar_schema() {
+const hg::Schema &cpp_hierarchical_scalar_schema() {
     using Reflection = hierarchical_scalar_schema_reflection<Schema>;
-    const bg::Schema *base = nullptr;
+    const hg::Schema *base = nullptr;
     if constexpr (Reflection::has_base) {
         using Base = typename Reflection::base_schema;
         base = &cpp_hierarchical_scalar_schema<Base::template apply>();
@@ -248,7 +248,7 @@ const bg::Schema &cpp_hierarchical_scalar_schema() {
         std::make_index_sequence<Reflection::direct_field_count>{});
     const auto name = util::symbol{util::unqualified_type_name<Schema<hierarchical_scalar_schema_field>>()};
     auto metadata = declared_schema_metadata<Schema, hierarchical_scalar_schema_field>();
-    return bg::schema(name, std::type_index{typeid(Schema<schema_identity_field>)}, base, fields, std::move(metadata));
+    return hg::schema(name, std::type_index{typeid(Schema<schema_identity_field>)}, base, fields, std::move(metadata));
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
@@ -320,4 +320,4 @@ struct declaration_variable_traits<Bundle<Schema>> {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

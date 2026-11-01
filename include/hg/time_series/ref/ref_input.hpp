@@ -1,32 +1,32 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/input_properties.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/ref/dynamic_reference_input.hpp>
-#include <bg/time_series/ref/fixed_item_selection.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_key_subscription.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/collection_membership.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/ref/dynamic_reference_input.hpp>
+#include <hg/time_series/ref/fixed_item_selection.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_key_subscription.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/collection_membership.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
 
 #include <stdexcept>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -315,4 +315,4 @@ class In<REF<Target, TimeSeriesProperties...>, Properties...>
         dynamic_;
 };
 
-} // namespace bg
+} // namespace hg

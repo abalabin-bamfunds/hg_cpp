@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/builtins.hpp>
-#include <bg/type/type.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/type/type.hpp>
 
 #include <cassert>
 #include <concepts>
 #include <cstddef>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename T = void> class Scalar;
 class ScalarRuntimeType;
@@ -185,4 +185,4 @@ template <typename T> const ScalarType &scalar_type_for() {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

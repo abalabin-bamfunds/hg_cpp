@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 struct ScheduleHandle {
     explicit operator bool() const noexcept { return id != 0; }
@@ -11,4 +11,4 @@ struct ScheduleHandle {
     std::uint32_t id{};
 };
 
-} // namespace bg
+} // namespace hg

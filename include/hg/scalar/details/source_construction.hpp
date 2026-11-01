@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <ranges>
 #include <stdexcept>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct is_scalar_tuple_source : std::false_type {};
 
@@ -90,7 +90,7 @@ void construct_scalar_source(const ScalarRuntimeType &runtime_type, void *destin
         runtime_type.construct_from_input(destination, scalar_data(source), memory);
     } else if constexpr (scalar_source<Value>) {
         using Canonical = canonical_scalar_t<Value>;
-        decltype(auto) value = bg::canonical_scalar(source);
+        decltype(auto) value = hg::canonical_scalar(source);
         runtime_type.construct_from_input(destination, make_scalar_source<Canonical>(value), memory);
     } else if constexpr (is_scalar_tuple_source<Value>::value) {
         const auto *tuple_type = type_cast<TupleScalarType>(&runtime_type.type());
@@ -122,4 +122,4 @@ void construct_scalar_source(const ScalarRuntimeType &runtime_type, void *destin
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

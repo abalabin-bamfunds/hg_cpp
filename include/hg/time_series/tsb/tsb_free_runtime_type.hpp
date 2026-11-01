@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/graph/node.hpp>
-#include <bg/time_series/tsb/tsb_free_storage.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/time_series/tsb/tsb_free_storage.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
 
 #include <memory>
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 Node free_bundle_node(const free_time_series_bundle_storage &storage) noexcept;
 bool free_bundle_valid(const free_time_series_bundle_storage &storage) noexcept;
@@ -132,4 +132,4 @@ class FreeTimeSeriesBundleRuntimeType final : public TimeSeriesRuntimeType {
 
 const TimeSeriesRuntimeType &free_time_series_bundle_runtime_type(const TimeSeriesBundleType &type);
 
-} // namespace bg::details
+} // namespace hg::details

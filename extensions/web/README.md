@@ -1,9 +1,9 @@
 # HTTP extension
 
-`bg_web` connects HTTP clients and servers to graphs. Transport threads submit
+`hg_web` connects HTTP clients and servers to graphs. Transport threads submit
 incoming requests and completed client responses through engine queues.
 
-Enable the extension with `BG_BUILD_WEB=ON`. Enable `BG_BUILD_PYTHON=ON` to build
+Enable the extension with `HG_BUILD_WEB=ON`. Enable `HG_BUILD_PYTHON=ON` to build
 the Python package. Boost.Asio and Boost.Beast provide the server transport;
 Boost.URL parses request targets. libcurl provides the client transport.
 These dependencies are private to the extension.
@@ -11,25 +11,25 @@ These dependencies are private to the extension.
 ## Server
 
 ```python
-import bg
-from bg_web import HttpServerRequest, HttpResponse, http_handler, http_server, register_http_server
+import hg
+from hg_web import HttpServerRequest, HttpResponse, http_handler, http_server, register_http_server
 
-@bg.compute_node
-def echo_response(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
+@hg.compute_node
+def echo_response(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
     return HttpResponse(status=200, body=request.value.body)
 
-@bg.graph
-def echo(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
+@hg.graph
+def echo(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
     return echo_response(request)
 
-@bg.graph
+@hg.graph
 def application() -> None:
     http_handler("/echo", echo)()
     http_server()
 
-catalogue = bg.ServiceCatalogue()
+catalogue = hg.ServiceCatalogue()
 register_http_server(catalogue, host="127.0.0.1", port=8080)
-bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realtime)
+hg.run_graph(application, catalogue=catalogue, engine=hg.EvaluationEngine.realtime)
 ```
 
 `register_http_server` installs the server implementation in a service
@@ -111,7 +111,7 @@ close the connection with code 1003. Incoming message payloads are limited to
 An authenticated route uses the same policy service as `http_handler`:
 
 ```cpp
-auto route = bg::web::websocket_handler("/socket", handler, policy);
+auto route = hg::web::websocket_handler("/socket", handler, policy);
 ```
 
 The handler receives the identity as its second input. A rejected connection
@@ -120,18 +120,18 @@ policy later rejects or invalidates the identity, the server closes the
 connection with code 1008. Removing a route closes its active connections with
 code 1001.
 
-The C++ entry points are declared in `<bg/web/http_server.hpp>`:
+The C++ entry points are declared in `<hg/web/http_server.hpp>`:
 
 ```cpp
-auto catalogue = bg::ServiceCatalogue{};
-bg::web::register_http_server(catalogue, {.host = "127.0.0.1", .port = 8080});
-auto echo_route = bg::web::http_handler("/echo", echo);
+auto catalogue = hg::ServiceCatalogue{};
+hg::web::register_http_server(catalogue, {.host = "127.0.0.1", .port = 8080});
+auto echo_route = hg::web::http_handler("/echo", echo);
 
-bg::run_graph([&] {
+hg::run_graph([&] {
     (void)echo_route();
-    (void)bg::web::http_server();
-}, bg::GraphRunOptions{.services = &catalogue,
-                       .engine = bg::EvaluationEngine::realtime});
+    (void)hg::web::http_server();
+}, hg::GraphRunOptions{.services = &catalogue,
+                       .engine = hg::EvaluationEngine::realtime});
 ```
 
 C++ handlers use `TS<Bundle<HttpServerRequest>>` for one request or
@@ -140,7 +140,7 @@ handler returns `TS<Bundle<HttpResponse>>` or a bundle with a `response` field
 and additional outputs. Its mapped result is `TSD<i64, REF<HANDLER_OUTPUT>>`.
 A dictionary handler returns `TSD<i64, TS<Bundle<HttpResponse>>>` or a bundle
 with a `response` field containing that dictionary and additional outputs. Link
-the optional `bg::web` target. Keep each returned C++ route callable alive through
+the optional `hg::web` target. Keep each returned C++ route callable alive through
 graph compilation and execution. The callable owns its handler definition.
 
 ## Server authentication
@@ -150,25 +150,25 @@ that authorizes each request. Register policy implementations in the service
 catalogue alongside the server implementation:
 
 ```python
-from bg_web import AuthDecision
+from hg_web import AuthDecision
 
-@bg.schema
+@hg.schema
 class User:
     name: str
 
-@bg.service
-def orders_access(request: bg.TS[HttpServerRequest]) -> bg.TS[AuthDecision[User]]:
+@hg.service
+def orders_access(request: hg.TS[HttpServerRequest]) -> hg.TS[AuthDecision[User]]:
     ...
 
-@bg.graph
-def orders(request: bg.TS[HttpServerRequest], identity: bg.TS[User],
-           prices: bg.TSD[str, bg.TS[float]]) -> bg.TS[HttpResponse]:
+@hg.graph
+def orders(request: hg.TS[HttpServerRequest], identity: hg.TS[User],
+           prices: hg.TSD[str, hg.TS[float]]) -> hg.TS[HttpResponse]:
     return order_response(request, identity, prices)
 
 orders_route = http_handler("/orders", orders, policy=orders_access)
 
-@bg.graph
-def application(prices: bg.TSD[str, bg.TS[float]]) -> None:
+@hg.graph
+def application(prices: hg.TSD[str, hg.TS[float]]) -> None:
     orders_route(prices)
 
 catalogue.register_impl(orders_access, orders_access_impl)
@@ -195,9 +195,9 @@ first two inputs. Both contain only accepted request IDs. The dictionary handler
 retains its lifecycle for the complete route. Rejection responses go directly to
 the HTTP service; they do not produce handler-specific additional outputs.
 
-The C++ decision type is `bg::web::AuthDecision<IDENTITY>` from
-`<bg/web/auth.hpp>`. Use `bg::web::auth::accept<IDENTITY>(identity)` and
-`bg::web::auth::reject<IDENTITY>(response)` to construct decisions; both
+The C++ decision type is `hg::web::AuthDecision<IDENTITY>` from
+`<hg/web/auth.hpp>`. Use `hg::web::auth::accept<IDENTITY>(identity)` and
+`hg::web::auth::reject<IDENTITY>(response)` to construct decisions; both
 factories also accept an allocator as their first argument.
 Pass the policy service as the third argument to C++ `http_handler` and keep the
 service declaration alive through handler wiring. The handler uses that original
@@ -209,22 +209,22 @@ declaration's catalogue identity.
 in the graph's service catalogue:
 
 ```python
-import bg
-from bg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
+import hg
+from hg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
 
-@bg.compute_node
-def show_response(response: bg.TS[HttpResponse]) -> None:
+@hg.compute_node
+def show_response(response: hg.TS[HttpResponse]) -> None:
     print(response.value.status, bytes(response.value.body))
 
-@bg.graph
+@hg.graph
 def application() -> None:
-    request = bg.operators.const_(HttpClientRequest("http://127.0.0.1:8080/echo"))
+    request = hg.operators.const_(HttpClientRequest("http://127.0.0.1:8080/echo"))
     show_response(http_client(request))
 
-catalogue = bg.ServiceCatalogue()
+catalogue = hg.ServiceCatalogue()
 catalogue.register_impl(http_client, http_client_impl())
-bg.run_graph(application, catalogue=catalogue,
-             engine=bg.EvaluationEngine.realtime)
+hg.run_graph(application, catalogue=catalogue,
+             engine=hg.EvaluationEngine.realtime)
 ```
 
 `HttpClientRequest` contains `method`, `url`, `headers`, and `body`. Its Python
@@ -264,11 +264,11 @@ HTTP/1.1 requests, connection reuse, and DNS caching. HTTPS verifies the server
 certificate and hostname. Redirect following is disabled. The adaptor adds no
 retry policy.
 
-The C++ entry points are declared in `<bg/web/http_client.hpp>`:
+The C++ entry points are declared in `<hg/web/http_client.hpp>`:
 
 ```cpp
-auto catalogue = bg::ServiceCatalogue{};
-catalogue.register_impl(bg::web::http_client, bg::web::http_client_impl(), {});
+auto catalogue = hg::ServiceCatalogue{};
+catalogue.register_impl(hg::web::http_client, hg::web::http_client_impl(), {});
 ```
 
 The client signature is `TS<Bundle<HttpClientRequest>> ->
@@ -296,7 +296,7 @@ renewing Kerberos tickets remains the application's responsibility.
 authentication scope: HTTP and WebSocket in C++, HTTP in Python. Existing service
 calls keep their signatures. Use this installation instead of installing their
 standalone implementations in that catalogue.
-The C++ registration functions are declared in `<bg/web/client_auth.hpp>`.
+The C++ registration functions are declared in `<hg/web/client_auth.hpp>`.
 
 Call `register_client_auth(scope, origin, credential_graph, ambient...)` anywhere
 in graph code. The credential graph receives the normalized origin as its first
@@ -355,11 +355,11 @@ and includes the selected subprotocol header when the server returns one.
 the observed close code and reason. A transport failure before the handshake
 returns status 599; an abnormal closure after admission reports code 1006.
 
-The C++ entry points are declared in `<bg/web/websocket_client.hpp>`:
+The C++ entry points are declared in `<hg/web/websocket_client.hpp>`:
 
 ```cpp
-auto catalogue = bg::ServiceCatalogue{};
-catalogue.register_impl(bg::web::websocket_client, bg::web::websocket_client_impl(), {});
+auto catalogue = hg::ServiceCatalogue{};
+catalogue.register_impl(hg::web::websocket_client, hg::web::websocket_client_impl(), {});
 ```
 
 `WebSocketClientOptions` configures the timeout for resolve, connect, and

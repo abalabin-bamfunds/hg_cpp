@@ -1,7 +1,7 @@
-# BG documentation
+# HG documentation
 
-BG connects calculations whose inputs change over time. Each node retains its
-current result. BG tracks the connections between nodes and evaluates affected
+HG connects calculations whose inputs change over time. Each node retains its
+current result. HG tracks the connections between nodes and evaluates affected
 calculations when an input updates. Shared intermediate results can feed several
 outputs without repeating the calculation.
 
@@ -31,8 +31,8 @@ A **graph function** constructs these connections; node code computes their valu
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import const_
+from hg import graph, run_graph
+from hg.operators import const_
 
 @graph
 def subtotal(price: int, quantity: int) -> int:
@@ -60,13 +60,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto subtotal(wp<TS<i64>> price, int quantity) {
@@ -95,7 +95,7 @@ Output:
 The [C++ example project](guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -106,7 +106,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 The example has a fixed result. [Changing inputs](guide/graphs/updates.md) use the
-same connections with successive values. BG retains current values; history is
+same connections with successive values. HG retains current values; history is
 provided by operations such as running totals and lag.
 
 ::::{grid} 1 2 2 2

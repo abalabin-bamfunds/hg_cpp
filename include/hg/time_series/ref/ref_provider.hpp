@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/output_notification.hpp>
-#include <bg/time_series/item_id.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
 
 #include <cstdint>
 #include <type_traits>
 #include <typeinfo>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 class EvaluationContext;
@@ -224,4 +224,4 @@ class ReferenceProvider {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

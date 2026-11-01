@@ -1,24 +1,24 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_storage.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_storage.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <functional>
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 
 template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, Properties...>> {
   public:
@@ -324,4 +324,4 @@ template <typename K, typename Item, auto... Properties> class Out<TSD<K, Item, 
     TimeSeriesOutputBinding state_;
 };
 
-} // namespace bg
+} // namespace hg

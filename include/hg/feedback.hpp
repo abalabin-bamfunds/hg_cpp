@@ -1,19 +1,19 @@
 #pragma once
 
-#include <bg/graph/compiled_node.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/node/aggregate_node_template.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/time_series/ts/ts_output.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/util/buffer.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/compiled_node.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/node/aggregate_node_template.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/time_series/ts/ts_output.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/util/buffer.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -23,7 +23,7 @@
 #include <string_view>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -218,4 +218,4 @@ template <typename SERIES> [[nodiscard]] auto feedback(std::string_view name = {
     return feedback(input, output_type, name);
 }
 
-} // namespace bg
+} // namespace hg

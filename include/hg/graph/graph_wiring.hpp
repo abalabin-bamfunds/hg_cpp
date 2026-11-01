@@ -1,19 +1,19 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/details/graph_signature.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/graph/details/nested_binding_identity.hpp>
-#include <bg/graph/node_call_identity.hpp>
-#include <bg/graph/wired_input.hpp>
-#include <bg/graph/wired_node.hpp>
-#include <bg/graph/wired_output.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_path.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/linear_hash_table.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/details/graph_signature.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/graph/details/nested_binding_identity.hpp>
+#include <hg/graph/node_call_identity.hpp>
+#include <hg/graph/wired_input.hpp>
+#include <hg/graph/wired_node.hpp>
+#include <hg/graph/wired_output.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_path.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/linear_hash_table.hpp>
 
 #include <cstdint>
 #include <functional>
@@ -25,7 +25,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class NodeTemplate;
 class Operator;
@@ -363,4 +363,4 @@ void WiringPoint::materialisation_option(Builder &&builder, double cost) const {
                                WiringMaterialisationBuilder{std::move(erased_builder)});
 }
 
-} // namespace bg
+} // namespace hg

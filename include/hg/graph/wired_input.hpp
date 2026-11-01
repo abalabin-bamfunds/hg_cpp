@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <limits>
 
-namespace bg {
+namespace hg {
 
 // Identifies a local output, inherited time series requirement, or borrowed input slot.
 class WiredInput {
@@ -42,4 +42,4 @@ class WiredInput {
 
 static_assert(sizeof(WiredInput) == sizeof(std::size_t));
 
-} // namespace bg
+} // namespace hg

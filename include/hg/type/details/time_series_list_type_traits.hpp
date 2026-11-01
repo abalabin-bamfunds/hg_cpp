@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/type/size_variable_instance.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/type/size_variable_instance.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Item, auto Size, auto... Properties> struct time_series_type_traits<TSL<Item, Size, Properties...>> {
     using semantic_type = TimeSeriesListType;
@@ -50,4 +50,4 @@ struct declaration_variable_traits<TSL<Item, Size, Properties...>> {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

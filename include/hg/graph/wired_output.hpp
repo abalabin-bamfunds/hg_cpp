@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/time_series/item_id.hpp>
+#include <hg/time_series/item_id.hpp>
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesType;
 class TimeSeriesRuntimeType;
@@ -20,4 +20,4 @@ struct WiredOutput {
     const TimeSeriesRuntimeType *runtime_type{};
 };
 
-} // namespace bg
+} // namespace hg

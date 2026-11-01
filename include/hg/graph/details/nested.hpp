@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/nested_graph.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/type/signature.hpp>
 
 #include <memory>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class NodeTemplate;
 class GraphWiring;
@@ -31,4 +31,4 @@ struct NestedGraphWiring {
                                                              const ResolvedSignature &graph_signature);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

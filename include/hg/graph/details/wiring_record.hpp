@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/node_call_identity.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/graph/wired_input.hpp>
-#include <bg/time_series/item_id.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/node_call_identity.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/graph/wired_input.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -16,7 +16,7 @@
 #include <string>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class Signature;
@@ -124,4 +124,4 @@ WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
                                    std::unique_ptr<WiringRecord> record);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

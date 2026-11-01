@@ -1,32 +1,32 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/evaluation_profiler.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
-#include <bg/realtime_evaluation_engine.hpp>
-#include <bg/wall_clock.hpp>
-#include <bg/graph_run_options.hpp>
-#include <bg/graph_run_input.hpp>
-#include <bg/testing/time_series_tick_comparison.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/time_series/tick_serializer.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
+#include <hg/realtime_evaluation_engine.hpp>
+#include <hg/wall_clock.hpp>
+#include <hg/graph_run_options.hpp>
+#include <hg/graph_run_input.hpp>
+#include <hg/testing/time_series_tick_comparison.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/time_series/tick_serializer.hpp>
 
 #include <algorithm>
 #include <array>
@@ -45,7 +45,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct SourceState {
     std::size_t next{};
@@ -315,16 +315,16 @@ template <typename T, auto... Properties> struct graph_output_scalar<TS<T, Prope
 template <typename Target, auto... Properties>
 struct graph_output_scalar<REF<Target, Properties...>> : graph_output_scalar<Target> {};
 
-template <typename Result, bool = bg::details::is_typed_wiring_point<Result>> struct graph_result_scalar {
+template <typename Result, bool = hg::details::is_typed_wiring_point<Result>> struct graph_result_scalar {
     using type = void;
 };
 
 template <typename Result> struct graph_result_scalar<Result, true> {
-    using type = typename graph_output_scalar<typename bg::details::typed_wiring_point<Result>::time_series_type>::type;
+    using type = typename graph_output_scalar<typename hg::details::typed_wiring_point<Result>::time_series_type>::type;
 };
 
 template <typename Function> struct graph_function {
-    using callable = bg::details::callable<std::remove_cvref_t<Function>>;
+    using callable = hg::details::callable<std::remove_cvref_t<Function>>;
     using result = std::remove_cvref_t<typename callable::result_type>;
     using output_scalar = typename graph_result_scalar<result>::type;
 
@@ -544,8 +544,8 @@ class LiteralMatcher {
     static bool matches_child(util::buffer_reader &reader, const TimeSeriesType &type,
                               const literal::TimeSeriesLiteral &expected, std::size_t tick_index,
                               Comparison &comparison) {
-        const auto header = bg::details::TickHeader::read(reader);
-        return header.operation == bg::details::TickOperation::tick &&
+        const auto header = hg::details::TickHeader::read(reader);
+        return header.operation == hg::details::TickOperation::tick &&
                matches_payload(reader, type, header.valid, expected, comparison, tick_index);
     }
 
@@ -592,7 +592,7 @@ class LiteralMatcher {
     static bool matches_scalar(util::buffer_reader &reader, const TimeSeriesValueType &type,
                                const literal::TimeSeriesLiteral &expected) {
         auto matched = false;
-        const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+        const auto read = hg::details::TimeSeriesTickScalarRead::visit(
             reader, type.value_type(), [&](Scalar<> actual) {
                 matched = matches_scalar_literal(actual, expected);
             });
@@ -604,32 +604,32 @@ class LiteralMatcher {
                              std::size_t tick_index) {
         return matches_indexed(reader, type, expected_literal, "a TSL update entry requires an index and a value",
                                [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
-                                   return bg::details::scalar_literal::list_index(selector) == index;
+                                   return hg::details::scalar_literal::list_index(selector) == index;
                                },
                                node, tick_index);
     }
 
     static bool matches_set(util::buffer_reader &reader, const TimeSeriesSetType &type,
                             const literal::TimeSeriesLiteral &expected_literal) {
-        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
+        const auto expected = hg::details::scalar_literal::sequence(expected_literal);
 
         auto matched = std::vector<bool>(expected.size());
         mark_skips(expected, matched, [](const literal::TimeSeriesLiteral &entry) {
             return is_sentinel(entry, literal::SKIP);
         });
         for (;;) {
-            const auto header = bg::details::TickHeader::read(reader);
-            if (header.operation == bg::details::TickOperation::end) {
+            const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation == hg::details::TickOperation::end) {
                 return all_expected_matched(matched);
             }
-            if (header.operation != bg::details::TickOperation::add &&
-                header.operation != bg::details::TickOperation::remove) {
+            if (header.operation != hg::details::TickOperation::add &&
+                header.operation != hg::details::TickOperation::remove) {
                 return false;
             }
 
             auto candidate = std::optional<std::size_t>{};
             auto candidate_count = std::size_t{};
-            const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+            const auto read = hg::details::TimeSeriesTickScalarRead::visit(
                 reader, type.item_type(), [&](Scalar<> actual_key) {
                     for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
                         const auto &value = expected[expected_index];
@@ -639,8 +639,8 @@ class LiteralMatcher {
 
                         const auto removed = literal::TaggedLiteral::from(value);
                         const auto is_removal = removed && removed->sentinel == literal::REMOVED;
-                        const auto expected_operation = is_removal ? bg::details::TickOperation::remove
-                                                                   : bg::details::TickOperation::add;
+                        const auto expected_operation = is_removal ? hg::details::TickOperation::remove
+                                                                   : hg::details::TickOperation::add;
                         if (expected_operation != header.operation) {
                             continue;
                         }
@@ -662,22 +662,22 @@ class LiteralMatcher {
     static bool matches_dictionary(util::buffer_reader &reader, const TimeSeriesDictionaryType &type,
                                    const literal::TimeSeriesLiteral &expected_literal, Comparison &node,
                                    std::size_t tick_index) {
-        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
+        const auto expected = hg::details::scalar_literal::sequence(expected_literal);
 
         auto matched = std::vector<bool>(expected.size());
         mark_skips(expected, matched, [](const literal::TimeSeriesLiteral &entry) {
-            const auto pair = bg::details::scalar_literal::pair(
+            const auto pair = hg::details::scalar_literal::pair(
                 entry, "a TSD update entry requires a key and a value");
             return is_sentinel(*pair.second, literal::SKIP);
         });
         for (;;) {
-            const auto header = bg::details::TickHeader::read(reader);
-            if (header.operation == bg::details::TickOperation::end) {
+            const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation == hg::details::TickOperation::end) {
                 return all_expected_matched(matched);
             }
-            if (header.operation != bg::details::TickOperation::add &&
-                header.operation != bg::details::TickOperation::tick &&
-                header.operation != bg::details::TickOperation::remove) {
+            if (header.operation != hg::details::TickOperation::add &&
+                header.operation != hg::details::TickOperation::tick &&
+                header.operation != hg::details::TickOperation::remove) {
                 return false;
             }
 
@@ -685,16 +685,16 @@ class LiteralMatcher {
             auto candidate_count = std::size_t{};
             auto matched_entry = false;
             auto matched_value = false;
-            const auto read = bg::details::TimeSeriesTickScalarRead::visit(
+            const auto read = hg::details::TimeSeriesTickScalarRead::visit(
                 reader, type.key_type(), [&](Scalar<> actual_key) {
                     for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
-                        const auto pair = bg::details::scalar_literal::pair(
+                        const auto pair = hg::details::scalar_literal::pair(
                             expected[expected_index], "a TSD update entry requires a key and a value");
                         if (is_sentinel(*pair.second, literal::SKIP)) {
                             continue;
                         }
                         const auto expected_removal = is_sentinel(*pair.second, literal::REMOVE);
-                        if (expected_removal != (header.operation == bg::details::TickOperation::remove)) {
+                        if (expected_removal != (header.operation == hg::details::TickOperation::remove)) {
                             continue;
                         }
 
@@ -710,13 +710,13 @@ class LiteralMatcher {
 
                     matched_entry = true;
                     matched[*candidate] = true;
-                    const auto pair = bg::details::scalar_literal::pair(
+                    const auto pair = hg::details::scalar_literal::pair(
                         expected[*candidate], "a TSD update entry requires a key and a value");
-                    if (header.operation == bg::details::TickOperation::remove) {
+                    if (header.operation == hg::details::TickOperation::remove) {
                         matched_value = node.retire_dictionary_child(actual_key);
                         return;
                     }
-                    if (header.operation == bg::details::TickOperation::add &&
+                    if (header.operation == hg::details::TickOperation::add &&
                         !node.retire_dictionary_child(actual_key)) {
                         return;
                     }
@@ -735,7 +735,7 @@ class LiteralMatcher {
         return matches_indexed(reader, type, expected_literal,
                                "a TSB update entry requires a field name and a value",
                                [&](const literal::TimeSeriesLiteral &selector, item_id_t index) {
-                                   return bg::details::scalar_literal::field_name(selector) ==
+                                   return hg::details::scalar_literal::field_name(selector) ==
                                           type.item_name(index).text();
                                },
                                node, tick_index);
@@ -746,20 +746,20 @@ class LiteralMatcher {
                                 const literal::TimeSeriesLiteral &expected_literal, const char *pair_error,
                                 SelectorMatches &&selector_matches, Comparison &node,
                                 std::size_t tick_index) {
-        const auto expected = bg::details::scalar_literal::sequence(expected_literal);
+        const auto expected = hg::details::scalar_literal::sequence(expected_literal);
 
         auto matched = std::vector<bool>(expected.size());
         mark_skips(expected, matched, [pair_error](const literal::TimeSeriesLiteral &entry) {
-            const auto pair = bg::details::scalar_literal::pair(
+            const auto pair = hg::details::scalar_literal::pair(
                 entry, pair_error);
             return is_sentinel(*pair.second, literal::SKIP);
         });
         for (;;) {
-            const auto header = bg::details::TickHeader::read(reader);
-            if (header.operation == bg::details::TickOperation::end) {
+            const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation == hg::details::TickOperation::end) {
                 return all_expected_matched(matched);
             }
-            if (header.operation != bg::details::TickOperation::tick) {
+            if (header.operation != hg::details::TickOperation::tick) {
                 return false;
             }
 
@@ -767,7 +767,7 @@ class LiteralMatcher {
             auto candidate = std::optional<std::size_t>{};
             const literal::TimeSeriesLiteral *child_literal{};
             for (auto expected_index = std::size_t{}; expected_index < expected.size(); ++expected_index) {
-                const auto pair = bg::details::scalar_literal::pair(
+                const auto pair = hg::details::scalar_literal::pair(
                     expected[expected_index], pair_error);
                 if (is_sentinel(*pair.second, literal::SKIP) ||
                     !std::invoke(selector_matches, *pair.first, index)) {
@@ -840,4 +840,4 @@ template <typename Output> void capture_graph_output(const Output &output, Captu
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

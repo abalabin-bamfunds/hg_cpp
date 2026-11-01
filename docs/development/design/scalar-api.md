@@ -87,7 +87,7 @@ erased visitor fallback.
 
 ## Scalar formatting
 
-`<bg/scalar/format.hpp>` formats scalar views directly into fmt's format
+`<hg/scalar/format.hpp>` formats scalar views directly into fmt's format
 context. For example, `fmt::format("{}", value.view())` formats an owning
 scalar value. Strings and symbols use quoted debug formatting; an empty symbol
 formats as `""`. Bytes use `bytes("...")` with two lowercase hexadecimal
@@ -126,7 +126,7 @@ Successful assignment empties the owner. Assignment failure leaves the owner unc
 containers that accept any combination of `Scalar` and `ScalarValue` handles.
 
 Use `ScalarValue` when a value must outlive a borrowed view. A constructor can
-accept a `bg::allocator` for owned storage.
+accept a `hg::allocator` for owned storage.
 
 `ScalarConstruction` is an engine and scalar-provider interface for constructing
 one owned value in runtime-selected storage. `ScalarValue<T>::from_construction`
@@ -196,7 +196,7 @@ allocated from it. `StringBuilder` appends text into allocator-owned storage and
 
 `ScalarValue` converts supported C++ source types to the engine's scalar types.
 Signed and unsigned integers that fit convert to `std::int64_t`. Character
-strings convert to `bg::string`, whose read API returns `std::string_view`.
+strings convert to `hg::string`, whose read API returns `std::string_view`.
 `EvaluationTime` retains its type.
 
 Wiring applies the same conversion to raw C++ scalar arguments before type
@@ -219,7 +219,7 @@ specialization provides those capabilities. Both are unsupported by default.
 
 ## Literals
 
-`<bg/literal/scalar_literal.hpp>` defines `literal::ScalarLiteral` as
+`<hg/literal/scalar_literal.hpp>` defines `literal::ScalarLiteral` as
 `literal::Literal<literal::ScalarLiteralItem>`. `literal::TimeSeriesLiteral` names
 the same type. Scalar construction and time series application interpret this
 carrier through separate operations. A scalar item borrows a C++ source,
@@ -232,7 +232,7 @@ a literal does not extend their lifetime. Scalar views delivered by its DDV
 visitor are callback-scoped. Extension behavior belongs to the visitor consumer
 and the source's scalar storage traits.
 
-`<bg/scalar/literal.hpp>` provides `ScalarValue<T>::from_literal(literal)` and
+`<hg/scalar/literal.hpp>` provides `ScalarValue<T>::from_literal(literal)` and
 `ScalarValue<>::from_literal(runtime_type, literal)`. Both return an owning
 `ScalarValue` and have overloads taking an allocator as the final argument.
 The same construction accepts `Literal<Leaf>` when the leaf provides scalar
@@ -254,7 +254,7 @@ optional bundle fields remain absent. Malformed sequences throw
 `std::invalid_argument`.
 
 Providers support extension sequences by registering `ScalarLiteralOperations`
-from `<bg/scalar/literal_operations.hpp>` with
+from `<hg/scalar/literal_operations.hpp>` with
 `ScalarDispatch<ScalarLiteralOperations>::instance()` using the
 [optional operation registry](#optional-operations). The handler receives the complete
 `ScalarLiteral`, destination runtime type, uninitialized destination storage, and
@@ -272,15 +272,15 @@ explicit allocator, including bundles nested in collections. See the
 [ownership contract](#ownership).
 
 ```cpp
-auto values = bg::ScalarValue<bg::List<bg::List<bg::i64>>>::from_literal({{1, 2}, {}, {3}});
+auto values = hg::ScalarValue<hg::List<hg::List<hg::i64>>>::from_literal({{1, 2}, {}, {3}});
 ```
 
 ### Sentinels
 
-`<bg/literal/sentinel.hpp>` defines `literal::Sentinel` and `literal::TaggedLiteral`.
+`<hg/literal/sentinel.hpp>` defines `literal::Sentinel` and `literal::TaggedLiteral`.
 Each `Sentinel` instance is a noncopyable instruction with a diagnostic symbol
 name. Sentinel equality compares object addresses. Names support diagnostics.
-BG exports `SKIP`, `INVALID`, `REMOVE`, and `REMOVED` as singleton instances.
+HG exports `SKIP`, `INVALID`, `REMOVE`, and `REMOVED` as singleton instances.
 `ScalarValue<Sentinel>` stores and copies a singleton pointer.
 
 ```cpp
@@ -309,7 +309,7 @@ address:
 extern EXAMPLE_EXPORT const literal::Sentinel RESET;
 
 // Extension source.
-const literal::Sentinel RESET{bg::symbol{"example_extension.reset"}};
+const literal::Sentinel RESET{hg::symbol{"example_extension.reset"}};
 ```
 
 Sentinels and tagged literals have canonical scalar types and runtimes. They do
@@ -333,7 +333,7 @@ retaining its pointer. Dictionary keys and values occupy separate columns.
 
 `MutableList<T>`, `MutableSet<T>`, and `MutableDict<K, V>` provide the matching
 mutation operations. `State` exposes these views during a node invocation. An
-operation that can allocate or release memory uses the active `bg::allocator`.
+operation that can allocate or release memory uses the active `hg::allocator`.
 Looking up a nested collection through a mutable list or dictionary
 returns its mutable view.
 
@@ -420,7 +420,7 @@ void forward_bundle(In<TS<Bundle<SCHEMA>>> input,
 scalar sources, scalar handles, tuple sources, and contiguous ranges for list
 fields. Positional arguments follow inherited logical field order. Named
 arguments use `_n`; a positional argument cannot follow a named argument.
-Optional fields may be omitted. An overload taking `bg::allocator&` as its
+Optional fields may be omitted. An overload taking `hg::allocator&` as its
 first argument places owned storage under that allocator. Construction uses
 the engine's composed hierarchical runtime type. Extension runtime types
 provide their own construction APIs. Fields are constructed directly in final
@@ -493,7 +493,7 @@ A provider can supply its canonical runtime by adding
 the declaration's semantic type and registers the returned runtime. The runtime
 must identify that semantic type, match the declared stored representation,
 and have process lifetime. Repeated requests return the same canonical runtime.
-Without the hook, BG selects or generates its existing canonical runtime.
+Without the hook, HG selects or generates its existing canonical runtime.
 
 The provider defines `scalar_type_traits<T>::type()` out of line. It also
 explicitly instantiates `cpp_scalar_runtime_type<T>()` in the provider library
@@ -529,7 +529,7 @@ ordinary leaf scalar.
 `scalar_storage_traits<T>::supports_alternative_layouts` states whether typed
 reads must interpret different stored layouts. `false` requires every runtime
 used for a typed `T` read to expose the trait's `stored_type` layout. Runtime
-objects can differ while sharing that layout. BG's ordinary fixed-layout traits
+objects can differ while sharing that layout. HG's ordinary fixed-layout traits
 declare `false`. A provider specialization that omits the member is treated as
 supporting alternative layouts.
 
@@ -556,7 +556,7 @@ valid for the operation that consumes it.
 
 A provider implements another physical representation by deriving from
 `ScalarRuntimeType`. Its virtual methods use `ScalarData` and `ScalarDataMode`
-from `<bg/scalar/data.hpp>`. These are APIs for extension authors implementing
+from `<hg/scalar/data.hpp>`. These are APIs for extension authors implementing
 runtime types. Node code uses `Scalar`, `ScalarValue`, `In`, and `Out`.
 
 `ScalarData` contains a runtime-type pointer, a payload word, and its mode.
@@ -578,7 +578,7 @@ and shared modes, and the payload pointer for the other modes. Providers must
 interpret the payload using its mode. For a non-reference read without a trait
 hook, an alternative runtime constructs the provider's declared C++ read value
 through `read_value(mode, data_word, destination)` in aligned, uninitialized
-storage. BG destroys that value after use, including when moving it throws.
+storage. HG destroys that value after use, including when moving it throws.
 
 A provider can specialize how a typed view reads runtime representations by
 adding `static value_type read_value(const details::ScalarData &source)` to
@@ -591,7 +591,7 @@ case. These trait hooks are extension APIs; node code uses `Scalar` and
 
 A provider supporting alternative layouts with a reference-valued `value_type`
 must supply this hook. It returns a reference to an existing source-owned object.
-BG checks the hook requirement when compiling typed reads. Fixed-layout
+HG checks the hook requirement when compiling typed reads. Fixed-layout
 reference reads use the trait's `read()` directly.
 
 A provider can also add
@@ -607,8 +607,8 @@ runtime. Providers override it when the owning representation differs from the
 borrowed representation. The runtime selector preserves the source's actual
 semantic type, including its actual schema.
 
-BG selects the destination once. If it is the source runtime, BG can use the
-existing inline-copy or shared-retain operations. Otherwise, BG allocates using
+HG selects the destination once. If it is the source runtime, HG can use the
+existing inline-copy or shared-retain operations. Otherwise, HG allocates using
 the destination's size and alignment and calls its `construct_from_input()`;
 the destination must accept the source representation. A constructed owning
 value records the selected destination runtime. Shared retain records the actual
@@ -632,7 +632,7 @@ a separate trait `construct` overload.
 
 The hook borrows the view or its source owner. It must not return a pointer to
 a temporary created inside the hook or transfer ownership through the
-descriptor. BG keeps a converted C++ view alive through the synchronous copy
+descriptor. HG keeps a converted C++ view alive through the synchronous copy
 or assignment. Without the hook, a C++ read view uses its declaration's
 canonical runtime. These operations are extension APIs; node code uses the
 ordinary scalar and time series APIs.

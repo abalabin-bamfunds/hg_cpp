@@ -4,7 +4,7 @@ Status: implemented and tested in the `frame-utilities` lane; changes are
 uncommitted. The focused utility suite passed 16 cases and 557 assertions.
 The current root at `6f347969` already supplies `index::first_set(start)`.
 This proposal uses the [working frame note](frame_design_note.md) and the
-[Arrow probe](README.md). It keeps Arrow-specific objects out of BG utilities.
+[Arrow probe](README.md). It keeps Arrow-specific objects out of HG utilities.
 
 ## Existing operations to use
 
@@ -128,4 +128,4 @@ publish. This policy belongs to the frame's column representation and Arrow
 adapter, not to `sparse_bunch` generally.
 
 No Arrow buffer owner, row-ID allocator, special compaction scheduler, or
-block-reservation API is proposed for BG utilities at this stage.
+block-reservation API is proposed for HG utilities at this stage.

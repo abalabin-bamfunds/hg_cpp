@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class ScalarRuntimeType;
 struct NodeStateLayout {
@@ -13,4 +13,4 @@ struct NodeStateLayout {
     std::vector<const ScalarRuntimeType *> generic_runtime_types;
 };
 
-} // namespace bg
+} // namespace hg

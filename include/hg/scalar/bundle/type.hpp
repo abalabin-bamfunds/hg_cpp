@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> struct scalar_storage_traits;
 
@@ -44,7 +44,7 @@ concept hierarchical_scalar_declaration =
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg
 
-static_assert(sizeof(bg::details::scalar_bundle_storage) == sizeof(void *));
-static_assert(alignof(bg::details::scalar_bundle_storage) == alignof(void *));
+static_assert(sizeof(hg::details::scalar_bundle_storage) == sizeof(void *));
+static_assert(alignof(hg::details::scalar_bundle_storage) == alignof(void *));

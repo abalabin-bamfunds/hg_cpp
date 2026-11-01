@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/dynamic_node_subscriber.hpp>
-#include <bg/graph/output_notification.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/dynamic_node_subscriber.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cassert>
 #include <cstddef>
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 
@@ -62,4 +62,4 @@ template <typename... AdditionalDestinations> struct DynamicNodeSubscriberStorag
 static_assert(sizeof(DynamicNodeSubscriberStorage<>) == 2 * sizeof(void *));
 
 } // namespace details
-} // namespace bg
+} // namespace hg

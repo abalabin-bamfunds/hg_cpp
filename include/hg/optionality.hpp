@@ -2,7 +2,7 @@
 
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 enum class Optionality : std::uint8_t {
     required,
@@ -12,4 +12,4 @@ enum class Optionality : std::uint8_t {
 inline constexpr Optionality required = Optionality::required;
 inline constexpr Optionality optional = Optionality::optional;
 
-} // namespace bg
+} // namespace hg

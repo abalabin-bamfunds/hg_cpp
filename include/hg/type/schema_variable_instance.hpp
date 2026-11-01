@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <util::compile_time_string Name>
 const TypeVariableType<SchemaType> &schema_variable_instance() {
@@ -31,9 +31,9 @@ const TypeVariableType<SchemaType> &schema_variable_instance() {
 template <template <template <typename, auto...> typename> typename Declaration>
 const SchemaType &time_series_schema_type();
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const SchemaType &schema_type<Schema>::type() {
@@ -44,4 +44,4 @@ const SchemaType &schema_type<Schema>::type() {
     }
 }
 
-} // namespace bg
+} // namespace hg

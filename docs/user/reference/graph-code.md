@@ -30,7 +30,7 @@ graphs; an ordinary graph call does not.
 ## Arguments
 
 Python signatures follow positional, named, positional-only, and keyword-only parameter
-rules. C++ named parameters use `"name"_n = argument`; import `bg::literals` for `_n`.
+rules. C++ named parameters use `"name"_n = argument`; import `hg::literals` for `_n`.
 Checked C++ declarations can label parameters with `wp<TS<i64>, "reading"_n>` or provide
 parameter names when declaring a template.
 

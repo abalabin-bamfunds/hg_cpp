@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/time_series/tsl/details/wiring.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/time_series/tsl/details/wiring.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
 
 #include <array>
 #include <cstddef>
@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 template <typename Item, auto Size, auto... TimeSeriesProperties, auto... WiringProperties>
     requires(details::variadic_mode<WiringProperties...>() != details::VariadicMode::none)
@@ -121,4 +121,4 @@ static_assert(std::is_trivially_copyable_v<wp<TSL<TS_T, SIZE>, var_args>>);
 static_assert(sizeof(wp<TSL<TS_T, SIZE>, var_args, optional>) == sizeof(WiringPoint));
 static_assert(std::is_trivially_copyable_v<wp<TSL<TS_T, SIZE>, var_args, optional>>);
 
-} // namespace bg
+} // namespace hg

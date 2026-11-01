@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/graph/context.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_template.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_template.hpp>
 
 #include <functional>
 #include <stdexcept>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -159,4 +159,4 @@ template <typename Function> GraphTemplate(Signature, Function) -> GraphTemplate
 template <typename Function, typename Label>
 GraphTemplate(Signature, Function, Label) -> GraphTemplate<std::decay_t<Function>, std::decay_t<Label>>;
 
-} // namespace bg
+} // namespace hg

@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/frame/frame.hpp>
-#include <bg/frame/literal.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/literal.hpp>
 
 #include <arrow/api.h>
 #include <arrow/array/data.h>
@@ -25,7 +25,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame {
+namespace hg::frame {
 
 namespace arrow_details {
 
@@ -187,7 +187,7 @@ template <arrow_cell_type T> arrow::Status validate_chunked(const std::shared_pt
 template <arrow_cell_type T> class ArrowColumnReadSource final : public ColumnReadSource<T> {
   public:
     ArrowColumnReadSource() = default;
-    ArrowColumnReadSource(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    ArrowColumnReadSource(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     explicit ArrowColumnReadSource(std::shared_ptr<arrow::ChunkedArray> column) { bind(std::move(column)); }
 
     void bind(std::shared_ptr<arrow::ChunkedArray> column) {
@@ -740,7 +740,7 @@ class ArrowScalarRuntime final : public ArrowScalarRuntimeBase<Semantic> {
     std::size_t hash(const void *) const noexcept override { return 0; }
     bool equals_same_type(const void *value, const ScalarData &other) const override {
         const auto left = ArrowScalarValueRead<Storage, Value>::read(*static_cast<const Storage *>(value));
-        return column_values_equal(left, bg::details::scalar_data_value<Semantic>(other));
+        return column_values_equal(left, hg::details::scalar_data_value<Semantic>(other));
     }
     void destroy(void *value, allocator &) const noexcept override { std::destroy_at(static_cast<Storage *>(value)); }
     bool accepts_input(const ScalarRuntimeType &source) const noexcept override { return &source == this; }
@@ -778,7 +778,7 @@ using ArrowRuntimeFrameColumn =
 class ArrowRuntimeFrameStorage {
   public:
     ArrowRuntimeFrameStorage() = default;
-    ArrowRuntimeFrameStorage(std::shared_ptr<arrow::Table> input, const bg::Schema &input_schema)
+    ArrowRuntimeFrameStorage(std::shared_ptr<arrow::Table> input, const hg::Schema &input_schema)
         : table{std::move(input)}, schema{std::addressof(input_schema)},
           size{static_cast<std::size_t>(table->num_rows())} {
         columns.reserve(schema->field_count());
@@ -794,7 +794,7 @@ class ArrowRuntimeFrameStorage {
     }
 
     std::shared_ptr<arrow::Table> table;
-    const bg::Schema *schema{};
+    const hg::Schema *schema{};
     std::vector<ArrowRuntimeFrameColumn> columns;
     std::size_t size{};
 };
@@ -827,7 +827,7 @@ inline FrameReadStorage frame_read_storage(const ArrowRuntimeFrameStorage &stora
     return result;
 }
 
-inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, const bg::Schema &schema) {
+inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, const hg::Schema &schema) {
     if (!table)
         return arrow::Status::Invalid("Arrow table is null");
     if (!schema.is_resolved())
@@ -864,7 +864,7 @@ inline arrow::Status validate_frame(const std::shared_ptr<arrow::Table> &table, 
 
 } // namespace arrow_details
 
-// The result borrows cell buffers and is valid only while the source view remains unchanged in its BG invocation.
+// The result borrows cell buffers and is valid only while the source view remains unchanged in its HG invocation.
 template <arrow_details::arrow_cell_type T>
 arrow::Result<std::shared_ptr<arrow::ChunkedArray>> borrow_arrow(const ColumnView<T> &column) {
     return arrow_details::export_column(column, false);
@@ -896,7 +896,7 @@ arrow::Result<std::shared_ptr<arrow::Table>> copy_to_arrow(const FrameView<Schem
 }
 
 // Imports retain the supplied Arrow arrays. Their buffers must remain alive through those Arrow owners; importing
-// a borrowed export does not extend the BG source lifetime. Use copy_to_arrow before retaining borrowed data.
+// a borrowed export does not extend the HG source lifetime. Use copy_to_arrow before retaining borrowed data.
 template <arrow_details::arrow_cell_type T>
 arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::ChunkedArray> column) {
     ARROW_RETURN_NOT_OK(arrow_details::validate_chunked<T>(column));
@@ -906,7 +906,7 @@ arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::ChunkedArray> col
     return ScalarValue<>{value};
 }
 
-inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table, const bg::Schema &schema) {
+inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table, const hg::Schema &schema) {
     ARROW_RETURN_NOT_OK(arrow_details::validate_frame(table, schema));
     auto storage = arrow_details::ArrowRuntimeFrameStorage{std::move(table), schema};
     try {
@@ -916,7 +916,7 @@ inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> tab
     }
     const auto &type = frame_type(schema);
     const auto &runtime = arrow_details::runtime_schema_frame_scalar_runtime(type);
-    auto value = Scalar<Frame<bg::SCHEMA>>::from(runtime, std::addressof(storage));
+    auto value = Scalar<Frame<hg::SCHEMA>>::from(runtime, std::addressof(storage));
     return ScalarValue<>{value};
 }
 
@@ -958,10 +958,10 @@ inline arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> tab
 
 template <template <template <typename, auto...> typename> typename Schema>
 arrow::Result<ScalarValue<>> from_arrow(std::shared_ptr<arrow::Table> table) {
-    const auto *schema = dynamic_cast<const bg::Schema *>(std::addressof(frame_schema_type<Schema>()));
+    const auto *schema = dynamic_cast<const hg::Schema *>(std::addressof(frame_schema_type<Schema>()));
     if (schema == nullptr)
         return arrow::Status::Invalid("Arrow frame import requires a resolved schema");
     return from_arrow(std::move(table), *schema);
 }
 
-} // namespace bg::frame
+} // namespace hg::frame

@@ -1,9 +1,9 @@
-#include <bg/python/graph_definition.hpp>
+#include <hg/python/graph_definition.hpp>
 
-#include <bg/operators.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/python/wiring_point.hpp>
-#include <bg/graph/wiring_context.hpp>
+#include <hg/operators.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/python/wiring_point.hpp>
+#include <hg/graph/wiring_context.hpp>
 
 #include "wiring_argument.hpp"
 
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::python {
+namespace hg::python {
 namespace {
 
 thread_local std::shared_ptr<PythonWiringLifetime> active_wiring_lifetime;
@@ -167,4 +167,4 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
     return *point;
 }
 
-} // namespace bg::python
+} // namespace hg::python

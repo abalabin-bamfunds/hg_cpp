@@ -1,8 +1,8 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -40,24 +40,24 @@ class CountingMemoryResource : public std::pmr::memory_resource {
 };
 
 [[nodiscard]] auto make_compiled_graph(std::size_t node_count) {
-    const auto schedule_node = bg::node<SchedulingNode>();
-    auto wiring = bg::GraphWiring{};
+    const auto schedule_node = hg::node<SchedulingNode>();
+    auto wiring = hg::GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = hg::WiringContext{wiring};
         for (auto node_index = std::size_t{}; node_index < node_count; ++node_index) {
             schedule_node(static_cast<std::uint32_t>(node_index));
         }
     }
 
     wiring.finalize();
-    return bg::CompiledGraph{wiring};
+    return hg::CompiledGraph{wiring};
 }
 
 void report_memory(std::size_t node_count) {
     const auto compiled = make_compiled_graph(node_count);
-    auto global_state = bg::GlobalState{};
+    auto global_state = hg::GlobalState{};
     auto memory = CountingMemoryResource{};
-    auto runtime = bg::RuntimeGraph{compiled, bg::allocator{memory}, global_state};
+    auto runtime = hg::RuntimeGraph{compiled, hg::allocator{memory}, global_state};
     const auto total_instance_bytes = sizeof(runtime) + memory.outstanding_bytes;
     std::cout << "memory nodes=" << node_count << " RuntimeGraph=" << sizeof(runtime)
               << " compiled_fixed=" << compiled.fixed_storage_size()
@@ -69,9 +69,9 @@ void report_memory(std::size_t node_count) {
 void benchmark_schedule_and_evaluate(std::size_t node_count, std::size_t cycles, bool sparse) {
     constexpr auto warmup_cycles = std::size_t{20'000};
     const auto compiled = make_compiled_graph(node_count);
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
-    const auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
+    auto global_state = hg::GlobalState{};
+    auto runtime = hg::RuntimeGraph{compiled, global_state};
+    const auto start_time = hg::MIN_DT + std::chrono::microseconds{1};
     runtime.start(start_time);
     SchedulingNode::evaluation_count = 0;
 
@@ -84,7 +84,7 @@ void benchmark_schedule_and_evaluate(std::size_t node_count, std::size_t cycles,
                     runtime.schedule(node_index);
                 }
             }
-            runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{static_cast<std::int64_t>(cycle + 1)});
+            runtime.evaluate(hg::MIN_DT + std::chrono::microseconds{static_cast<std::int64_t>(cycle + 1)});
         }
     };
 
@@ -111,7 +111,7 @@ void benchmark_schedule_and_evaluate(std::size_t node_count, std::size_t cycles,
 } // namespace
 
 int main() {
-    std::cout << "sizeof(RuntimeGraph)=" << sizeof(bg::RuntimeGraph) << '\n';
+    std::cout << "sizeof(RuntimeGraph)=" << sizeof(hg::RuntimeGraph) << '\n';
     for (const auto node_count : {std::size_t{32}, std::size_t{56}, std::size_t{57}, std::size_t{64},
                                   std::size_t{65}}) {
         report_memory(node_count);

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/graph/evaluation_function.hpp>
-#include <bg/graph/output_notification.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/node/invalidation.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/graph/evaluation_function.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/node/invalidation.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -17,7 +17,7 @@
 #include <span>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 class CompiledGraphBuilder;
 class CompiledNode;
@@ -742,4 +742,4 @@ inline const void *NodeInvocationMetadata::compiled_data(const CompiledNode &nod
     return reinterpret_cast<const std::byte *>(&node) + compiled_data_offset;
 }
 
-} // namespace bg
+} // namespace hg

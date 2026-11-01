@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_storage.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_storage.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include <memory>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     struct Layout {
@@ -223,8 +223,8 @@ template <typename Item, auto Size, auto... Properties>
 struct CppTimeSeriesRuntimeType<TSL<Item, Size, Properties...>> {
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &list = static_cast<const TimeSeriesListType &>(type);
-        return fixed_time_series_list_runtime_type(list, ::bg::cpp_time_series_runtime_type<Item>(list.item_type()));
+        return fixed_time_series_list_runtime_type(list, ::hg::cpp_time_series_runtime_type<Item>(list.item_type()));
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

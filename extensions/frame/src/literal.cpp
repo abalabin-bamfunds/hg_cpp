@@ -1,18 +1,18 @@
-#include <bg/frame/literal.hpp>
+#include <hg/frame/literal.hpp>
 
-#include <bg/frame/column.hpp>
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
+#include <hg/frame/column.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
 #include "literal_helpers.hpp"
 
 #include <algorithm>
 #include <stdexcept>
 #include <vector>
 
-namespace bg::frame {
+namespace hg::frame {
 
 const literal::Sentinel NULL_VALUE{symbol{"frame.null"}};
 
@@ -110,11 +110,11 @@ void construct_frame_literal(const literal::ScalarLiteral &literal, const Scalar
             columns.reserve(values.size());
             for (const auto &value : values)
                 columns.push_back(scalar_storage_traits<Column<SCALAR>>::read_value(
-                    bg::details::scalar_data(value)));
+                    hg::details::scalar_data(value)));
 
             const auto row_count = columns.empty() ? 0 : columns.front().size();
             auto value = make_frame_value(memory, schema, row_count, columns);
-            runtime.construct_from_input(destination, bg::details::scalar_data(value), memory);
+            runtime.construct_from_input(destination, hg::details::scalar_data(value), memory);
         });
 }
 
@@ -131,7 +131,7 @@ void apply_native_column_series_literal(const literal::TimeSeriesLiteral &litera
         throw std::invalid_argument{"TSC literal does not accept this sentinel"};
     }
 
-    const auto values = bg::details::scalar_literal::sequence(literal);
+    const auto values = hg::details::scalar_literal::sequence(literal);
     if (values.empty()) {
         if (!typed_output.valid())
             typed_output.clear();
@@ -261,4 +261,4 @@ void register_column_series_literal_runtime(const TimeSeriesRuntimeType &runtime
 }
 
 } // namespace details
-} // namespace bg::frame
+} // namespace hg::frame

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/node.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
 
 #include "client_output.hpp"
 #include "client_runtime.hpp"
@@ -10,7 +10,7 @@
 #include <memory>
 #include <utility>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
 struct ClientSource {
     Scalar<Opaque<HttpClientOptions>> options;
@@ -31,4 +31,4 @@ struct ClientSource {
 
 inline const auto client_source = node<ClientSource>();
 
-} // namespace bg::web::details
+} // namespace hg::web::details

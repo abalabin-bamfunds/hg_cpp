@@ -1,6 +1,6 @@
 # hgraph pattern recheck
 
-The review lane `agent/hgraph-pattern-review` is rebased onto BG `dfe929f0`.
+The review lane `agent/hgraph-pattern-review` is rebased onto HG `dfe929f0`.
 Seven of the original eleven pattern findings still fail. All seven fail during
 wiring; their runtime behavior remains unverified. Four findings now pass.
 This recheck changes tests and reports only.
@@ -36,9 +36,9 @@ Both failures from the previous complete main-suite run still reproduce on
 `dfe929f0`:
 
 - **Hierarchical scalar conflict test:** the cross-translation-unit helper still
-  uses `typeid(bg::Bundle<Instrument>)`, while production uses schema identity.
+  uses `typeid(hg::Bundle<Instrument>)`, while production uses schema identity.
   The keys differ, so the expected conflict exception is absent.
-- **Python web bindings:** `_bg` uses the stable nanobind ABI and `_bg_web` uses
+- **Python web bindings:** `_hg` uses the stable nanobind ABI and `_hg_web` uses
   the regular ABI. Their separate type registries reject wiring-point and graph
   arguments. The web Python suite still has seven failing cases and two passing
   cases, with failures before runtime evaluation.
@@ -52,11 +52,11 @@ diagnostics. The results are in the reference-target-identity lane's
 ## Scope corrections
 
 The earlier exclusions for `test_reduce_map` and `test_reduce_from_switch` no
-longer apply: current BG [reduce](../design/reduce.md) supports non-scalar TSD
+longer apply: current HG [reduce](../design/reduce.md) supports non-scalar TSD
 items, including TSB items. The ordinary `reduce accepts TSB values` regression
 passes in this recheck. The exact upstream compositions remain unverified and
 are eligible for porting. Tuple folding still requires a different operation
-from BG's TSD reduction. The [review scope table](hgraph-pattern-review-2026-10-28.md#scope-assessment)
+from HG's TSD reduction. The [review scope table](hgraph-pattern-review-2026-10-28.md#scope-assessment)
 records the corrected dispositions.
 
 ## Verification
@@ -65,7 +65,7 @@ All nine review test translation units were rebuilt with the current headers,
 GCC Release flags, and `NDEBUG`. Production headers and source match main.
 The executables use lane-local copies of the libraries from the fresh,
 fully built `dfe929f0` Release build. Library hashes and compile commands are
-recorded in `build/recheck/manifest.json`; `ldd` confirms the lane-local BG
+recorded in `build/recheck/manifest.json`; `ldd` confirms the lane-local HG
 libraries are loaded.
 
 | Run | Cases | Assertions | Result |

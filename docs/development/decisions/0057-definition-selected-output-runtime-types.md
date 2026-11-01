@@ -19,6 +19,6 @@ its declared `Out` interface, and remain alive while the graph uses it.
 
 ## Consequences
 
-BG invokes the hook after overload selection and signature resolution. Evaluation
+HG invokes the hook after overload selection and signature resolution. Evaluation
 binds outputs to the retained descriptor without calling the hook again. See the
 [output API](../design/node-api.md#output-parameters) for the hook forms and contract.

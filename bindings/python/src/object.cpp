@@ -1,9 +1,9 @@
-#include <bg/python/object.hpp>
-#include <bg/python/gil.hpp>
+#include <hg/python/object.hpp>
+#include <hg/python/gil.hpp>
 
 #include <stdexcept>
 
-namespace bg::python {
+namespace hg::python {
 
 std::mutex Object::deferred_releases_mutex_;
 std::vector<PyObject *> Object::deferred_releases_;
@@ -70,4 +70,4 @@ void Object::drain_deferred_releases() {
     }
 }
 
-} // namespace bg::python
+} // namespace hg::python

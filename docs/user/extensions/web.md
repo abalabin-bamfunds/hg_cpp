@@ -2,8 +2,8 @@
 
 The web extension connects HTTP requests and responses to graph calculations.
 HTTP has Python and C++ APIs. Build the [web extension](index.md#web), import from
-`bg_web` in Python, or include `<bg/web/http_server.hpp>` and
-`<bg/web/http_client.hpp>` in C++.
+`hg_web` in Python, or include `<hg/web/http_server.hpp>` and
+`<hg/web/http_client.hpp>` in C++.
 
 ## Serving a request
 
@@ -18,8 +18,8 @@ wait for other graph inputs before responding.
 :sync: python
 
 ```python
-from bg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
-from bg_web import HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
+from hg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
+from hg_web import HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
 
 @compute_node
 def echo(request: TS[HttpServerRequest]) -> TS[HttpResponse]:
@@ -50,14 +50,14 @@ run_graph(application, catalogue=catalogue, engine=EvaluationEngine.realtime)
 :::{tab-item} Code
 
 ```cpp
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/web/http_server.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/web/http_server.hpp>
 
-using namespace bg;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::web;
 
 int main() {
     const auto echo = node([](In<TS<Bundle<HttpServerRequest>>> request,
@@ -87,7 +87,7 @@ int main() {
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -190,9 +190,9 @@ same request IDs.
 
 ```python
 from datetime import timedelta
-from bg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
-from bg.operators import const_
-from bg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
+from hg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
+from hg.operators import const_
+from hg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
 
 @compute_node
 def show(response: TS[HttpResponse]) -> None:
@@ -219,19 +219,19 @@ run_graph(application, catalogue=catalogue, engine=EvaluationEngine.realtime,
 :::{tab-item} Code
 
 ```cpp
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/web/http_client.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/web/http_client.hpp>
 
 #include <chrono>
 #include <iostream>
 #include <span>
 #include <string_view>
 
-using namespace bg;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::web;
 
 int main() {
     auto catalogue = ServiceCatalogue{};
@@ -265,7 +265,7 @@ int main() {
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -289,7 +289,7 @@ retries are disabled. HTTPS verifies the certificate and hostname.
 Response processing can be tested with literal inputs, without a listener or a client
 transport. These inputs include successful and error statuses:
 
-<!-- example-libraries: bg::web -->
+<!-- example-libraries: hg::web -->
 <!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language
@@ -298,8 +298,8 @@ transport. These inputs include successful and error statuses:
 :sync: python
 
 ```python
-from bg import TS, compute_node, graph, run_graph
-from bg_web import HttpResponse
+from hg import TS, compute_node, graph, run_graph
+from hg_web import HttpResponse
 
 @compute_node
 def response_status(response: TS[HttpResponse]) -> TS[int]:
@@ -331,15 +331,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/web/types.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/web/types.hpp>
 
 #include <iostream>
 #include <span>
 
-using namespace bg;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::web;
 
 int main() {
     const auto response_status = node([](In<TS<Bundle<HttpResponse>>> response) {
@@ -368,7 +368,7 @@ Output:
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -420,9 +420,9 @@ the run ends after two seconds.
 ```python
 from datetime import timedelta
 
-from bg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
-from bg_web import HttpClientRequest, HttpResponse, HttpServerRequest
-from bg_web import http_client, http_client_impl, http_handler, http_server, register_http_server
+from hg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
+from hg_web import HttpClientRequest, HttpResponse, HttpServerRequest
+from hg_web import http_client, http_client_impl, http_handler, http_server, register_http_server
 
 
 def main():
@@ -479,14 +479,14 @@ Response:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/web/http_client.hpp>
-#include <bg/web/http_server.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/web/http_client.hpp>
+#include <hg/web/http_server.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -495,8 +495,8 @@ Response:
 #include <string_view>
 #include <string>
 
-using namespace bg;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::web;
 
 int main() {
     auto catalogue = ServiceCatalogue{};
@@ -552,7 +552,7 @@ Response:
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

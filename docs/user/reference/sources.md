@@ -9,8 +9,8 @@ application-specific values or external events.
 `const_(value)` creates a time series whose scalar type is inferred from `value`. It
 publishes once at the start when observable and never changes. It accepts registered
 scalar values, including scalar collections; it does not split them into independently
-updating items. Python imports it from `bg.operators`; C++ uses `bg::operators::const_`
-from `<bg/library.hpp>`.
+updating items. Python imports it from `hg.operators`; C++ uses `hg::operators::const_`
+from `<hg/library.hpp>`.
 
 ## nothing
 
@@ -19,7 +19,7 @@ guarantee. Required inputs connected to it remain blocked; optional inputs can
 evaluate from another active input and observe `valid == False`. It produces no
 updates and compiles without a runtime producer node.
 
-Python imports `nothing` from `bg.operators`. C++ supplies the time-series type
+Python imports `nothing` from `hg.operators`. C++ supplies the time-series type
 explicitly:
 
 ```cpp

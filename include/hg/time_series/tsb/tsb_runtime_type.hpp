@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_storage.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_storage.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -15,7 +15,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
   public:
@@ -263,7 +263,7 @@ void append_bundle_item_runtime_types(const TimeSeriesBundleType &type,
     const auto append = [&]<std::size_t Field>() {
         constexpr auto Item = direct_bundle_field_logical_index<Field, Schema>;
         const auto *runtime_type =
-            &::bg::cpp_time_series_runtime_type<direct_bundle_field_time_series<Field, Schema>>(type.item_type(Item));
+            &::hg::cpp_time_series_runtime_type<direct_bundle_field_time_series<Field, Schema>>(type.item_type(Item));
         if (Item < items.size()) {
             items[Item] = runtime_type;
         } else {
@@ -285,4 +285,4 @@ struct CppTimeSeriesRuntimeType<TSB<Schema, Properties...>> {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

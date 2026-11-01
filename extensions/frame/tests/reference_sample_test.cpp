@@ -1,10 +1,10 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/nested.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/nested.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <array>
 #include <optional>
@@ -12,9 +12,9 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct SampleFrameBase {
     Field<i64> id;
@@ -78,7 +78,7 @@ TEST_CASE("TSF reference switch samples actual derived fields and shared column 
                 result.bid = input.column("bid").input<double>().cell(0);
             }
             if (*cycle == 3) {
-                const auto source = bg::details::ResolvedTimeSeries{input.input_data().last_updated_ref(),
+                const auto source = hg::details::ResolvedTimeSeries{input.input_data().last_updated_ref(),
                                                                     input.input_data().data(),
                                                                     std::addressof(input.runtime_type())};
                 const auto factory = input.runtime_type().reference_sample_factory();
@@ -117,8 +117,8 @@ TEST_CASE("TSF reference switch samples actual derived fields and shared column 
     const auto &runtime = frame_time_series_runtime_type<SampleFrameDerived>(TSF<SampleFrameDerived>::type());
     static_cast<void>(run_graph(
         graph, std::array{true, true, true, true, true}, std::array{false, false, true, false, false},
-        bg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
-        bg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{8}}, {"price", 11.0}, {"bid", 21.0}}}}),
+        hg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
+        hg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{8}}, {"price", 11.0}, {"bid", 21.0}}}}),
         std::array<i64, 5>{0, 1, 2, 3, 4}));
 
     REQUIRE(observations.size() == 5);
@@ -336,8 +336,8 @@ TEST_CASE("anonymous TSF reference samples retain schema through copy",
         return observe(selected, copy(selected), cycle);
     };
 
-    const auto first = bg::input(runtime.type(), {{{{"value", 10.5}, {"count", i64{7}}}}, literal::SKIP});
-    const auto second = bg::input(runtime.type(), {{{{"value", 20.5}, {"count", i64{8}}}}, literal::SKIP});
+    const auto first = hg::input(runtime.type(), {{{{"value", 10.5}, {"count", i64{7}}}}, literal::SKIP});
+    const auto second = hg::input(runtime.type(), {{{{"value", 20.5}, {"count", i64{8}}}}, literal::SKIP});
     static_cast<void>(run_graph(graph, std::array{false, true}, first, second, std::array<i64, 2>{0, 1}));
 
     REQUIRE(observations.size() == 2);

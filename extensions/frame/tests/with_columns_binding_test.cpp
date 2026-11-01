@@ -1,8 +1,8 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <bg/frame/expression.hpp>
-#include <bg/frame/frame.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/run_graph.hpp>
 
 #include <optional>
 #include <string>
@@ -10,9 +10,9 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct Quotes {
     Field<i64> size;

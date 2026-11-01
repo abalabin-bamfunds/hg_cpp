@@ -1,13 +1,13 @@
-#include <bg/evaluation_context.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/reduce.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/reduce.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <algorithm>
 #include <bit>
@@ -44,8 +44,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 using clock_type = std::chrono::steady_clock;
 
@@ -537,13 +537,13 @@ int main(int argument_count, char **argument_values) {
     try {
         const auto arguments = parse_arguments(argument_count, argument_values);
         if (arguments.help) {
-            std::cout << "usage: bg_reduce_benchmark [--size MULTIPLE_OF_100] [--mode reduce|source] "
+            std::cout << "usage: hg_reduce_benchmark [--size MULTIPLE_OF_100] [--mode reduce|source] "
                          "[--samples N] [--lifecycle-rounds N]\n";
             return EXIT_SUCCESS;
         }
         return run(arguments);
     } catch (const std::exception &error) {
-        std::cerr << "bg_reduce_benchmark: " << error.what() << '\n';
+        std::cerr << "hg_reduce_benchmark: " << error.what() << '\n';
         return EXIT_FAILURE;
     }
 }

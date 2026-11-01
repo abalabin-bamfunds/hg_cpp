@@ -1,22 +1,22 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/util/adaptive_set.hpp>
+#include <hg/allocator.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/util/adaptive_set.hpp>
 
 #include <cassert>
 #include <cstdint>
 #include <functional>
 #include <memory_resource>
 
-namespace bg::details {
+namespace hg::details {
 
 class ReferenceSample {
   public:
     // A runtime-type factory returns one owned reference. The sample can borrow source storage through the receiving
-    // cycle; BG releases retained samples during next-cycle cleanup or graph shutdown.
+    // cycle; HG releases retained samples during next-cycle cleanup or graph shutdown.
     virtual void retain() noexcept = 0;
     virtual void release() noexcept = 0;
     virtual TimeSeriesRuntimeType::ConstItem input() const noexcept = 0;
@@ -136,4 +136,4 @@ struct ReferenceInputSampleStorage {
 
 static_assert(sizeof(ReferenceInputSampleStorage) == sizeof(void *));
 
-} // namespace bg::details
+} // namespace hg::details

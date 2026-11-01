@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/opaque.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/web/types.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/web/types.hpp>
 
-namespace bg::web {
+namespace hg::web {
 class ServerRuntime;
 namespace details {
 
@@ -16,4 +16,4 @@ template <template <typename, auto...> typename Field> struct ServerOutput {
 };
 
 } // namespace details
-} // namespace bg::web
+} // namespace hg::web

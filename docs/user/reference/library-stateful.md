@@ -1,7 +1,7 @@
 # Calculations over successive updates
 
 Use these operators for a history over updates to one value. Each runtime node retains
-its own state. Repeated calls that BG reuses during graph construction share that node;
+its own state. Repeated calls that HG reuses during graph construction share that node;
 separate runtime graph instances have separate state.
 
 ## count
@@ -38,8 +38,8 @@ Keep a two-event separation from the current value:
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import lag
+from hg import graph, run_graph
+from hg.operators import lag
 
 @graph
 def previous(value: int) -> int:
@@ -63,12 +63,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto previous(wp<TS<i64>> value) {
@@ -92,7 +92,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -137,7 +137,7 @@ input. Invalidating `reset` does not clear history or contribute another value.
 :sync: python
 
 ```python
-from bg.operators import sums
+from hg.operators import sums
 
 total = sums(value)
 restarted_total = sums(value, reset=reset)
@@ -148,7 +148,7 @@ restarted_total = sums(value, reset=reset)
 :sync: cpp
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto total = sums(value);
 auto restarted_total = sums(value, "reset"_n = reset);
@@ -171,8 +171,8 @@ Skipped positions do not advance history.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import diff
+from hg import graph, run_graph
+from hg.operators import diff
 
 @graph
 def change(value: int) -> int:
@@ -196,13 +196,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto change(wp<TS<i64>> value) {
@@ -227,7 +227,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -257,8 +257,8 @@ to final.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import ewma
+from hg import graph, run_graph
+from hg.operators import ewma
 
 @graph
 def smoothed(value: float) -> float:
@@ -282,13 +282,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto smoothed(wp<TS<double>> value) {
@@ -313,7 +313,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

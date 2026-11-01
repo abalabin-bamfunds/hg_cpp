@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/python/input_view.hpp>
-#include <bg/scalar/dict/scalar.hpp>
+#include <hg/python/input_view.hpp>
+#include <hg/scalar/dict/scalar.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -11,7 +11,7 @@
 #include <memory>
 #include <utility>
 
-namespace bg::python {
+namespace hg::python {
 
 class PythonDictCursorIterator {
   public:
@@ -100,4 +100,4 @@ class PythonDictView {
 
 void bind_dict_view(nanobind::module_ &module);
 
-} // namespace bg::python
+} // namespace hg::python

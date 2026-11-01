@@ -9,7 +9,7 @@ values, and removed storage can be reused before consumers evaluate.
 
 ## Decision
 
-Implement numeric column sum as an ordinary BG node registered on
+Implement numeric column sum as an ordinary HG node registered on
 `operators::sum_`. Each node owns previous non-null contributions by row ID and
 updates its aggregate from row deltas. This is required to subtract previous
 contributions without retaining source cells.

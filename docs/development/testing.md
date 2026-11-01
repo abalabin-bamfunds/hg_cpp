@@ -76,7 +76,7 @@ the tags and write `test-coverage.md` to the build directory.
 - `tests/evaluation`: evaluation context, engines, lifecycle, scheduling, storage, time series, and validity
 - `tests/node`: node declaration and invocation interfaces
 - `tests/testing`: test utilities
-- `tests/library`: standard library overloads, in the separate `bg_library_tests` binary
+- `tests/library`: standard library overloads, in the separate `hg_library_tests` binary
 
 Name a test file after the feature it covers. Split node and graph behavior by
 value type when the type changes the expected behavior.
@@ -91,7 +91,7 @@ namespace-scope type, place its declaration immediately before the test case.
 Keep other declarations at file scope only when multiple test cases share them.
 Separate node and graph definitions with a blank line.
 
-Tests may use `using namespace bg;` to avoid repeated qualification.
+Tests may use `using namespace hg;` to avoid repeated qualification.
 
 Use the simplest applicable [node declaration](design/node-api.md). Prefer plain C++
 parameters and a return value for scalar computations:
@@ -218,7 +218,7 @@ advances past exactly one payload on success, and leaves encoded values intact.
 For comparisons across cycles, set `TickLiteralComparison::create_state` instead
 of `compare`. Each `equals()` call creates a separate `TickLiteralComparisonState`
 for each nested time series lifetime. Its `compare()` receives the zero-based
-output cycle index, including skipped cycles. BG checks invalidation expectations
+output cycle index, including skipped cycles. HG checks invalidation expectations
 and calls `invalidate()`, including when an enclosing collection invalidates.
 `finish()` checks the accumulated result when the time series is removed or the
 comparison ends. Removing and re-adding a collection item creates new comparison
@@ -637,7 +637,7 @@ For each reusable node and graph, test:
 - deferred logging, level filtering before capture, scalar format specifications,
   collection deltas, backend extension formatting, ownership after graph teardown,
   and typed payload cleanup after formatting failure
-- BG logging startup configuration, stdout, stderr and file output, message and
+- HG logging startup configuration, stdout, stderr and file output, message and
   timestamp patterns, deferred node argument ownership, runtime level changes,
   default initialization, rejection of late or repeated initialization, and
   logging macros that skip disabled argument evaluation and evaluate enabled
@@ -803,7 +803,7 @@ For each reusable node and graph, test:
 - scheduling, evaluation, reference, and collection benchmarks
 - supported compiler builds and sanitizer runs
 
-Build the `benchmark` preset and run `build/benchmark/benchmarks/bg_container_benchmark`
+Build the `benchmark` preset and run `build/benchmark/benchmarks/hg_container_benchmark`
 to compare the custom hash dictionary with the standard library implementation.
 The [high-count map benchmark](../../benchmarks/high_count_map.md) defines the
 portable map workload and the format for commit-keyed comparison results.

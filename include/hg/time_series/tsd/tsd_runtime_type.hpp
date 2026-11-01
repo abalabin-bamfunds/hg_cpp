@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_storage.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/util/occupancy_index.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_storage.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/util/occupancy_index.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 class TimeSeriesDictionaryRuntimeType;
 
@@ -437,8 +437,8 @@ template <typename K, typename Item, auto... Properties> struct CppTimeSeriesRun
     static const TimeSeriesRuntimeType &get(const TimeSeriesType &type) {
         const auto &dictionary = static_cast<const TimeSeriesDictionaryType &>(type);
         return time_series_dictionary_runtime_type(dictionary, cpp_scalar_runtime_type<K>(),
-                                                   ::bg::cpp_time_series_runtime_type<Item>(dictionary.value_type()));
+                                                   ::hg::cpp_time_series_runtime_type<Item>(dictionary.value_type()));
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

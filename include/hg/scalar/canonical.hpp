@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/scalar/builtins.hpp>
-#include <bg/scalar/struct/declaration.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/scalar/struct/declaration.hpp>
 
 #include <concepts>
 #include <cstdint>
@@ -11,7 +11,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -172,4 +172,4 @@ constexpr decltype(auto) scalar_source_value(Source &&source) noexcept {
     }
 }
 
-} // namespace bg
+} // namespace hg

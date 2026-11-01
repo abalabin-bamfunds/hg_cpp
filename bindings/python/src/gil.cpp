@@ -1,8 +1,8 @@
-#include <bg/python/gil.hpp>
+#include <hg/python/gil.hpp>
 
 #include <exception>
 
-namespace bg::python {
+namespace hg::python {
 
 void report_unraisable(std::exception_ptr failure) noexcept {
     if (!Py_IsInitialized()) {
@@ -27,4 +27,4 @@ void report_unraisable(std::exception_ptr failure) noexcept {
     }
 }
 
-} // namespace bg::python
+} // namespace hg::python

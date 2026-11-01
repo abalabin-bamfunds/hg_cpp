@@ -16,7 +16,7 @@ Validity-aware traversal omits unavailable values.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, compute_node, graph, run_graph
+from hg import REMOVE, TS, TSD, compute_node, graph, run_graph
 
 @compute_node
 def product(values: TSD[int, TS[int]]) -> TS[int]:
@@ -47,16 +47,16 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/reduce.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/reduce.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::operators;
 using namespace literal;
 
 const auto product = node([](In<TSD<i64, TS<i64>>> values) {
@@ -91,7 +91,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -132,8 +132,8 @@ changes as key additions and removals.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, compute_node, graph, run_graph
-from bg.operators import sum_
+from hg import REMOVE, TS, TSD, compute_node, graph, run_graph
+from hg.operators import sum_
 
 @compute_node
 def adjust(readings: TSD[int, TS[int]]) -> TSD[int, TS[int]]:
@@ -166,13 +166,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto adjust = node([](In<TSD<i64, TS<i64>>> readings, Out<TSD<i64, TS<i64>>> output) {
@@ -210,7 +210,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -236,7 +236,7 @@ unchanged. C++ nodes can return values or use an explicit `Out<>` field.
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def accepted(reading: int) -> int:
@@ -266,15 +266,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 #include <optional>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto accepted = node([](i64 reading) -> std::optional<i64> {
@@ -306,7 +306,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

@@ -1,8 +1,8 @@
-#include <bg/frame/arrow.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/frame/arrow.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <arrow/api.h>
 #include <arrow/builder.h>
@@ -19,8 +19,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 template <template <typename, auto...> typename Field> struct Quotes {
     Field<i64> size;
@@ -40,7 +40,7 @@ template <template <typename, auto...> typename Field> struct KeyedTextSymbolArr
     Field<symbol> venue;
     Field<symbol> code;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"label", "venue">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"label", "venue">(); }
 };
 
 template <template <typename, auto...> typename Field> struct InheritedArrowBase {
@@ -49,7 +49,7 @@ template <template <typename, auto...> typename Field> struct InheritedArrowBase
 };
 
 template <template <typename, auto...> typename Field>
-struct InheritedArrowFrame : bg::schema_extends<InheritedArrowBase, Field> {
+struct InheritedArrowFrame : hg::schema_extends<InheritedArrowBase, Field> {
     Field<double> bid;
     Field<double> ask;
 };
@@ -61,7 +61,7 @@ template <template <typename, auto...> typename Field> struct KeyedArrowRows {
     Field<i64> sequence;
     Field<double> price;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
 };
 
 struct RowTraversalOrder {
@@ -113,12 +113,12 @@ void test_arrow_default_frame_runtime() {
         auto frame = Frame<Quotes>{Quotes<Column>{.size = Column<i64>{{5}}, .bid = Column<double>{{12.5}},
                                                    .ask = Column<double>{{2.0}}}};
         auto view = FrameView<Quotes>{frame};
-        output.set_value(Scalar<Frame<Quotes>>::from(bg::frame::details::frame_view_scalar_runtime_type<Quotes>(),
+        output.set_value(Scalar<Frame<Quotes>>::from(hg::frame::details::frame_view_scalar_runtime_type<Quotes>(),
                                                      std::addressof(view)));
     });
     const auto graph = [&](wp<TS<i64>> command) { return publish(command); };
     const auto commands = std::array<i64, 1>{0};
-    const auto snapshots = bg::run_graph(graph, commands);
+    const auto snapshots = hg::run_graph(graph, commands);
     require(snapshots.size() == 1 && snapshots[0] &&
                 snapshots[0]->view().value().columns().bid.cell(0) == 12.5,
             "generic Frame scalar output failed after Arrow runtime initialization");
@@ -366,7 +366,7 @@ void test_arrow_keyed_text_symbol_frame_import() {
     auto inferred = from_arrow(make_table(false));
     require(inferred.ok(), "schema-inferred Arrow import rejected text and symbol columns");
     auto inferred_value = std::move(inferred).ValueUnsafe();
-    const auto dynamic_frame = Scalar<Frame<bg::SCHEMA>>::from(inferred_value).value();
+    const auto dynamic_frame = Scalar<Frame<hg::SCHEMA>>::from(inferred_value).value();
     const auto label_column = dynamic_frame.column("label");
     const auto code_column = dynamic_frame.column("code");
     require(label_column.view<string>().cell(0) == "alpha" && code_column.view<symbol>().cell(1) == symbol{},
@@ -690,7 +690,7 @@ void test_inferred_arrow_frame_import() {
     auto erased_copy = ScalarValue<>{imported.view()};
     table.reset();
     const auto erased_view = erased_copy.view();
-    const auto scalar = Scalar<Frame<bg::SCHEMA>>::from(erased_view);
+    const auto scalar = Scalar<Frame<hg::SCHEMA>>::from(erased_view);
     const auto frame = scalar.value();
     const auto generic_count = frame.column("count");
     const auto generic_price = frame.column("price");
@@ -938,16 +938,16 @@ void test_imports_and_runtime_lifetime() {
     require(copied_sizes->Value(0) == 5 && copied_sizes->IsNull(1),
             "Arrow frame export lost imported values or validity");
 
-    const auto consume_frame = bg::node([](In<TS<i64>> trigger, Scalar<Frame<Quotes>> input, Out<TS<i64>> output) {
+    const auto consume_frame = hg::node([](In<TS<i64>> trigger, Scalar<Frame<Quotes>> input, Out<TS<i64>> output) {
         output.set(input.value().columns().size.cell(0).value_or(-1) + *trigger);
     });
     auto graph_owner = ScalarValue<>{scalar};
     const auto graph = [&](wp<TS<i64>> trigger) { return consume_frame(trigger, std::move(graph_owner)); };
-    const auto consumed = bg::run_graph(graph, std::array<i64, 1>{0});
-    require(consumed.size() == 1, "BG node did not publish its Arrow-backed frame result");
+    const auto consumed = hg::run_graph(graph, std::array<i64, 1>{0});
+    require(consumed.size() == 1, "HG node did not publish its Arrow-backed frame result");
     const auto consumed_value = consumed[0];
-    require(consumed_value.has_value(), "BG node produced an invalid Arrow-backed frame result");
-    require(consumed_value->view().value() == 5, "BG node read an incorrect Arrow-backed frame value");
+    require(consumed_value.has_value(), "HG node produced an invalid Arrow-backed frame result");
+    require(consumed_value->view().value() == 5, "HG node read an incorrect Arrow-backed frame value");
 }
 
 void test_column_equality_across_arrow_chunks() {
@@ -1042,7 +1042,7 @@ void test_inherited_arrow_frame_fields() {
                        arrow::field("ask", arrow::float64(), true)}),
         std::vector<std::shared_ptr<arrow::Array>>{int_array({5, 6}), double_array({12.5, 23.0}),
                                                    double_array({std::nullopt, 21.5})});
-    const auto &derived_schema = static_cast<const bg::Schema &>(frame_schema_type<InheritedArrowFrame>());
+    const auto &derived_schema = static_cast<const hg::Schema &>(frame_schema_type<InheritedArrowFrame>());
     auto imported_result = from_arrow(table, derived_schema);
     require(imported_result.ok(), "inherited Arrow frame import failed");
     auto imported = std::move(imported_result).ValueUnsafe();
@@ -1051,7 +1051,7 @@ void test_inherited_arrow_frame_fields() {
     const auto imported_view = imported.view();
     const auto scalar = Scalar<Frame<InheritedArrowFrame>>::from(imported_view);
     const auto view = scalar.value();
-    const auto fields = bg::details::hierarchical_scalar_schema_reflection<InheritedArrowFrame>::fields(
+    const auto fields = hg::details::hierarchical_scalar_schema_reflection<InheritedArrowFrame>::fields(
         view.columns());
     require(view.size() == 2 && std::get<0>(fields).cell(1) == 6 && std::get<1>(fields).cell(0) == 12.5 &&
                 !std::get<2>(fields).cell(0) && std::get<2>(fields).cell(1) == 21.5,
@@ -1101,7 +1101,7 @@ void test_zero_column_row_count() {
     require(inferred.ok(), "schema-inferred zero-column Arrow frame import failed");
     auto inferred_value = std::move(inferred).ValueUnsafe();
     const auto inferred_view = inferred_value.view();
-    const auto inferred_frame = Scalar<Frame<bg::SCHEMA>>::from(inferred_view).value();
+    const auto inferred_frame = Scalar<Frame<hg::SCHEMA>>::from(inferred_view).value();
     require(inferred_frame.schema().field_count() == 0 && inferred_frame.size() == 3,
             "schema-inferred zero-column Arrow frame lost its row count");
     auto imported = from_arrow<EmptySchema>(table);
@@ -1116,7 +1116,7 @@ void test_zero_column_row_count() {
 }
 
 void test_schema_validation() {
-    const auto &schema = static_cast<const bg::Schema &>(frame_schema_type<Quotes>());
+    const auto &schema = static_cast<const hg::Schema &>(frame_schema_type<Quotes>());
     auto wrong_name = arrow::Table::Make(
         arrow::schema({arrow::field("wrong", arrow::int64(), true), arrow::field("bid", arrow::float64(), true),
                        arrow::field("ask", arrow::float64(), true)}),
@@ -1190,7 +1190,7 @@ void test_arrow_frame_key_validation() {
     auto runtime_import = from_arrow(table, schema);
     require(!runtime_import.ok(), "runtime-schema Arrow import accepted duplicate all-null composite keys");
 
-    const auto colliding_key = static_cast<i64>(bg::frame::details::null_key_hash);
+    const auto colliding_key = static_cast<i64>(hg::frame::details::null_key_hash);
     const auto make_collision_table = [](std::initializer_list<std::optional<i64>> id_values) {
         const auto row_count = id_values.size();
         auto ids = arrow::ChunkedArray::Make({int_array(id_values)}, arrow::int64()).ValueOrDie();

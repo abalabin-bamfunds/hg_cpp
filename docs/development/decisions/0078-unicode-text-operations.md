@@ -15,7 +15,7 @@ complete input when an operation interprets code points. Use ICU's root-locale
 case mappings and Unicode case folding. Keep byte-preserving operations and
 engine string storage unchanged.
 
-Place Unicode support and its ICU dependency in `bg::library`. Return strings
+Place Unicode support and its ICU dependency in `hg::library`. Return strings
 from text-producing symbol operations. This is required to avoid interning
 computed text automatically.
 

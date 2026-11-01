@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 // Binds an input view to its runtime type, update time, and storage. It does not own the storage.
 class TimeSeriesInputData {
@@ -61,10 +61,10 @@ class TimeSeriesInputData {
 static_assert(sizeof(TimeSeriesInputData) == 3 * sizeof(void *));
 static_assert(alignof(TimeSeriesRuntimeType) >= 4);
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
-using ::bg::TimeSeriesInputData;
+using ::hg::TimeSeriesInputData;
 
-} // namespace bg::details
+} // namespace hg::details

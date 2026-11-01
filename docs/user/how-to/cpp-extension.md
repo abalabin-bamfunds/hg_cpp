@@ -1,10 +1,10 @@
 # C++ nodes in Python
 
 To expose a native graph operation to Python, export its operator from a
-nanobind module linked to `bg::python`. The same native overloads can then serve
+nanobind module linked to `hg::python`. The same native overloads can then serve
 C++ and Python graph code.
 
-Prerequisites: a BG installation built with the Python component, the same
+Prerequisites: a HG installation built with the Python component, the same
 Python environment used to build it, and nanobind. This example exposes the
 existing `const_` operator and requires no new scalar conversions.
 
@@ -17,7 +17,7 @@ existing `const_` operator and requires no new scalar conversions.
 After building `sensor_native`, graph code can import its exported operator:
 
 ```python
-from bg import graph, run_graph
+from hg import graph, run_graph
 from sensor_native import constant
 
 @graph
@@ -40,12 +40,12 @@ Output: `[20]`.
 The extension source is `sensor_native.cpp`:
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/python/operator.hpp>
+#include <hg/library.hpp>
+#include <hg/python/operator.hpp>
 #include <nanobind/nanobind.h>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 NB_MODULE(sensor_native, module) {
     python::export_operator(module, "constant", operators::const_);
@@ -58,25 +58,25 @@ NB_MODULE(sensor_native, module) {
 ```cmake
 cmake_minimum_required(VERSION 3.31)
 project(sensor_native LANGUAGES CXX)
-find_package(bg CONFIG COMPONENTS python REQUIRED)
+find_package(hg CONFIG COMPONENTS python REQUIRED)
 find_package(nanobind CONFIG REQUIRED)
 nanobind_add_module(sensor_native NB_SHARED sensor_native.cpp)
-target_link_libraries(sensor_native PRIVATE bg::python bg::library)
+target_link_libraries(sensor_native PRIVATE hg::python hg::library)
 ```
 
-Use the BG installation and the selected environment's nanobind CMake directory
+Use the HG installation and the selected environment's nanobind CMake directory
 in `CMAKE_PREFIX_PATH`. With `sensor_native.cpp` and `CMakeLists.txt` in the
 current directory, configure and build:
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install -DPython_EXECUTABLE=/path/to/python
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install -DPython_EXECUTABLE=/path/to/python
 cmake --build build --config Release
 ```
 
-The BG Python component finds nanobind in the selected Python environment.
+The HG Python component finds nanobind in the selected Python environment.
 Put the module's output directory on `PYTHONPATH` before running the Python
 example; multi-configuration generators place it under `build/Release`.
-Use the same Python interpreter and compatible compiler as the BG installation.
+Use the same Python interpreter and compatible compiler as the HG installation.
 :::
 ::::
 :::::

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/operators.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/operators.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <functional>
 #include <memory>
@@ -12,15 +12,15 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 struct ResolvedSignature;
 }
 
-namespace bg::util {
+namespace hg::util {
 class thread_local_pointer;
 }
 
-namespace bg::details {
+namespace hg::details {
 
 struct ContextBinding {
     util::symbol name;
@@ -128,9 +128,9 @@ template <typename Value> WiringArgument context_wiring_argument(Value &&value) 
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <util::compile_time_string Name, typename Value>
 [[nodiscard]] auto with_context(details::named_argument<Name, Value> binding) {
@@ -143,4 +143,4 @@ decltype(auto) with_context(details::named_argument<Name, Value> binding, Functi
     return std::invoke(std::forward<Function>(function));
 }
 
-} // namespace bg
+} // namespace hg

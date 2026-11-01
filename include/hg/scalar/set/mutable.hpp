@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/mutable_traits.hpp>
-#include <bg/scalar/details/storage_traits.hpp>
-#include <bg/scalar/set/type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/mutable_traits.hpp>
+#include <hg/scalar/details/storage_traits.hpp>
+#include <hg/scalar/set/type.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class MutableSet : public Set<T> {
     using Base = Set<T>;
@@ -45,9 +45,9 @@ template <typename T> class MutableSet : public Set<T> {
     Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
     requires(!generic_scalar<Set<T>>)
@@ -56,4 +56,4 @@ struct scalar_mutable_traits<Set<T>> {
     using view_type = MutableSet<T>;
 };
 
-} // namespace bg::details
+} // namespace hg::details

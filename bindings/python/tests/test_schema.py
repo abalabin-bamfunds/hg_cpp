@@ -2,11 +2,11 @@ from typing import Optional
 
 import pytest
 
-import bg
+import hg
 
 
 def test_bundle_construction_and_python_class_round_trip():
-    @bg.schema
+    @hg.schema
     class Quote:
         bid: float
         ask: Optional[float]
@@ -14,164 +14,164 @@ def test_bundle_construction_and_python_class_round_trip():
     quote = Quote(2.0, ask=3.0)
     missing_ask = Quote(4.0)
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[Quote]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[Quote]]:
         return quote
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[Quote]]) -> bg.TS[float]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[Quote]]) -> hg.TS[float]:
         observed = value.value
         assert type(observed) is Quote
         return observed.bid + (observed.ask or 0.0)
 
-    @bg.graph
-    def graph() -> bg.TS[float]:
+    @hg.graph
+    def graph() -> hg.TS[float]:
         return read(source())
 
-    assert bg.run_graph(graph) == [5.0]
+    assert hg.run_graph(graph) == [5.0]
     assert missing_ask.ask is None
 
 
 def test_bundle_covariance_retains_the_actual_derived_python_class():
-    @bg.schema
+    @hg.schema
     class BaseQuote:
         bid: float
 
-    @bg.schema
+    @hg.schema
     class Quote(BaseQuote):
         ask: int
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[Quote]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[Quote]]:
         return Quote(1.5, ask=2)
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[BaseQuote]]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[BaseQuote]]) -> hg.TS[int]:
         observed = value.value
         assert type(observed) is Quote
         return int(observed.bid) + observed.ask
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return read(source())
 
-    assert bg.run_graph(graph) == [3]
+    assert hg.run_graph(graph) == [3]
 
 
 def test_tsb_projects_scalar_fields_and_preserves_explicit_time_series_fields():
-    @bg.schema
+    @hg.schema
     class Pair:
         value: int
-        text: bg.TS[str]
+        text: hg.TS[str]
 
-    @bg.compute_node
-    def make(value: bg.TS[int], text: bg.TS[str]) -> bg.TSB[Pair]:
+    @hg.compute_node
+    def make(value: hg.TS[int], text: hg.TS[str]) -> hg.TSB[Pair]:
         return {"value": value.value, "text": text.value}
 
-    @bg.compute_node
-    def read(value: bg.TSB[Pair]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TSB[Pair]) -> hg.TS[int]:
         return value.value.value + len(value.text.value)
 
-    @bg.graph
-    def graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[int]:
+    @hg.graph
+    def graph(value: hg.TS[int], text: hg.TS[str]) -> hg.TS[int]:
         return read(make(value, text))
 
-    assert bg.run_graph(graph, [2], ["abc"]) == [5]
+    assert hg.run_graph(graph, [2], ["abc"]) == [5]
 
 
 def test_bundle_rejects_time_series_schema_fields():
-    @bg.schema
+    @hg.schema
     class Mixed:
         value: int
-        text: bg.TS[str]
+        text: hg.TS[str]
 
     with pytest.raises(TypeError, match="scalar Bundle schema"):
-        bg._native_type(Mixed)
+        hg._native_type(Mixed)
 
 
 def test_optional_recursive_schema_field_round_trips():
-    @bg.schema
+    @hg.schema
     class Node:
         value: int
         child: Optional["Node"]
 
     node = Node(1, child=Node(2))
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[Node]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[Node]]:
         return node
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[Node]]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[Node]]) -> hg.TS[int]:
         observed = value.value
         assert type(observed) is Node
         assert type(observed.child) is Node
         return observed.value + observed.child.value
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return read(source())
 
-    assert bg.run_graph(graph) == [3]
+    assert hg.run_graph(graph) == [3]
 
 
 def test_recursive_schema_projects_and_wires_as_tsb():
-    @bg.schema
+    @hg.schema
     class Node:
         value: int
         child: Optional["Node"]
 
     child = Node(2)
 
-    @bg.compute_node
-    def make(trigger: bg.TS[int]) -> bg.TSB[Node]:
+    @hg.compute_node
+    def make(trigger: hg.TS[int]) -> hg.TSB[Node]:
         return {"value": trigger.value, "child": child}
 
-    @bg.compute_node
-    def read(value: bg.TSB[Node]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TSB[Node]) -> hg.TS[int]:
         observed = value.child.value
         assert type(observed) is Node
         return value.value.value + observed.value
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         return read(make(trigger))
 
-    assert bg.run_graph(graph, [1]) == [3]
+    assert hg.run_graph(graph, [1]) == [3]
 
 
 def test_required_recursive_schema_field_is_rejected():
     with pytest.raises(ValueError, match="recursive cycle"):
 
-        @bg.schema
+        @hg.schema
         class Node:
             child: "Node"
 
-    @bg.schema
+    @hg.schema
     class Node:
         value: int
         child: Optional["Node"]
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[Node]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[Node]]:
         return Node(1)
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[Node]]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[Node]]) -> hg.TS[int]:
         observed = value.value
         assert type(observed) is Node
         assert observed.child is None
         return observed.value
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return read(source())
 
-    assert bg.run_graph(graph) == [1]
+    assert hg.run_graph(graph) == [1]
 
 
 def test_python_schema_conversion_does_not_call_custom_constructor():
-    @bg.schema
+    @hg.schema
     class Entry:
         value: int
 
@@ -180,42 +180,42 @@ def test_python_schema_conversion_does_not_call_custom_constructor():
 
     entry = Entry(3)
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[Entry]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[Entry]]:
         return entry
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[Entry]]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[Entry]]) -> hg.TS[int]:
         observed = value.value
         assert type(observed) is Entry
         return observed.value
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return read(source())
 
-    assert bg.run_graph(graph) == [30]
+    assert hg.run_graph(graph) == [30]
 
 
 def test_const_schema_with_nested_list_strings_and_bytes_survives_repeated_wiring():
-    @bg.schema
+    @hg.schema
     class Detail:
         labels: tuple[str, ...]
         payload: bytes
 
-    @bg.schema
+    @hg.schema
     class Envelope:
         detail: Detail
         count: int
 
     value = Envelope(detail=Detail(labels=("first", "second"), payload=b"\x00nested\xff"), count=3)
 
-    @bg.graph
-    def graph() -> bg.TS[bg.Bundle[Envelope]]:
-        return bg.operators.const_(value)
+    @hg.graph
+    def graph() -> hg.TS[hg.Bundle[Envelope]]:
+        return hg.operators.const_(value)
 
     for _ in range(2):
-        observed = bg.run_graph(graph, capture_output=True)[0]
+        observed = hg.run_graph(graph, capture_output=True)[0]
         assert type(observed) is Envelope
         assert observed.detail.labels == ("first", "second")
         assert observed.detail.payload == b"\x00nested\xff"
@@ -223,31 +223,31 @@ def test_const_schema_with_nested_list_strings_and_bytes_survives_repeated_wirin
 
 
 def test_schema_value_converts_inside_scalar_dictionary():
-    @bg.schema
+    @hg.schema
     class Quote:
         bid: float
 
     quotes = {7: Quote(2.5)}
 
-    @bg.source_node
-    def source() -> bg.TS[dict[int, Quote]]:
+    @hg.source_node
+    def source() -> hg.TS[dict[int, Quote]]:
         return quotes
 
-    @bg.compute_node
-    def read(value: bg.TS[dict[int, Quote]]) -> bg.TS[float]:
+    @hg.compute_node
+    def read(value: hg.TS[dict[int, Quote]]) -> hg.TS[float]:
         observed = value.value
         assert type(observed[7]) is Quote
         return observed[7].bid
 
-    @bg.graph
-    def graph() -> bg.TS[float]:
+    @hg.graph
+    def graph() -> hg.TS[float]:
         return read(source())
 
-    assert bg.run_graph(graph) == [2.5]
+    assert hg.run_graph(graph) == [2.5]
 
 
 def test_native_schema_export_supports_tsb_and_scalar_projections():
-    from bg._bg_test_extension import export_native_pair_schema, native_pair_consumer
+    from hg._hg_test_extension import export_native_pair_schema, native_pair_consumer
 
     class NativePair:
         def __init__(self, value):
@@ -255,82 +255,82 @@ def test_native_schema_export_supports_tsb_and_scalar_projections():
 
     export_native_pair_schema(NativePair)
 
-    @bg.source_node
-    def scalar_source() -> bg.TS[NativePair]:
+    @hg.source_node
+    def scalar_source() -> hg.TS[NativePair]:
         return NativePair(4)
 
-    @bg.compute_node
-    def scalar_read(value: bg.TS[bg.Bundle[NativePair]]) -> bg.TS[int]:
+    @hg.compute_node
+    def scalar_read(value: hg.TS[hg.Bundle[NativePair]]) -> hg.TS[int]:
         return value.value.value
 
-    @bg.graph
-    def scalar_graph() -> bg.TS[int]:
+    @hg.graph
+    def scalar_graph() -> hg.TS[int]:
         return scalar_read(scalar_source())
 
-    assert bg.run_graph(scalar_graph) == [4]
+    assert hg.run_graph(scalar_graph) == [4]
 
-    @bg.compute_node
-    def make(value: bg.TS[int]) -> bg.TSB[NativePair]:
+    @hg.compute_node
+    def make(value: hg.TS[int]) -> hg.TSB[NativePair]:
         return {"value": value.value}
 
-    @bg.compute_node
-    def read(value: bg.TSB[NativePair]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TSB[NativePair]) -> hg.TS[int]:
         return value.value.value
 
-    @bg.graph
-    def time_series_graph(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def time_series_graph(value: hg.TS[int]) -> hg.TS[int]:
         return read(make(value))
 
-    assert bg.run_graph(time_series_graph, [7]) == [7]
+    assert hg.run_graph(time_series_graph, [7]) == [7]
 
-    @bg.graph
-    def native_consumer_graph(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def native_consumer_graph(value: hg.TS[int]) -> hg.TS[int]:
         return native_pair_consumer(make(value))
 
-    assert bg.run_graph(native_consumer_graph, [9]) == [9]
+    assert hg.run_graph(native_consumer_graph, [9]) == [9]
 
 
 def test_native_tsb_only_schema_export_does_not_require_scalar_projection():
-    from bg._bg_test_extension import export_native_tsb_schema, native_pair_consumer
+    from hg._hg_test_extension import export_native_tsb_schema, native_pair_consumer
 
     class NativeBase:
         pass
 
     export_native_tsb_schema(NativeBase)
 
-    @bg.schema
+    @hg.schema
     class NativeChild(NativeBase):
-        text: bg.TS[str]
+        text: hg.TS[str]
 
-    @bg.compute_node
-    def make(value: bg.TS[int], text: bg.TS[str]) -> bg.TSB[NativeChild]:
+    @hg.compute_node
+    def make(value: hg.TS[int], text: hg.TS[str]) -> hg.TSB[NativeChild]:
         return {"value": value.value, "text": text.value}
 
-    @bg.compute_node
-    def read(value: bg.TSB[NativeChild]) -> bg.TS[str]:
+    @hg.compute_node
+    def read(value: hg.TSB[NativeChild]) -> hg.TS[str]:
         return f"{value.value.value}:{value.text.value}"
 
-    @bg.graph
-    def graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[str]:
+    @hg.graph
+    def graph(value: hg.TS[int], text: hg.TS[str]) -> hg.TS[str]:
         return read(make(value, text))
 
-    assert bg.run_graph(graph, [3], ["native"]) == ["3:native"]
+    assert hg.run_graph(graph, [3], ["native"]) == ["3:native"]
 
-    @bg.graph
-    def native_consumer_graph(value: bg.TS[int], text: bg.TS[str]) -> bg.TS[int]:
+    @hg.graph
+    def native_consumer_graph(value: hg.TS[int], text: hg.TS[str]) -> hg.TS[int]:
         return native_pair_consumer(make(value, text))
 
-    assert bg.run_graph(native_consumer_graph, [3], ["native"]) == [3]
+    assert hg.run_graph(native_consumer_graph, [3], ["native"]) == [3]
     with pytest.raises(TypeError, match="scalar Bundle schema"):
-        bg._native_type(NativeChild)
+        hg._native_type(NativeChild)
     with pytest.raises(TypeError, match=r"Bundle\[\.\.\.\]"):
-        bg.Bundle[NativeBase]
+        hg.Bundle[NativeBase]
     with pytest.raises(TypeError, match="scalar Bundle schema"):
-        bg.Bundle[NativeChild]
+        hg.Bundle[NativeChild]
 
 
 def test_native_schema_export_is_idempotent_and_can_add_scalar_projection():
-    from bg._bg_test_extension import export_native_pair_schema, export_native_tsb_schema
+    from hg._hg_test_extension import export_native_pair_schema, export_native_tsb_schema
 
     class NativePair:
         pass
@@ -341,23 +341,23 @@ def test_native_schema_export_is_idempotent_and_can_add_scalar_projection():
     export_native_pair_schema(NativePair)
     export_native_tsb_schema(NativePair)
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[NativePair]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[NativePair]]:
         return NativePair(value=12)
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[NativePair]]) -> bg.TS[int]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[NativePair]]) -> hg.TS[int]:
         return value.value.value
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return read(source())
 
-    assert bg.run_graph(graph) == [12]
+    assert hg.run_graph(graph) == [12]
 
 
 def test_native_scalar_export_installs_constructor_with_scalar_optional_fields():
-    from bg._bg_test_extension import export_native_optional_schema, export_native_optional_tsb_schema
+    from hg._hg_test_extension import export_native_optional_schema, export_native_optional_tsb_schema
 
     class NativeOptional:
         pass
@@ -370,23 +370,23 @@ def test_native_scalar_export_installs_constructor_with_scalar_optional_fields()
     assert NativeOptional._schema_optional_fields == {"value": True}
     assert NativeOptional().value is None
 
-    @bg.source_node
-    def source() -> bg.TS[bg.Bundle[NativeOptional]]:
+    @hg.source_node
+    def source() -> hg.TS[hg.Bundle[NativeOptional]]:
         return NativeOptional()
 
-    @bg.compute_node
-    def read(value: bg.TS[bg.Bundle[NativeOptional]]) -> bg.TS[bool]:
+    @hg.compute_node
+    def read(value: hg.TS[hg.Bundle[NativeOptional]]) -> hg.TS[bool]:
         return value.value.value is None
 
-    @bg.graph
-    def graph() -> bg.TS[bool]:
+    @hg.graph
+    def graph() -> hg.TS[bool]:
         return read(source())
 
-    assert bg.run_graph(graph) == [True]
+    assert hg.run_graph(graph) == [True]
 
 
 def test_native_schema_export_rejects_conflicting_rebinding():
-    from bg._bg_test_extension import export_conflicting_tsb_schema, export_native_pair_schema
+    from hg._hg_test_extension import export_conflicting_tsb_schema, export_native_pair_schema
 
     class NativePair:
         pass

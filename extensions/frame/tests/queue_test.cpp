@@ -1,16 +1,16 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
 
-#include <bg/bg.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/queue.hpp>
-#include <bg/queue_node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/hg.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/queue.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -23,8 +23,8 @@
 #include <string_view>
 #include <vector>
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 namespace {
 

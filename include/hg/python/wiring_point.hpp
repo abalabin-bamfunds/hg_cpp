@@ -1,21 +1,21 @@
 #pragma once
 
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/python/export.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/python/export.hpp>
 
 #include <memory>
 #include <stdexcept>
 #include <unordered_map>
 
-namespace bg {
+namespace hg {
 class NodeTemplate;
 class WiringArgument;
 }
 
-namespace bg::python {
+namespace hg::python {
 
-class BG_PYTHON_API PythonWiringLifetime {
+class HG_PYTHON_API PythonWiringLifetime {
   public:
     explicit PythonWiringLifetime(const GraphWiring &wiring) noexcept : wiring_{&wiring} {}
 
@@ -50,7 +50,7 @@ class BG_PYTHON_API PythonWiringLifetime {
     bool active_{true};
 };
 
-class BG_PYTHON_API PythonWiringPoint {
+class HG_PYTHON_API PythonWiringPoint {
   public:
     PythonWiringPoint(WiringPoint point, std::shared_ptr<PythonWiringLifetime> lifetime,
                       bool requires_optional = false, bool requires_valid_items = false) noexcept
@@ -84,7 +84,7 @@ class BG_PYTHON_API PythonWiringPoint {
     bool requires_valid_items_{};
 };
 
-class BG_PYTHON_API PythonWiringScope {
+class HG_PYTHON_API PythonWiringScope {
   public:
     explicit PythonWiringScope(const GraphWiring &wiring);
     ~PythonWiringScope();
@@ -101,4 +101,4 @@ class BG_PYTHON_API PythonWiringScope {
     bool owner_{};
 };
 
-} // namespace bg::python
+} // namespace hg::python

@@ -1,17 +1,17 @@
-# BG logging facade
+# HG logging facade
 
 Status: accepted
 
 ## Context
 
-Node logging and application startup must use BG APIs so that the logging
+Node logging and application startup must use HG APIs so that the logging
 backend can change without requiring graph and node code to change.
 
 ## Decision
 
-Expose BG severity levels, output configuration, and formatting functions.
-Keep Quill headers, types, macros, and target requirements inside the BG build.
-Translate BG message-pattern fields at the backend boundary.
+Expose HG severity levels, output configuration, and formatting functions.
+Keep Quill headers, types, macros, and target requirements inside the HG build.
+Translate HG message-pattern fields at the backend boundary.
 
 Use one owning, move-only deferred formatting callback for both node messages
 and the existing [captured tick messages](0083-deferred-tick-logging.md).

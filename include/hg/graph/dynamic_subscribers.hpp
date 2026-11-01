@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/dynamic_node_subscriber.hpp>
-#include <bg/graph/output_notification.hpp>
-#include <bg/util/adaptive_set.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/dynamic_node_subscriber.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/util/adaptive_set.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 
@@ -210,4 +210,4 @@ static_assert(sizeof(DynamicInputSubscriber) == 4 * sizeof(void *));
 static_assert(sizeof(RuntimeObserver) == 3 * sizeof(void *));
 
 } // namespace details
-} // namespace bg
+} // namespace hg

@@ -29,8 +29,8 @@ Measure spacing between input updates in microseconds. Each literal position is 
 
 ```python
 from datetime import timedelta
-from bg import node, graph, run_graph
-from bg.operators import elapsed
+from hg import node, graph, run_graph
+from hg.operators import elapsed
 
 @node
 def microseconds(value: timedelta) -> int:
@@ -58,15 +58,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/node.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/node.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto microseconds = node([](timedelta_t value) { return value.count(); });
 
@@ -91,7 +91,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -200,8 +200,8 @@ shows period and run-limit syntax.
 
 ```python
 from datetime import timedelta
-from bg import graph, run_graph
-from bg.operators import resample
+from hg import graph, run_graph
+from hg.operators import resample
 
 @graph
 def snapshots(value: int) -> int:
@@ -226,13 +226,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto snapshots(wp<TS<i64>> value) {
@@ -257,7 +257,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

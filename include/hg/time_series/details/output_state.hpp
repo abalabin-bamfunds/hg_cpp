@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/time_series/details/output_path.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/time_series/details/output_path.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 // Connects an output view to its value storage and the mutation path of any containing collections.
 class OutputState {
@@ -107,7 +107,7 @@ class OutputState {
         return details::output_path_context(owner_.get<details::OutputPath>());
     }
 
-    bg::allocator &allocator() const noexcept { return details::current_scalar_allocator(); }
+    hg::allocator &allocator() const noexcept { return details::current_scalar_allocator(); }
 
   private:
     void publish_containing_collections(bool item_was_valid) const noexcept {
@@ -127,10 +127,10 @@ static_assert(alignof(TimeSeriesRuntimeType) >= 4);
 static_assert(alignof(EvaluationContext) >= 4);
 static_assert(alignof(EvaluationTime) >= 4);
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
-using ::bg::OutputState;
+using ::hg::OutputState;
 
-} // namespace bg::details
+} // namespace hg::details

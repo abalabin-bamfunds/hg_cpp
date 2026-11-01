@@ -7,7 +7,7 @@ domain, and traversal order. They own result cells in local physical slots. A
 computed `TSC` owns one slot map; computed columns in one frame share a slot
 map. Borrowed columns retain their source buffers.
 
-The frame extension selects this layout through its output declaration and BG's
+The frame extension selects this layout through its output declaration and HG's
 output runtime type hook. The semantic frame type continues to describe the
 schema. See the [output API](../../README.md#mixed-computed-and-borrowed-columns).
 

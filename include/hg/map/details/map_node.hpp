@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/map/details/map_graph_wiring.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/map/details/map_graph_wiring.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <optional>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class NodeTemplate;
 
@@ -18,4 +18,4 @@ namespace details {
                                                           const ResolvedSignature &outer_signature);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/operator.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/graph/details/typed_signature.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/graph/wiring_template.hpp>
+#include <hg/export.hpp>
+#include <hg/operator.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/graph/details/typed_signature.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/graph/wiring_template.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -19,9 +19,9 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
-BG_EXPORT std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &dispatch_signature,
+HG_EXPORT std::optional<WiringPoint> wire_dispatch(GraphWiring &wiring, const Signature &dispatch_signature,
                                                     bool has_output, const TimeSeriesType *output_contract,
                                                     const Signature &prototype,
                                                     std::span<const WiringArgument> supplied,
@@ -127,10 +127,10 @@ template <typename Prototype> class DispatchTemplate final : public WiringTempla
     std::vector<std::unique_ptr<WiringTemplate>> implementations_;
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <typename Prototype> using dispatch_ = details::DispatchTemplate<Prototype>;
 
-} // namespace bg
+} // namespace hg

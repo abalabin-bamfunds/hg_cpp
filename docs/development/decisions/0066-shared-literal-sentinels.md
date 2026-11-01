@@ -11,7 +11,7 @@ retain separate operation records and interpretation rules. See the
 [literal API](../design/scalar-api.md#literals).
 
 One registered scalar type, `Sentinel`, carries a qualified symbol identity and
-an optional borrowed literal argument. BG exports its built-in instances from
+an optional borrowed literal argument. HG exports its built-in instances from
 the engine library. Extensions define additional instances and interpret them
 in their literal consumers. Consumers interpret instruction placement and
 arguments. See the [sentinel contract](../design/scalar-api.md#sentinels).
@@ -22,9 +22,9 @@ Structured scalar replacements inside time series must reach scalar extension
 handlers directly. One recursive carrier preserves borrowed storage throughout
 that call without converting or copying the literal tree.
 
-Symbol identities allow extensions to add instructions without changing BG's
+Symbol identities allow extensions to add instructions without changing HG's
 literal representation or registering another scalar type. Exported constants
-and canonical scalar registrations give libraries shared BG definitions.
+and canonical scalar registrations give libraries shared HG definitions.
 
 This replaces the separate-carrier decision in
 [0062](0062-scalar-literal-consumption.md).

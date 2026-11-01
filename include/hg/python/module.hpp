@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/python/export.hpp>
+#include <hg/python/export.hpp>
 
 #include <nanobind/nanobind.h>
 
-namespace bg::python {
+namespace hg::python {
 
-BG_PYTHON_API void bind_core(nanobind::module_ &module);
+HG_PYTHON_API void bind_core(nanobind::module_ &module);
 
-} // namespace bg::python
+} // namespace hg::python

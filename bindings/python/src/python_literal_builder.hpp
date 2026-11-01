@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/allocator.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -15,7 +15,7 @@
 #include <span>
 #include <vector>
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 // Owns scalar and nested literal backing until serialization completes; literals borrow this storage.
 class PythonLiteralBuilder {
@@ -38,4 +38,4 @@ class PythonLiteralBuilder {
     std::vector<std::unique_ptr<std::vector<literal::TimeSeriesLiteral>>> sequences_;
 };
 
-} // namespace bg::python::details
+} // namespace hg::python::details

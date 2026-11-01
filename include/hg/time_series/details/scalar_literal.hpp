@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/scalar/literal.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/scalar/literal.hpp>
 
 #include <concepts>
 #include <functional>
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details::scalar_literal {
+namespace hg::details::scalar_literal {
 
 using Literal = literal::ScalarLiteral;
 
@@ -102,4 +102,4 @@ void with_scalar_data(const ScalarRuntimeType &runtime_type, const Literal &valu
         });
 }
 
-} // namespace bg::details::scalar_literal
+} // namespace hg::details::scalar_literal

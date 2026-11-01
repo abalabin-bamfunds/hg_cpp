@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/util/hash_dictionary.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/util/hash_dictionary.hpp>
 
 #include <concepts>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 // Stores one optional-operation handler per exact scalar type or runtime type. find(runtime_type) prefers the exact
 // runtime handler, then falls back to its semantic type. Consumers that choose optional actions independently use
@@ -67,4 +67,4 @@ template <typename Handler> class ScalarDispatch {
     util::hash_dictionary<const ScalarType *, Handler> type_handlers_;
 };
 
-} // namespace bg
+} // namespace hg

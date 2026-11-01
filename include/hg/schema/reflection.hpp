@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/util/compile_time_string.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/util/compile_time_string.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <array>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <template <template <typename, auto...> typename> typename Schema> struct schema_template {
     template <template <typename, auto...> typename Field> using apply = Schema<Field>;
@@ -40,9 +40,9 @@ schema_template<Base> schema_base(const schema_base_marker<Base> *);
 
 no_schema_base schema_base(...);
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Base,
           template <typename, auto...> typename Field,
@@ -61,9 +61,9 @@ template <template <template <typename, auto...> typename> typename Base,
           template <typename, auto...> typename Field>
 using bundle_extends = schema_extends<Base, Field>;
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 inline constexpr auto missing_schema_field = static_cast<std::size_t>(-1);
 
@@ -376,4 +376,4 @@ class schema_reflection {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

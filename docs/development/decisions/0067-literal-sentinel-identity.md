@@ -5,7 +5,7 @@ Status: accepted
 ## Decision
 
 Each `Sentinel` is a noncopyable instruction instance. Consumers identify it by
-object address. Its symbol is diagnostic. BG and extensions provide singleton
+object address. Its symbol is diagnostic. HG and extensions provide singleton
 instances with static storage duration.
 
 Calling a sentinel creates a separate `TaggedLiteral` scalar that borrows the

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/scalar/dict/runtime_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/mutable_collection.hpp>
-#include <bg/scalar/set/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/byte_copy.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/mutable_collection.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/byte_copy.hpp>
 
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class State {
     static_assert(util::byte_copy_initializable<T>);
@@ -198,4 +198,4 @@ static_assert(sizeof(State<List<SCALAR>>) == 2 * sizeof(void *));
 static_assert(sizeof(State<Set<SCALAR>>) == 2 * sizeof(void *));
 static_assert(sizeof(State<Dict<SCALAR, SCALAR>>) == 2 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

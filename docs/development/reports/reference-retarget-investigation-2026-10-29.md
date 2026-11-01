@@ -5,7 +5,7 @@ This report preserves the original investigation of missing-item updates in
 records verification against the latest code. This lane changed no production
 code.
 
-The original reproduction was checked against BG revision `cab5c342` using the
+The original reproduction was checked against HG revision `cab5c342` using the
 Release runtime. The regression test is now an ordinary map test at
 [`map_test.cpp`](../../../tests/evaluation/map_test.cpp#L957).
 
@@ -68,7 +68,7 @@ scalar target's own last-updated state.
 Scalar sampling uses the reference's binding timestamp. For an ordinary node
 input, `Node::binding_data` selects the later of the reference and target states
 when the target is valid
-([`node.hpp`](../../../include/bg/graph/node.hpp)).
+([`node.hpp`](../../../include/hg/graph/node.hpp)).
 `SampledReferenceChange::create` returning no collection sample for scalar `TS`
 is expected; a scalar does not require collection transition data.
 
@@ -76,16 +76,16 @@ The missing operation is in the dictionary representation's `item()` method:
 it returns the target state without comparing the source `REF` item's state.
 The reference's binding timestamp therefore does not reach the value item.
 `In<TSD>::make_item` derives `modified()` from that returned timestamp
-([`tsd_input.hpp`](../../../include/bg/time_series/tsd/tsd_input.hpp)).
+([`tsd_input.hpp`](../../../include/hg/time_series/tsd/tsd_input.hpp)).
 The dictionary can report key 2 as modified while its scalar view reports the
 old target time and `modified() == false`. This is a missing reference-time
 selection in dictionary item access, not a missing scalar sample object.
 
 The copy path exposes the mismatch. `Out<TSD>::copy_tick` iterates dictionary
 items it sees as modified and calls the item output's `copy_tick`
-([`tsd_output.hpp`](../../../include/bg/time_series/tsd/tsd_output.hpp)).
+([`tsd_output.hpp`](../../../include/hg/time_series/tsd/tsd_output.hpp)).
 `Out<TS>::copy_tick` skips an item unless it was modified at the current
-evaluation time ([`ts_output.hpp`](../../../include/bg/time_series/ts/ts_output.hpp)).
+evaluation time ([`ts_output.hpp`](../../../include/hg/time_series/ts/ts_output.hpp)).
 For the retargeted scalar, that guard rejects the current value because its
 timestamp is still tick 1 and `item.modified()` is false. This matches the
 missing key-2 values in the captured output.
@@ -119,8 +119,8 @@ key 1; it does not assert removal of key 2.
 The map translation unit passed with **39 cases and 53 assertions**. The
 promoted test passed independently with **1 case and 1 assertion**. The fresh
 executable linked only the freshly compiled `map_test.cpp` object, Catch2, the
-latest Release `libbg`, and `fmt`; `ldd` confirmed it loaded
-`build/current-release/libbg.so.0`. Reproduce these runs with:
+latest Release `libhg`, and `fmt`; `ldd` confirmed it loaded
+`build/current-release/libhg.so.0`. Reproduce these runs with:
 
 ```sh
 build/verification/map-retarget-post-merge

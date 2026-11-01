@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_proxy.hpp>
-#include <bg/time_series/output_state.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_proxy.hpp>
+#include <hg/time_series/output_state.hpp>
 
-namespace bg {
+namespace hg {
 
 // Owns or borrows the output state used by an Out view. Values constructed from storage retain the existing
 // scratch-backed ownership until the view releases them.
@@ -36,4 +36,4 @@ class TimeSeriesOutputBinding {
     Proxy state_;
 };
 
-} // namespace bg
+} // namespace hg

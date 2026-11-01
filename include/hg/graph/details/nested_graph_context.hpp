@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/details/inherited_time_series_section.hpp>
-#include <bg/graph/details/service_binding_section.hpp>
-#include <bg/graph/nested_graph.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/details/inherited_time_series_section.hpp>
+#include <hg/graph/details/service_binding_section.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <span>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 // Builds the child evaluation context containing an inner graph's inherited time series references.
 class NestedGraphStartupContext {
@@ -107,4 +107,4 @@ class NestedGraphStartupContext {
     std::optional<EvaluationContext> service_context_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

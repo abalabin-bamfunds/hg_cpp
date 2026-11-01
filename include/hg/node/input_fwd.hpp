@@ -1,7 +1,7 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 template <typename TimeSeries, auto... Properties> class In;
 
-} // namespace bg
+} // namespace hg

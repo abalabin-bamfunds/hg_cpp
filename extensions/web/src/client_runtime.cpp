@@ -4,12 +4,12 @@
 #include "http_header.hpp"
 #include "runtime_logging.hpp"
 
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/bytes_builder.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/bytes_builder.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <curl/curl.h>
 
@@ -37,12 +37,12 @@
 #include <utility>
 #include <vector>
 
-namespace bg::web {
+namespace hg::web {
 namespace {
 
 using HeaderPair = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
-using namespace bg::literals;
+using namespace hg::literals;
 
 std::string lowercase(std::string_view value);
 
@@ -837,4 +837,4 @@ void ClientRuntime::cancel(i64 client_id, i64 client_sequence) noexcept {
     implementation_->cancel(client_id, client_sequence);
 }
 
-} // namespace bg::web
+} // namespace hg::web

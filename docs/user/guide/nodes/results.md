@@ -17,7 +17,7 @@ updates produce one evaluation with all current values.
 :sync: python
 
 ```python
-from bg import graph, run_graph
+from hg import graph, run_graph
 
 
 @graph
@@ -53,12 +53,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
+using namespace hg;
 using namespace literal;
 
 auto calibrated_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
@@ -91,7 +91,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -119,7 +119,7 @@ A calculation can accept an input without publishing a new result. Python return
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def accepted(reading: int) -> int:
@@ -149,15 +149,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 #include <optional>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto accepted = node([](i64 reading) -> std::optional<i64> {
@@ -189,7 +189,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

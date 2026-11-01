@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/scalar/details/value_storage.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/scalar.hpp>
+#include <hg/scalar/details/value_storage.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/scalar.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class Scalar<List<T>> {
   public:
@@ -70,4 +70,4 @@ template <typename T> class Scalar<List<T>> {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg

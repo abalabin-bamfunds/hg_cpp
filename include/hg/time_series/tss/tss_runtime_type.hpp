@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
-#include <bg/type/time_series_set_type.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
+#include <hg/type/time_series_set_type.hpp>
 
 #include <memory>
 
-namespace bg::details {
+namespace hg::details {
 
 class TimeSeriesSetRuntimeType;
 
@@ -90,4 +90,4 @@ template <typename K, auto... Properties> struct CppTimeSeriesRuntimeType<TSS<K,
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

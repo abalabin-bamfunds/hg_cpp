@@ -19,7 +19,7 @@ keeps the test's separate input times visible in the node history.
 
 ```python
 from datetime import timedelta
-from bg import EvaluationProfiler, graph, run_graph
+from hg import EvaluationProfiler, graph, run_graph
 
 @graph
 def temperature(reading: int) -> int:
@@ -62,14 +62,14 @@ node 2: 1 evaluation(s)
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/evaluation_profiler.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/evaluation_profiler.hpp>
 #include <chrono>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto temperature(wp<TS<i64>> reading) {
@@ -112,7 +112,7 @@ node 2: 1 evaluation(s)
 :::{tab-item} Build and run
 
 The [C++ example project](../guide/installation.md#c-example-project)
-builds this example as `main.cpp`, linked to `bg::library`.
+builds this example as `main.cpp`, linked to `hg::library`.
 :::
 ::::
 :::::

@@ -1,10 +1,10 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
 
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/time_series/queue_operations.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/time_series/queue_operations.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include "literal_helpers.hpp"
 #include "queue_operations.hpp"
@@ -19,7 +19,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 namespace {
 
 enum class FrameQueueOperation : std::uint8_t { upsert, remove };
@@ -374,11 +374,11 @@ template <typename T> void register_column_series_queue_runtime(const TimeSeries
     register_column_queue_runtime<T>(runtime);
 }
 
-template BG_FRAME_EXPORT void register_column_series_queue_runtime<i64>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_queue_runtime<double>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_queue_runtime<bool>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_queue_runtime<string>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_queue_runtime<symbol>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_queue_runtime<i64>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_queue_runtime<double>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_queue_runtime<bool>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_queue_runtime<string>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_queue_runtime<symbol>(const TimeSeriesRuntimeType &runtime);
 
 void register_frame_series_queue_runtime(const TimeSeriesRuntimeType &runtime) {
     const auto &series = static_cast<const FrameSeriesType &>(runtime.type());
@@ -408,4 +408,4 @@ void register_frame_series_queue_runtime(const TimeSeriesRuntimeType &runtime) {
     static_cast<void>(dispatch.add(runtime, std::move(operations)));
 }
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details

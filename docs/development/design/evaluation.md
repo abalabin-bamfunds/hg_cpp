@@ -151,7 +151,7 @@ of its current activity.
 requests it explicitly as its first parameter:
 
 ```cpp
-[](bg::EvaluationContext* context, float value) {
+[](hg::EvaluationContext* context, float value) {
     // ...
 }
 ```
@@ -184,7 +184,7 @@ The context provides:
 - a wall-clock observation through `WallClock::now()`
 - the active `EvaluationProfile`, or `nullptr` when profiling is disabled
 - the current runtime graph and node index
-- access to the runtime graph's `bg::allocator`
+- access to the runtime graph's `hg::allocator`
 - temporary scratch storage for the current node invocation
 - the outer graph's [global state](global-state.md)
 - immediate and timed scheduling, and wall-clock timers
@@ -297,7 +297,7 @@ series use operations registered with
 `TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`:
 
 ```cpp
-auto fb = bg::feedback<bg::TS<bg::i64>>("loop");
+auto fb = hg::feedback<hg::TS<hg::i64>>("loop");
 consume(fb);
 fb = produce();
 ```
@@ -370,7 +370,7 @@ stop through `std::stop_source` from normal thread execution.
 ## Periodic callbacks
 
 Both evaluation engines accept `PeriodicCallback` from
-`<bg/periodic_callback.hpp>`. Its `callback` function runs on the evaluation
+`<hg/periodic_callback.hpp>`. Its `callback` function runs on the evaluation
 thread before startup, between complete outer cycles, and before normal
 termination. Periodic calls use its positive `interval`, which defaults to
 50 milliseconds and uses `std::chrono::steady_clock`, independently of evaluation

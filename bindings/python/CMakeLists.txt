@@ -13,10 +13,10 @@ endif()
 list(PREPEND CMAKE_PREFIX_PATH "${nanobind_cmake_dir}")
 find_package(nanobind CONFIG REQUIRED)
 
-nanobind_add_module(_bg STABLE_ABI NB_SHARED src/module.cpp)
+nanobind_add_module(_hg STABLE_ABI NB_SHARED src/module.cpp)
 
 add_library(
-    bg_python SHARED
+    hg_python SHARED
     src/object.cpp
     src/scalar_conversion.cpp
     src/node_definition.cpp
@@ -37,9 +37,9 @@ add_library(
     src/python.cpp
     src/gil.cpp
 )
-add_library(bg::python ALIAS bg_python)
+add_library(hg::python ALIAS hg_python)
 set_target_properties(
-    bg_python
+    hg_python
     PROPERTIES
         EXPORT_NAME python
         POSITION_INDEPENDENT_CODE ON
@@ -47,29 +47,29 @@ set_target_properties(
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )
-target_compile_features(bg_python PUBLIC cxx_std_23)
-target_compile_definitions(bg_python PRIVATE BG_PYTHON_BUILDING PUBLIC NB_SHARED Py_LIMITED_API=0x030C0000)
+target_compile_features(hg_python PUBLIC cxx_std_23)
+target_compile_definitions(hg_python PRIVATE HG_PYTHON_BUILDING PUBLIC NB_SHARED Py_LIMITED_API=0x030C0000)
 target_include_directories(
-    bg_python
+    hg_python
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
         $<BUILD_INTERFACE:${NB_DIR}/include>
 )
 target_link_libraries(
-    bg_python
-    PUBLIC bg::library Python::SABIModule
+    hg_python
+    PUBLIC hg::library Python::SABIModule
     PRIVATE "$<BUILD_INTERFACE:$<TARGET_LINKER_FILE:nanobind-abi3>>"
 )
-add_dependencies(bg_python nanobind-abi3)
+add_dependencies(hg_python nanobind-abi3)
 
-target_link_libraries(_bg PRIVATE bg::python)
-target_compile_features(_bg PRIVATE cxx_std_23)
+target_link_libraries(_hg PRIVATE hg::python)
+target_compile_features(_hg PRIVATE cxx_std_23)
 
-set(python_package_dir "${PROJECT_BINARY_DIR}/bindings/python/bg")
+set(python_package_dir "${PROJECT_BINARY_DIR}/bindings/python/hg")
 file(MAKE_DIRECTORY "${python_package_dir}")
-configure_file(python/bg/__init__.py "${python_package_dir}/__init__.py" COPYONLY)
-configure_file(python/bg/operators.py "${python_package_dir}/operators.py" COPYONLY)
+configure_file(python/hg/__init__.py "${python_package_dir}/__init__.py" COPYONLY)
+configure_file(python/hg/operators.py "${python_package_dir}/operators.py" COPYONLY)
 if(APPLE)
     set(python_build_rpath "@loader_path/..;@loader_path/../../..")
     set(python_install_rpath "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
@@ -85,13 +85,13 @@ else()
 endif()
 
 set_target_properties(
-    bg_python
+    hg_python
     PROPERTIES
         INSTALL_RPATH "${python_library_install_rpath}"
 )
 
 set_target_properties(
-    _bg
+    _hg
     PROPERTIES
         LIBRARY_OUTPUT_DIRECTORY "${python_package_dir}"
         RUNTIME_OUTPUT_DIRECTORY "${python_package_dir}"
@@ -101,23 +101,23 @@ set_target_properties(
 
 if(WIN32)
     add_custom_command(
-        TARGET _bg
+        TARGET _hg
         POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg>" "$<TARGET_FILE_DIR:_bg>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_library>" "$<TARGET_FILE_DIR:_bg>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:bg_python>" "$<TARGET_FILE_DIR:_bg>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nanobind-abi3>" "$<TARGET_FILE_DIR:_bg>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hg>" "$<TARGET_FILE_DIR:_hg>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hg_library>" "$<TARGET_FILE_DIR:_hg>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hg_python>" "$<TARGET_FILE_DIR:_hg>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nanobind-abi3>" "$<TARGET_FILE_DIR:_hg>"
         VERBATIM
     )
-    install(FILES "$<TARGET_FILE:bg>" DESTINATION bg)
-    install(FILES "$<TARGET_FILE:bg_library>" DESTINATION bg)
-    install(FILES "$<TARGET_FILE:bg_python>" DESTINATION bg)
-    install(FILES "$<TARGET_FILE:nanobind-abi3>" DESTINATION bg)
+    install(FILES "$<TARGET_FILE:hg>" DESTINATION hg)
+    install(FILES "$<TARGET_FILE:hg_library>" DESTINATION hg)
+    install(FILES "$<TARGET_FILE:hg_python>" DESTINATION hg)
+    install(FILES "$<TARGET_FILE:nanobind-abi3>" DESTINATION hg)
 endif()
 
 install(
-    TARGETS bg_python
-    EXPORT bgTargets
+    TARGETS hg_python
+    EXPORT hgTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
@@ -128,14 +128,14 @@ install(
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
-install(TARGETS _bg LIBRARY DESTINATION bg RUNTIME DESTINATION bg)
-install(FILES python/bg/__init__.py python/bg/operators.py DESTINATION bg)
+install(TARGETS _hg LIBRARY DESTINATION hg RUNTIME DESTINATION hg)
+install(FILES python/hg/__init__.py python/hg/operators.py DESTINATION hg)
 
 if(BUILD_TESTING)
-    nanobind_add_module(_bg_test_extension STABLE_ABI NB_SHARED tests/extension_module.cpp)
-    target_link_libraries(_bg_test_extension PRIVATE bg::python)
+    nanobind_add_module(_hg_test_extension STABLE_ABI NB_SHARED tests/extension_module.cpp)
+    target_link_libraries(_hg_test_extension PRIVATE hg::python)
     set_target_properties(
-        _bg_test_extension
+        _hg_test_extension
         PROPERTIES
             LIBRARY_OUTPUT_DIRECTORY "${python_package_dir}"
             RUNTIME_OUTPUT_DIRECTORY "${python_package_dir}"
@@ -161,7 +161,7 @@ if(BUILD_TESTING)
     set(
         python_test_environment
         "PYTHONPATH=${PROJECT_BINARY_DIR}/bindings/python"
-        "BG_PYTHON_PACKAGE_DIR=${PROJECT_BINARY_DIR}/bindings/python/bg"
+        "HG_PYTHON_PACKAGE_DIR=${PROJECT_BINARY_DIR}/bindings/python/hg"
     )
     set_tests_properties(
         python_tests

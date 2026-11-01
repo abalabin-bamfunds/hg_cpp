@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/requirement.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/details/wiring_argument_descriptor.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/requirement.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/type/signature.hpp>
 
 #include <memory>
 #include <optional>
@@ -12,7 +12,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class WiringArguments;
 
@@ -128,4 +128,4 @@ class WiringTemplate {
     std::shared_ptr<const Signature> named_signature_;
 };
 
-} // namespace bg
+} // namespace hg

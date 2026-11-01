@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/symbol.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/symbol.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration> struct ScalarVariableInstance;
 
@@ -69,9 +69,9 @@ struct declaration_variable_traits<ScalarVariable<Name, Constraints...>> {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <details::scalar_variable Declaration> struct scalar_type_traits<Declaration> {
     static const ScalarType &type() { return details::scalar_variable_instance<Declaration>(); }
@@ -84,4 +84,4 @@ template <details::scalar_variable Declaration> struct scalar_declaration_traits
     static constexpr bool supports_time_series = true;
 };
 
-} // namespace bg
+} // namespace hg

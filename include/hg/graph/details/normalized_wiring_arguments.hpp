@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/details/wiring_argument_descriptor.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/type/signature.hpp>
 
 #include <span>
 #include <optional>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 class WiringRecordOverlay;
 
@@ -37,4 +37,4 @@ struct NormalizedWiringArguments {
                                                                WiringRecordOverlay &records,
                                                                const Signature *parameter_aliases = nullptr);
 
-} // namespace bg::details
+} // namespace hg::details

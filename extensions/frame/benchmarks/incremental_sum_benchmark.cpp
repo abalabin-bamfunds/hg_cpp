@@ -1,15 +1,15 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/compiled_graph_builder.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/evaluation_profiler.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/details/compiled_graph_builder.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -28,8 +28,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 constexpr auto warmup_cycles = std::size_t{10};
 constexpr auto measured_cycles = std::size_t{101};
@@ -301,7 +301,7 @@ template <std::size_t RowCount, bool Filtered, bool Incremental> ProfileGraph ma
     wiring->finalize();
 
     auto compiled_indices = std::array{wiring->node_index(*sum_node)};
-    auto compiled = bg::details::compile_graph(*wiring, allocator{}, compiled_indices);
+    auto compiled = hg::details::compile_graph(*wiring, allocator{}, compiled_indices);
     return {std::move(wiring), std::move(compiled), compiled_indices.front()};
 }
 
@@ -470,7 +470,7 @@ template <std::size_t RowCount> void print_profile_row(bool filtered) {
 int main(int argc, char **argv) {
     const auto profile_nodes = argc == 2 && std::string_view{argv[1]} == "--profile-nodes";
     if (argc > 2 || (argc == 2 && !profile_nodes))
-        throw std::runtime_error{"usage: bg_frame_incremental_sum_benchmark [--profile-nodes]"};
+        throw std::runtime_error{"usage: hg_frame_incremental_sum_benchmark [--profile-nodes]"};
 
     if (profile_nodes) {
         std::cout << std::setprecision(10)

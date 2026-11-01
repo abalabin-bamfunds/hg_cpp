@@ -16,8 +16,8 @@ but its updates alone do not publish a sample.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import sample
+from hg import graph, run_graph
+from hg.operators import sample
 
 
 @graph
@@ -48,13 +48,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto sampled_temperature(wp<TS<i64>> reading, wp<TS<bool>> signal) {
@@ -83,7 +83,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -120,7 +120,7 @@ expresses relationships such as a component total depending on its parent total.
 :sync: python
 
 ```python
-from bg import TS, TSD, graph, mesh, node, run_graph
+from hg import TS, TSD, graph, mesh, node, run_graph
 
 @node
 def add_available(reading: int, dependency: int | None) -> int:
@@ -152,16 +152,16 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/mesh.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/mesh.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 #include <optional>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto add_available = node([](i64 reading, std::optional<i64> dependency) {
@@ -192,7 +192,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/queue.hpp>
-#include <bg/node/details/callable_node.hpp>
-#include <bg/node/details/callable_signature.hpp>
-#include <bg/node/output_declaration_traits.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/scalar/canonical.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/util/reflection.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/queue.hpp>
+#include <hg/node/details/callable_node.hpp>
+#include <hg/node/details/callable_signature.hpp>
+#include <hg/node/output_declaration_traits.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/util/reflection.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <algorithm>
 #include <array>
@@ -26,7 +26,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct NoQueueCallback {};
 
@@ -151,8 +151,8 @@ template <> struct queue_callback_indices<NoQueueCallback> {
     using type = std::index_sequence<>;
 };
 
-template <typename Function, typename... Options>
-using queue_callback_indices_t = typename queue_callback_indices<Function, Options...>::type;
+template <typename Callback>
+using queue_callback_indices_t = typename queue_callback_indices<Callback>::type;
 
 template <typename Wrapper, typename First, typename... Rest>
 decltype(auto) queue_callback_value(First &&first, Rest &&...rest) {
@@ -576,9 +576,9 @@ template <typename... Options> auto make_queue_callbacks(Options &&...options) {
     return std::tuple{std::move(start), std::move(stop), mode, output};
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 inline constexpr auto start = details::QueueStartName{};
 inline constexpr auto stop = details::QueueStopName{};
@@ -613,4 +613,4 @@ template <typename... Options>
         std::move(start_callback), std::move(stop_callback), mode_value, output}};
 }
 
-} // namespace bg
+} // namespace hg

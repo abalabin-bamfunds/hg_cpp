@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/switch_argument.hpp>
-#include <bg/switch/details/default_switch_wiring.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/switch_argument.hpp>
+#include <hg/switch/details/default_switch_wiring.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <concepts>
 #include <functional>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -226,4 +226,4 @@ class cases : public details::switch_cases<std::decay_t<Case>...> {
 
 template <typename... Case> cases(Case &&...) -> cases<Case...>;
 
-} // namespace bg
+} // namespace hg

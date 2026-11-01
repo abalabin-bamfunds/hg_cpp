@@ -10,7 +10,7 @@
 #include <string>
 #include <string_view>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
 inline bool valid_http_header_name(std::string_view value) noexcept {
     if (value.empty()) return false;
@@ -91,4 +91,4 @@ inline void convert_latin1_header_value_as_utf8(std::string &value) {
     value.swap(converted);
 }
 
-} // namespace bg::web::details
+} // namespace hg::web::details

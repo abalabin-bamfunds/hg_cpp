@@ -19,7 +19,7 @@ def setup(app):
     return {"parallel_read_safe": True}
 
 
-project = "BG"
+project = "HG"
 release = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]["version"]
 
 extensions = ["myst_parser", "sphinxcontrib.mermaid", "sphinx_design"]
@@ -34,7 +34,7 @@ myst_fence_as_directive = ["mermaid"]
 mermaid_height = "auto"
 
 html_theme = "furo"
-html_title = "BG documentation"
+html_title = "HG documentation"
 html_show_copyright = False
 html_theme_options = {"navigation_with_keys": True}
 html_static_path = ["_static"]

@@ -16,8 +16,8 @@ Python `tuple[int, ...]` and C++ `List<i64>` describe homogeneous scalar sequenc
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import len_
+from hg import graph, run_graph
+from hg.operators import len_
 
 @graph
 def batch_size(prices: tuple[int, ...]) -> int:
@@ -41,13 +41,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto batch_size(wp<TS<List<i64>>> prices) {
@@ -72,7 +72,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -99,8 +99,8 @@ types. `contains_` tests the current mapping for a key.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import contains_
+from hg import graph, run_graph
+from hg.operators import contains_
 
 @graph
 def has_bid(quote: dict[str, int]) -> bool:
@@ -124,13 +124,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto has_bid(wp<TS<Dict<string, i64>>> quote) {
@@ -155,7 +155,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -183,7 +183,7 @@ explains the node declaration used here. C++ `In<TS<...>>` receives a changing i
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def quantity(order: tuple[str, int]) -> int:
@@ -211,13 +211,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto quantity = node([](In<TS<Tuple<string, i64>>> order) {
@@ -246,7 +246,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -270,7 +270,7 @@ fields from the current record.
 :sync: python
 
 ```python
-from bg import Bundle, graph, node, run_graph, schema
+from hg import Bundle, graph, node, run_graph, schema
 
 @schema
 class Quote:
@@ -303,13 +303,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 template <template <typename, auto...> typename Field>
@@ -345,7 +345,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

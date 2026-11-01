@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/time_series/details/type_access.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/details/scalar_type.hpp>
-#include <bg/type/guarantee_variable_instance.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/type/time_series_variable.hpp>
+#include <hg/time_series/details/type_access.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/details/scalar_type.hpp>
+#include <hg/type/guarantee_variable_instance.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/type/time_series_variable.hpp>
 
 #include <cstddef>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 concept has_cpp_scalar_type = requires { cpp_scalar_type<T>(); };
@@ -24,23 +24,23 @@ template <typename TimeSeries> struct time_series_type_traits {
     static constexpr bool supported = time_series_variable<TimeSeries>;
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 // Maps a C++ time series declaration to its semantic type. Providers specialize this trait for their declarations.
 template <typename TimeSeries>
 struct time_series_type_traits : details::time_series_type_traits<std::remove_cv_t<TimeSeries>> {};
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
-
-template <typename T>
-concept generic_time_series = ::bg::time_series_type_traits<std::remove_cv_t<T>>::generic;
+namespace hg::details {
 
 template <typename T>
-concept supported_time_series = ::bg::time_series_type_traits<std::remove_cv_t<T>>::supported;
+concept generic_time_series = ::hg::time_series_type_traits<std::remove_cv_t<T>>::generic;
+
+template <typename T>
+concept supported_time_series = ::hg::time_series_type_traits<std::remove_cv_t<T>>::supported;
 
 template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role, typename TimeSeries>
 [[nodiscard]] const TimeSeriesType &time_series_type_for(GuaranteeParameter inherited_guarantee) {
@@ -57,16 +57,16 @@ template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role, typename T
             }
         }();
 
-        return ::bg::time_series_type_traits<Type>::template get<Scope, Index, Role>(guarantee);
+        return ::hg::time_series_type_traits<Type>::template get<Scope, Index, Role>(guarantee);
     }
 }
 
 template <typename Declaration> decltype(auto) time_series_type_access<Declaration>::type() {
     static_assert(supported_time_series<Declaration>, "unsupported time series declaration");
-    using SemanticType = typename ::bg::time_series_type_traits<Declaration>::semantic_type;
+    using SemanticType = typename ::hg::time_series_type_traits<Declaration>::semantic_type;
     return static_cast<const SemanticType &>(
         time_series_type_for<Declaration, 0, TimeSeriesTypeRole::declaration, Declaration>(
             TimeSeriesGuarantee::ordinary));
 }
 
-} // namespace bg::details
+} // namespace hg::details

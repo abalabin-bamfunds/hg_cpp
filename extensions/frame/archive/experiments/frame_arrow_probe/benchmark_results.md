@@ -7,15 +7,15 @@
 - NumPy: `2.5.3`
 - Fixed seed: `20260928`
 - Physical rows per case: `100,000`
-- Warmups: 1 for each sparse export, 5 for BG copy and dense exports, 2 for compute; repetitions: 3 when chunk count is at least 10,000, otherwise 5 for each sparse export; 31 for BG copy and each dense export; 7 for compute
-- Exact command: `conda run -n bg-build bash experiments/frame_arrow_probe/benchmark.sh`
+- Warmups: 1 for each sparse export, 5 for HG copy and dense exports, 2 for compute; repetitions: 3 when chunk count is at least 10,000, otherwise 5 for each sparse export; 31 for HG copy and each dense export; 7 for compute
+- Exact command: `conda run -n hg-build bash experiments/frame_arrow_probe/benchmark.sh`
 
 Timings are milliseconds as `median [minimum, maximum]` over repeated runs.
-Sparse export scans occupied positions, discovers BG spans, and creates PyArrow chunks; its timing includes Python per-chunk wrapper construction. The allocation variant also allocates a zero-filled descriptor array with capacity for every live row.
-BG copy visits live positions and copies values into a preallocated NumPy buffer. Dense export adds PyArrow wrapping to that copy. Dense export with allocation creates a fresh NumPy buffer inside each timed call.
+Sparse export scans occupied positions, discovers HG spans, and creates PyArrow chunks; its timing includes Python per-chunk wrapper construction. The allocation variant also allocates a zero-filled descriptor array with capacity for every live row.
+HG copy visits live positions and copies values into a preallocated NumPy buffer. Dense export adds PyArrow wrapping to that copy. Dense export with allocation creates a fresh NumPy buffer inside each timed call.
 Compute inputs are built before timing. The single-chunk baseline is the same live values. A native adapter could reduce sparse export wrapper cost; Arrow compute still sees the resulting chunk count.
 
-| Dead ratio | Pattern | Live | Dead | Live runs | Arrow chunks | Sparse reps | Sparse preallocated | Sparse with allocation | BG copy | Dense preallocated | Dense with allocation | Sum sparse | Sum single | Filter sparse | Filter single |
+| Dead ratio | Pattern | Live | Dead | Live runs | Arrow chunks | Sparse reps | Sparse preallocated | Sparse with allocation | HG copy | Dense preallocated | Dense with allocation | Sum sparse | Sum single | Filter sparse | Filter single |
 |---:|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
 | 0.0000% | clustered | 100,000 | 0 | 1 | 15 | 5 | 0.268 [0.267, 0.275] | 0.301 [0.300, 0.312] | 0.237 [0.237, 0.259] | 0.242 [0.241, 0.258] | 0.246 [0.245, 0.271] | 0.022 [0.021, 0.022] | 0.018 [0.017, 0.018] | 0.165 [0.164, 0.172] | 0.157 [0.156, 0.157] |
 | 0.0100% | clustered | 99,990 | 10 | 2 | 16 | 5 | 0.268 [0.268, 0.272] | 0.303 [0.301, 0.337] | 0.238 [0.236, 0.244] | 0.242 [0.241, 0.267] | 0.246 [0.244, 0.265] | 0.022 [0.021, 0.022] | 0.019 [0.019, 0.020] | 0.166 [0.165, 0.174] | 0.157 [0.157, 0.158] |
@@ -30,7 +30,7 @@ Compute inputs are built before timing. The single-chunk baseline is the same li
 | 80.0000% | scattered | 20,000 | 80,000 | 16,003 | 16,003 | 3 | 24.254 [24.202, 24.315] | 24.370 [24.322, 24.377] | 0.057 [0.057, 0.064] | 0.062 [0.061, 0.081] | 0.065 [0.064, 0.070] | 1.403 [1.399, 1.443] | 0.005 [0.005, 0.006] | 5.264 [5.244, 5.326] | 0.034 [0.034, 0.035] |
 
 All cases assert identical values, sums, multiplied values, and filtered outputs before timing.
-Chunk count includes splits at deleted-row gaps and BG value-block boundaries.
+Chunk count includes splits at deleted-row gaps and HG value-block boundaries.
 
 ## Derived one-export plus one-operator comparison
 

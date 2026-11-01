@@ -1,14 +1,14 @@
-#include <bg/feedback.hpp>
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/client_auth.hpp>
+#include <hg/feedback.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/client_auth.hpp>
 
 #include "client_runtime.hpp"
 #include "client_request_sink.hpp"
@@ -27,10 +27,10 @@
 #include <string_view>
 #include <utility>
 
-namespace bg::web {
+namespace hg::web {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct ClientAuthSelection {
     Field<service_client_id_t> registration_id;
@@ -247,4 +247,4 @@ void register_client_transports(ServiceCatalogue &catalogue, std::string scope, 
     registration.register_impl(websocket_client);
 }
 
-} // namespace bg::web
+} // namespace hg::web

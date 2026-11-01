@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/details/value_storage.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/set/runtime_type.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/details/value_storage.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
 
 #include <functional>
 #include <memory>
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class Scalar<Set<T>> {
   public:
@@ -89,4 +89,4 @@ template <typename T> class Scalar<Set<T>> {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg

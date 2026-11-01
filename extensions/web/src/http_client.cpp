@@ -1,18 +1,18 @@
-#include <bg/graph.hpp>
-#include <bg/map.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/http_client.hpp>
+#include <hg/graph.hpp>
+#include <hg/map.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/http_client.hpp>
 
 #include "client_request_sink.hpp"
 #include "client_source.hpp"
 
 #include <utility>
 
-namespace bg::web {
-using namespace bg::literals;
+namespace hg::web {
+using namespace hg::literals;
 
 const service<auto(TS<Bundle<HttpClientRequest>>) -> TS<Bundle<HttpResponse>>> http_client{"http_client",
                                                                                          {"request"}};
@@ -43,4 +43,4 @@ std::shared_ptr<const WiringTemplate> http_client_impl(HttpClientOptions options
     return std::make_shared<decltype(implementation)>(std::move(implementation));
 }
 
-} // namespace bg::web
+} // namespace hg::web

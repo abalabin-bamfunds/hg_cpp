@@ -30,7 +30,7 @@ NOINLINE std::string old_encode(std::string_view value) {
 }
 
 NOINLINE std::string new_encode(std::string_view value) {
-    return bg::web::details::latin1_header_value_as_utf8(value);
+    return hg::web::details::latin1_header_value_as_utf8(value);
 }
 
 NOINLINE void old_convert(std::string &value) {
@@ -48,7 +48,7 @@ NOINLINE void old_convert(std::string &value) {
 }
 
 NOINLINE void new_convert(std::string &value) {
-    bg::web::details::convert_latin1_header_value_as_utf8(value);
+    hg::web::details::convert_latin1_header_value_as_utf8(value);
 }
 
 volatile std::size_t consumed = 0;

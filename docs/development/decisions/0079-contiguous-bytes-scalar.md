@@ -9,7 +9,7 @@ Construction from a borrowed span copies into shared storage. `BytesBuilder` let
 producers fill owned storage before transferring it to a scalar value.
 
 Python exports `bytes` as a read-only `memoryview` that retains the native
-storage for the view's lifetime. Reimporting a full BG-exported view shares
+storage for the view's lifetime. Reimporting a full HG-exported view shares
 that storage; partial views and external memoryviews copy their visible
 contents. See [Python graph authoring](../design/python.md#graph-authoring) for the
 boundary contract.

@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/queue.hpp>
-#include <bg/scalar/bundle/type.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/web/http_client.hpp>
+#include <hg/queue.hpp>
+#include <hg/scalar/bundle/type.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/web/http_client.hpp>
 
 #include <chrono>
 #include <memory>
 #include <optional>
 #include <string_view>
 
-namespace bg::web {
+namespace hg::web {
 
 class ClientImplementation;
 
@@ -33,4 +33,4 @@ class ClientRuntime {
     std::unique_ptr<ClientImplementation> implementation_;
 };
 
-} // namespace bg::web
+} // namespace hg::web

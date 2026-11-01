@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/periodic_callback.hpp>
-#include <bg/evaluation_engine.hpp>
-#include <bg/evaluation_profile.hpp>
+#include <hg/allocator.hpp>
+#include <hg/periodic_callback.hpp>
+#include <hg/evaluation_engine.hpp>
+#include <hg/evaluation_profile.hpp>
 
 #include <chrono>
 #include <cstddef>
@@ -14,7 +14,7 @@
 #include <string>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 
@@ -112,4 +112,4 @@ class EvaluationProfiler {
     std::unique_ptr<State> state_;
 };
 
-} // namespace bg
+} // namespace hg

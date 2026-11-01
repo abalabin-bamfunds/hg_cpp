@@ -3,7 +3,7 @@
 #include <memory>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class WiringPoint;
@@ -34,4 +34,4 @@ class WiringRecordOverlay {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

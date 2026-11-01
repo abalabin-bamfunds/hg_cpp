@@ -470,7 +470,7 @@ and the resolved output type for comparison.
 ## Implementation and validation
 
 Keep the utility in the public time series API. Keep cycle sequencing and test
-capture in `bg::testing`. One type-guided interpreter owns literal traversal;
+capture in `hg::testing`. One type-guided interpreter owns literal traversal;
 consumers own output mutation, retained storage, and scheduling.
 
 Use visitors for structural interpretation and extensible dispatch for

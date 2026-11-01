@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/graph/details/typed_signature.hpp>
-#include <bg/graph/service.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/type/type_parameter.hpp>
+#include <hg/graph/details/typed_signature.hpp>
+#include <hg/graph/service.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/type/type_parameter.hpp>
 
 #include <array>
 #include <initializer_list>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename Definition, typename Prototype, typename... TypeParameters>
 class ServiceTemplate final
@@ -200,4 +200,4 @@ using service = typename details::service_declaration<Service, Declaration...>::
 
 wp<TS<service_client_id_t, TimeSeriesGuarantee::const_>> service_client_id();
 
-} // namespace bg
+} // namespace hg

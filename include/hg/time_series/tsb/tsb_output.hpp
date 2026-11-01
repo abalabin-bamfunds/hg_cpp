@@ -1,20 +1,20 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
 
 #include <stdexcept>
 
-namespace bg {
+namespace hg {
 namespace details {
 
 struct bundle_output_fields {
@@ -210,4 +210,4 @@ class Out<TSB<Schema, Properties...>> {
     TimeSeriesOutputBinding state_;
 };
 
-} // namespace bg
+} // namespace hg

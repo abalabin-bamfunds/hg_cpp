@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/details/scalar_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/details/scalar_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration, bool TimeSeries = supported_time_series<Declaration>,
           bool Scalar = !scalar_declaration_traits<Declaration>::generic && has_cpp_scalar_type<Declaration> &&
@@ -36,4 +36,4 @@ struct bundle_schema_field : bundle_field_projection<Declaration> {
 
 template <> inline constexpr bool is_schema_reflection_field<bundle_schema_field> = true;
 
-} // namespace bg::details
+} // namespace hg::details

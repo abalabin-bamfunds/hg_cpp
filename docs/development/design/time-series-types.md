@@ -14,7 +14,7 @@ Every time series type has the recursive guarantee defined by the
 A guarantee is an optional template property:
 
 ```cpp
-bg::TS<float, bg::TimeSeriesGuarantee::final>
+hg::TS<float, hg::TimeSeriesGuarantee::final>
 ```
 
 The [validity design](time-series-validity.md) defines invalidation and
@@ -111,7 +111,7 @@ The built-in writer supports value, fixed-list, bundle, set, and dictionary time
 series, including invalidation. It does not serialize reference bindings.
 Provider-defined time series register `TimeSeriesTickOperations` with
 `TimeSeriesDispatch<TimeSeriesTickOperations>::instance()`, declared in
-`<bg/time_series/tick_operations.hpp>`. This registry is
+`<hg/time_series/tick_operations.hpp>`. This registry is
 shared by tick writers, readers, and feedback nodes in the process. Complete
 registration before concurrent writes, replay, or graph evaluation;
 registration is not synchronized. A dynamically loaded provider module must
@@ -152,7 +152,7 @@ discards unread records on destruction, releasing their scalar payloads.
 
 ## Tick formatting
 
-`<bg/time_series/tick_format.hpp>` provides fmt formatters for live inputs and
+`<hg/time_series/tick_format.hpp>` provides fmt formatters for live inputs and
 retained records. `fmt::format("{}", tick(input, now))` formats the root input
 only when it changed at `now`; otherwise it writes `SKIP`. Formatting a retained
 record with `tick(type, reader)` reads one complete record from a fork and leaves
@@ -162,7 +162,7 @@ consumed, as in `GraphRunResult::visit_tick`.
 The fmt wrappers borrow live inputs or retained readers and accept no format
 specifiers.
 
-Scalar values use the scalar formatter in `<bg/scalar/format.hpp>`. Collection
+Scalar values use the scalar formatter in `<hg/scalar/format.hpp>`. Collection
 ticks show changed entries only; invalid children print `INVALID`, dictionary
 removals print `REMOVE`, and set removals print `REMOVED(value)`. Live and
 retained reference ticks are unsupported. The formatter writes directly to
@@ -186,7 +186,7 @@ API](scalar-api.md#scalar-formatting).
 
 ## Queue messages
 
-`bg::Queue::write(literal)` returns whether it committed a message. Root `SKIP`
+`hg::Queue::write(literal)` returns whether it committed a message. Root `SKIP`
 and writes after closure return `false`. Closed writes do not project or serialize
 the literal. Serialization errors propagate while the queue is open.
 
@@ -195,7 +195,7 @@ distinct copies on distinct threads. Do not write through a handle while copying
 or using that same handle on another thread. Default-constructed and moved-from
 handles reject writes.
 
-The engine owns `bg::details::QueueControl`. Its `close()` rejects new writes and
+The engine owns `hg::details::QueueControl`. Its `close()` rejects new writes and
 waits for accepted writes to finish. Destroying the controller closes it. After
 closure, the reader discards unread messages before their runtime types are
 destroyed. Retained handles remain safe to copy, move, destroy, or write through.
@@ -216,7 +216,7 @@ The concurrent buffer's allocator must support concurrent allocation and
 deallocation and outlive every retained handle. Each handle retains its writer
 block until destruction; the controller does not retain a root buffer handle.
 
-`bg::details::QueueMessageWriter` is an engine-only writer. It serializes a
+`hg::details::QueueMessageWriter` is an engine-only writer. It serializes a
 `TimeSeriesLiteral` for a destination node into a concurrent buffer. Each frame
 starts with a typed `QueueMessageHeader` containing a 32-bit destination node
 ID and a 32-bit total frame size, followed by one tick record using the grammar
@@ -234,7 +234,7 @@ Frame consumers align to the header, use its size to bound the message, and
 read or discard the tick payload with the semantic time-series type. They must
 not construct a `TimeSeriesTickReader` over the framed buffer.
 
-`bg::details::QueueMessageReader` returns the next non-sentinel target without
+`hg::details::QueueMessageReader` returns the next non-sentinel target without
 consuming that frame. Standard and batch apply leave a conflicting frame
 pending, and inspection exceptions leave it pending. Successful apply and typed discard
 consume the entire frame, including trailing padding. Replay exceptions consume
@@ -251,7 +251,7 @@ selected write registration and semantic read and discard handlers. Projection
 uses the [scalar buffer operation contract](scalar-api.md#optional-operations).
 Missing handlers fail before reservation.
 
-`bg::details::QueueTickApply::apply(output)` reads one tick payload from the
+`hg::details::QueueTickApply::apply(output)` reads one tick payload from the
 current reader position. In standard mode, it returns `false` when an effective
 change targets a time series already changed at the current evaluation time.
 Inspection stops at the first conflict. The entire payload remains pending:
@@ -273,12 +273,12 @@ as standard mode below. A conflicting message remains pending in its entirety
 and stops queue reading.
 
 ```cpp
-const auto events = bg::queue<bg::TS<bg::List<bg::i64>>>(
-    bg::start = [](bg::Queue queue) {
-        queue.write(literal::TimeSeriesLiteral(bg::i64{1}));
-        queue.write(literal::TimeSeriesLiteral(bg::i64{2}));
+const auto events = hg::queue<hg::TS<hg::List<hg::i64>>>(
+    hg::start = [](hg::Queue queue) {
+        queue.write(literal::TimeSeriesLiteral(hg::i64{1}));
+        queue.write(literal::TimeSeriesLiteral(hg::i64{2}));
     },
-    bg::mode = bg::QueueMode::batch);
+    hg::mode = hg::QueueMode::batch);
 ```
 
 The first outer cycle publishes the list `[1, 2]`.

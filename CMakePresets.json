@@ -35,7 +35,7 @@
       "cacheVariables": {
         "CMAKE_BUILD_TYPE": "Release",
         "BUILD_TESTING": "OFF",
-        "BG_BUILD_BENCHMARKS": "ON"
+        "HG_BUILD_BENCHMARKS": "ON"
       }
     }
   ],

@@ -1,6 +1,6 @@
 # Development documentation
 
-These documents support changes to the BG engine and standard library.
+These documents support changes to the HG engine and standard library.
 The [project definition](project.md) sets purpose and priorities. The shared
 [terminology dictionary](../terminology.md) defines project terms.
 

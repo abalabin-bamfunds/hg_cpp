@@ -1,10 +1,10 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/overload.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/overload.hpp>
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
 struct collection_overloads {
@@ -28,4 +28,4 @@ const auto registered = [] {
 }();
 
 } // namespace
-} // namespace bg::frame
+} // namespace hg::frame

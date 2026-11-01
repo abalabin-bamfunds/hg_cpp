@@ -1,12 +1,12 @@
 # Evaluation context benchmark
 
-`bg_evaluation_context_benchmark` measures child-context construction and graph
+`hg_evaluation_context_benchmark` measures child-context construction and graph
 evaluation that reads evaluation time. Build it with the `benchmark` preset:
 
 ```sh
 cmake --preset benchmark
-cmake --build --preset benchmark --target bg_evaluation_context_benchmark
-build/benchmark/benchmarks/bg_evaluation_context_benchmark
+cmake --build --preset benchmark --target hg_evaluation_context_benchmark
+build/benchmark/benchmarks/hg_evaluation_context_benchmark
 ```
 
 Each workload reports nine samples and their median, minimum, and maximum.
@@ -59,9 +59,9 @@ From the build's source directory, each variant was run as:
 
 ```sh
 taskset -c 0 env \
-  LD_PRELOAD="$PWD/build/benchmark/context-cached/libbg.so.0.1.0" \
+  LD_PRELOAD="$PWD/build/benchmark/context-cached/libhg.so.0.1.0" \
   LD_LIBRARY_PATH="$PWD/build/benchmark/context-cached" \
-  "$PWD/build/benchmark/context-cached/bg_evaluation_context_benchmark"
+  "$PWD/build/benchmark/context-cached/hg_evaluation_context_benchmark"
 ```
 
 The shared-time command uses `context-global-only` in place of `context-cached`.

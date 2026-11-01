@@ -5,9 +5,9 @@ lifecycle belong to those instances. Use ordinary graph calls when a runtime bou
 not required. C++ graph arguments need a concrete output type. Use
 `.as<TS<T>>()` when a library expression returns an untyped connection.
 
-Python imports `map`, `mesh`, `switch_`, and `pass_through` from `bg`. C++ imports
-`bg` and includes the corresponding `<bg/map.hpp>`, `<bg/mesh.hpp>`, or
-`<bg/switch.hpp>` header.
+Python imports `map`, `mesh`, `switch_`, and `pass_through` from `hg`. C++ imports
+`hg` and includes the corresponding `<hg/map.hpp>`, `<hg/mesh.hpp>`, or
+`<hg/switch.hpp>` header.
 
 ## map
 

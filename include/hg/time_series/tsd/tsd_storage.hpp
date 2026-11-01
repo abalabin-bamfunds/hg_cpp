@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/runtime_bunch.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/runtime_bunch.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 inline std::size_t contained_time_series_value_offset(const TimeSeriesRuntimeType &runtime_type) noexcept {
     const auto alignment = runtime_type.value_alignment();
@@ -200,4 +200,4 @@ class time_series_dict_storage {
 
 static_assert(util::byte_copy_initializable<time_series_dict_storage>);
 
-} // namespace bg::details
+} // namespace hg::details

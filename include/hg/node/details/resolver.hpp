@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/node/details/callable_node_options.hpp>
-#include <bg/time_series/guarantee_variable.hpp>
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/time_series/size_variable.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/guarantee_variable_instance.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/schema_variable_instance.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/size_variable_instance.hpp>
-#include <bg/type/time_series_variable.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/node/details/callable_node_options.hpp>
+#include <hg/time_series/guarantee_variable.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/time_series/size_variable.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/guarantee_variable_instance.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/schema_variable_instance.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/size_variable_instance.hpp>
+#include <hg/type/time_series_variable.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -21,7 +21,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Result> TypeMapValue resolver_mapping(Result &&result, const Variable &variable) {
     using Value = std::remove_cvref_t<Result>;
@@ -108,4 +108,4 @@ template <typename... Options> std::vector<VariableResolver> callable_resolvers(
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details

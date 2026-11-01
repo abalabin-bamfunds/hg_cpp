@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/time_series/guarantee_variable.hpp>
-#include <bg/type/guarantee_variable_instance.hpp>
-#include <bg/type/time_series_guarantee.hpp>
+#include <hg/time_series/guarantee_variable.hpp>
+#include <hg/type/guarantee_variable_instance.hpp>
+#include <hg/type/time_series_guarantee.hpp>
 
 #include <concepts>
 #include <cstddef>
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 inline constexpr bool is_guarantee =
@@ -43,4 +43,4 @@ template <auto... Properties> struct time_series_properties {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

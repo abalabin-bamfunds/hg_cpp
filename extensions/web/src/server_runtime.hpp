@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/queue.hpp>
-#include <bg/scalar/bundle/type.hpp>
-#include <bg/web/http_server.hpp>
+#include <hg/queue.hpp>
+#include <hg/scalar/bundle/type.hpp>
+#include <hg/web/http_server.hpp>
 
 #include <memory>
 #include <optional>
 #include <string>
 
-namespace bg::web {
+namespace hg::web {
 
 class ServerImplementation;
 
@@ -39,4 +39,4 @@ class ServerRuntime {
     std::unique_ptr<ServerImplementation> implementation_;
 };
 
-} // namespace bg::web
+} // namespace hg::web

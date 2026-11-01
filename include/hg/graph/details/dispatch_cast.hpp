@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/wiring_point.hpp>
+#include <hg/graph/wiring_point.hpp>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesType;
 
@@ -13,4 +13,4 @@ namespace details {
 WiringPoint dispatch_cast(WiringPoint source, const TimeSeriesType &target_type);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

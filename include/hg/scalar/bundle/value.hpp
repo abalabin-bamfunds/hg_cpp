@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/bundle/details/value_factory.hpp>
-#include <bg/scalar/details/source_construction.hpp>
-#include <bg/schema/arguments.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/bundle/details/value_factory.hpp>
+#include <hg/scalar/details/source_construction.hpp>
+#include <hg/schema/arguments.hpp>
 
 #include <algorithm>
 #include <array>
@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Source>
 inline constexpr bool hierarchical_bundle_scalar_source = [] {
@@ -92,9 +92,9 @@ ScalarValue<Bundle<Schema>> make_hierarchical_bundle(allocator *memory, Argument
     return construction.finish(memory);
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Schema, typename... Arguments>
     requires(!details::schema_variable_template<Schema>) &&
@@ -122,4 +122,4 @@ template <template <template <typename, auto...> typename> typename Schema, type
     return details::HierarchicalScalarValueFactory::make(schema, fields, &memory);
 }
 
-} // namespace bg
+} // namespace hg

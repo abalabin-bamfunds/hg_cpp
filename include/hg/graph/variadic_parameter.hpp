@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 enum class VariadicMode : unsigned char { none, positional, named };
 
@@ -25,11 +25,11 @@ template <auto... Properties> consteval VariadicMode variadic_mode() {
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 using details::var_args;
 using details::var_kwargs;
 
-} // namespace bg
+} // namespace hg

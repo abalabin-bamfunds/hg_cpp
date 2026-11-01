@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/scalar/construction.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/struct/scalar_type.hpp>
+#include <hg/scalar/construction.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class StructScalarRuntimeType : public ScalarRuntimeType {
   public:
@@ -31,4 +31,4 @@ class StructScalarRuntimeType : public ScalarRuntimeType {
     virtual details::ScalarData field(const details::ScalarData &value, std::size_t index) const = 0;
 };
 
-} // namespace bg
+} // namespace hg

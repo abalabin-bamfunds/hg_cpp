@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/type/type.hpp>
-#include <bg/type/schema_metadata.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/type/type.hpp>
+#include <hg/type/schema_metadata.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,14 +13,14 @@
 #include <variant>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class SchemaType : public Type {
   public:
     virtual std::size_t field_count() const noexcept { return std::dynamic_extent; }
 };
 
-// Engine and extension descriptor. Runtime-defined schemas use BG-allocated identities.
+// Engine and extension descriptor. Runtime-defined schemas use HG-allocated identities.
 class RuntimeSchemaId {
   public:
     bool operator==(const RuntimeSchemaId &) const noexcept = default;
@@ -104,4 +104,4 @@ class SchemaRegistration {
                                    std::span<const SchemaField> fields, SchemaMetadata metadata = {});
 [[nodiscard]] const Schema &anonymous_schema(std::span<const SchemaField> fields, SchemaMetadata metadata = {});
 
-} // namespace bg
+} // namespace hg

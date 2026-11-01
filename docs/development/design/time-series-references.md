@@ -226,7 +226,7 @@ removed.
 A TSS target switch compares current membership with the previous target's
 membership before the current cycle. A TSD target switch compares keys.
 A TSL or TSB target switch samples corresponding items by position or field.
-Collection samples apply sampling recursively to contained collections. BG
+Collection samples apply sampling recursively to contained collections. HG
 asks the runtime requested by the receiving input to create a sample. The sample
 exposes the requested semantic type, while its previous and current source
 descriptors retain their actual runtime types for interpreting source storage.

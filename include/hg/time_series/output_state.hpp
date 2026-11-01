@@ -1,3 +1,3 @@
 #pragma once
 
-#include <bg/time_series/details/output_state.hpp>
+#include <hg/time_series/details/output_state.hpp>

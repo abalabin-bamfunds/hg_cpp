@@ -21,7 +21,7 @@ are unchanged. See the
 
 The Release build completed all configured targets, including Python, web, and
 benchmarks. After restoring the original increment graph in the reproduction,
-`bg_library_tests` rebuilt successfully. The final full CTest run executed all
+`hg_library_tests` rebuilt successfully. The final full CTest run executed all
 2,948 entries: 2,946 passed, two failed, and none were skipped.
 
 Seven new compatibility cases pass. They cover reference/value dictionary and
@@ -68,7 +68,7 @@ increment graph and its simpler
 Run the retained, unhidden case with:
 
 ```sh
-build/release/tests/bg_library_tests \
+build/release/tests/hg_library_tests \
   'take keeps the initial map of branches across nested switch replacement' \
   --colour-mode none
 ```
@@ -78,7 +78,7 @@ The diagnostic artifacts are `build/release/nested-take-backtrace.log` and
 
 ## Wiring ownership investigation
 
-After rebasing onto `1b4a241c` and rebuilding `bg_library_tests`, the original
+After rebasing onto `1b4a241c` and rebuilding `hg_library_tests`, the original
 regression still received SIGSEGV. A scalar-only graph also reproduced the crash:
 
 ```cpp
@@ -116,9 +116,9 @@ The generic case adapter had an ownership gap:
 5. A later structure snapshot or compilation dereferenced the destroyed node.
 
 The relevant code is
-[`switch_invoke.hpp`](../../../include/bg/switch/details/switch_invoke.hpp),
-[`WiredNode`](../../../include/bg/graph/wired_node.hpp), and
-[`SwitchBranchWiring`](../../../include/bg/switch/details/switch_node.hpp).
+[`switch_invoke.hpp`](../../../include/hg/switch/details/switch_invoke.hpp),
+[`WiredNode`](../../../include/hg/graph/wired_node.hpp), and
+[`SwitchBranchWiring`](../../../include/hg/switch/details/switch_node.hpp).
 Before the correction, the latter retained the wired branch without retaining
 the callable that owns the captured node templates. In the original nested
 test, the false inner case captures `empty_values` by value and had this
@@ -183,9 +183,9 @@ Temporary post-run diagnostics recorded the result in
 
 ## Other full-suite failure
 
-`bg_web_python_tests` has seven failing pytest cases and two passing cases.
-Nanobind rejects BG native graph/service objects at the web extension boundary
+`hg_web_python_tests` has seven failing pytest cases and two passing cases.
+Nanobind rejects HG native graph/service objects at the web extension boundary
 with `incompatible function arguments`. In the latest run,
-`_http_handler_input_is_dictionary()` rejects `bg._bg._PythonGraphDefinition`
-where it expects `bg::python::PythonGraphDefinition`. This matches the previously
+`_http_handler_input_is_dictionary()` rejects `hg._hg._PythonGraphDefinition`
+where it expects `hg::python::PythonGraphDefinition`. This matches the previously
 observed binding mismatch. No Python or web code is changed here.

@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "benchmark": "portable_high_count_map",
-  "engine": "bg",
+  "engine": "hg",
   "runtime": "native-cpp",
   "source_commit": "6b7bb4351022dc7afce108ad735fb87083864c5a",
   "profile": "250k",

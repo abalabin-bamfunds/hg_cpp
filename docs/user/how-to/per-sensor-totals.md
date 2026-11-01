@@ -16,8 +16,8 @@ Prerequisites: [Dictionaries](../guide/advanced-graphs/collections.md#dictionari
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, map, run_graph
-from bg.operators import sums
+from hg import REMOVE, TS, TSD, graph, map, run_graph
+from hg.operators import sums
 
 @graph
 def accumulated_quantity(quantity: int) -> int:
@@ -53,15 +53,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/graph.hpp>
-#include <bg/map.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/graph.hpp>
+#include <hg/map.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto accumulated_quantity(wp<TS<i64>> quantity) {
@@ -91,7 +91,7 @@ Output:
 :::{tab-item} Build and run
 
 The [C++ example project](../guide/installation.md#c-example-project)
-builds this example as `main.cpp`, linked to `bg::library`.
+builds this example as `main.cpp`, linked to `hg::library`.
 :::
 ::::
 :::::

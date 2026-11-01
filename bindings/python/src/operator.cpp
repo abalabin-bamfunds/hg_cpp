@@ -1,15 +1,15 @@
-#include <bg/python/operator.hpp>
+#include <hg/python/operator.hpp>
 
 #include "operator_binding.hpp"
 #include "wiring_argument.hpp"
 
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/operators.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/python/wiring_point.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/operators.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/python/wiring_point.hpp>
 
 #include <nanobind/stl/string.h>
 
@@ -23,7 +23,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python {
+namespace hg::python {
 namespace details {
 
 PythonOperator::PythonOperator(const Operator &operation) : operation_{&operation} {}
@@ -272,7 +272,7 @@ void bind_operators(nb::module_ &module) {
 nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
     auto &wiring = WiringContext::current().wiring();
     const auto point = collection.get(wiring);
-    if (const auto *record = bg::details::variadic_wiring_record(point)) {
+    if (const auto *record = hg::details::variadic_wiring_record(point)) {
         const auto index = [&]() -> std::size_t {
             if (PyLong_Check(key.ptr())) {
                 return nb::cast<std::size_t>(key);
@@ -320,4 +320,4 @@ nb::object getitem(const PythonWiringPoint &collection, nb::handle key) {
 }
 
 } // namespace details
-} // namespace bg::python
+} // namespace hg::python

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/type/scalar_type.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/type/scalar_type.hpp>
 
 #include <array>
 #include <cstddef>
@@ -12,7 +12,7 @@
 #include <stdexcept>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct DispatchSelectorCandidate {
     std::vector<const ScalarType *> input_types;
@@ -134,4 +134,4 @@ class DispatchSelectorDefinition {
 std::unique_ptr<NodeTemplate> make_dispatch_selector(std::span<const WiringArgument> inputs,
                                                       std::span<const DispatchSelectorCandidate> candidates);
 
-} // namespace bg::details
+} // namespace hg::details

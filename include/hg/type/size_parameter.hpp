@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/type/size_variable.hpp>
+#include <hg/type/size_variable.hpp>
 
 #include <optional>
 #include <span>
 #include <variant>
 
-namespace bg {
+namespace hg {
 
 class SizeParameter {
   public:
@@ -48,4 +48,4 @@ class SizeParameter {
     std::variant<std::size_t, const SizeVariable *> value_{std::dynamic_extent};
 };
 
-} // namespace bg
+} // namespace hg

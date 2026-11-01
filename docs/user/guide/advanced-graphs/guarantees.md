@@ -23,8 +23,8 @@ a violating publication fails.
 :sync: python
 
 ```python
-from bg import TS, final, graph, run_graph
-from bg.operators import const_
+from hg import TS, final, graph, run_graph
+from hg.operators import const_
 
 @graph
 def configured(offset: TS[int, final]) -> int:
@@ -52,13 +52,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto configured(wp<TS<i64, TimeSeriesGuarantee::final>> offset) {
@@ -87,7 +87,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -125,7 +125,7 @@ uses of one variable constrain those arguments together.
 
 ```python
 from typing import TypeVar
-from bg import TS, graph, run_graph
+from hg import TS, graph, run_graph
 
 VALUE = TypeVar("VALUE")
 
@@ -151,14 +151,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/graph.hpp>
+#include <hg/graph.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 using VALUE = ScalarVariable<"VALUE">;
@@ -186,7 +186,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -214,7 +214,7 @@ constructs connections for the supplied argument list.
 :sync: python
 
 ```python
-from bg import SIZE, TS, TSL, compute_node, graph, run_graph
+from hg import SIZE, TS, TSL, compute_node, graph, run_graph
 
 @compute_node
 def total(*values: TSL[TS[int], SIZE]) -> TS[int]:
@@ -242,14 +242,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto total = node([](In<TSL<TS<i64>, SIZE>, var_args> values) {
@@ -280,7 +280,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

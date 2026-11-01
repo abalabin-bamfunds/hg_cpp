@@ -22,9 +22,9 @@ C++ declares an operator prototype with `operator_` and registers implementation
 `overload`:
 
 ```cpp
-#include <bg/library.hpp>
+#include <hg/library.hpp>
 
-using namespace bg;
+using namespace hg;
 
 inline operator_<auto(i64) -> i64> doubled{"doubled", {"value"}};
 inline overload<doubled> implementation{[](i64 value) { return value * 2; }};
@@ -39,7 +39,7 @@ refine signatures before construction.
 
 Python currently exposes native operators rather than Python `@operator` or `@overload`
 declarations. A Python wrapper can observe native overloads registered later. C++
-extension modules export an operator through `bg::python::export_operator`.
+extension modules export an operator through `hg::python::export_operator`.
 
 See [C++ integration](../how-to/cpp-extension.md) for build and ownership rules. Do not
 register a conversion overload merely to hide an incompatible numeric expression;
@@ -65,7 +65,7 @@ and implementations. The most specific applicable implementation wins.
 :sync: python
 
 ```python
-from bg import Bundle, TS, compute_node, dispatch, graph, run_graph, schema
+from hg import Bundle, TS, compute_node, dispatch, graph, run_graph, schema
 
 @schema
 class Asset:
@@ -110,15 +110,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/dispatch.hpp>
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
+#include <hg/dispatch.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 template <template <typename, auto...> typename Field>
@@ -167,7 +167,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

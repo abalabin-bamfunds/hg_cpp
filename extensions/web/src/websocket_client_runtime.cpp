@@ -11,11 +11,11 @@
 
 #include <unicode/utf8.h>
 
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -39,7 +39,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::web {
+namespace hg::web {
 namespace {
 
 namespace asio = boost::asio;
@@ -47,7 +47,7 @@ namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
-using namespace bg::literals;
+using namespace hg::literals;
 
 using Header = Tuple<string, string>;
 using HeaderValues = std::vector<std::pair<std::string, std::string>>;
@@ -967,4 +967,4 @@ void WebSocketClientRuntime::cancel(i64 client_id, i64 sequence) noexcept {
     implementation_->cancel(client_id, sequence);
 }
 
-} // namespace bg::web
+} // namespace hg::web

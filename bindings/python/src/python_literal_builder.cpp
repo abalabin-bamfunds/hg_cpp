@@ -1,13 +1,13 @@
 #include "python_literal_builder.hpp"
 
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/scalar/builtins.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include "delta.hpp"
 
@@ -23,7 +23,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 namespace {
 
 nb::object mapping_items(nb::handle value) {
@@ -199,4 +199,4 @@ literal::TimeSeriesLiteral PythonLiteralBuilder::delta(const TimeSeriesType &typ
     throw std::invalid_argument{"unsupported Python time-series literal type"};
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details

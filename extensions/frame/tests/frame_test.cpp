@@ -1,21 +1,21 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/expression.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/bg.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/graph/runtime_graph_input.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/time_series/tick_serializer.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/hg.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/graph/runtime_graph_input.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/time_series/tick_serializer.hpp>
 
 #include <algorithm>
 #include <array>
@@ -35,11 +35,11 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 template <template <typename, auto...> typename Field> struct Quotes {
-    Field<bg::i64> size;
+    Field<hg::i64> size;
     Field<double> bid;
     Field<double> ask;
 };
@@ -54,14 +54,14 @@ template <template <typename, auto...> typename Field> struct TextKeyedRows {
     Field<symbol> venue;
     Field<string> description;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"name", "venue">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"name", "venue">(); }
 };
 
 template <template <typename, auto...> typename Field> struct KeyedQuotes {
     Field<i64> id;
     Field<double> price;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
 template <template <typename, auto...> typename Field> struct CompositeKeyRows {
@@ -70,7 +70,7 @@ template <template <typename, auto...> typename Field> struct CompositeKeyRows {
     Field<double> price;
     Field<i64> value;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"id", "sequence">(); }
 };
 
 template <template <typename, auto...> typename Field> struct RenamedCompositeKeyRows {
@@ -78,14 +78,14 @@ template <template <typename, auto...> typename Field> struct RenamedCompositeKe
     Field<i64> account;
     Field<double> amount;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"account", "sequence">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"account", "sequence">(); }
 };
 
 template <template <typename, auto...> typename Field> struct RenamedKeyedQuotes {
     Field<i64> row_id;
     Field<double> amount;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"row_id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"row_id">(); }
 };
 
 template <template <typename, auto...> typename Field> struct OtherKeyedQuotes {
@@ -93,18 +93,18 @@ template <template <typename, auto...> typename Field> struct OtherKeyedQuotes {
     Field<i64> other_id;
     Field<double> price;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
 };
 
 template <template <typename, auto...> typename Field> struct KeyedQuotesBase {
     Field<i64> id;
     Field<double> price;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
 template <template <typename, auto...> typename Field>
-struct KeyedQuotesDerived : bg::schema_extends<KeyedQuotesBase, Field> {
+struct KeyedQuotesDerived : hg::schema_extends<KeyedQuotesBase, Field> {
     Field<double> bid;
 };
 
@@ -114,33 +114,33 @@ template <template <typename, auto...> typename Field> struct UnkeyedQuotesBase 
 };
 
 template <template <typename, auto...> typename Field>
-struct KeyedQuotesDerivedFromUnkeyed : bg::schema_extends<UnkeyedQuotesBase, Field> {
+struct KeyedQuotesDerivedFromUnkeyed : hg::schema_extends<UnkeyedQuotesBase, Field> {
     Field<double> bid;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"id">(); }
 };
 
 template <template <typename, auto...> typename Field>
-struct OtherKeyedQuotesDerivedFromUnkeyed : bg::schema_extends<UnkeyedQuotesBase, Field> {
+struct OtherKeyedQuotesDerivedFromUnkeyed : hg::schema_extends<UnkeyedQuotesBase, Field> {
     Field<i64> other_id;
     Field<double> bid;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
 };
 
 template <template <typename, auto...> typename Field>
-struct ChangedKeyQuotes : bg::schema_extends<KeyedQuotesBase, Field> {
+struct ChangedKeyQuotes : hg::schema_extends<KeyedQuotesBase, Field> {
     Field<i64> other_id;
     Field<double> bid;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"other_id">(); }
 };
 
 template <template <typename, auto...> typename Field> struct DoubleKeyQuotes {
     Field<i64> id;
     Field<double> price;
 
-    static bg::SchemaMetadata metadata() { return key_metadata<"price">(); }
+    static hg::SchemaMetadata metadata() { return key_metadata<"price">(); }
 };
 
 template <template <typename, auto...> typename Field> struct ReorderedQuotes {
@@ -156,7 +156,7 @@ template <template <typename, auto...> typename Field> struct ComputedQuote {
 };
 
 template <template <typename, auto...> typename Field> struct GenericQuote {
-    Field<bg::SCALAR> bid;
+    Field<hg::SCALAR> bid;
 };
 template <template <typename, auto...> typename Field> struct MixedGenericQuote {
     Field<i64> size;
@@ -194,12 +194,12 @@ struct InheritedGenericQuote : schema_extends<InheritedGenericQuoteBase, Field> 
     Field<double> ask;
 };
 template <template <typename, auto...> typename Field> struct InheritedFrameBase {
-    Field<bg::i64> size;
+    Field<hg::i64> size;
     Field<double> bid;
 };
 
 template <template <typename, auto...> typename Field>
-struct InheritedFrame : bg::schema_extends<InheritedFrameBase, Field> {
+struct InheritedFrame : hg::schema_extends<InheritedFrameBase, Field> {
     Field<double> bid;
     Field<double> ask;
 };
@@ -213,15 +213,15 @@ template <typename Output, typename Value>
 concept accepts_column_set = requires(const Output &output, Value value) { output.set(row_id_t{}, value); };
 
 static_assert(complete_type<Out<TSF<Quotes>>>);
-static_assert(complete_type<Out<TSF<Quotes>, bg::frame::view>>);
-static_assert(complete_type<Out<TSF<ComputedQuote>, bg::frame::computed<"mid">>>);
-static_assert(complete_type<Out<TSF<ComputedQuote>, bg::frame::computed<>>>);
-static_assert(complete_type<Out<TSC<bg::i64>>>);
-static_assert(complete_type<Out<TSC<bg::i64>, bg::frame::view>>);
-static_assert(!complete_type<Out<TS<bg::i64>, bg::frame::view>>);
-static_assert(accepts_column_set<Out<TSC<SCALAR>, bg::frame::computed<>>, i64>);
-static_assert(accepts_column_set<Out<TSC<SCALAR>, bg::frame::computed<>>, std::optional<i64>>);
-static_assert(requires(const Out<TSC<SCALAR>, bg::frame::computed<>> &output) {
+static_assert(complete_type<Out<TSF<Quotes>, hg::frame::view>>);
+static_assert(complete_type<Out<TSF<ComputedQuote>, hg::frame::computed<"mid">>>);
+static_assert(complete_type<Out<TSF<ComputedQuote>, hg::frame::computed<>>>);
+static_assert(complete_type<Out<TSC<hg::i64>>>);
+static_assert(complete_type<Out<TSC<hg::i64>, hg::frame::view>>);
+static_assert(!complete_type<Out<TS<hg::i64>, hg::frame::view>>);
+static_assert(accepts_column_set<Out<TSC<SCALAR>, hg::frame::computed<>>, i64>);
+static_assert(accepts_column_set<Out<TSC<SCALAR>, hg::frame::computed<>>, std::optional<i64>>);
+static_assert(requires(const Out<TSC<SCALAR>, hg::frame::computed<>> &output) {
     output.template set<string>(row_id_t{}, std::string_view{});
     output.template set<string>(row_id_t{}, std::optional<std::string_view>{});
     output.template set<symbol>(row_id_t{}, symbol{});
@@ -355,7 +355,7 @@ void test_scalar_literals_and_content_equality() {
     require(frame.equals(same_frame.view()), "equal frame values compared unequal");
     const auto shared_source = Scalar<Frame<Quotes>>::from(frame.runtime_type(), frame.view().data());
     auto shared_frame = ScalarValue<Frame<Quotes>>{shared_source};
-    require(bg::details::scalar_data(shared_frame).mode() == ScalarDataMode::shared_value,
+    require(hg::details::scalar_data(shared_frame).mode() == ScalarDataMode::shared_value,
             "frame scalar copy did not retain shared storage");
     require(frame.equals(shared_frame.view()),
             "frame equality failed for a shared scalar value");
@@ -397,14 +397,14 @@ void test_runtime_schema_and_malformed_frame_literals() {
 
     const auto base_fields = std::array{SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
                                         SchemaField{util::symbol{"price"}, &cpp_scalar_type<double>()}};
-    const auto &keyed_base = bg::schema(util::symbol{"RuntimeKeyBase"}, bg::new_runtime_schema_id(), nullptr,
+    const auto &keyed_base = hg::schema(util::symbol{"RuntimeKeyBase"}, hg::new_runtime_schema_id(), nullptr,
                                         base_fields, key_metadata<"id">());
     const auto mid_fields = std::array{SchemaField{util::symbol{"other_id"}, &cpp_scalar_type<i64>()},
                                      SchemaField{util::symbol{"bid"}, &cpp_scalar_type<double>()}};
-    const auto &changed_key_mid = bg::schema(util::symbol{"RuntimeChangedKeyMid"}, bg::new_runtime_schema_id(),
+    const auto &changed_key_mid = hg::schema(util::symbol{"RuntimeChangedKeyMid"}, hg::new_runtime_schema_id(),
                                              std::addressof(keyed_base), mid_fields, key_metadata<"other_id">());
     const auto leaf_fields = std::array{SchemaField{util::symbol{"ask"}, &cpp_scalar_type<double>()}};
-    const auto &keyed_leaf = bg::schema(util::symbol{"RuntimeKeyLeaf"}, bg::new_runtime_schema_id(),
+    const auto &keyed_leaf = hg::schema(util::symbol{"RuntimeKeyLeaf"}, hg::new_runtime_schema_id(),
                                         std::addressof(changed_key_mid), leaf_fields);
     auto inherited_key_change_rejected = false;
     try {
@@ -482,13 +482,13 @@ void test_runtime_schema_and_malformed_frame_literals() {
 }
 
 void test_frame_literals_as_ordinary_time_series_inputs() {
-    using namespace bg::literals;
+    using namespace hg::literals;
 
     const auto copy_column = node([](In<TS<Column<i64>>> input, Out<TS<Column<i64>>> output) {
         output.set_value(input.value_view());
     });
-    const auto column_result = bg::run_graph(
-        copy_column, bg::input<TS<Column<i64>>>({{i64{1}, i64{2}}, {i64{3}, NULL_VALUE}}));
+    const auto column_result = hg::run_graph(
+        copy_column, hg::input<TS<Column<i64>>>({{i64{1}, i64{2}}, {i64{3}, NULL_VALUE}}));
     auto first_column = ScalarValue<Column<i64>>::from_literal({i64{1}, i64{2}});
     auto second_column = ScalarValue<Column<i64>>::from_literal({i64{3}, NULL_VALUE});
     require(column_result.equals<Column<i64>>({first_column.view().value(), second_column.view().value()}),
@@ -499,9 +499,9 @@ void test_frame_literals_as_ordinary_time_series_inputs() {
     const auto copy_frame = node([](In<TS<Frame<Quotes>>> input, Out<TS<Frame<Quotes>>> output) {
         output.set_value(input.value_view());
     });
-    const auto frame_result = bg::run_graph(
+    const auto frame_result = hg::run_graph(
         copy_frame,
-        bg::input<TS<Frame<Quotes>>>({{{"size", {i64{1}}}, {"bid", {10.0}}, {"ask", {12.0}}},
+        hg::input<TS<Frame<Quotes>>>({{{"size", {i64{1}}}, {"bid", {10.0}}, {"ask", {12.0}}},
                                            {{"ask", {20.0}}, {"size", {i64{2}}}, {"bid", {20.0}}}}));
     auto first_frame = ScalarValue<Frame<Quotes>>::from_literal(
         {{"size", {i64{1}}}, {"bid", {10.0}}, {"ask", {12.0}}});
@@ -515,7 +515,7 @@ void test_frame_literals_as_ordinary_time_series_inputs() {
 }
 
 void test_base_and_derived_frame_equality() {
-    using namespace bg::frame;
+    using namespace hg::frame;
 
     auto memory = allocator{};
     const auto make_derived = [&](double ask) {
@@ -560,7 +560,7 @@ void test_base_and_derived_frame_equality() {
 
 template <typename Function>
 void with_native_storage(const SchemaType &schema, allocator memory, Function &&function) {
-    const auto &layout = bg::frame::details::native_frame_layout(schema);
+    const auto &layout = hg::frame::details::native_frame_layout(schema);
     auto *allocation = ::operator new(layout.size, std::align_val_t{layout.alignment});
     auto *storage = std::construct_at(static_cast<NativeFrameStorage *>(allocation));
     storage->initialize(layout);
@@ -714,8 +714,8 @@ struct TwoMapRowSet {
 };
 
 void test_native_frame_composite_keys() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = FailingResource{};
     const auto memory = allocator{resource};
@@ -812,8 +812,8 @@ void test_native_frame_composite_keys() {
 }
 
 void test_native_frame_compaction_prepares_later_fields_before_moving_each_range() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     constexpr auto last_id = row_id_t{450};
     constexpr auto first_move = row_id_t{1};
@@ -911,8 +911,8 @@ void test_native_frame_compaction_prepares_later_fields_before_moving_each_range
 }
 
 void test_zero_column_frame_compaction_uses_only_row_mappings() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -940,8 +940,8 @@ void test_zero_column_frame_compaction_uses_only_row_mappings() {
 }
 
 void test_frame_key_schema_validation() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto inherited_change_rejected = false;
     try {
@@ -1008,8 +1008,8 @@ void test_frame_key_schema_validation() {
 }
 
 void test_frame_scalar_key_validation() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto single_key_rejected = false;
     try {
@@ -1077,8 +1077,8 @@ void test_frame_scalar_key_validation() {
 }
 
 void test_native_frame_key_insert_rolls_back() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto failures = std::size_t{};
     auto succeeded = false;
@@ -1114,8 +1114,8 @@ void test_native_frame_key_insert_rolls_back() {
 }
 
 void test_native_frame_key_removal_retention_rolls_back() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto failures = std::size_t{};
     auto succeeded = false;
@@ -1157,8 +1157,8 @@ void test_native_frame_key_removal_retention_rolls_back() {
 }
 
 void test_runtime_native_storage_mixed_and_zero_column_schemas() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto mixed_fields = std::array{
         SchemaField{util::symbol{"number"}, &cpp_scalar_type<i64>()},
@@ -1196,8 +1196,8 @@ void test_runtime_native_storage_mixed_and_zero_column_schemas() {
 }
 
 void test_native_storage_validates_row_and_patch_shape_before_mutation() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = FailingResource{};
     const auto memory = allocator{resource};
@@ -1228,8 +1228,8 @@ void test_native_storage_validates_row_and_patch_shape_before_mutation() {
                 "invalid raw patch shape changed frame deltas or values");
 
         const auto replacement = std::optional<double>{12.5};
-        const auto patch = std::array<bg::frame::details::NativeFrameCellPatch, 1>{
-            bg::frame::details::NativeFrameCellPatch{.changed = true, .value = std::addressof(replacement)}};
+        const auto patch = std::array<hg::frame::details::NativeFrameCellPatch, 1>{
+            hg::frame::details::NativeFrameCellPatch{.changed = true, .value = std::addressof(replacement)}};
         const auto update_time = first_time + EvaluationTime::duration{1};
         require(storage.set(id, patch, update_time, memory) && storage.modified(0)->contains(id),
                 "valid raw patch did not publish its row change");
@@ -1247,8 +1247,8 @@ void test_native_storage_validates_row_and_patch_shape_before_mutation() {
 }
 
 void test_native_storage_changed_columns_beyond_inline_capacity() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto names = std::vector<std::string>{};
     auto fields = std::vector<SchemaField>{};
@@ -1296,7 +1296,7 @@ void test_native_storage_changed_columns_beyond_inline_capacity() {
                 "changed-column index did not publish columns beyond inline capacity");
 
         const auto updated = std::optional<i64>{5600};
-        auto patches = std::vector<bg::frame::details::NativeFrameCellPatch>(57);
+        auto patches = std::vector<hg::frame::details::NativeFrameCellPatch>(57);
         patches[56] = {.changed = true, .value = std::addressof(updated)};
         const auto update_time = time + EvaluationTime::duration{1};
         require(storage.set(id, patches, update_time, memory) && storage.modified(56)->contains(id) &&
@@ -1347,14 +1347,14 @@ void test_native_storage_changed_columns_beyond_inline_capacity() {
 }
 
 void test_shared_rows_and_column_changes() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
     auto frame = NativeFrame<Quotes>{};
     auto release = util::scope_exit{[&]() noexcept { frame.release(memory); }};
-    const auto &layout = bg::frame::details::native_frame_layout<Quotes>();
+    const auto &layout = hg::frame::details::native_frame_layout<Quotes>();
     const auto &runtime = frame_time_series_runtime_type<Quotes>(
         frame_time_series_type<Quotes>(TimeSeriesGuarantee::ordinary));
     const auto &field_layout = layout.fields[1];
@@ -1410,8 +1410,8 @@ void test_shared_rows_and_column_changes() {
 }
 
 void test_failed_multicolumn_insert_cleanup() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto time = MIN_DT + EvaluationTime::duration{1};
     auto failures = std::size_t{};
@@ -1442,8 +1442,8 @@ void test_failed_multicolumn_insert_cleanup() {
 }
 
 void test_recycled_rows_reuse_physical_slots() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1526,8 +1526,8 @@ void test_recycled_rows_reuse_physical_slots() {
 }
 
 void test_failed_value_insert_rolls_back_reused_slot() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto first_time = MIN_DT + EvaluationTime::duration{1};
     auto failures = std::size_t{};
@@ -1564,8 +1564,8 @@ void test_failed_value_insert_rolls_back_reused_slot() {
 }
 
 void test_frame_scalar_views_and_snapshots() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto columns = Quotes<Column>{.size = Column<i64>{{i64{5}, i64{6}}},
                                   .bid = Column<double>{{10.5, 11.5}},
@@ -1656,10 +1656,10 @@ void test_frame_scalar_views_and_snapshots() {
     snapshot_runtime.construct_from_input(std::addressof(retained_copy), retained_source, snapshot_allocator);
     require(retained_owner != nullptr && retained_copy.owner == retained_owner,
             "frame snapshot construction did not retain its existing owner");
-    auto *assignment_pool = bg::details::ScalarAllocationPool::create(snapshot_allocator);
+    auto *assignment_pool = hg::details::ScalarAllocationPool::create(snapshot_allocator);
     auto release_assignment_pool = util::scope_exit{[&]() noexcept { assignment_pool->release(); }};
     {
-        const auto allocation_context = bg::details::ScalarAllocationContext{
+        const auto allocation_context = hg::details::ScalarAllocationContext{
             snapshot_allocator, *assignment_pool, std::addressof(retained_copy), 0};
         snapshot_runtime.assign_from_input(std::addressof(retained_copy), retained_source);
     }
@@ -1669,10 +1669,10 @@ void test_frame_scalar_views_and_snapshots() {
 
     FailingResource pooled_memory;
     auto pooled_allocator = allocator{pooled_memory};
-    auto *allocation_pool = bg::details::ScalarAllocationPool::create(pooled_allocator);
+    auto *allocation_pool = hg::details::ScalarAllocationPool::create(pooled_allocator);
     auto release_allocation_pool = util::scope_exit{[&]() noexcept { allocation_pool->release(); }};
     {
-        const auto allocation_context = bg::details::ScalarAllocationContext{
+        const auto allocation_context = hg::details::ScalarAllocationContext{
             pooled_allocator, *allocation_pool, std::addressof(native), 0};
         auto pool_allocator = allocation_pool->memory();
         auto context_allocator_snapshot = ScalarValue<Frame<Quotes>>{native_scalar, pooled_allocator};
@@ -1688,7 +1688,7 @@ void test_frame_scalar_views_and_snapshots() {
     require(cpp_scalar_type<Frame<Quotes>>().accepts(cpp_scalar_type<Frame<EmptySchema>>()) == false,
             "frame semantic types with distinct schemas matched");
 
-    const auto &generic_frame_type = frame_type(frame_schema_type<bg::SCHEMA>());
+    const auto &generic_frame_type = frame_type(frame_schema_type<hg::SCHEMA>());
     const auto &concrete_frame_type = frame_type(frame_schema_type<Quotes>());
     auto generic_frame_name = std::string{};
     generic_frame_type.format_name(generic_frame_name);
@@ -1702,17 +1702,17 @@ void test_frame_scalar_views_and_snapshots() {
             "generic frame schema did not resolve to the captured schema");
 
     const auto anonymous_fields = std::array{SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>()}};
-    const auto &anonymous_schema = bg::anonymous_schema(anonymous_fields);
-    require(&anonymous_schema == &bg::anonymous_schema(anonymous_fields),
+    const auto &anonymous_schema = hg::anonymous_schema(anonymous_fields);
+    require(&anonymous_schema == &hg::anonymous_schema(anonymous_fields),
             "equivalent anonymous schema descriptors were not canonical");
-    require(&frame_type(anonymous_schema) == &frame_type(bg::anonymous_schema(anonymous_fields)),
+    require(&frame_type(anonymous_schema) == &frame_type(hg::anonymous_schema(anonymous_fields)),
             "frame types over canonical anonymous schemas were not canonical");
     require(&frame_series_type(anonymous_schema, TimeSeriesGuarantee::ordinary) ==
-                &frame_series_type(bg::anonymous_schema(anonymous_fields), TimeSeriesGuarantee::ordinary),
+                &frame_series_type(hg::anonymous_schema(anonymous_fields), TimeSeriesGuarantee::ordinary),
             "frame series types over canonical anonymous schemas were not canonical");
 
     const auto optional_fields = std::array{SchemaField{util::symbol{"optional"}, &cpp_scalar_type<i64>(), true}};
-    const auto &optional_schema = bg::anonymous_schema(optional_fields);
+    const auto &optional_schema = hg::anonymous_schema(optional_fields);
     auto optional_frame_rejected = false;
     auto optional_series_rejected = false;
     try {
@@ -1731,7 +1731,7 @@ void test_frame_scalar_views_and_snapshots() {
     using OPTIONAL_CELL = ScalarVariable<"FRAME_OPTIONAL_CELL">;
     const auto optional_unresolved_fields = std::array{SchemaField{
         util::symbol{"optional_unresolved"}, &cpp_scalar_type<OPTIONAL_CELL>(), true}};
-    const auto &optional_unresolved_schema = bg::anonymous_schema(optional_unresolved_fields);
+    const auto &optional_unresolved_schema = hg::anonymous_schema(optional_unresolved_fields);
     auto optional_unresolved_frame_rejected = false;
     auto optional_unresolved_series_rejected = false;
     try {
@@ -1749,7 +1749,7 @@ void test_frame_scalar_views_and_snapshots() {
 
     const auto non_scalar_fields = std::array{SchemaField{
         util::symbol{"nested"}, &column_time_series_type<i64>(TimeSeriesGuarantee::ordinary), false}};
-    const auto &non_scalar_schema = bg::anonymous_schema(non_scalar_fields);
+    const auto &non_scalar_schema = hg::anonymous_schema(non_scalar_fields);
     auto non_scalar_frame_rejected = false;
     auto non_scalar_series_rejected = false;
     try {
@@ -1765,7 +1765,7 @@ void test_frame_scalar_views_and_snapshots() {
     require(non_scalar_frame_rejected && non_scalar_series_rejected,
             "frame scalar or time series accepted a non-scalar field");
 
-    const auto &generic_series_type = frame_series_type(frame_schema_type<bg::SCHEMA>(),
+    const auto &generic_series_type = frame_series_type(frame_schema_type<hg::SCHEMA>(),
                                                         TimeSeriesGuarantee::ordinary);
     auto generic_series_name = std::string{};
     generic_series_type.format_name(generic_series_name);
@@ -1794,8 +1794,8 @@ void test_frame_scalar_views_and_snapshots() {
         std::array{SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>(), false}};
     const auto double_fields =
         std::array{SchemaField{util::symbol{"value"}, &cpp_scalar_type<double>(), false}};
-    const auto &integer_schema = bg::anonymous_schema(integer_fields);
-    const auto &double_schema = bg::anonymous_schema(double_fields);
+    const auto &integer_schema = hg::anonymous_schema(integer_fields);
+    const auto &double_schema = hg::anonymous_schema(double_fields);
     const auto &integer_series = frame_series_type(integer_schema, TimeSeriesGuarantee::ordinary);
     const auto &double_series = frame_series_type(double_schema, TimeSeriesGuarantee::ordinary);
     auto mismatched_cell_type_map = TypeMap{};
@@ -1856,8 +1856,8 @@ void test_frame_scalar_views_and_snapshots() {
             "unknown frame schema arity was confused with an empty schema");
 
     constexpr auto FRAME_GUARANTEE = guarantee_variable<"FRAME_SCHEMA_GUARANTEE">;
-    const auto guarantee_parameter = bg::details::guarantee_parameter<FRAME_GUARANTEE>();
-    const auto &schema_and_guarantee_type = frame_series_type(frame_schema_type<bg::SCHEMA>(), guarantee_parameter);
+    const auto guarantee_parameter = hg::details::guarantee_parameter<FRAME_GUARANTEE>();
+    const auto &schema_and_guarantee_type = frame_series_type(frame_schema_type<hg::SCHEMA>(), guarantee_parameter);
     auto guarantee_type_map = TypeMap{};
     require(schema_and_guarantee_type.match(series_type, guarantee_type_map),
             "frame series schema and guarantee variables did not match");
@@ -1867,7 +1867,7 @@ void test_frame_scalar_views_and_snapshots() {
     static const auto minimum_deduplicated =
         GuaranteeVariable{util::symbol{"FRAME_SCHEMA_MIN_DEDUPLICATED"}, TimeSeriesGuarantee::deduplicated};
     const auto &constrained_series_type = frame_series_type(
-        frame_schema_type<bg::SCHEMA>(), GuaranteeParameter{minimum_deduplicated});
+        frame_schema_type<hg::SCHEMA>(), GuaranteeParameter{minimum_deduplicated});
     const auto &schema_variable = dynamic_cast<const Variable &>(constrained_series_type.schema_type());
     auto rollback_type_map = TypeMap{};
     require(!constrained_series_type.match(series_type, rollback_type_map),
@@ -1879,7 +1879,7 @@ void test_frame_scalar_views_and_snapshots() {
 }
 
 void test_runtime_frame_value_factory() {
-    using GenericFrame = Frame<bg::SCHEMA>;
+    using GenericFrame = Frame<hg::SCHEMA>;
     using GenericValue = ScalarValue<GenericFrame>;
 
     const auto fields = std::array{SchemaField{util::symbol{"value"}, &cpp_scalar_type<i64>()}};
@@ -1922,7 +1922,7 @@ void test_runtime_frame_value_factory() {
                 !mixed_view.column("price").cell<double>(0) && mixed_view.column("price").cell<double>(1) == 2.5,
             "runtime-schema frame factory changed mixed numeric values or nulls");
 
-    const auto rejects_columns = [&](const bg::Schema &target_schema, std::size_t row_count,
+    const auto rejects_columns = [&](const hg::Schema &target_schema, std::size_t row_count,
                                      std::span<const ColumnView<>> values) {
         try {
             static_cast<void>(make_frame_value(memory, target_schema, row_count, values));
@@ -1973,13 +1973,13 @@ void test_runtime_frame_value_factory() {
 }
 
 void test_scalar_variable_frame_input() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto &generic_schema = frame_schema_type<GenericQuote>();
     auto type_map = TypeMap{};
-    type_map.set(bg::details::scalar_variable_instance<SCALAR>(), &cpp_scalar_type<double>());
-    const auto &schema = dynamic_cast<const bg::Schema &>(generic_schema.resolve(type_map));
+    type_map.set(hg::details::scalar_variable_instance<SCALAR>(), &cpp_scalar_type<double>());
+    const auto &schema = dynamic_cast<const hg::Schema &>(generic_schema.resolve(type_map));
     auto column = Column<double>{{12.5}};
     const auto columns = std::array{ColumnView<>{column.view()}};
     auto memory = allocator{};
@@ -1987,7 +1987,7 @@ void test_scalar_variable_frame_input() {
     auto erased_source = ScalarValue<>{source};
     auto ticks = std::vector<std::optional<ScalarValue<>>>{};
     ticks.emplace_back(std::in_place, erased_source.view());
-    const auto inputs = std::array{bg::GraphRunInput{erased_source.runtime_type(), ticks}};
+    const auto inputs = std::array{hg::GraphRunInput{erased_source.runtime_type(), ticks}};
 
     const auto read = node([](In<TS<Frame<GenericQuote>>> input, Out<TS<double>> output) {
         const auto value = input.value_view().value();
@@ -2001,20 +2001,20 @@ void test_scalar_variable_frame_input() {
         }
         output.set(bid.cell(0).value());
     });
-    using namespace bg::literals;
-    const auto graph = bg::graph("name"_n = "generic_quote_input", [&](wp<TS<Frame<SCHEMA>>> input) {
+    using namespace hg::literals;
+    const auto graph = hg::graph("name"_n = "generic_quote_input", [&](wp<TS<Frame<SCHEMA>>> input) {
         return read(input);
     });
-    const auto result = bg::run_graph(graph, std::span<const bg::GraphRunInput>{inputs});
+    const auto result = hg::run_graph(graph, std::span<const hg::GraphRunInput>{inputs});
 
     require(result.equals<double>({12.5}),
             "generic frame input did not read a scalar-variable field by name");
 }
 
 void test_inherited_frame_fields_and_views() {
-    using namespace bg;
-    using namespace bg::frame;
-    using Reflection = bg::details::hierarchical_scalar_schema_reflection<InheritedFrame>;
+    using namespace hg;
+    using namespace hg::frame;
+    using Reflection = hg::details::hierarchical_scalar_schema_reflection<InheritedFrame>;
 
     static_assert(Reflection::field_count == 3);
     static_assert(Reflection::field_name<0>() == "size");
@@ -2069,9 +2069,9 @@ void test_inherited_frame_fields_and_views() {
     const auto base_annotation = Scalar<Frame<InheritedFrameBase>>::from(derived_snapshot_view);
     auto retained_base_snapshot = ScalarValue<Frame<InheritedFrameBase>>{base_annotation, memory};
     const auto *derived_snapshot_owner =
-        frame::details::frame_snapshot_owner(bg::details::scalar_data(derived_snapshot));
+        frame::details::frame_snapshot_owner(hg::details::scalar_data(derived_snapshot));
     const auto *base_snapshot_owner =
-        frame::details::frame_snapshot_owner(bg::details::scalar_data(retained_base_snapshot));
+        frame::details::frame_snapshot_owner(hg::details::scalar_data(retained_base_snapshot));
     require(derived_snapshot_owner != nullptr && base_snapshot_owner == derived_snapshot_owner &&
                 retained_base_snapshot.view().value().schema().field_count() == 3,
             "base annotation did not retain the derived snapshot owner and schema");
@@ -2138,8 +2138,8 @@ void test_inherited_frame_fields_and_views() {
 }
 
 void test_scalar_frame_time_series_graph() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     using FrameValue = Frame<Quotes>;
     using Columns = Quotes<Column>;
@@ -2147,14 +2147,14 @@ void test_scalar_frame_time_series_graph() {
                                           .ask = Column<double>{{std::nullopt}}}};
     const auto second = FrameValue{Columns{.size = Column<i64>{{i64{6}}}, .bid = Column<double>{{11.5}},
                                            .ask = Column<double>{{12.5}}}};
-    const auto copy = bg::node([](In<TS<FrameValue>> input, Out<TS<FrameValue>> output) {
+    const auto copy = hg::node([](In<TS<FrameValue>> input, Out<TS<FrameValue>> output) {
         const auto value = input.value();
         const auto scalar = Scalar<FrameValue>::from(frame::details::frame_view_scalar_runtime_type<Quotes>(),
                                                       std::addressof(value));
         output.set_value(scalar);
     });
     const auto graph = [&](wp<TS<FrameValue>> input) { return copy(input); };
-    const auto result = bg::run_graph(graph, std::vector{first, second});
+    const auto result = hg::run_graph(graph, std::vector{first, second});
     require(result.size() == 2 && result[0] && result[1], "TS<Frame> graph lost scalar frame values");
     require(result[0]->view().value().columns().bid.cell(0) == 10.5 &&
                 !result[0]->view().value().columns().ask.cell(0) &&
@@ -2761,8 +2761,8 @@ struct wide_column_writer {
 };
 
 void test_double_column_addition_updates_and_nulls() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -2795,7 +2795,7 @@ void test_double_column_addition_updates_and_nulls() {
 
     const auto commands = std::array<i64, 10>{0, 1, 2, 10, 3, 6, 7, 8, 9, 1};
     const auto ticks = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "double column addition observer missed a cycle");
     require(observations[0].valid && observations[0].rows.empty(),
@@ -2832,8 +2832,8 @@ void test_double_column_addition_updates_and_nulls() {
 }
 
 void test_double_column_addition_crosses_scratch_batch_boundaries() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::vector<std::optional<double>> values;
@@ -2856,7 +2856,7 @@ void test_double_column_addition_crosses_scratch_batch_boundaries() {
 
     const auto commands = std::array<i64, 2>{0, 1};
     const auto ticks = std::array<i64, 2>{0, 1};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "wide column addition observer missed a cycle");
     require(observations[0].values.size() == 257 && observations[0].values[125] == 2751.0 &&
@@ -2870,8 +2870,8 @@ void test_double_column_addition_crosses_scratch_batch_boundaries() {
 }
 
 void test_double_column_subtraction_order_nulls_and_updates() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::array<std::vector<std::optional<double>>, 4> values;
@@ -2904,7 +2904,7 @@ void test_double_column_subtraction_order_nulls_and_updates() {
     const auto commands = std::array<std::optional<i64>, 4>{0, 1, std::nullopt, std::nullopt};
     const auto parameters = std::array<std::optional<double>, 4>{2.0, std::nullopt, std::nullopt, 3.0};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    static_cast<void>(bg::run_graph(graph, commands, parameters, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, parameters, ticks));
 
     require(observations.size() == commands.size(), "column subtraction observer missed a cycle");
     const auto &initial = observations[0].values;
@@ -2935,8 +2935,8 @@ void test_double_column_subtraction_order_nulls_and_updates() {
 }
 
 void test_double_column_addition_accepts_projected_columns_with_shared_selection() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::vector<row_id_t> rows;
@@ -2965,7 +2965,7 @@ void test_double_column_addition_accepts_projected_columns_with_shared_selection
 
     const auto commands = std::array<i64, 4>{0, 1, 2, 3};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size() && observations[1].rows == std::vector<row_id_t>{0} &&
                 observations[1].values == std::vector<std::optional<double>>{41.0} &&
@@ -2977,8 +2977,8 @@ void test_double_column_addition_accepts_projected_columns_with_shared_selection
 }
 
 void test_double_column_addition_rejects_different_domains_and_membership() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto observe = node([](In<TSC<double>>, In<TS<i64>> tick, Out<TS<i64>> output) { output.set(*tick); });
     const auto first_writer = node<filter_writer>();
@@ -2991,7 +2991,7 @@ void test_double_column_addition_rejects_different_domains_and_membership() {
 
     auto domain_rejected = false;
     try {
-        static_cast<void>(bg::run_graph(domain_graph, std::array<i64, 1>{1}, std::array<i64, 1>{1}));
+        static_cast<void>(hg::run_graph(domain_graph, std::array<i64, 1>{1}, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         domain_rejected = true;
     }
@@ -3005,7 +3005,7 @@ void test_double_column_addition_rejects_different_domains_and_membership() {
     };
     auto membership_rejected = false;
     try {
-        static_cast<void>(bg::run_graph(membership_graph, std::array<i64, 1>{1}, std::array<i64, 1>{1}));
+        static_cast<void>(hg::run_graph(membership_graph, std::array<i64, 1>{1}, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         membership_rejected = true;
     }
@@ -3020,7 +3020,7 @@ void test_double_column_addition_rejects_different_domains_and_membership() {
     };
     auto distinct_filters_rejected = false;
     try {
-        static_cast<void>(bg::run_graph(distinct_filters_graph, std::array<i64, 1>{1},
+        static_cast<void>(hg::run_graph(distinct_filters_graph, std::array<i64, 1>{1},
                                               std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         distinct_filters_rejected = true;
@@ -3030,8 +3030,8 @@ void test_double_column_addition_rejects_different_domains_and_membership() {
 }
 
 void test_double_column_addition_rejects_mixed_integer_columns() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto rejected = false;
     try {
@@ -3046,8 +3046,8 @@ void test_double_column_addition_rejects_mixed_integer_columns() {
     require(rejected, "column addition promoted a mixed i64 and double operand pair");
 }
 
-void test_double_column_addition_leaves_scalar_addition_to_bg() {
-    using namespace bg;
+void test_double_column_addition_leaves_scalar_addition_to_hg() {
+    using namespace hg;
 
     auto wiring = GraphWiring{};
     auto context = WiringContext{wiring};
@@ -3060,7 +3060,7 @@ void test_double_column_addition_leaves_scalar_addition_to_bg() {
 }
 
 void test_double_column_addition_broadcasts_owned_scalar_values() {
-    using namespace bg;
+    using namespace hg;
 
     struct observation {
         std::vector<std::optional<double>> column_plus_scalar;
@@ -3088,7 +3088,7 @@ void test_double_column_addition_broadcasts_owned_scalar_values() {
 
     const auto commands = std::array<i64, 3>{1, 2, 10};
     const auto ticks = std::array<i64, 3>{0, 1, 2};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "scalar column addition observer missed a cycle");
     require(observations[0].column_plus_scalar == std::vector<std::optional<double>>{12.5} &&
@@ -3107,7 +3107,7 @@ void test_double_column_addition_broadcasts_owned_scalar_values() {
 }
 
 void test_double_column_addition_parameter_updates_recompute_rows() {
-    using namespace bg;
+    using namespace hg;
 
     struct observation {
         std::vector<std::optional<double>> values;
@@ -3130,7 +3130,7 @@ void test_double_column_addition_parameter_updates_recompute_rows() {
     const auto commands = std::array<std::optional<i64>, 5>{1, 2, std::nullopt, 10, std::nullopt};
     const auto parameters = std::array<std::optional<double>, 5>{2.0, std::nullopt, 5.0, 7.0, std::nullopt};
     const auto ticks = std::array<i64, 5>{0, 1, 2, 3, 4};
-    static_cast<void>(bg::run_graph(graph, commands, parameters, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, parameters, ticks));
 
     require(observations.size() == commands.size(), "parameterized column addition observer missed a cycle");
     require(observations[0].values == std::vector<std::optional<double>>{12.5} &&
@@ -3165,7 +3165,7 @@ struct invalidating_double_source {
 };
 
 void test_double_column_addition_parameter_invalidation_and_revalidation() {
-    using namespace bg;
+    using namespace hg;
 
     struct observation {
         bool valid{};
@@ -3196,7 +3196,7 @@ void test_double_column_addition_parameter_invalidation_and_revalidation() {
     const auto values = std::array<double, 4>{2.0, 3.0, 3.0, 4.0};
     const auto invalidations = std::array<bool, 4>{false, true, false, false};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    static_cast<void>(bg::run_graph(graph, commands, values, invalidations, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, values, invalidations, ticks));
 
     require(observations.size() == commands.size(), "parameter validity observer missed a cycle");
     require(observations[0].valid && observations[0].values == std::vector<std::optional<double>>{22.5},
@@ -3211,7 +3211,7 @@ void test_double_column_addition_parameter_invalidation_and_revalidation() {
 }
 
 void test_double_column_addition_deduplicates_repeated_parameter_inputs() {
-    using namespace bg;
+    using namespace hg;
 
     const auto consume = node([](In<TSC<double>>) {});
     const auto frame_source = node([](Out<TSF<Quotes>> output) {
@@ -3243,8 +3243,8 @@ void test_double_column_addition_deduplicates_repeated_parameter_inputs() {
 }
 
 void test_bound_column_expression_owns_captures_and_binds_parameters() {
-    using namespace bg;
-    using namespace bg::literals;
+    using namespace hg;
+    using namespace hg::literals;
 
     struct observation {
         std::vector<std::optional<double>> named_parameter;
@@ -3308,7 +3308,7 @@ void test_bound_column_expression_owns_captures_and_binds_parameters() {
     const auto commands = std::array<std::optional<i64>, 3>{1, 2, std::nullopt};
     const auto parameters = std::array<std::optional<double>, 3>{2.0, std::nullopt, 5.0};
     const auto ticks = std::array<i64, 3>{0, 1, 2};
-    static_cast<void>(bg::run_graph(graph, commands, parameters, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, parameters, ticks));
 
     require(observations.size() == commands.size(), "bound column expression observer missed a cycle");
     require(observations[0].named_parameter == std::vector<std::optional<double>>{12.5} &&
@@ -3370,7 +3370,7 @@ void add_double_parameter(std::span<const row_id_t> ids, const ColumnOperandBatc
 }
 
 void test_mixed_column_expression_fuses_and_collects_parameters() {
-    using namespace bg;
+    using namespace hg;
 
     register_column_block_function<double, i64, i64>();
     register_column_block_function<double, double, double>();
@@ -3452,7 +3452,7 @@ void test_mixed_column_expression_fuses_and_collects_parameters() {
     const auto integer_parameters = std::array<i64, 1>{7};
     const auto double_parameters = std::array{0.5};
     const auto ticks = std::array<i64, 1>{0};
-    static_cast<void>(bg::run_graph(graph, commands, integer_parameters, double_parameters, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, integer_parameters, double_parameters, ticks));
 
     require(observations == std::vector<std::vector<std::optional<double>>>{{23.0}} &&
                 mixed_i64_parameter_calls == 1 && mixed_double_parameter_calls == 1,
@@ -3488,9 +3488,9 @@ struct double_column_materializer {
 };
 
 void test_double_column_addition_reuses_expression_and_sparse_rows() {
-    using namespace bg;
-    using namespace bg::literals;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::literals;
+    using namespace hg::frame;
 
     using Expression = TSB<BinaryColumnExpression<TSC<double>, TSC<double>, double>::template schema>;
 
@@ -3537,7 +3537,7 @@ void test_double_column_addition_reuses_expression_and_sparse_rows() {
     double_column_materializer_rows = 0;
     const auto commands = std::array<i64, 4>{0, 1, 2, 10};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "column expression observer missed a cycle");
     require(observations[0].callback_calls == 0 && observations[0].callback_rows == 0,
@@ -3554,9 +3554,9 @@ void test_double_column_addition_reuses_expression_and_sparse_rows() {
 }
 
 void test_double_column_addition_reuses_forced_materialisation_form() {
-    using namespace bg;
-    using namespace bg::literals;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::literals;
+    using namespace hg::frame;
 
     using Expression = TSB<BinaryColumnExpression<TSC<double>, TSC<double>, double>::template schema>;
 
@@ -3614,7 +3614,7 @@ void test_double_column_addition_reuses_forced_materialisation_form() {
     double_column_materializer_rows = 0;
     const auto commands = std::array<i64, 4>{0, 1, 2, 10};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "forced materialisation observer missed a cycle");
     require(observations[0].values.empty() && observations[0].callback_calls == 0 &&
@@ -3635,9 +3635,9 @@ void test_double_column_addition_reuses_forced_materialisation_form() {
 }
 
 void test_double_column_arithmetic_fusion_and_forced_materialization() {
-    using namespace bg;
-    using namespace bg::literals;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::literals;
+    using namespace hg::frame;
 
     const auto source = node([](Out<TSF<Quotes>>) {});
     const auto consume = node([](In<TSC<double>>) {});
@@ -3703,8 +3703,8 @@ void test_double_column_arithmetic_fusion_and_forced_materialization() {
 }
 
 void test_double_column_addition_preserves_null_cells() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::vector<row_id_t> rows;
@@ -3728,7 +3728,7 @@ void test_double_column_addition_preserves_null_cells() {
 
     const auto commands = std::array<i64, 3>{0, 12, 13};
     const auto ticks = std::array<i64, 3>{0, 1, 2};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size(), "nullable column addition observer missed a cycle");
     require(observations[1].rows == std::vector<row_id_t>{0} &&
@@ -3925,8 +3925,8 @@ struct frame_view_runtime_capture {
 };
 
 void test_compiled_graph_runtime_storage_is_independent() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto command = node<frame_command_source>();
     const auto trigger = node<frame_trigger_source>();
@@ -3988,8 +3988,8 @@ void test_compiled_graph_runtime_storage_is_independent() {
 }
 
 void test_tsf_graph_behavior() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto observations = std::vector<frame_observation>{};
     auto column_observations = std::vector<column_observation>{};
@@ -4083,7 +4083,7 @@ void test_tsf_graph_behavior() {
     };
     const auto commands = std::array<i64, 9>{0, 1, 2, 3, 4, 5, 6, 7, 8};
     const auto ticks = std::array<i64, 9>{0, 1, 2, 3, 4, 5, 6, 7, 8};
-    const auto snapshots = bg::run_graph(graph, commands, ticks);
+    const auto snapshots = hg::run_graph(graph, commands, ticks);
 
     require(observations.size() == commands.size(), "TSF observer did not run for every cycle");
     if (column_observations.size() != commands.size())
@@ -4201,8 +4201,8 @@ struct frame_literal_observation {
 };
 
 void test_tsf_literal_updates() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto observations = std::vector<frame_literal_observation>{};
     const auto observe = node([&](In<TSF<KeyedQuotes>, optional> input, In<TS<i64>> tick,
@@ -4225,16 +4225,16 @@ void test_tsf_literal_updates() {
         output.set(*tick);
     });
     const auto graph = [&](wp<TSF<KeyedQuotes>> input, wp<TS<i64>> tick) { return observe(input, tick); };
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         graph,
-        bg::input(TSF<KeyedQuotes>::type(),
+        hg::input(TSF<KeyedQuotes>::type(),
                        {literal::TimeSeriesLiteral{}, {{{"id", i64{1}}, {"price", 10.0}}},
                         {{{"id", i64{1}}, {"price", 11.0}}}, {{{"id", i64{2}}}},
                         {{{"id", i64{1}}}}, literal::TimeSeriesLiteral{},
                         {literal::REMOVE({{"id", i64{1}}}), {{"id", i64{1}}, {"price", 12.0}}},
                         {literal::REMOVE({{"id", i64{99}}})}, literal::SKIP, literal::INVALID,
                         literal::TimeSeriesLiteral{}}),
-        bg::input(TS<i64>::type(),
+        hg::input(TS<i64>::type(),
                        {i64{0}, i64{1}, i64{2}, i64{3}, i64{4}, i64{5}, i64{6}, i64{7}, i64{8}, i64{9},
                         i64{10}}));
 
@@ -4279,8 +4279,8 @@ void test_tsf_literal_updates() {
 }
 
 void test_tsf_literal_uses_actual_derived_schema() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto observed_prices = std::vector<std::optional<double>>{};
     auto observed_bids = std::vector<std::optional<double>>{};
@@ -4299,12 +4299,12 @@ void test_tsf_literal_uses_actual_derived_schema() {
     });
     const auto graph = [&](wp<TSF<KeyedQuotesBase>> input, wp<TS<i64>> tick) { return observe(input, tick); };
     const auto &derived_runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         graph,
-        bg::input(derived_runtime.type(),
+        hg::input(derived_runtime.type(),
                        {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}},
                         {{{"id", i64{5}}, {"price", 11.0}}}}),
-        bg::input(TS<i64>::type(), {i64{0}, i64{1}, i64{2}}));
+        hg::input(TS<i64>::type(), {i64{0}, i64{1}, i64{2}}));
 
     require(result.size() == 3 && observed_prices == std::vector<std::optional<double>>{10.0, 11.0} &&
                 observed_bids == std::vector<std::optional<double>>{20.0, 20.0},
@@ -4312,8 +4312,8 @@ void test_tsf_literal_uses_actual_derived_schema() {
 }
 
 void test_tsf_literal_unkeyed_append_and_typed_output() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto sizes = std::vector<std::size_t>{};
     auto row_ids = std::vector<std::vector<row_id_t>>{};
@@ -4326,8 +4326,8 @@ void test_tsf_literal_unkeyed_append_and_typed_output() {
     });
     const auto graph = [&](wp<TSF<Quotes>> input) { return observe(input); };
     const auto &runtime = frame_time_series_runtime_type<Quotes>(TSF<Quotes>::type());
-    const auto result = bg::run_graph(
-        graph, bg::input(runtime.type(), {{{{"bid", 10.5}}}, {{{"ask", 12.5}}}}));
+    const auto result = hg::run_graph(
+        graph, hg::input(runtime.type(), {{{{"bid", 10.5}}}, {{{"ask", 12.5}}}}));
     require(result.size() == 2 && sizes == std::vector<std::size_t>{1, 2} &&
                 row_ids == std::vector<std::vector<row_id_t>>{{0}, {0, 1}},
             "unkeyed TSF literal did not append rows with consecutive row ids");
@@ -4344,14 +4344,14 @@ void test_tsf_literal_unkeyed_append_and_typed_output() {
         output.set(static_cast<i64>(input.size()));
     });
     const auto typed_graph = [&](wp<TS<i64>> tick) { return sink(write(tick)); };
-    const auto typed_result = bg::run_graph(typed_graph, {0, 1});
+    const auto typed_result = hg::run_graph(typed_graph, {0, 1});
     require(typed_result.size() == 2 && observed_prices == std::vector<std::optional<double>>{15.5},
             "typed TSF output apply did not apply a frame literal");
 }
 
 void test_tsf_literal_anonymous_composite_key() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto fields = std::array{
         SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
@@ -4372,9 +4372,9 @@ void test_tsf_literal_anonymous_composite_key() {
         output.set(static_cast<i64>(input.size()));
     });
     const auto graph = [&](wp<TSF<SCHEMA>> input) { return observe(input); };
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         graph,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"sequence", i64{2}}, {"value", 10.0}}},
                         {{{"id", i64{1}}, {"sequence", i64{2}}, {"value", 11.0}}},
@@ -4391,8 +4391,8 @@ void test_tsf_literal_anonymous_composite_key() {
 }
 
 void test_tsf_literal_rejections() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto observe = node([](In<TSF<KeyedQuotes>, optional> input, Out<TS<i64>> output) {
         output.set(static_cast<i64>(input.size()));
@@ -4401,7 +4401,7 @@ void test_tsf_literal_rejections() {
     const auto rejects = [&](const TimeSeriesRuntimeType &runtime,
                              std::initializer_list<literal::TimeSeriesLiteral> ticks) {
         try {
-            static_cast<void>(bg::run_graph(graph, bg::input(runtime.type(), ticks)));
+            static_cast<void>(hg::run_graph(graph, hg::input(runtime.type(), ticks)));
         } catch (const std::invalid_argument &) {
             return true;
         }
@@ -4422,9 +4422,9 @@ void test_tsf_literal_rejections() {
     const auto &unkeyed_runtime = frame_time_series_runtime_type<Quotes>(TSF<Quotes>::type());
     auto unkeyed_remove_rejected = false;
     try {
-        static_cast<void>(bg::run_graph(
+        static_cast<void>(hg::run_graph(
             unkeyed_graph,
-            bg::input(unkeyed_runtime.type(), {{literal::REMOVE({{"id", i64{1}}})}})));
+            hg::input(unkeyed_runtime.type(), {{literal::REMOVE({{"id", i64{1}}})}})));
     } catch (const std::invalid_argument &) {
         unkeyed_remove_rejected = true;
     }
@@ -4432,14 +4432,14 @@ void test_tsf_literal_rejections() {
 }
 
 void test_keyed_tsf_delta_capture() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<CompositeKeyRows>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}},
                          {{"id", i64{2}}, {"sequence", i64{1}}, {"price", 20.0}, {"value", i64{5}}}},
@@ -4490,16 +4490,16 @@ void test_keyed_tsf_delta_capture() {
 }
 
 void test_text_keyed_tsf_delta_capture() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     constexpr auto embedded_nul = std::string_view{"key\0tail", 8};
     constexpr auto embedded_value = std::string_view{"text\0value", 10};
     const auto identity = [](wp<TSF<TextKeyedRows>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<TextKeyedRows>(TSF<TextKeyedRows>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}}, {"description", embedded_value}}},
                         {{{"name", embedded_nul}, {"venue", symbol{"XNAS"}},
@@ -4519,14 +4519,14 @@ void test_text_keyed_tsf_delta_capture() {
 }
 
 void test_frame_view_tick_capture() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<tsf_writer>();
     const auto projected_graph = [&](wp<TS<i64>> command) {
         return project<BidOnly, "bid">(write(command));
     };
-    const auto projected = bg::run_graph(projected_graph, {0, 1, 2, 3, 5, 6, 7});
+    const auto projected = hg::run_graph(projected_graph, {0, 1, 2, 3, 5, 6, 7});
     require(projected.equals({
                 {},
                 {{"first", {{"price", 10.5}}}},
@@ -4541,14 +4541,14 @@ void test_frame_view_tick_capture() {
     const auto nullable_projection = [&](wp<TS<i64>> command) {
         return project<BidOnly, "ask">(write(command));
     };
-    const auto nullable = bg::run_graph(nullable_projection, {1, 3, 5});
+    const auto nullable = hg::run_graph(nullable_projection, {1, 3, 5});
     require(nullable.equals({{{"first", {{"price", NULL_VALUE}}}},
                              {{"first", {{"price", 12.5}}}},
                              {{"first", literal::REMOVED}}}),
             "TSF projection view capture did not preserve null and valid selected cells");
 
     const auto column_graph = [&](wp<TS<i64>> command) { return select_column<"bid">(write(command)); };
-    const auto column = bg::run_graph(column_graph, {0, 1, 3, 5, 6, 7});
+    const auto column = hg::run_graph(column_graph, {0, 1, 3, 5, 6, 7});
     require(column.equals({
                 {},
                 {{"first", 10.5}},
@@ -4563,9 +4563,9 @@ void test_frame_view_tick_capture() {
     const auto keyed_graph = [](wp<TSF<KeyedQuotes>> input) {
         return project<KeyedQuotes, "id", "price">(input);
     };
-    const auto keyed = bg::run_graph(
+    const auto keyed = hg::run_graph(
         keyed_graph,
-        bg::input(keyed_runtime.type(),
+        hg::input(keyed_runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{7}}, {"price", 10.0}}},
                         {{{"id", i64{7}}, {"price", 11.0}}},
@@ -4578,15 +4578,15 @@ void test_frame_view_tick_capture() {
 }
 
 void test_computed_tsc_tick_capture() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<filter_writer>();
     const auto graph = [&](wp<TS<i64>> command) {
         const auto frame = write(command);
         return operators::add(select_column<"bid">(frame), select_column<"ask">(frame));
     };
-    const auto result = bg::run_graph(graph, {0, 1, 3, 6, 7, 8, 9});
+    const auto result = hg::run_graph(graph, {0, 1, 3, 6, 7, 8, 9});
     require(result.equals({
                 {},
                 {{"first", 20.5}},
@@ -4603,19 +4603,19 @@ void test_computed_tsc_tick_capture() {
         const auto frame = nullable_write(command);
         return operators::add(select_column<"bid">(frame), select_column<"ask">(frame));
     };
-    const auto nullable = bg::run_graph(nullable_graph, {1, 3, 5});
+    const auto nullable = hg::run_graph(nullable_graph, {1, 3, 5});
     require(nullable.equals({{{"first", NULL_VALUE}}, {{"first", 23.0}}, {{"first", literal::REMOVED}}}),
             "computed TSC capture did not preserve null and valid results");
 }
 
 void test_computed_tsf_tick_capture() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<computed_frame_writer>();
     const auto compute = node<computed_quote_node>();
     const auto graph = [&](wp<TS<i64>> command) { return compute(write(command), command); };
-    const auto result = bg::run_graph(graph, {0, 1, 2, 6, 7, 8, 9, 10});
+    const auto result = hg::run_graph(graph, {0, 1, 2, 6, 7, 8, 9, 10});
     require(result.equals({
                 {},
                 {{"first", {{"mid", 11.0}, {"ask", 12.0}, {"bid", 10.0}}}},
@@ -4633,15 +4633,15 @@ void test_computed_tsf_tick_capture() {
     const auto nullable_graph = [&](wp<TS<i64>> command) {
         return nullable_compute(nullable_write(command), command);
     };
-    const auto nullable = bg::run_graph(nullable_graph, {12, 13});
+    const auto nullable = hg::run_graph(nullable_graph, {12, 13});
     require(nullable.equals({{{"first", {{"mid", NULL_VALUE}, {"ask", NULL_VALUE}, {"bid", 50.0}}}},
                              {{"first", {{"mid", 52.0}, {"ask", 54.0}}}}}),
             "computed TSF capture did not preserve nullable pass-through and computed cells");
 }
 
 void test_boolean_tsf_row_mutations() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::vector<std::optional<bool>> values;
@@ -4682,7 +4682,7 @@ void test_boolean_tsf_row_mutations() {
         return output;
     };
     const auto commands = std::array<i64, 4>{0, 1, 2, 3};
-    const auto result = bg::run_graph(graph, commands);
+    const auto result = hg::run_graph(graph, commands);
 
     require(result.equals({{{"first", {{"value", true}}}},
                            {{"first", {{"value", false}}}},
@@ -4704,9 +4704,9 @@ void test_boolean_tsf_row_mutations() {
 }
 
 void test_boolean_expression_operators_and_filter() {
-    using namespace bg;
-    using namespace bg::frame;
-    using namespace bg::literals;
+    using namespace hg;
+    using namespace hg::frame;
+    using namespace hg::literals;
 
     struct expected_row {
         row_id_t id{};
@@ -4826,7 +4826,7 @@ void test_boolean_expression_operators_and_filter() {
         return observe(and_result, or_result, not_result, scalar_broadcast, filtered, tick);
     };
 
-    const auto result = bg::run_graph(graph, std::array<i64, 2>{0, 1});
+    const auto result = hg::run_graph(graph, std::array<i64, 2>{0, 1});
     require(result.equals<i64>({0, 1}) && observations.size() == 2,
             "Boolean expression graph did not evaluate both source cycles");
 
@@ -4936,23 +4936,23 @@ void test_boolean_expression_operators_and_filter() {
         const auto gate = gate_source(tick);
         return observe_gate(bind_expression(source, col("value") && param("gate"), "gate"_n = gate), tick);
     };
-    const auto gate_result = bg::run_graph(gate_graph, std::array<i64, 4>{0, 1, 2, 3});
+    const auto gate_result = hg::run_graph(gate_graph, std::array<i64, 4>{0, 1, 2, 3});
     require(gate_result.equals<i64>({0, 1, 2, 3}) && gate_observations.size() == 4 &&
                 gate_observations[0].valid && !gate_observations[1].valid && gate_observations[2].valid &&
                 gate_observations[0].cells == std::vector<std::optional<bool>>(1, false) &&
                 gate_observations[2].cells == std::vector<std::optional<bool>>(1, false) &&
                 gate_observations[3].valid &&
                 gate_observations[3].cells == std::vector<std::optional<bool>>(1, false),
-            "captured Boolean time-series validity did not follow BG dependency invalidation");
+            "captured Boolean time-series validity did not follow HG dependency invalidation");
 }
 
 void test_filter_tsf_tick_capture() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<filter_writer>();
     const auto graph = [&](wp<TS<i64>> command) { return filter(write(command), col("size") > i64{4}); };
-    const auto result = bg::run_graph(graph, {0, 1, 4});
+    const auto result = hg::run_graph(graph, {0, 1, 4});
     require(result.equals({{},
                           {{"first", {{"size", i64{5}}, {"bid", 10.5}, {"ask", 10.0}}}},
                           {{"first", literal::REMOVED}}}),
@@ -4960,8 +4960,8 @@ void test_filter_tsf_tick_capture() {
 }
 
 void test_tsc_view_and_computed_capture_rebinds_overlapping_row_ids() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto first_source = node([](In<TS<i64>> command, Out<TSF<Quotes>> output) {
         if (*command == 0)
@@ -4987,7 +4987,7 @@ void test_tsc_view_and_computed_capture_rebinds_overlapping_row_ids() {
         const auto second = second_source(command);
         return bind_view(select_column<"bid">(first), select_column<"bid">(second), selection);
     };
-    const auto view = bg::run_graph(view_graph, {0, 1, literal::SKIP}, {0, 0, 1});
+    const auto view = hg::run_graph(view_graph, {0, 1, literal::SKIP}, {0, 0, 1});
     require(view.equals({{},
                          {{"first", NULL_VALUE}},
                          {{"first", literal::REMOVED}, {"second", 20.5}}}),
@@ -5010,7 +5010,7 @@ void test_tsc_view_and_computed_capture_rebinds_overlapping_row_ids() {
         const auto second = second_source(command);
         return bind_computed(select_column<"bid">(first), select_column<"bid">(second), selection);
     };
-    const auto computed = bg::run_graph(computed_graph, {0, 1, literal::SKIP}, {0, 0, 1});
+    const auto computed = hg::run_graph(computed_graph, {0, 1, literal::SKIP}, {0, 0, 1});
     require(computed.equals({{},
                              {{"first", NULL_VALUE}},
                              {{"first", literal::REMOVED}, {"second", 41.0}}}),
@@ -5018,8 +5018,8 @@ void test_tsc_view_and_computed_capture_rebinds_overlapping_row_ids() {
 }
 
 void test_tsf_view_capture_rebinds_overlapping_row_ids() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto first_source = node([](In<TS<i64>> command, Out<TSF<Quotes>> output) {
         if (*command == 0)
@@ -5045,7 +5045,7 @@ void test_tsf_view_capture_rebinds_overlapping_row_ids() {
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> selection) {
         return select(first_source(command), second_source(command), selection);
     };
-    const auto result = bg::run_graph(graph, {0, 1, literal::SKIP}, {0, 0, 1});
+    const auto result = hg::run_graph(graph, {0, 1, literal::SKIP}, {0, 0, 1});
     require(result.equals({
                 {},
                 {{"first", {{"size", i64{5}}, {"bid", 10.5}, {"ask", 10.0}}}},
@@ -5193,12 +5193,12 @@ struct distinct_column_capture_writer {
 };
 
 void test_unkeyed_tsf_capture_matches_named_row_histories() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<unkeyed_frame_capture_writer>();
     const auto graph = [&](wp<TS<i64>> command) { return write(command); };
-    const auto result = bg::run_graph(graph, {1, 2, 3, 4, 5, 6, 7, 8});
+    const auto result = hg::run_graph(graph, {1, 2, 3, 4, 5, 6, 7, 8});
     const auto matches = [&](const literal::TimeSeriesLiteral &patch, const literal::TimeSeriesLiteral &final_add) {
         return result.equals({
             {{"first", {{"size", i64{5}}, {"bid", 10.5}}}},
@@ -5244,12 +5244,12 @@ void test_unkeyed_tsf_capture_matches_named_row_histories() {
 }
 
 void test_tsc_capture_matches_named_row_histories() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<column_capture_writer>();
     const auto graph = [&](wp<TS<i64>> command) { return write(command); };
-    const auto result = bg::run_graph(graph, {1, 2, 3, 4, 5, 6, 7, 8, 9});
+    const auto result = hg::run_graph(graph, {1, 2, 3, 4, 5, 6, 7, 8, 9});
     require(result.size() == 9 && result.equals({
                 {{"first", i64{10}}},
                 {{"first", NULL_VALUE}},
@@ -5265,12 +5265,12 @@ void test_tsc_capture_matches_named_row_histories() {
 }
 
 void test_tsc_capture_disambiguates_complete_row_histories() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<ambiguous_column_capture_writer>();
     const auto graph = [&](wp<TS<i64>> command) { return write(command); };
-    const auto result = bg::run_graph(graph, {1, 2});
+    const auto result = hg::run_graph(graph, {1, 2});
     const auto first_assignment = result.equals({
         {{"left", i64{10}}, {"right", i64{10}}},
         {{"left", i64{11}}, {"right", i64{12}}},
@@ -5285,13 +5285,13 @@ void test_tsc_capture_disambiguates_complete_row_histories() {
             }),
             "TSC comparison did not treat identical additions as interchangeable or reset between comparisons");
 
-    const auto identical = bg::run_graph(graph, {1});
+    const auto identical = hg::run_graph(graph, {1});
     require(identical.equals({{{"left", i64{10}}, {"right", i64{10}}}}),
             "TSC comparison did not treat identical complete histories as interchangeable");
 
     const auto distinct_write = node<distinct_column_capture_writer>();
     const auto distinct_graph = [&](wp<TS<i64>> command) { return distinct_write(command); };
-    const auto distinct = bg::run_graph(distinct_graph, {1, 2, 3});
+    const auto distinct = hg::run_graph(distinct_graph, {1, 2, 3});
     const auto matches_distinct_histories = [&] {
         return distinct.equals({
             {{"a", i64{10}}, {"b", i64{20}}},
@@ -5311,49 +5311,49 @@ void test_tsc_capture_disambiguates_complete_row_histories() {
 }
 
 void test_tsc_double_capture_matches_named_row_histories() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSC<double>> input) { return input; };
-    const auto result = bg::run_graph(identity, bg::input<TSC<double>>({{1.0, NULL_VALUE}}));
+    const auto result = hg::run_graph(identity, hg::input<TSC<double>>({{1.0, NULL_VALUE}}));
     require(result.equals({{{"a", 1.0}, {"b", NULL_VALUE}}}),
             "TSC<double> capture did not compare named rows and null cells");
 }
 
 void test_keyed_tsf_capture_treats_omitted_added_cells_as_null() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<KeyedQuotes>> input) { return input; };
-    const auto result = bg::run_graph(identity, {{}, {{{"id", i64{7}}}}});
+    const auto result = hg::run_graph(identity, {{}, {{{"id", i64{7}}}}});
     require(result.equals({{}, {{{"id", i64{7}}}}}),
             "keyed TSF capture did not treat omitted addition cells as null");
 }
 
 void test_tsf_capture_reference_base_output_with_derived_runtime() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto forward = node([](In<REF<TSF<KeyedQuotesBase>>> input,
                                  Out<REF<TSF<KeyedQuotesBase>>> output) { output.copy(input); });
     const auto graph = [&](wp<TSF<KeyedQuotesBase>> input) { return forward(input); };
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
-    const auto result = bg::run_graph(
-        graph, bg::input(runtime.type(), {literal::TimeSeriesLiteral{},
+    const auto result = hg::run_graph(
+        graph, hg::input(runtime.type(), {literal::TimeSeriesLiteral{},
                                         {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}));
     require(result.equals({{}, {{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}}),
             "reference-to-value capture lost Derived TSF fields under a Base reference declaration");
 }
 
 void test_keyed_tsf_capture_uses_actual_derived_schema() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<KeyedQuotesBase>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerived>(TSF<KeyedQuotesDerived>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}}}));
     require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 20.0}}}}),
@@ -5361,15 +5361,15 @@ void test_keyed_tsf_capture_uses_actual_derived_schema() {
 }
 
 void test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<UnkeyedQuotesBase>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotesDerivedFromUnkeyed>(
         TSF<KeyedQuotesDerivedFromUnkeyed>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{5}}, {"price", 10.0}, {"bid", 9.0}}}}));
     require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}, {"bid", 9.0}}}}),
@@ -5377,8 +5377,8 @@ void test_keyed_tsf_capture_uses_keyed_runtime_schema_for_unkeyed_base_output() 
 }
 
 void test_keyed_tsf_capture_uses_runtime_schema() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto fields = std::array{
         SchemaField{util::symbol{"id"}, &cpp_scalar_type<i64>()},
@@ -5388,21 +5388,21 @@ void test_keyed_tsf_capture_uses_runtime_schema() {
     const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
     const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
     const auto identity = [](wp<TSF<SCHEMA>> input) { return input; };
-    const auto result = bg::run_graph(
-        identity, bg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}}}}));
+    const auto result = hg::run_graph(
+        identity, hg::input(runtime.type(), {literal::TimeSeriesLiteral{}, {{{"id", i64{5}}, {"price", 10.0}}}}));
     require(result.equals({{}, {{{"id", i64{5}}, {"price", 10.0}}}}),
             "keyed TSF capture did not parse its runtime-defined schema");
 }
 
 void test_keyed_tsf_capture_supports_null_composite_keys() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<CompositeKeyRows>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", NULL_VALUE}, {"sequence", i64{4}}, {"price", 20.0}, {"value", i64{8}}}},
                         {literal::REMOVE({{"id", NULL_VALUE}, {"sequence", i64{4}}})}}));
@@ -5413,28 +5413,28 @@ void test_keyed_tsf_capture_supports_null_composite_keys() {
 }
 
 void test_keyed_tsf_capture_invalidates_and_revalidates_without_old_deltas() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<KeyedQuotes>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<KeyedQuotes>(TSF<KeyedQuotes>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {{{{"id", i64{1}}, {"price", 10.0}}}, literal::INVALID, literal::TimeSeriesLiteral{}}));
     require(result.equals({{{{"id", i64{1}}, {"price", 10.0}}}, literal::INVALID, literal::TimeSeriesLiteral{}}),
             "keyed TSF capture leaked old row changes into an empty revalidated frame");
 }
 
 void test_keyed_tsf_capture_rejects_missing_actual_patch_fields() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto identity = [](wp<TSF<CompositeKeyRows>> input) { return input; };
     const auto &runtime = frame_time_series_runtime_type<CompositeKeyRows>(TSF<CompositeKeyRows>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         identity,
-        bg::input(runtime.type(),
+        hg::input(runtime.type(),
                        {literal::TimeSeriesLiteral{},
                         {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 10.0}, {"value", i64{4}}}},
                         {{{"id", i64{1}}, {"sequence", i64{1}}, {"price", 11.0}, {"value", i64{5}}}}}));
@@ -5445,8 +5445,8 @@ void test_keyed_tsf_capture_rejects_missing_actual_patch_fields() {
 }
 
 void test_borrowed_tsf_input_with_native_and_view_runtimes() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto child_graph = make_borrowed_frame_graph();
     borrowed_frame_runner::compiled_graph = std::addressof(child_graph);
@@ -5461,7 +5461,7 @@ void test_borrowed_tsf_input_with_native_and_view_runtimes() {
         borrowed_frame_runner::child = nullptr;
         borrowed_frame_runner::evaluator = nullptr;
 
-        const auto result = bg::run_graph(graph, commands);
+        const auto result = hg::run_graph(graph, commands);
         require(result.size() == commands.size() && borrowed_frame_sink::observations.size() == commands.size(),
                 "borrowed TSF sink did not run for every graph cycle");
         const auto &first = borrowed_frame_sink::observations[0];
@@ -5506,8 +5506,8 @@ void test_borrowed_tsf_input_with_native_and_view_runtimes() {
 }
 
 void test_generic_tsf_input_schema_and_columns() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::size_t field_count{};
@@ -5563,7 +5563,7 @@ void test_generic_tsf_input_schema_and_columns() {
         return observe(source);
     };
     const auto commands = std::array<i64, 1>{1};
-    static_cast<void>(bg::run_graph(graph, commands));
+    static_cast<void>(hg::run_graph(graph, commands));
 
     require(observations.size() == 1 && observations[0].field_count == 3 &&
                 observations[0].field_names ==
@@ -5573,8 +5573,8 @@ void test_generic_tsf_input_schema_and_columns() {
 }
 
 void test_typed_patch_rows_insert_nullable_rows() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     using row_values = std::tuple<std::optional<i64>, std::optional<double>, std::optional<double>>;
     struct observation {
@@ -5600,7 +5600,7 @@ void test_typed_patch_rows_insert_nullable_rows() {
     });
     const auto graph = [&](wp<TS<i64>> command) { return observe(write(command), command); };
     const auto commands = std::array<i64, 2>{0, 1};
-    const auto result = bg::run_graph(graph, commands);
+    const auto result = hg::run_graph(graph, commands);
 
     require(result.size() == 2 && observations.size() == 2 && observations[0].rows == std::vector<row_id_t>{0} &&
                 observations[0].values == std::vector<row_values>{{std::nullopt, 10.5, std::nullopt}} &&
@@ -5612,8 +5612,8 @@ void test_typed_patch_rows_insert_nullable_rows() {
 }
 
 void test_runtime_schema_tsf_writes_and_named_projection() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -5653,8 +5653,8 @@ void test_runtime_schema_tsf_writes_and_named_projection() {
         command_ticks.emplace_back(ScalarValue<i64>{command});
     }
     const auto inputs = std::array{
-        bg::GraphRunInput{erased_seed.runtime_type(), seed_ticks},
-        bg::GraphRunInput{cpp_scalar_runtime_type<i64>(), command_ticks},
+        hg::GraphRunInput{erased_seed.runtime_type(), seed_ticks},
+        hg::GraphRunInput{cpp_scalar_runtime_type<i64>(), command_ticks},
     };
 
     const auto write = node<runtime_schema_tsf_writer>();
@@ -5693,13 +5693,13 @@ void test_runtime_schema_tsf_writes_and_named_projection() {
         observations.push_back(std::move(result));
         output.set(*command);
     });
-    using namespace bg::literals;
-    const auto graph = bg::graph("name"_n = "runtime_schema_tsf_writer", [&](wp<TS<Frame<SCHEMA>>> seed_input,
+    using namespace hg::literals;
+    const auto graph = hg::graph("name"_n = "runtime_schema_tsf_writer", [&](wp<TS<Frame<SCHEMA>>> seed_input,
                                                                                 wp<TS<i64>> command) {
         const auto frame = write(seed_input, command);
         return observe(project(pass_through(frame, command)), command);
     });
-    const auto result = bg::run_graph(graph, std::span<const bg::GraphRunInput>{inputs});
+    const auto result = hg::run_graph(graph, std::span<const hg::GraphRunInput>{inputs});
 
     require(result.size() == commands.size() && observations.size() == commands.size(),
             "runtime-schema TSF writer graph missed a command cycle");
@@ -5742,8 +5742,8 @@ void test_runtime_schema_tsf_writes_and_named_projection() {
 }
 
 void test_generic_declared_tsf_rows_follow_resolved_cell_type() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
     using observed_cell = std::variant<std::optional<i64>, std::optional<double>>;
 
     auto observations = std::vector<std::vector<observed_cell>>{};
@@ -5810,8 +5810,8 @@ void test_generic_declared_tsf_rows_follow_resolved_cell_type() {
         output.set(1);
     });
 
-    using namespace bg::literals;
-    const auto graph = bg::graph("name"_n = "generic_declared_tsf_rows", [&](wp<TS<Frame<SCHEMA>>> seed,
+    using namespace hg::literals;
+    const auto graph = hg::graph("name"_n = "generic_declared_tsf_rows", [&](wp<TS<Frame<SCHEMA>>> seed,
                                                                                    wp<TS<i64>> command) {
         return observe(write(seed, command), command);
     });
@@ -5819,8 +5819,8 @@ void test_generic_declared_tsf_rows_follow_resolved_cell_type() {
 
     for (const auto *cell_type : {&cpp_scalar_type<i64>(), &cpp_scalar_type<double>()}) {
         auto type_map = TypeMap{};
-        type_map.set(bg::details::scalar_variable_instance<SCALAR>(), cell_type);
-        const auto &resolved_schema = dynamic_cast<const bg::Schema &>(frame_schema_type<GenericQuote>().resolve(type_map));
+        type_map.set(hg::details::scalar_variable_instance<SCALAR>(), cell_type);
+        const auto &resolved_schema = dynamic_cast<const hg::Schema &>(frame_schema_type<GenericQuote>().resolve(type_map));
         auto memory = allocator{};
         auto seed_value = std::optional<ScalarValue<Frame<SCHEMA>>>{};
         if (cell_type == std::addressof(cpp_scalar_type<i64>())) {
@@ -5840,10 +5840,10 @@ void test_generic_declared_tsf_rows_follow_resolved_cell_type() {
             command_ticks.emplace_back(ScalarValue<i64>{command});
         }
         const auto inputs = std::array{
-            bg::GraphRunInput{erased_seed.runtime_type(), seed_ticks},
-            bg::GraphRunInput{cpp_scalar_runtime_type<i64>(), command_ticks},
+            hg::GraphRunInput{erased_seed.runtime_type(), seed_ticks},
+            hg::GraphRunInput{cpp_scalar_runtime_type<i64>(), command_ticks},
         };
-        const auto result = bg::run_graph(graph, std::span<const bg::GraphRunInput>{inputs});
+        const auto result = hg::run_graph(graph, std::span<const hg::GraphRunInput>{inputs});
         require(result.size() == commands.size(), "generic declared TSF graph missed a command cycle");
     }
 
@@ -5874,8 +5874,8 @@ void test_generic_declared_tsf_rows_follow_resolved_cell_type() {
 }
 
 void test_repeated_and_constrained_generic_tsf_fields_match_runtime_schema() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto schema_fields = std::array{
         SchemaField{util::symbol{"size"}, &cpp_scalar_type<i64>()},
@@ -5916,19 +5916,19 @@ void test_repeated_and_constrained_generic_tsf_fields_match_runtime_schema() {
         output.set(1);
     });
 
-    using namespace bg::literals;
-    const auto graph = bg::graph("name"_n = "repeated_constrained_generic_tsf_fields", [&](wp<TS<Frame<SCHEMA>>> seed_input) {
+    using namespace hg::literals;
+    const auto graph = hg::graph("name"_n = "repeated_constrained_generic_tsf_fields", [&](wp<TS<Frame<SCHEMA>>> seed_input) {
         return observe(write(seed_input));
     });
     const auto seed_ticks = std::array{std::optional<ScalarValue<>>{erased_seed.view()}};
-    const auto inputs = std::array{bg::GraphRunInput{erased_seed.runtime_type(), seed_ticks}};
-    const auto result = bg::run_graph(graph, std::span<const bg::GraphRunInput>{inputs});
+    const auto inputs = std::array{hg::GraphRunInput{erased_seed.runtime_type(), seed_ticks}};
+    const auto result = hg::run_graph(graph, std::span<const hg::GraphRunInput>{inputs});
     require(result.size() == 1, "repeated and constrained generic TSF writer missed its cycle");
 }
 
 void test_inherited_tsf_graph_behavior() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -5967,7 +5967,7 @@ void test_inherited_tsf_graph_behavior() {
     };
     const auto commands = std::array<i64, 4>{0, 1, 2, 3};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    const auto snapshots = bg::run_graph(graph, commands, ticks);
+    const auto snapshots = hg::run_graph(graph, commands, ticks);
 
     require(observations.size() == commands.size() && observations[0].valid && observations[0].rows.empty() &&
                 observations[1].rows == std::vector<row_id_t>{0} && observations[1].sizes[0] == 5 &&
@@ -5987,8 +5987,8 @@ void test_inherited_tsf_graph_behavior() {
 }
 
 void test_base_frame_output_retains_derived_schema() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto write = node<inherited_tsf_writer>();
     const auto borrow_derived = [](In<TSF<InheritedFrame>, optional> input) { return input.value_view(); };
@@ -6003,7 +6003,7 @@ void test_base_frame_output_retains_derived_schema() {
     const auto graph = [&](wp<TS<i64>> command, wp<TS<i64>> tick) { return capture(write(command), tick); };
     const auto commands = std::array<i64, 4>{0, 1, 2, 3};
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
-    const auto snapshots = bg::run_graph(graph, commands, ticks);
+    const auto snapshots = hg::run_graph(graph, commands, ticks);
 
     require(snapshots.size() == commands.size() && snapshots[1] && snapshots[2],
             "base frame output did not publish owning snapshots");
@@ -6020,8 +6020,8 @@ void test_base_frame_output_retains_derived_schema() {
 }
 
 void test_tsf_projection_view() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct projection_observation {
         bool valid{};
@@ -6065,7 +6065,7 @@ void test_tsf_projection_view() {
         return observe(source, projected, command);
     };
     const auto commands = std::array<i64, 8>{0, 1, 2, 3, 4, 5, 6, 7};
-    static_cast<void>(bg::run_graph(graph, commands));
+    static_cast<void>(hg::run_graph(graph, commands));
 
     require(observations.size() == commands.size(),
             ("TSF projection observer missed a cycle: " + std::to_string(observations.size()) + " of " +
@@ -6094,8 +6094,8 @@ void test_tsf_projection_view() {
 }
 
 void test_tsf_projection_empty_columns_match_target_schema() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto reject_projection = node([](In<TSF<Quotes>> input, Out<TSF<BidOnly>, view> output) {
         output.bind_projection(input, columns<>());
@@ -6110,7 +6110,7 @@ void test_tsf_projection_empty_columns_match_target_schema() {
 
     auto rejected = false;
     try {
-        static_cast<void>(bg::run_graph(rejected_graph, std::array<i64, 1>{1}));
+        static_cast<void>(hg::run_graph(rejected_graph, std::array<i64, 1>{1}));
     } catch (const std::invalid_argument &) {
         rejected = true;
     }
@@ -6129,14 +6129,14 @@ void test_tsf_projection_empty_columns_match_target_schema() {
     const auto empty_graph = [&](wp<TS<i64>> command) {
         return observe_empty(project_empty(write_empty(command)));
     };
-    const auto result = bg::run_graph(empty_graph, std::array<i64, 1>{1});
+    const auto result = hg::run_graph(empty_graph, std::array<i64, 1>{1});
     require(result.equals<i64>({1}),
             "empty TSF projection did not preserve rows for a zero-field target schema");
 }
 
 void test_tsf_projection_selection_change() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -6164,7 +6164,7 @@ void test_tsf_projection_selection_change() {
     const auto commands = std::array<i64, 8>{7, 1, 4, 3, 4, 2, 4, 6};
     const auto selections = std::array<i64, 8>{0, 0, 0, 0, 1, 1, 0, 0};
     const auto ticks = std::array<i64, 8>{0, 1, 2, 3, 4, 5, 6, 7};
-    static_cast<void>(bg::run_graph(graph, commands, selections, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, selections, ticks));
 
     require(observations.size() == commands.size(), "switchable TSF projection missed a cycle");
     require(observations[0].valid && observations[0].modified && observations[0].changed.empty(),
@@ -6187,8 +6187,8 @@ void test_tsf_projection_selection_change() {
 }
 
 void test_tsf_projection_rejects_invalid_mappings_before_invalidation() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto projection_errors = std::array<bool, 2>{};
     auto observations = std::vector<bool>{};
@@ -6222,7 +6222,7 @@ void test_tsf_projection_rejects_invalid_mappings_before_invalidation() {
     };
     const auto commands = std::array<i64, 3>{1, 6, 6};
     const auto selections = std::array<i64, 3>{0, 1, 2};
-    const auto result = bg::run_graph(graph, commands, selections);
+    const auto result = hg::run_graph(graph, commands, selections);
 
     require(projection_errors[0] && projection_errors[1] && observations == std::vector<bool>{true, true, true} &&
                 result.equals<i64>({1, 1, 1}),
@@ -6230,8 +6230,8 @@ void test_tsf_projection_rejects_invalid_mappings_before_invalidation() {
 }
 
 void test_keyed_tsf_projection_rejects_invalid_source_before_invalidation() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -6287,12 +6287,12 @@ void test_keyed_tsf_projection_rejects_invalid_source_before_invalidation() {
         TSF<KeyedQuotesDerivedFromUnkeyed>::type());
     const auto &mismatched_runtime = frame_time_series_runtime_type<OtherKeyedQuotesDerivedFromUnkeyed>(
         TSF<OtherKeyedQuotesDerivedFromUnkeyed>::type());
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         graph,
-        bg::input(matching_runtime.type(),
+        hg::input(matching_runtime.type(),
                        {{{{"id", i64{7}}, {"price", 10.0}, {"bid", 20.0}}}, literal::SKIP}),
-        bg::input(mismatched_runtime.type(), {literal::INVALID, literal::INVALID}),
-        bg::input<TS<i64>>({0, 1}));
+        hg::input(mismatched_runtime.type(), {literal::INVALID, literal::INVALID}),
+        hg::input<TS<i64>>({0, 1}));
 
     require(invalid_source_rejected && observations.size() == 2 && observations[0].valid &&
                 observations[0].modified && observations[0].rows.size() == 1 && observations[0].amount == 10.0 &&
@@ -6305,8 +6305,8 @@ void test_keyed_tsf_projection_rejects_invalid_source_before_invalidation() {
 }
 
 void test_tsf_projection_rejects_empty_row_domain_mismatch() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto memory = allocator{};
     const auto time = MIN_DT + EvaluationTime::duration{1};
@@ -6334,8 +6334,8 @@ void test_tsf_projection_rejects_empty_row_domain_mismatch() {
 }
 
 void test_tsf_projection_rejects_native_columns_from_another_logical_domain() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto memory = allocator{};
     auto value_frame = NativeFrame<Quotes>{};
@@ -6380,8 +6380,8 @@ void test_tsf_projection_rejects_native_columns_from_another_logical_domain() {
 }
 
 void test_view_updates_do_not_traverse_source_rows() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -6440,8 +6440,8 @@ void test_view_updates_do_not_traverse_source_rows() {
 }
 
 void test_projection_normalizes_row_domain_deltas() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -6884,7 +6884,7 @@ void test_computed_tsf_compaction_moves_only_its_own_mapping() {
         auto &filter = *static_cast<RuntimeFrameViewOutputStorage *>(filter_allocation);
         auto &output = *static_cast<RuntimeFrameViewOutputStorage *>(computed_allocation);
 
-        const auto source_input = bg::frame::details::frame_read_storage(source, std::addressof(source), nullptr);
+        const auto source_input = hg::frame::details::frame_read_storage(source, std::addressof(source), nullptr);
         auto select_even_rows = [&](row_id_t id) { return id % 2 == 0; };
         static_cast<void>(filter.bind_filter(source_input, {}, true, {},
                                              runtime_filter_evaluator(select_even_rows), first_time, memory));
@@ -7053,8 +7053,8 @@ void test_empty_full_filter_request_skips_evaluator() {
 }
 
 void test_tsf_view_uses_local_physical_rows_incrementally() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -7123,8 +7123,8 @@ void test_tsf_view_uses_local_physical_rows_incrementally() {
 }
 
 void test_tsf_view_preserves_ordered_key_mappings() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     auto memory = allocator{resource};
@@ -7309,8 +7309,8 @@ void test_tsf_view_preserves_ordered_key_mappings() {
 }
 
 void test_filtered_column_coverage_rejects_a_different_row_set() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -7373,8 +7373,8 @@ void test_filtered_column_coverage_rejects_a_different_row_set() {
 }
 
 void test_incremental_numeric_filter() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -7410,7 +7410,7 @@ void test_incremental_numeric_filter() {
     };
     const auto commands = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
     const auto ticks = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    const auto snapshots = bg::run_graph(graph, commands, ticks);
+    const auto snapshots = hg::run_graph(graph, commands, ticks);
 
     require(observations.size() == commands.size(), "numeric filter observer missed a cycle");
     require(observations[0].valid && observations[0].became_valid && observations[0].modified &&
@@ -7455,7 +7455,7 @@ void test_incremental_numeric_filter() {
 }
 
 void test_expression_filter_evaluates_only_required_rows() {
-    using namespace bg;
+    using namespace hg;
 
     register_column_block_function<bool, i64, i64>();
     struct observation {
@@ -7484,14 +7484,14 @@ void test_expression_filter_evaluates_only_required_rows() {
     };
 
     counted_filter_rows.clear();
-    const auto result = bg::run_graph(
+    const auto result = hg::run_graph(
         graph,
-        bg::input<TS<i64>>(
+        hg::input<TS<i64>>(
             {0, 1, 2, 3, 4, 5, 6, 7, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP}),
-        bg::input<TS<i64>>({4, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
+        hg::input<TS<i64>>({4, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP,
                                  literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, literal::INVALID, 6,
                                  9}),
-        bg::input<TS<i64>>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
+        hg::input<TS<i64>>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}));
 
     require(result.equals<i64>({0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}) &&
                 observations.size() == 13,
@@ -7513,7 +7513,7 @@ void test_expression_filter_evaluates_only_required_rows() {
 }
 
 void test_runtime_schema_filter_uses_nullable_boolean_field() {
-    using namespace bg;
+    using namespace hg;
 
     const auto fields = std::array{SchemaField{util::symbol{"keep"}, &cpp_scalar_type<bool>()}};
     const auto &schema = anonymous_schema(fields);
@@ -7529,8 +7529,8 @@ void test_runtime_schema_filter_uses_nullable_boolean_field() {
     };
     const auto &series_type = frame_series_type(schema, TimeSeriesGuarantee::ordinary);
     const auto &runtime = frame_time_series_runtime_type<SCHEMA>(series_type);
-    const auto result = bg::run_graph(
-        graph, bg::input(runtime.type(), {{{{"keep", true}}, {{"keep", NULL_VALUE}}, {{"keep", false}},
+    const auto result = hg::run_graph(
+        graph, hg::input(runtime.type(), {{{{"keep", true}}, {{"keep", NULL_VALUE}}, {{"keep", false}},
                                          {{"keep", true}}}}));
 
     require(result.equals<i64>({2}) && selected_rows == std::vector<row_id_t>{0, 3},
@@ -7538,7 +7538,7 @@ void test_runtime_schema_filter_uses_nullable_boolean_field() {
 }
 
 void test_filter_reuses_forced_materialized_predicate() {
-    using namespace bg;
+    using namespace hg;
 
     register_column_block_function<bool, i64, i64>();
     struct observation {
@@ -7576,7 +7576,7 @@ void test_filter_reuses_forced_materialized_predicate() {
     counted_filter_rows.clear();
     const auto commands = std::array<i64, 5>{0, 1, 3, 4, 6};
     const auto ticks = std::array<i64, 5>{0, 1, 2, 3, 4};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size() && observations[1].predicate_values ==
                 std::vector<std::optional<bool>>{true} && observations[1].selected_rows ==
@@ -7593,8 +7593,8 @@ void test_filter_reuses_forced_materialized_predicate() {
 }
 
 void test_expression_filter_composes_with_column_projection() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool valid{};
@@ -7624,7 +7624,7 @@ void test_expression_filter_composes_with_column_projection() {
     };
     const auto commands = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 10, 11};
     const auto ticks = std::array<i64, 10>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
-    static_cast<void>(bg::run_graph(graph, commands, ticks));
+    static_cast<void>(hg::run_graph(graph, commands, ticks));
 
     require(observations.size() == commands.size() && observations[1].rows.empty() &&
                 observations[2].rows == std::vector<row_id_t>{1} &&
@@ -7637,8 +7637,8 @@ void test_expression_filter_composes_with_column_projection() {
 }
 
 void test_computed_tsf_outputs_and_downstream_views() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         bool source_valid{};
@@ -7730,7 +7730,7 @@ void test_computed_tsf_outputs_and_downstream_views() {
     };
     const auto commands = std::array<i64, 12>{0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11};
     const auto ticks = commands;
-    const auto result = bg::run_graph(graph, commands, ticks);
+    const auto result = hg::run_graph(graph, commands, ticks);
 
     require(result.size() == commands.size() && observations.size() == commands.size(),
             "computed TSF graph missed a command cycle");
@@ -7785,8 +7785,8 @@ void test_computed_tsf_outputs_and_downstream_views() {
 }
 
 void test_all_computed_tsf_publishes_empty_domain_rebinding() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         const void *selected_row_domain{};
@@ -7850,7 +7850,7 @@ void test_all_computed_tsf_publishes_empty_domain_rebinding() {
     };
     const auto ticks = std::array<i64, 4>{0, 1, 2, 3};
     const auto selections = std::array<i64, 4>{0, 0, 1, 1};
-    static_cast<void>(bg::run_graph(graph, ticks, selections));
+    static_cast<void>(hg::run_graph(graph, ticks, selections));
 
     require(observations.size() == ticks.size() && observations[0].valid && observations[0].bid_valid &&
                 observations[0].row_domain != nullptr && observations[0].bid_row_domain == observations[0].row_domain &&
@@ -7871,8 +7871,8 @@ void test_all_computed_tsf_publishes_empty_domain_rebinding() {
 }
 
 void test_computed_tsf_callable_and_aggregate_runtime_hooks() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         const TimeSeriesRuntimeType *mid_runtime{};
@@ -7933,7 +7933,7 @@ void test_computed_tsf_callable_and_aggregate_runtime_hooks() {
         return observe(frame, compute_mid(frame), compute_bid(frame, "bid"), command);
     };
     const auto commands = std::array<i64, 2>{0, 1};
-    static_cast<void>(bg::run_graph(graph, commands));
+    static_cast<void>(hg::run_graph(graph, commands));
 
     const auto &series_type = TSF<ComputedQuote>::type();
     const auto &mid_runtime = frame_computed_time_series_runtime_type<ComputedQuote>(
@@ -7951,8 +7951,8 @@ void test_computed_tsf_callable_and_aggregate_runtime_hooks() {
 }
 
 void test_computed_tsf_runtime_cache_and_source_rebinding() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto &series_type = frame_time_series_type<ComputedQuote>(TimeSeriesGuarantee::ordinary);
     const auto selected_names = std::array{util::symbol{"mid"}, util::symbol{"bid"}};
@@ -8056,8 +8056,8 @@ void test_computed_tsf_runtime_cache_and_source_rebinding() {
 }
 
 void test_runtime_schema_computed_tsf_output() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct observation {
         std::vector<row_id_t> rows;
@@ -8092,8 +8092,8 @@ void test_runtime_schema_computed_tsf_output() {
         command_ticks.emplace_back(ScalarValue<i64>{command});
     }
     const auto inputs = std::array{
-        bg::GraphRunInput{erased_seed.runtime_type(), seed_ticks},
-        bg::GraphRunInput{cpp_scalar_runtime_type<i64>(), command_ticks},
+        hg::GraphRunInput{erased_seed.runtime_type(), seed_ticks},
+        hg::GraphRunInput{cpp_scalar_runtime_type<i64>(), command_ticks},
     };
 
     const auto source = node([](In<TS<Frame<SCHEMA>>> schema_seed, In<TS<i64>> command, Out<TSF<SCHEMA>> output) {
@@ -8193,12 +8193,12 @@ void test_runtime_schema_computed_tsf_output() {
         observations.push_back(std::move(result));
         output.set(*command);
     });
-    using namespace bg::literals;
-    const auto graph = bg::graph("name"_n = "runtime_schema_computed_tsf_output", [&](wp<TS<Frame<SCHEMA>>> seed_input,
+    using namespace hg::literals;
+    const auto graph = hg::graph("name"_n = "runtime_schema_computed_tsf_output", [&](wp<TS<Frame<SCHEMA>>> seed_input,
                                                                                            wp<TS<i64>> command) {
         return observe(compute(source(seed_input, command)), command);
     });
-    const auto result = bg::run_graph(graph, std::span<const bg::GraphRunInput>{inputs});
+    const auto result = hg::run_graph(graph, std::span<const hg::GraphRunInput>{inputs});
     require(result.size() == commands.size() && observations.size() == commands.size() &&
                 observations[1].rows == std::vector<row_id_t>{0} &&
                 observations[1].bids == std::vector<std::optional<double>>{std::nullopt} &&
@@ -8300,7 +8300,7 @@ int main() {
         test_double_column_addition_accepts_projected_columns_with_shared_selection();
         test_double_column_addition_rejects_different_domains_and_membership();
         test_double_column_addition_rejects_mixed_integer_columns();
-        test_double_column_addition_leaves_scalar_addition_to_bg();
+        test_double_column_addition_leaves_scalar_addition_to_hg();
         test_double_column_addition_broadcasts_owned_scalar_values();
         test_double_column_addition_parameter_updates_recompute_rows();
         test_double_column_addition_parameter_invalidation_and_revalidation();
@@ -8320,7 +8320,7 @@ int main() {
         test_computed_tsf_compaction_moves_only_its_own_mapping();
         test_scalar_variable_frame_input();
     } catch (const std::exception &error) {
-        std::cerr << "bg_frame_frame_test: " << error.what() << '\n';
+        std::cerr << "hg_frame_frame_test: " << error.what() << '\n';
         return 1;
     }
 }

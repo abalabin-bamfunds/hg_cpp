@@ -17,8 +17,8 @@ response. Register the service implementation in the same catalogue as the liste
 :sync: python
 
 ```python
-from bg import TS, service
-from bg_web import AuthDecision, HttpServerRequest, http_handler
+from hg import TS, service
+from hg_web import AuthDecision, HttpServerRequest, http_handler
 
 @service
 def access(request: TS[HttpServerRequest]) -> TS[AuthDecision[int]]: ...
@@ -32,12 +32,12 @@ catalogue.register_impl(access, access_impl)
 :sync: cpp
 
 ```cpp
-#include <bg/service.hpp>
-#include <bg/web/auth.hpp>
-#include <bg/web/http_server.hpp>
+#include <hg/service.hpp>
+#include <hg/web/auth.hpp>
+#include <hg/web/http_server.hpp>
 
-using namespace bg;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::web;
 
 auto access = service<auto(TS<Bundle<HttpServerRequest>>) -> TS<AuthDecision<i64>>>{
     "access", {"request"}};
@@ -57,7 +57,7 @@ application's policy implementation. A policy constructs its result as follows:
 :sync: python
 
 ```python
-from bg_web import AuthDecision, HttpResponse
+from hg_web import AuthDecision, HttpResponse
 
 accepted = AuthDecision[int].accept(42)
 denied = AuthDecision[int].reject(HttpResponse(status=403))
@@ -86,7 +86,7 @@ from the route call. While the policy has no decision, the per-request handler w
 A rejection completes the request without starting that handler.
 
 Python constructs decisions with `AuthDecision[User].accept(user)` or
-`.reject(HttpResponse(...))`. C++ includes `<bg/web/auth.hpp>` and uses
+`.reject(HttpResponse(...))`. C++ includes `<hg/web/auth.hpp>` and uses
 `auth::accept<User>(identity)` or `auth::reject<User>(response)`. A rejection can include
 `WWW-Authenticate` headers or a redirect. Keep the C++ service declaration alive through
 route wiring.
@@ -107,9 +107,9 @@ arguments. It returns `TS[Auth]` or a supported derived authentication type.
 :sync: python
 
 ```python
-from bg import TS, graph
-from bg.operators import const_
-from bg_web import BearerAuth, register_client_auth, register_client_transports
+from hg import TS, graph
+from hg.operators import const_
+from hg_web import BearerAuth, register_client_auth, register_client_transports
 
 @graph
 def credentials(origin: str) -> TS[BearerAuth]:
@@ -126,11 +126,11 @@ register_client_auth("api", "https://api.example.com", credentials)
 :sync: cpp
 
 ```cpp
-#include <bg/web/client_auth.hpp>
+#include <hg/web/client_auth.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::web;
 
 auto memory = allocator{};
 auto token = bundle<BearerAuth>(memory, "token"_n = "example-token");
@@ -159,7 +159,7 @@ request timeout. An unmatched origin uses anonymous access.
 | `BearerAuth` | `token` | Yes | Yes |
 | `HeaderAuth` | Ordered `headers` | Yes | Yes |
 
-C++ declarations are in `<bg/web/client_auth.hpp>`. Negotiate requires libcurl with
+C++ declarations are in `<hg/web/client_auth.hpp>`. Negotiate requires libcurl with
 GSSAPI or Windows SSPI support; the application supplies and renews platform credentials.
 
 ## Origin matching and updates

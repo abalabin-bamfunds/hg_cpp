@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/time_series/guarantee_variable.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/details/time_series_bundle_type_traits.hpp>
+#include <hg/time_series/guarantee_variable.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/details/time_series_bundle_type_traits.hpp>
 
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <auto... Properties>
 inline constexpr bool has_guarantee_variable_property =
@@ -75,4 +75,4 @@ template <typename TimeSeries>
 inline constexpr bool contains_guarantee_variable_v =
     contains_guarantee_variable<std::remove_cv_t<TimeSeries>>::value;
 
-} // namespace bg::details
+} // namespace hg::details

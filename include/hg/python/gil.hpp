@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/python/export.hpp>
+#include <hg/python/export.hpp>
 
 #include <Python.h>
 #include <nanobind/nanobind.h>
@@ -8,7 +8,7 @@
 #include <exception>
 #include <stdexcept>
 
-namespace bg::python {
+namespace hg::python {
 
 class GilScope {
   public:
@@ -56,6 +56,6 @@ class GilScope {
     bool acquired_{};
 };
 
-BG_PYTHON_API void report_unraisable(std::exception_ptr failure) noexcept;
+HG_PYTHON_API void report_unraisable(std::exception_ptr failure) noexcept;
 
-} // namespace bg::python
+} // namespace hg::python

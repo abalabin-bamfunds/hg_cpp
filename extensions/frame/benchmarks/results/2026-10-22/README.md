@@ -1,9 +1,9 @@
 # Frame benchmark results: 2026-10-22
 
-These results measure the frame implementation at `ad4ad92c`, against BG main
+These results measure the frame implementation at `ad4ad92c`, against HG main
 baseline `21a0f87c`. The benchmark and extension used GNU C++ 14.3.0 with
-`-O3 -DNDEBUG`; the installed BG library used the matching Release build. The
-Arrow run used Arrow and ArrowCompute 24.0.0 from the `bg-build` Conda
+`-O3 -DNDEBUG`; the installed HG library used the matching Release build. The
+Arrow run used Arrow and ArrowCompute 24.0.0 from the `hg-build` Conda
 environment. The host was an x86_64 Linux KVM VM with an AMD EPYC 7R13
 processor. Each benchmark ran as one process. No concurrent builds by our agents
 ran during measurement, and no CPU affinity was set.
@@ -49,24 +49,24 @@ runs unnecessarily on full predicate reevaluation with unchanged membership.
 ## Build and run commands
 
 Run these commands from the `.lanes/frame-field-access` worktree root. The build
-trees were configured for Release with the matching BG install at
-`dependencies/bg-frame-core-release-install`; the Arrow-enabled tree also uses
-Arrow 24.0.0 from the `bg-build` Conda environment. The compiler and Arrow
-packages come from `bg-build`; CMake and build commands run through `hg-build`.
+trees were configured for Release with the matching HG install at
+`dependencies/hg-frame-core-release-install`; the Arrow-enabled tree also uses
+Arrow 24.0.0 from the `hg-build` Conda environment. The compiler and Arrow
+packages come from `hg-build`; CMake and build commands run through `hg-build`.
 
 ```sh
-BG_FRAME_RELEASE_PREFIX="$PWD/dependencies/bg-frame-core-release-install"
-BG_FRAME_BUILD_PREFIX=/home/abalabin/miniforge3/envs/bg-build
+HG_FRAME_RELEASE_PREFIX="$PWD/dependencies/hg-frame-core-release-install"
+HG_FRAME_BUILD_PREFIX=/home/abalabin/miniforge3/envs/hg-build
 ```
 
 ```sh
 conda run --no-capture-output -n hg-build cmake -S extensions/frame \
   -B build/tsf-row-release-arrow-off -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$BG_FRAME_RELEASE_PREFIX;$BG_FRAME_BUILD_PREFIX" \
-  -DBG_FRAME_BUILD_ARROW=OFF -DBG_FRAME_BUILD_BENCHMARKS=ON -DBUILD_TESTING=ON
+  -DCMAKE_PREFIX_PATH="$HG_FRAME_RELEASE_PREFIX;$HG_FRAME_BUILD_PREFIX" \
+  -DHG_FRAME_BUILD_ARROW=OFF -DHG_FRAME_BUILD_BENCHMARKS=ON -DBUILD_TESTING=ON
 conda run --no-capture-output -n hg-build cmake --build build/tsf-row-release-arrow-off \
-  --target bg_frame_expression_benchmark -j2
-build/tsf-row-release-arrow-off/bg_frame_expression_benchmark \
+  --target hg_frame_expression_benchmark -j2
+build/tsf-row-release-arrow-off/hg_frame_expression_benchmark \
   --report extensions/frame/benchmarks/results/2026-10-22/expression-release-arrow-off.md \
   --csv extensions/frame/benchmarks/results/2026-10-22/expression-release-arrow-off.csv
 ```
@@ -74,12 +74,12 @@ build/tsf-row-release-arrow-off/bg_frame_expression_benchmark \
 ```sh
 conda run --no-capture-output -n hg-build cmake -S extensions/frame \
   -B build/tsf-row-release-arrow-on -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$BG_FRAME_RELEASE_PREFIX;$BG_FRAME_BUILD_PREFIX" \
-  -DArrow_DIR="$BG_FRAME_BUILD_PREFIX/lib/cmake/Arrow" \
-  -DBG_FRAME_BUILD_ARROW=ON -DBG_FRAME_BUILD_BENCHMARKS=ON -DBUILD_TESTING=ON
+  -DCMAKE_PREFIX_PATH="$HG_FRAME_RELEASE_PREFIX;$HG_FRAME_BUILD_PREFIX" \
+  -DArrow_DIR="$HG_FRAME_BUILD_PREFIX/lib/cmake/Arrow" \
+  -DHG_FRAME_BUILD_ARROW=ON -DHG_FRAME_BUILD_BENCHMARKS=ON -DBUILD_TESTING=ON
 conda run --no-capture-output -n hg-build cmake --build build/tsf-row-release-arrow-on \
-  --target bg_frame_arrow_benchmark -j2
-build/tsf-row-release-arrow-on/bg_frame_arrow_benchmark \
+  --target hg_frame_arrow_benchmark -j2
+build/tsf-row-release-arrow-on/hg_frame_arrow_benchmark \
   --report extensions/frame/benchmarks/results/2026-10-22/arrow-release-arrow-on.md \
   --csv extensions/frame/benchmarks/results/2026-10-22/arrow-release-arrow-on.csv
 ```

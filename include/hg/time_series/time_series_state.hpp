@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
+#include <hg/evaluation_time.hpp>
 
 #include <bit>
 #include <cassert>
 #include <cstdint>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 // Stores the latest change of a time series. The upper bits record validity
 // transitions; ordinary valid updates retain the EvaluationTime bit pattern.
@@ -92,4 +92,4 @@ static_assert(std::is_trivially_copyable_v<TimeSeriesState>);
 
 inline constexpr TimeSeriesState initial_time_series_state{};
 
-} // namespace bg
+} // namespace hg

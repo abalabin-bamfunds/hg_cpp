@@ -1,7 +1,7 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 enum class EvaluationEngine { simulation, realtime };
 
-} // namespace bg
+} // namespace hg

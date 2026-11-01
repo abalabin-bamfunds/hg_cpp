@@ -2,7 +2,7 @@
 
 ## Purpose
 
-`bg` is an engine for forward propagation through computation graphs.
+`hg` is an engine for forward propagation through computation graphs.
 
 The engine defines how users describe nodes. Users construct a graph by
 connecting nodes. These connections define the forward flow of data. The engine

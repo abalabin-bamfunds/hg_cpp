@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/periodic_callback.hpp>
+#include <hg/periodic_callback.hpp>
 
 #include <chrono>
 #include <cstddef>
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 class PeriodicCallbackRunner {
   public:
@@ -60,4 +60,4 @@ class PeriodicCallbackRunner {
     std::size_t cycles_until_poll_{cycles_per_poll};
 };
 
-} // namespace bg::details
+} // namespace hg::details

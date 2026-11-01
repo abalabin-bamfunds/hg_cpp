@@ -1,7 +1,7 @@
 import pytest
 
-import bg
-from bg._bg_test_extension import (
+import hg
+from hg._hg_test_extension import (
     can_convert_python_type,
     copy_release_python_scalar_without_gil,
     native_concrete_type_name,
@@ -19,23 +19,23 @@ def test_python_objects_keep_identity_through_base_typed_time_series():
     value = Derived()
 
     # Register the derived class first; its bases must still resolve to the same scalar types.
-    @bg.graph
-    def derived_to_base(value: bg.TS[Derived]) -> bg.TS[Base]:
+    @hg.graph
+    def derived_to_base(value: hg.TS[Derived]) -> hg.TS[Base]:
         return value
 
-    @bg.graph
-    def base_to_base(value: bg.TS[Base]) -> bg.TS[Base]:
+    @hg.graph
+    def base_to_base(value: hg.TS[Base]) -> hg.TS[Base]:
         return value
 
-    assert bg.run_graph(derived_to_base, [value])[0] is value
-    assert bg.run_graph(base_to_base, [value])[0] is value
+    assert hg.run_graph(derived_to_base, [value])[0] is value
+    assert hg.run_graph(base_to_base, [value])[0] is value
 
 
 def test_python_object_defaults_resolve_inside_list_and_bundle_scalars():
     class Value:
         pass
 
-    @bg.schema
+    @hg.schema
     class Record:
         value: Value
 
@@ -43,16 +43,16 @@ def test_python_object_defaults_resolve_inside_list_and_bundle_scalars():
     second = Value()
     record = Record(first)
 
-    @bg.graph
-    def list_identity(value: bg.TS[tuple[Value, ...]]) -> bg.TS[tuple[Value, ...]]:
+    @hg.graph
+    def list_identity(value: hg.TS[tuple[Value, ...]]) -> hg.TS[tuple[Value, ...]]:
         return value
 
-    @bg.graph
-    def bundle_identity(value: bg.TS[bg.Bundle[Record]]) -> bg.TS[bg.Bundle[Record]]:
+    @hg.graph
+    def bundle_identity(value: hg.TS[hg.Bundle[Record]]) -> hg.TS[hg.Bundle[Record]]:
         return value
 
-    assert bg.run_graph(list_identity, [(first, second)]) == [(first, second)]
-    result = bg.run_graph(bundle_identity, [record])
+    assert hg.run_graph(list_identity, [(first, second)]) == [(first, second)]
+    result = hg.run_graph(bundle_identity, [record])
     assert type(result[0]) is Record
     assert result[0].value is first
 
@@ -79,11 +79,11 @@ def test_type_operator_reports_concrete_python_object_classes_from_base_typed_in
     class DerivedB(Base):
         pass
 
-    @bg.graph
-    def graph(value: bg.TS[Base]) -> bg.TS[str]:
+    @hg.graph
+    def graph(value: hg.TS[Base]) -> hg.TS[str]:
         return native_concrete_type_name(value)
 
-    assert bg.run_graph(graph, [DerivedA(), DerivedA(), DerivedB(), Base()]) == [
+    assert hg.run_graph(graph, [DerivedA(), DerivedA(), DerivedB(), Base()]) == [
         "DerivedA",
         "DerivedA",
         "DerivedB",
@@ -92,19 +92,19 @@ def test_type_operator_reports_concrete_python_object_classes_from_base_typed_in
 
 
 def test_type_operator_reports_concrete_dataclass_schema_from_base_typed_input():
-    @bg.schema
+    @hg.schema
     class BaseRecord:
         value: int
 
-    @bg.schema
+    @hg.schema
     class DerivedRecord(BaseRecord):
         extra: int
 
-    @bg.graph
-    def graph(value: bg.TS[bg.Bundle[BaseRecord]]) -> bg.TS[str]:
+    @hg.graph
+    def graph(value: hg.TS[hg.Bundle[BaseRecord]]) -> hg.TS[str]:
         return native_concrete_type_name(value)
 
-    assert bg.run_graph(graph, [DerivedRecord(1, 2), DerivedRecord(2, 3), BaseRecord(4)]) == [
+    assert hg.run_graph(graph, [DerivedRecord(1, 2), DerivedRecord(2, 3), BaseRecord(4)]) == [
         "DerivedRecord",
         "DerivedRecord",
         "BaseRecord",
@@ -123,16 +123,16 @@ def test_python_object_scalars_support_multiple_inheritance():
 
     value = Derived()
 
-    @bg.graph
-    def as_left(value: bg.TS[Derived]) -> bg.TS[Left]:
+    @hg.graph
+    def as_left(value: hg.TS[Derived]) -> hg.TS[Left]:
         return value
 
-    @bg.graph
-    def as_right(value: bg.TS[Derived]) -> bg.TS[Right]:
+    @hg.graph
+    def as_right(value: hg.TS[Derived]) -> hg.TS[Right]:
         return value
 
-    assert bg.run_graph(as_left, [value])[0] is value
-    assert bg.run_graph(as_right, [value])[0] is value
+    assert hg.run_graph(as_left, [value])[0] is value
+    assert hg.run_graph(as_right, [value])[0] is value
 
 
 def test_object_annotation_accepts_a_previously_registered_python_class():
@@ -141,12 +141,12 @@ def test_object_annotation_accepts_a_previously_registered_python_class():
 
     assert can_convert_python_type(Value)
 
-    @bg.graph
-    def graph(value: bg.TS[object]) -> bg.TS[object]:
+    @hg.graph
+    def graph(value: hg.TS[object]) -> hg.TS[object]:
         return value
 
     value = Value()
-    assert bg.run_graph(graph, bg.ticks([value]))[0] is value
+    assert hg.run_graph(graph, hg.ticks([value]))[0] is value
 
 
 def test_run_graph_uses_registered_object_types_to_classify_iterable_values():
@@ -156,20 +156,20 @@ def test_run_graph_uses_registered_object_types_to_classify_iterable_values():
     class Derived(Base):
         pass
 
-    @bg.graph
-    def base_values(value: bg.TS[Base]) -> bg.TS[Base]:
+    @hg.graph
+    def base_values(value: hg.TS[Base]) -> hg.TS[Base]:
         return value
 
-    @bg.graph
-    def object_values(value: bg.TS[object]) -> bg.TS[object]:
+    @hg.graph
+    def object_values(value: hg.TS[object]) -> hg.TS[object]:
         return value
 
     derived = [Derived(), Derived()]
     list_value = [1, 2]
 
-    assert bg.run_graph(base_values, derived) == derived
-    assert bg.run_graph(object_values, list_value) == [list_value]
-    assert bg.run_graph(object_values, bg.ticks([list_value, [3, 4]])) == [list_value, [3, 4]]
+    assert hg.run_graph(base_values, derived) == derived
+    assert hg.run_graph(object_values, list_value) == [list_value]
+    assert hg.run_graph(object_values, hg.ticks([list_value, [3, 4]])) == [list_value, [3, 4]]
 
 
 def test_can_from_python_recognizes_python_object_and_builtin_scalar_types():
@@ -186,11 +186,11 @@ def test_python_object_constants_copy_without_changing_identity():
 
     value = Value()
 
-    @bg.graph
-    def graph() -> bg.TS[Value]:
-        return bg.operators.const_(value)
+    @hg.graph
+    def graph() -> hg.TS[Value]:
+        return hg.operators.const_(value)
 
-    assert bg.run_graph(graph)[0] is value
+    assert hg.run_graph(graph)[0] is value
 
 
 def test_python_object_reference_copy_and_final_release_do_not_need_the_gil():
@@ -208,26 +208,26 @@ def test_python_node_returning_none_produces_no_tick_for_object_scalars():
 
     value = Value()
 
-    @bg.compute_node
-    def maybe(trigger: bg.TS[int]) -> bg.TS[Value]:
+    @hg.compute_node
+    def maybe(trigger: hg.TS[int]) -> hg.TS[Value]:
         return value if trigger.value == 1 else None
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[Value]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[Value]:
         return maybe(trigger)
 
-    result = bg.run_graph(graph, [1, 2])
+    result = hg.run_graph(graph, [1, 2])
     assert result[0] is value
     assert result[1] is None
 
 
 def test_none_is_not_a_python_object_scalar_value():
-    @bg.graph
-    def graph() -> bg.TS[type(None)]:
-        return bg.operators.const_(None)
+    @hg.graph
+    def graph() -> hg.TS[type(None)]:
+        return hg.operators.const_(None)
 
     with pytest.raises(ValueError, match="None does not identify a scalar type"):
-        bg.run_graph(graph)
+        hg.run_graph(graph)
 
 
 def test_tss_base_keys_use_python_hash_and_equality_across_classes():
@@ -247,9 +247,9 @@ def test_tss_base_keys_use_python_hash_and_equality_across_classes():
     base = Base(1)
     derived = Derived(1)
 
-    @bg.compute_node
-    def make_set(trigger: bg.TS[int]) -> bg.TSS[Base]:
-        delta = bg.SetDelta()
+    @hg.compute_node
+    def make_set(trigger: hg.TS[int]) -> hg.TSS[Base]:
+        delta = hg.SetDelta()
         if trigger.value == 1:
             # SetDelta normally stores a frozenset. A list lets the engine apply
             # both candidates and exercise its own cross-class equality path.
@@ -258,19 +258,19 @@ def test_tss_base_keys_use_python_hash_and_equality_across_classes():
             delta.removed = [derived]
         return delta
 
-    @bg.compute_node
-    def inspect(value: bg.TSS[Base]) -> bg.TS[int]:
+    @hg.compute_node
+    def inspect(value: hg.TSS[Base]) -> hg.TS[int]:
         if value.was_added(derived):
             return 1
         if value.was_removed(derived):
             return 2
         return len(value)
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         return inspect(make_set(trigger))
 
-    assert bg.run_graph(graph, [1, 2]) == [1, 2]
+    assert hg.run_graph(graph, [1, 2]) == [1, 2]
 
 
 def test_tsd_base_keys_support_derived_lookup_and_removal():
@@ -290,19 +290,19 @@ def test_tsd_base_keys_support_derived_lookup_and_removal():
     base = Base(1)
     derived = Derived(1)
 
-    @bg.compute_node
-    def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[Base, bg.TS[int]]:
-        return {base: 10} if trigger.value == 1 else {derived: bg.REMOVE}
+    @hg.compute_node
+    def make_dictionary(trigger: hg.TS[int]) -> hg.TSD[Base, hg.TS[int]]:
+        return {base: 10} if trigger.value == 1 else {derived: hg.REMOVE}
 
-    @bg.compute_node
-    def inspect(trigger: bg.TS[int], values: bg.TSD[Base, bg.TS[int]]) -> bg.TS[int]:
+    @hg.compute_node
+    def inspect(trigger: hg.TS[int], values: hg.TSD[Base, hg.TS[int]]) -> hg.TS[int]:
         return values[derived].value if derived in values else 0
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         return inspect(trigger, make_dictionary(trigger))
 
-    assert bg.run_graph(graph, [1, 2]) == [10, 0]
+    assert hg.run_graph(graph, [1, 2]) == [10, 0]
 
 
 @pytest.mark.parametrize("operation", ["hash", "equality"])
@@ -327,22 +327,22 @@ def test_python_hash_and_equality_exceptions_keep_their_identity(operation):
 
         added = [Key(), Key()]
 
-    @bg.compute_node
-    def make_set(trigger: bg.TS[int]) -> bg.TSS[Key]:
-        delta = bg.SetDelta()
+    @hg.compute_node
+    def make_set(trigger: hg.TS[int]) -> hg.TSS[Key]:
+        delta = hg.SetDelta()
         delta.added = added
         return delta
 
-    @bg.compute_node
-    def inspect(value: bg.TSS[Key]) -> bg.TS[int]:
+    @hg.compute_node
+    def inspect(value: hg.TSS[Key]) -> hg.TS[int]:
         return len(value)
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         return inspect(make_set(trigger))
 
     with pytest.raises(RuntimeError) as raised:
-        bg.run_graph(graph, [1])
+        hg.run_graph(graph, [1])
 
     assert raised.value is error
 
@@ -357,22 +357,22 @@ def test_unhashable_python_objects_raise_type_error_as_tss_keys():
 
     key = Key()
 
-    @bg.compute_node
-    def make_set(trigger: bg.TS[int]) -> bg.TSS[Base]:
-        delta = bg.SetDelta()
+    @hg.compute_node
+    def make_set(trigger: hg.TS[int]) -> hg.TSS[Base]:
+        delta = hg.SetDelta()
         delta.added = [key]
         return delta
 
-    @bg.compute_node
-    def inspect(value: bg.TSS[Base]) -> bg.TS[int]:
+    @hg.compute_node
+    def inspect(value: hg.TSS[Base]) -> hg.TS[int]:
         return len(value)
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         return inspect(make_set(trigger))
 
     with pytest.raises(TypeError, match="unhashable type"):
-        bg.run_graph(graph, [1])
+        hg.run_graph(graph, [1])
 
 
 def test_unhashable_python_objects_raise_type_error_as_tsd_lookup_keys():
@@ -392,17 +392,17 @@ def test_unhashable_python_objects_raise_type_error_as_tsd_lookup_keys():
     stored = Base(1)
     missing = Unhashable(2)
 
-    @bg.compute_node
-    def make_dictionary(trigger: bg.TS[int]) -> bg.TSD[Base, bg.TS[int]]:
+    @hg.compute_node
+    def make_dictionary(trigger: hg.TS[int]) -> hg.TSD[Base, hg.TS[int]]:
         return {stored: 10}
 
-    @bg.compute_node
-    def inspect(trigger: bg.TS[int], values: bg.TSD[Base, bg.TS[int]]) -> bg.TS[int]:
+    @hg.compute_node
+    def inspect(trigger: hg.TS[int], values: hg.TSD[Base, hg.TS[int]]) -> hg.TS[int]:
         return values[missing].value if missing in values else 0
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         return inspect(trigger, make_dictionary(trigger))
 
     with pytest.raises(TypeError, match="unhashable type"):
-        bg.run_graph(graph, [1])
+        hg.run_graph(graph, [1])

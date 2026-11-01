@@ -1,10 +1,10 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -20,12 +20,12 @@
 
 namespace {
 
-using Dictionary = bg::TSD<std::int64_t, bg::TS<bg::i64>>;
-using ReferenceDictionary = bg::TSD<std::int64_t, bg::REF<bg::TS<bg::i64>>>;
+using Dictionary = hg::TSD<std::int64_t, hg::TS<hg::i64>>;
+using ReferenceDictionary = hg::TSD<std::int64_t, hg::REF<hg::TS<hg::i64>>>;
 constexpr auto MaximumKeyCount = std::size_t{128};
 
 struct DictionarySource {
-    bg::Out<Dictionary> output;
+    hg::Out<Dictionary> output;
 
     void evaluate() const {
         const auto tick = ++ticks;
@@ -38,14 +38,14 @@ struct DictionarySource {
 };
 
 struct ReferenceDictionaryView {
-    bg::In<bg::REF<ReferenceDictionary>> input;
-    bg::Out<bg::REF<ReferenceDictionary>> output;
+    hg::In<hg::REF<ReferenceDictionary>> input;
+    hg::Out<hg::REF<ReferenceDictionary>> output;
 
     void evaluate() const { output.copy(input); }
 };
 
 struct SelectedItemSink {
-    bg::In<bg::TS<bg::i64>> input;
+    hg::In<hg::TS<hg::i64>> input;
 
     void evaluate() const {
         ++evaluations;
@@ -112,7 +112,7 @@ Options parse_options(int argc, char **argv) {
                 std::exit(2);
             }
         } else {
-            std::cerr << "usage: bg_tsd_selected_reference_benchmark [--selected 0,1,16,128] "
+            std::cerr << "usage: hg_tsd_selected_reference_benchmark [--selected 0,1,16,128] "
                          "[--cycles N] [--warmup N] [--mode direct|representation|both]\n";
             std::exit(2);
         }
@@ -138,12 +138,12 @@ void wire_selected_items(DictionaryPoint dictionary, const SinkTemplate &sink, s
 }
 
 void run_case(std::string_view mode, std::size_t selected_count, std::size_t cycles, std::size_t warmup_cycles) {
-    const auto source = bg::node<DictionarySource>();
-    const auto reference_view = bg::node<ReferenceDictionaryView>();
-    const auto sink = bg::node<SelectedItemSink>();
-    auto wiring = bg::GraphWiring{};
+    const auto source = hg::node<DictionarySource>();
+    const auto reference_view = hg::node<ReferenceDictionaryView>();
+    const auto sink = hg::node<SelectedItemSink>();
+    auto wiring = hg::GraphWiring{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = hg::WiringContext{wiring};
         if (mode == "representation") {
             wire_selected_items(reference_view(source()), sink, selected_count);
         } else {
@@ -152,19 +152,19 @@ void run_case(std::string_view mode, std::size_t selected_count, std::size_t cyc
     }
 
     wiring.finalize();
-    const auto compiled = bg::CompiledGraph{wiring};
-    auto global_state = bg::GlobalState{};
-    auto runtime = bg::RuntimeGraph{compiled, global_state};
+    const auto compiled = hg::CompiledGraph{wiring};
+    auto global_state = hg::GlobalState{};
+    auto runtime = hg::RuntimeGraph{compiled, global_state};
     DictionarySource::ticks = 0;
     SelectedItemSink::evaluations = 0;
     SelectedItemSink::checksum = 0;
 
-    const auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto start_time = hg::MIN_DT + std::chrono::microseconds{1};
     runtime.start(start_time);
     const auto evaluate_cycles = [&](std::size_t first_cycle, std::size_t cycle_count) {
         for (auto cycle = first_cycle; cycle < first_cycle + cycle_count; ++cycle) {
             runtime.schedule(0);
-            runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{static_cast<std::int64_t>(cycle + 1)});
+            runtime.evaluate(hg::MIN_DT + std::chrono::microseconds{static_cast<std::int64_t>(cycle + 1)});
         }
     };
 

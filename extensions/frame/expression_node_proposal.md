@@ -5,10 +5,10 @@ Status: implemented and reviewed.
 ## Purpose
 
 Implement the accepted [block-operation contract](block_operation_proposal.md)
-with ordinary BG nodes and generic bundles. Wiring fixes the schemas, cell
+with ordinary HG nodes and generic bundles. Wiring fixes the schemas, cell
 types, and adapters. Evaluation binds current values and executes block calls.
 
-`Expression` construction is scalar code. BG operator overloads combine scalar
+`Expression` construction is scalar code. HG operator overloads combine scalar
 expressions and time series into ordinary TSBs holding a constant expression
 and explicit bindings. Binding the expression to columns selects the typed
 block functions. Time series updates change parameter values without rebuilding
@@ -16,7 +16,7 @@ the scalar expression tree.
 
 ## Computation node
 
-Use separate BG schema variables named `COLUMNS`, `PARAMETER_INPUTS`, and
+Use separate HG schema variables named `COLUMNS`, `PARAMETER_INPUTS`, and
 `PARAMETERS`. Their C++ declarations use `BundleSchemaVariableDeclaration`.
 The computation node has this declaration:
 
@@ -46,7 +46,7 @@ function. This keeps the result batch and output writer typed. The expression
 can contain intermediates and columns with different cell types. The node
 implementation is independent of the operation.
 
-BG applies `all_valid` to the immediate column inputs and `required` to the
+HG applies `all_valid` to the immediate column inputs and `required` to the
 parameter snapshot. `start()` allocates binding state; `stop()` releases it.
 Evaluation does not retain input views between invocations.
 
@@ -65,12 +65,12 @@ struct ParameterUpdateNode {
 The existing aggregate resolver API supports this output schema calculation.
 The resolver reads the resolved input schema and maps each field from `TS<T>`
 to scalar `T`, preserving field name and order. It returns an anonymous schema
-through BG's canonical schema factory.
+through HG's canonical schema factory.
 
 During evaluation, the collector reads the immediate scalar inputs, constructs
-one bundle with BG's scalar bundle factory, and publishes it through
+one bundle with HG's scalar bundle factory, and publishes it through
 `output.set_value()`. The bundle owns its values. Any parameter update schedules
-this collector; BG handles input invalidation and revalidation.
+this collector; HG handles input invalidation and revalidation.
 
 For example:
 
@@ -87,11 +87,11 @@ and participate as ordinary captured time series.
 
 The shared concrete materialisation function performs these steps:
 
-1. Compile the selected root expression after BG records concrete demands.
-2. Deduplicate concrete columns and scalar time series by their BG source
+1. Compile the selected root expression after HG records concrete demands.
+2. Deduplicate concrete columns and scalar time series by their HG source
    identities. Assign each input a field index in its corresponding bundle.
 3. Build free TSBs with schemas declaring the observed `TSC<T>` column types
-   and `TS<T>` parameter types. BG's ordinary input binding dereferences any
+   and `TS<T>` parameter types. HG's ordinary input binding dereferences any
    reference sources. Build the parameter collector when parameters exist.
 4. Bind typed input adapters, instruction callbacks, intermediate buffer
    layouts, and the typed result publication call.
@@ -100,7 +100,7 @@ The shared concrete materialisation function performs these steps:
 
 Internal field names such as `c0` and `p0` identify dependencies; instructions
 use field indices. The compiler validates the expression contract before
-creating the runtime computation node. BG's ordinary argument matching and
+creating the runtime computation node. HG's ordinary argument matching and
 materialisation validate the node's inputs.
 
 Each compiled column binding records its field index and typed adapter. At
@@ -117,7 +117,7 @@ value once in invocation storage. Block callbacks reuse those values.
 The compiled expression owns callback values and buffer layout descriptions.
 Binding state stores source fingerprints used to detect replacement and lost
 delta continuity. Borrowed descriptors, prepared broadcasts, and intermediate
-buffers have invocation lifetime. BG nodes retain the current input values.
+buffers have invocation lifetime. HG nodes retain the current input values.
 
 ## Heterogeneous block evaluation
 
@@ -144,7 +144,7 @@ during wiring. Cell values do not acquire individual scalar handles or type tags
 
 ## Callback adapter registration
 
-Use BG's existing `ScalarDispatch<Handler>` optional-operation facility to
+Use HG's existing `ScalarDispatch<Handler>` optional-operation facility to
 attach the erased entry point to each supported callback signature. The frame
 library supplies the shared instance anchor for its handler type. Register
 handlers before graph wiring, alongside the corresponding operator providers.
@@ -157,9 +157,9 @@ Evaluation calls the cached entry point with the retained `Scalar<>` callback
 and current batches. The typed adapter reads
 `ColumnBlockFunction<RESULT, ARGS...>` through the normal scalar API.
 
-Callback values use BG's ordinary generated scalar runtime for storage and
+Callback values use HG's ordinary generated scalar runtime for storage and
 copying. The dispatch facility supplies the extension-specific operation;
-`ColumnBlockFunctionType` continues to describe the signature through BG's
+`ColumnBlockFunctionType` continues to describe the signature through HG's
 semantic types. Adapter lookup occurs during wiring.
 
 ## Evaluation and publication
@@ -187,5 +187,5 @@ conversion bounds, null handling, incremental changes, and captured scalar
 parameters. Comparison, Boolean storage, and filtering use the same expression
 path.
 
-This proposal uses existing BG extension APIs. Any missing capability requires
+This proposal uses existing HG extension APIs. Any missing capability requires
 discussion before implementation.

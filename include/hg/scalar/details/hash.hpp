@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/storage_traits.hpp>
+#include <hg/scalar/storage_traits.hpp>
 
 #include <concepts>
 #include <cstddef>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct scalar_hash {
     using is_transparent = void;
@@ -41,4 +41,4 @@ template <typename T> struct scalar_equal {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

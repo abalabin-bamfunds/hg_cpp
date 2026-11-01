@@ -1,5 +1,5 @@
 #pragma once
 
-#include <bg/scalar/declaration.hpp>
+#include <hg/scalar/declaration.hpp>
 
-#include <bg/type/scalar_variable.hpp>
+#include <hg/type/scalar_variable.hpp>

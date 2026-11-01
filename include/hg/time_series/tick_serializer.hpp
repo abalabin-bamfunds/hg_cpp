@@ -1,23 +1,23 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/time_series/dispatch.hpp>
-#include <bg/time_series/queue_operations.hpp>
-#include <bg/time_series/tick_operations.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/buffer.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/time_series/dispatch.hpp>
+#include <hg/time_series/queue_operations.hpp>
+#include <hg/time_series/tick_operations.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/buffer.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -32,7 +32,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -496,7 +496,7 @@ class TimeSeriesTickReplay {
             if (item_header.operation != TickOperation::tick) {
                 throw std::logic_error{"invalid list tick entry"};
             }
-            const auto item_id = reader_->read_raw<bg::item_id_t>();
+            const auto item_id = reader_->read_raw<hg::item_id_t>();
             apply_child_at(list_type.item_type(item_id), output, item_id, item_header);
         }
     }
@@ -516,7 +516,7 @@ class TimeSeriesTickReplay {
             if (item_header.operation != TickOperation::tick) {
                 throw std::logic_error{"invalid bundle tick entry"};
             }
-            const auto item_id = reader_->read_raw<bg::item_id_t>();
+            const auto item_id = reader_->read_raw<hg::item_id_t>();
             apply_child_at(bundle_type.item_type(item_id), output, item_id, item_header);
         }
     }
@@ -887,4 +887,4 @@ class TimeSeriesTickReader {
     bool discard_failed_{};
 };
 
-} // namespace bg
+} // namespace hg

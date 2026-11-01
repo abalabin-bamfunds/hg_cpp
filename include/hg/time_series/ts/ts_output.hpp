@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/literal.hpp>
-#include <bg/scalar/details/value_storage.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/literal.hpp>
+#include <hg/scalar/details/value_storage.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <concepts>
 #include <ranges>
@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <details::scalar_variable Variable, auto... Properties>
 class Out<TS<Variable, Properties...>> {
@@ -194,7 +194,7 @@ class Out<TS<T, Properties...>> {
                 }
             }
 
-            auto allocator = bg::allocator{};
+            auto allocator = hg::allocator{};
             if constexpr (Traits::assign_uses_memory_resource) {
                 allocator = state_->allocator();
             }
@@ -339,4 +339,4 @@ class Out<TS<T, Properties...>> {
 
 static_assert(sizeof(Out<TS<i64>>) == sizeof(void *));
 
-} // namespace bg
+} // namespace hg

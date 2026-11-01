@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/wired_input.hpp>
-#include <bg/graph/wired_scalar.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/wired_input.hpp>
+#include <hg/graph/wired_scalar.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstddef>
 #include <span>
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class NodeTemplate;
 struct WiringPath;
@@ -54,4 +54,4 @@ class WiredNode {
     const WiringPath *path_;
 };
 
-} // namespace bg
+} // namespace hg

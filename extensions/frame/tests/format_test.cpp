@@ -1,9 +1,9 @@
-#include <bg/frame/frame.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tick_format.hpp>
-#include <bg/time_series/tick_serializer.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tick_format.hpp>
+#include <hg/time_series/tick_serializer.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <fmt/format.h>
@@ -15,9 +15,9 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct FormatRows {
     Field<i64> id;

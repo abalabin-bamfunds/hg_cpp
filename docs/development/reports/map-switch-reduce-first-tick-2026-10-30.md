@@ -2,9 +2,9 @@
 
 Verified on root revision `97dd0e1b` with the nested-output fix `773fee39`.
 
-The original reproductions expected `0` on the first tick, but BG captures
+The original reproductions expected `0` on the first tick, but HG captures
 `SKIP`. The populated control matches. `visit_tick` confirmed these are skipped
-slots, not invalid ticks. The final BG tests now expect `SKIP` at the first
+slots, not invalid ticks. The final HG tests now expect `SKIP` at the first
 position; later values are unchanged. The original graph does not crash.
 
 | Input | Expected | Captured |
@@ -27,7 +27,7 @@ The graph helper and tests are in
   selecting the default.
 
 Typed bundle construction retains the actual field argument types:
-`include/bg/time_series/tsb/tsb.hpp:149` calls
+`include/hg/time_series/tsb/tsb.hpp:149` calls
 `make_free_time_series_bundle`, which derives fields from those arguments in
 `src/time_series/tsb/wiring.cpp:315-337`. Thus a valid bundle root can contain
 valid REF handles whose targets are invalid.

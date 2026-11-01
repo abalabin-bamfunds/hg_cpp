@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename TimeSeries, TimeSeriesTypeRole Role>
 const TimeSeriesType &concrete_time_series_type(TimeSeriesGuarantee inherited) {
@@ -28,9 +28,9 @@ template <typename Target, auto... Properties> struct CppTimeSeriesRuntimeType<R
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 // Maps a C++ time series declaration to its default physical representation. Providers specialize this trait when
 // their declaration has a runtime representation that differs from the composed defaults.
@@ -59,4 +59,4 @@ const TimeSeriesRuntimeType &cpp_time_series_runtime_type() {
     return *cpp_time_series_runtime_type_v<TimeSeries, Role>;
 }
 
-} // namespace bg
+} // namespace hg

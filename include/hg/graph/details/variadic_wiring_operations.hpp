@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/variadic_parameter.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/variadic_parameter.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class allocator;
 class TimeSeriesType;
@@ -55,4 +55,4 @@ const VariadicWiringOperations *variadic_wiring_operations() noexcept {
 }
 
 } // namespace details
-} // namespace bg
+} // namespace hg

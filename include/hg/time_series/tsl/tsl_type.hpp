@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/time_series/details/time_series_properties.hpp>
-#include <bg/time_series/details/type_access.hpp>
-#include <bg/time_series/size_variable.hpp>
+#include <hg/time_series/details/time_series_properties.hpp>
+#include <hg/time_series/details/type_access.hpp>
+#include <hg/time_series/size_variable.hpp>
 
 #include <cstddef>
 #include <span>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename Item, auto Size = std::dynamic_extent, auto... Properties>
 struct TSL : details::time_series_type_access<TSL<Item, Size, Properties...>> {
@@ -41,6 +41,6 @@ template <typename T> inline constexpr bool is_time_series_list = time_series_li
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/type/details/time_series_list_type_traits.hpp>
+#include <hg/type/details/time_series_list_type_traits.hpp>

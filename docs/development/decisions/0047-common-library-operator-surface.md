@@ -10,16 +10,16 @@ without the library.
 
 ## Decision
 
-Expose engine and library operators together through `<bg/library.hpp>` and
-`bg.operators`. Keep their existing operator identities and normal overload
-resolution. Place native library implementations in `bg::library`, which
-depends on `bg::bg`; keep the engine independent of that target. Export native
+Expose engine and library operators together through `<hg/library.hpp>` and
+`hg.operators`. Keep their existing operator identities and normal overload
+resolution. Place native library implementations in `hg::library`, which
+depends on `hg::hg`; keep the engine independent of that target. Export native
 operators to Python through the existing operator wrapper.
 
 ## Consequences
 
 Implementation placement determines dependencies, not graph-code syntax. C++
-users link `bg::library` for the common surface. Engine-only users can continue
-to link `bg::bg`.
+users link `hg::library` for the common surface. Engine-only users can continue
+to link `hg::hg`.
 
 See [operators](../design/operators.md#declaration-and-registration) and [Python operators](../design/python.md#graph-authoring).

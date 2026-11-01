@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/time_series/item_id.hpp>
-#include <bg/time_series/time_series_state.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/time_series/time_series_state.hpp>
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 class TimeSeriesRuntimeType;
@@ -23,4 +23,4 @@ void release_output_path(void *path) noexcept;
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

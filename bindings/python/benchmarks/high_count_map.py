@@ -1,4 +1,4 @@
-"""Run the portable high-count map workload through the BG Python API.
+"""Run the portable high-count map workload through the HG Python API.
 
 Run from the repository root with:
 
@@ -33,7 +33,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-import bg
+import hg
 from benchmarks.high_count_map_workload import (
     CHILD_COUNT,
     PROFILES,
@@ -176,8 +176,8 @@ def git_commit() -> str | None:
 
 
 def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
-    @bg.compute_node
-    def flat_source(trigger: bg.TS[int]) -> bg.TSD[int, bg.TS[int]]:
+    @hg.compute_node
+    def flat_source(trigger: hg.TS[int]) -> hg.TSD[int, hg.TS[int]]:
         cycle = trigger.value
         observer.start(cycle)
         if cycle == 0:
@@ -187,15 +187,15 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
         plan = workload.cycles[measured_cycle]
         changes = {update.key: update.value for update in plan.flat_updates}
         if plan.lifecycle is Lifecycle.REMOVE_FLAT_AND_PARENTS:
-            changes.update({key: bg.REMOVE for key in plan.flat_lifecycle_keys})
+            changes.update({key: hg.REMOVE for key in plan.flat_lifecycle_keys})
         elif plan.lifecycle is Lifecycle.RESTORE_FLAT_AND_PARENTS:
             changes.update({key: flat_source_value(measured_cycle, key) for key in plan.flat_lifecycle_keys})
         return changes or None
 
-    @bg.compute_node
+    @hg.compute_node
     def parent_source(
-        trigger: bg.TS[int],
-    ) -> bg.TSD[int, bg.TSD[int, bg.TS[int]]]:
+        trigger: hg.TS[int],
+    ) -> hg.TSD[int, hg.TSD[int, hg.TS[int]]]:
         cycle = trigger.value
         if cycle == 0:
             return {
@@ -213,7 +213,7 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
             changes.setdefault(update.parent_key, {})[update.child_key] = update.value
 
         if plan.lifecycle is Lifecycle.REMOVE_FLAT_AND_PARENTS:
-            changes.update({key: bg.REMOVE for key in plan.parent_lifecycle_keys})
+            changes.update({key: hg.REMOVE for key in plan.parent_lifecycle_keys})
         elif plan.lifecycle is Lifecycle.RESTORE_FLAT_AND_PARENTS:
             changes.update(
                 {
@@ -226,7 +226,7 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
             )
         elif plan.lifecycle is Lifecycle.REMOVE_CHILDREN:
             for parent_key, child_key in plan.child_lifecycle_keys:
-                changes.setdefault(parent_key, {})[child_key] = bg.REMOVE
+                changes.setdefault(parent_key, {})[child_key] = hg.REMOVE
         elif plan.lifecycle is Lifecycle.RESTORE_CHILDREN:
             for parent_key, child_key in plan.child_lifecycle_keys:
                 changes.setdefault(parent_key, {})[child_key] = child_source_value(
@@ -234,86 +234,86 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
                 )
         return changes or None
 
-    @bg.compute_node
-    def bias_source(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def bias_source(trigger: hg.TS[int]) -> hg.TS[int]:
         if trigger.value == 0:
             return 1
         return workload.cycles[trigger.value - 1].bias
 
     if arithmetic == "library":
-        add_values = bg.operators.add
-        multiply = bg.operators.mul
-        add_constant = bg.operators.add
+        add_values = hg.operators.add
+        multiply = hg.operators.mul
+        add_constant = hg.operators.add
     else:
-        @bg.compute_node
-        def add_values(lhs: bg.TS[int], rhs: bg.TS[int]) -> bg.TS[int]:
+        @hg.compute_node
+        def add_values(lhs: hg.TS[int], rhs: hg.TS[int]) -> hg.TS[int]:
             return lhs.value + rhs.value
 
-        @bg.compute_node
-        def multiply(value: bg.TS[int], factor: int) -> bg.TS[int]:
+        @hg.compute_node
+        def multiply(value: hg.TS[int], factor: int) -> hg.TS[int]:
             return value.value * factor
 
-        @bg.compute_node
-        def add_constant(value: bg.TS[int], addend: int) -> bg.TS[int]:
+        @hg.compute_node
+        def add_constant(value: hg.TS[int], addend: int) -> hg.TS[int]:
             return value.value + addend
 
-    @bg.graph
-    def stage_a(key: bg.TS[int], value: bg.TS[int], bias: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def stage_a(key: hg.TS[int], value: hg.TS[int], bias: hg.TS[int]) -> hg.TS[int]:
         a1 = add_values(value, bias)
         a2 = multiply(a1, 3)
         a3 = add_values(a2, key)
         a4 = multiply(a3, 5)
         return add_constant(a4, 7)
 
-    @bg.graph
-    def stage_b(key: bg.TS[int], value: bg.TS[int], bias: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def stage_b(key: hg.TS[int], value: hg.TS[int], bias: hg.TS[int]) -> hg.TS[int]:
         b1 = add_values(value, bias)
         b2 = multiply(b1, 7)
         b3 = add_values(b2, key)
         b4 = multiply(b3, 3)
         return add_constant(b4, 11)
 
-    @bg.graph
+    @hg.graph
     def child_branch(
-        child_key: bg.TS[int],
-        value: bg.TS[int],
-        parent_key: bg.TS[int],
-        seed: bg.TS[int],
-        bias: bg.TS[int],
-    ) -> bg.TS[int]:
+        child_key: hg.TS[int],
+        value: hg.TS[int],
+        parent_key: hg.TS[int],
+        seed: hg.TS[int],
+        bias: hg.TS[int],
+    ) -> hg.TS[int]:
         c1 = add_values(value, seed)
         c2 = multiply(c1, 3)
         c3 = add_values(c2, child_key)
         c4 = add_values(c3, bias)
         return multiply(c4, 7)
 
-    @bg.graph
+    @hg.graph
     def parent_branch(
-        parent_key: bg.TS[int],
-        children: bg.TSD[int, bg.TS[int]],
-        bias: bg.TS[int],
-    ) -> bg.TSD[int, bg.REF[bg.TS[int]]]:
+        parent_key: hg.TS[int],
+        children: hg.TSD[int, hg.TS[int]],
+        bias: hg.TS[int],
+    ) -> hg.TSD[int, hg.REF[hg.TS[int]]]:
         p1 = add_values(bias, parent_key)
         seed = multiply(p1, 5)
-        return bg.map(child_branch, children, parent_key, seed, bias, __key_arg__="child_key")
+        return hg.map(child_branch, children, parent_key, seed, bias, __key_arg__="child_key")
 
-    @bg.compute_node
-    def observe_flat(trigger: bg.TS[int], values: bg.TSD[int, bg.TS[int]]) -> None:
+    @hg.compute_node
+    def observe_flat(trigger: hg.TS[int], values: hg.TSD[int, hg.TS[int]]) -> None:
         delta = values.delta_value
         cycle = trigger.value - 1
         if delta is not None and cycle >= 0:
             for key, value in _mapping(delta).items():
-                if value is bg.REMOVE:
+                if value is hg.REMOVE:
                     observer.actual.add(cycle, Branch.FLAT, 0, key, False, 0)
                 else:
                     observer.actual.add(cycle, Branch.FLAT, 0, key, True, value)
                 observer.cycle_event_counts[cycle] += 1
         observer.complete(cycle, "flat")
 
-    @bg.compute_node
+    @hg.compute_node
     def observe_children(
-        trigger: bg.TS[int],
-        values: bg.TSD[int, bg.TSD[int, bg.TS[int]]],
+        trigger: hg.TS[int],
+        values: hg.TSD[int, hg.TSD[int, hg.TS[int]]],
     ) -> None:
         delta = values.delta_value
         cycle = trigger.value - 1
@@ -322,7 +322,7 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
                 if cycle < 0:
                     observer.active_children[parent_key] = set(_mapping(child_delta))
                     continue
-                if child_delta is bg.REMOVE:
+                if child_delta is hg.REMOVE:
                     for child_key in observer.active_children.pop(parent_key, set()):
                         observer.actual.add(cycle, Branch.CHILD, parent_key, child_key, False, 0)
                         observer.cycle_event_counts[cycle] += 1
@@ -330,7 +330,7 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
 
                 active = observer.active_children.setdefault(parent_key, set())
                 for child_key, value in _mapping(child_delta).items():
-                    if value is bg.REMOVE:
+                    if value is hg.REMOVE:
                         observer.actual.add(cycle, Branch.CHILD, parent_key, child_key, False, 0)
                         active.discard(child_key)
                     else:
@@ -339,14 +339,14 @@ def make_graph(workload: Workload, observer: RunObserver, arithmetic: str):
                     observer.cycle_event_counts[cycle] += 1
         observer.complete(cycle, "child")
 
-    @bg.graph
-    def benchmark(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def benchmark(trigger: hg.TS[int]) -> hg.TS[int]:
         flat_values = flat_source(trigger)
         parents = parent_source(trigger)
         bias = bias_source(trigger)
-        stage_a_values = bg.map(stage_a, flat_values, bias, __key_arg__="key")
-        flat_output = bg.map(stage_b, stage_a_values, bias, __key_arg__="key")
-        child_output = bg.map(parent_branch, parents, bias, __key_arg__="parent_key")
+        stage_a_values = hg.map(stage_a, flat_values, bias, __key_arg__="key")
+        flat_output = hg.map(stage_b, stage_a_values, bias, __key_arg__="key")
+        child_output = hg.map(parent_branch, parents, bias, __key_arg__="parent_key")
         observe_flat(trigger, flat_output)
         observe_children(trigger, child_output)
         return trigger
@@ -364,7 +364,7 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
     before_wiring_rss = current_rss_bytes()
 
     runner_started = time.perf_counter_ns()
-    bg.run_graph(definition, triggers)
+    hg.run_graph(definition, triggers)
     runner_ns = time.perf_counter_ns() - runner_started
     after_stop_rss = current_rss_bytes()
     process_peak_rss = peak_rss_bytes()
@@ -402,8 +402,8 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
     for cycle, duration in enumerate(measured_cycle_ns):
         latency[latency_class(workload.cycles[cycle])].append(duration)
     measured_cycles_total_ns = sum(measured_cycle_ns)
-    source_commit = os.environ.get("BG_SOURCE_COMMIT") or git_commit()
-    adapter_commit = os.environ.get("BG_BENCHMARK_ADAPTER_COMMIT") or git_commit()
+    source_commit = os.environ.get("HG_SOURCE_COMMIT") or git_commit()
+    adapter_commit = os.environ.get("HG_BENCHMARK_ADAPTER_COMMIT") or git_commit()
     try:
         cpu_affinity = sorted(os.sched_getaffinity(0))
     except (AttributeError, OSError):
@@ -412,7 +412,7 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
     return {
         "schema_version": 1,
         "benchmark": "portable_high_count_map",
-        "engine": "bg",
+        "engine": "hg",
         "runtime": "library-operators" if arithmetic == "library" else "python-callbacks",
         "source_commit": source_commit,
         "benchmark_adapter_commit": adapter_commit,
@@ -496,7 +496,7 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
             "valid": True,
         },
         "notes": [
-            "bg.run_graph owns wiring, compilation, runtime creation, evaluation, and stop as one call.",
+            "hg.run_graph owns wiring, compilation, runtime creation, evaluation, and stop as one call.",
             "Per-cycle timing starts at flat_source and ends after both output observers; it excludes run_graph input dispatch.",
             "Per-cycle timing includes source callbacks, graph evaluation, and checksum observers.",
         ],

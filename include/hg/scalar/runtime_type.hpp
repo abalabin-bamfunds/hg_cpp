@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/construction.hpp>
-#include <bg/runtime_type.hpp>
-#include <bg/type/scalar_type.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/construction.hpp>
+#include <hg/runtime_type.hpp>
+#include <hg/type/scalar_type.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -11,7 +11,7 @@
 #include <optional>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class Scalar;
 template <typename T> class ScalarValue;
@@ -19,8 +19,8 @@ class ScalarData;
 enum class ScalarDataMode : std::uintptr_t;
 
 namespace details {
-using ScalarData = ::bg::ScalarData;
-using ScalarDataMode = ::bg::ScalarDataMode;
+using ScalarData = ::hg::ScalarData;
+using ScalarDataMode = ::hg::ScalarDataMode;
 
 template <typename T> const ScalarData &scalar_data(const Scalar<T> &value) noexcept;
 template <typename T> const ScalarData &scalar_data(const ScalarValue<T> &value) noexcept;
@@ -144,4 +144,4 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type_for_type(
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

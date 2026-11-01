@@ -1,22 +1,22 @@
 # hgraph nested graph pattern findings
 
 This review selects higher-level graph compositions from hgraph 0.5 and 0.8
-tests and checks whether BG has corresponding behavior tests. It adds regression
+tests and checks whether HG has corresponding behavior tests. It adds regression
 tests only. It does not change engine code.
 
-The [latest BG recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
+The [latest HG recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
 failure statuses below: the `take` composition and switch/mesh/reduce cases now
 pass in the ordinary focused run. The two switch/mesh cases pass after adding
 concrete `.as<TS<i64>>()` return annotations to their callbacks. The nested
 free-structure REF result cases also pass after the nested output correction.
 
 The source snapshots are hgraph 0.5 at `c34dba1d` and hgraph 0.8 at
-`b9305bb2`. Final validation uses BG `8058a013`; full source revisions
+`b9305bb2`. Final validation uses HG `8058a013`; full source revisions
 are recorded in the [review summary](hgraph-pattern-review-2026-10-28.md).
 
 ## Classification
 
-| Pattern | hgraph evidence | BG coverage | Status |
+| Pattern | hgraph evidence | HG coverage | Status |
 | --- | --- | --- | --- |
 | Mapped reductions with switch selection and removal/recreation | 0.5 [`test_reduce_map_and_switch`](https://github.com/hhenson/hgraph/blob/c34dba1db8a1c873ee303796db4c8fc48c8cc5be/hgraph_unit_tests/_wiring/test_reduce.py); 0.8 [`test_tsd_reduce_wires_switch_inside_mapped_values`](https://github.com/hhenson/hgraph/blob/b9305bb23f8e54337cd1941447b940e5fd43ec59/python/tests/ported/_wiring/test_reduce.py) | [`mapped reductions apply each parent's switch to its own total across removal and recreation`](../../../tests/evaluation/reduce_test.cpp) | Added, passing. |
 | Switch branches consume reductions, including empty input | 0.5 [`test_switch_from_reduce`](https://github.com/hhenson/hgraph/blob/c34dba1db8a1c873ee303796db4c8fc48c8cc5be/hgraph_unit_tests/_wiring/test_switch.py), [`test_switch_bundle_from_reduce`](https://github.com/hhenson/hgraph/blob/c34dba1db8a1c873ee303796db4c8fc48c8cc5be/hgraph_unit_tests/_wiring/test_switch.py); 0.8 [`test_switch_from_reduce`](https://github.com/hhenson/hgraph/blob/b9305bb23f8e54337cd1941447b940e5fd43ec59/python/tests/ported/_wiring/test_switch.py), [`test_switch_bundle_from_reduce`](https://github.com/hhenson/hgraph/blob/b9305bb23f8e54337cd1941447b940e5fd43ec59/python/tests/ported/_wiring/test_switch.py) | [`switch branches consume a reduced TSD value`](../../../tests/evaluation/switch_test.cpp), [`switch passes a reduced value through a free bundle argument`](../../../tests/evaluation/switch_test.cpp), [`an empty reduction uses its default again after an outputless switch branch`](../../../tests/evaluation/reduce_test.cpp) | Added, passing. |
@@ -28,11 +28,11 @@ The 0.8 reduce suite also includes
 This review covers observable switch/map/reduce output changes; it does not
 reproduce hgraph's per-node trace output.
 
-The empty/singleton reduction contracts differ. BG forwards one valid item
+The empty/singleton reduction contracts differ. HG forwards one valid item
 unchanged and uses its named default only when no valid items remain. hgraph
 0.8's `zero` argument also participates in a singleton reduction, as exercised
 by [`test_tsd_reduce_zero_is_used_only_for_empty_and_singleton`](https://github.com/hhenson/hgraph/blob/b9305bb23f8e54337cd1941447b940e5fd43ec59/python/tests/ported/_wiring/test_reduce.py).
-The new BG tests use BG's existing default contract and do not claim parity for
+The new HG tests use HG's existing default contract and do not claim parity for
 that behavior.
 
 ## Original verification on `8058a013`
@@ -48,9 +48,9 @@ not establish runtime behavior. See the
 Run the reproductions from the review lane:
 
 ```sh
-build/verification/bg_tests "switch-selected mesh branches feed a reduction"
-build/verification/bg_tests "a reduction observes mesh dependencies after switch outputs change"
-build/verification/bg_library_tests \
+build/verification/hg_tests "switch-selected mesh branches feed a reduction"
+build/verification/hg_tests "a reduction observes mesh dependencies after switch outputs change"
+build/verification/hg_library_tests \
   "take keeps the initial map of branches across nested switch replacement"
 ```
 

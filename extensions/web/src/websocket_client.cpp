@@ -1,14 +1,14 @@
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/queue_node.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/websocket_client.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/websocket_client.hpp>
 
 #include "websocket_client_output.hpp"
 #include "websocket_client_source_replies.hpp"
@@ -22,10 +22,10 @@
 #include <string>
 #include <utility>
 
-namespace bg::web {
+namespace hg::web {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 struct WebSocketClientSource {
     Scalar<Opaque<WebSocketClientOptions>> options;
@@ -115,4 +115,4 @@ details::wire_websocket_client_source_replies(WebSocketClientOptions options) {
                                                           "replies"_n = reply_values);
 }
 
-} // namespace bg::web
+} // namespace hg::web

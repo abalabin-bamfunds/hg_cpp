@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 class Type;
 
@@ -54,4 +54,4 @@ class RuntimeType {
     std::uint8_t flags_;
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_path.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_path.hpp>
 
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 namespace details {
@@ -62,4 +62,4 @@ class WiringContext {
     details::MultiservicePorts *multiservice_ports_{};
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/time_series/guarantee_variable.hpp>
-#include <bg/type/guarantee_parameter.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/time_series/guarantee_variable.hpp>
+#include <hg/type/guarantee_parameter.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration>
     requires guarantee_variable_declaration<Declaration>
@@ -35,4 +35,4 @@ template <auto Guarantee> [[nodiscard]] GuaranteeParameter guarantee_parameter()
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

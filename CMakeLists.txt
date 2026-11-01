@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.31)
 
 project(
-    bg
+    hg
     VERSION 0.1.0
     DESCRIPTION "An engine for forward propagation through computation graphs"
     LANGUAGES CXX
@@ -11,15 +11,31 @@ include(CTest)
 include(FetchContent)
 include(GNUInstallDirs)
 
+if(APPLE)
+    list(REMOVE_ITEM CMAKE_PREFIX_PATH "$ENV{CONDA_PREFIX}")
+    list(PREPEND CMAKE_PREFIX_PATH "/opt/homebrew" "/usr/local")
+endif()
+
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 find_package(Threads REQUIRED)
+if(APPLE AND NOT DEFINED ICU_ROOT)
+    if(DEFINED ENV{CONDA_PREFIX} AND EXISTS "$ENV{CONDA_PREFIX}/lib/libicuuc.dylib")
+        set(ICU_ROOT "$ENV{CONDA_PREFIX}")
+    elseif(EXISTS "/Users/kc/conda/lib/libicuuc.dylib")
+        set(ICU_ROOT "/Users/kc/conda")
+    elseif(EXISTS "/opt/homebrew/opt/icu4c")
+        set(ICU_ROOT "/opt/homebrew/opt/icu4c")
+    elseif(EXISTS "/usr/local/opt/icu4c")
+        set(ICU_ROOT "/usr/local/opt/icu4c")
+    endif()
+endif()
 find_package(ICU REQUIRED COMPONENTS uc i18n)
 
-option(BG_BUNDLE_FMT "Build and install fmt into the package prefix" OFF)
-if(BG_BUNDLE_FMT)
-    set(FMT_INSTALL ON CACHE BOOL "Install fmt with BG" FORCE)
-    set(_bg_build_shared_libs "${BUILD_SHARED_LIBS}")
+option(HG_BUNDLE_FMT "Build and install fmt into the package prefix" OFF)
+if(HG_BUNDLE_FMT)
+    set(FMT_INSTALL ON CACHE BOOL "Install fmt with HG" FORCE)
+    set(_hg_build_shared_libs "${BUILD_SHARED_LIBS}")
     set(BUILD_SHARED_LIBS ON)
     FetchContent_Declare(
         fmt
@@ -28,10 +44,10 @@ if(BG_BUNDLE_FMT)
         GIT_SHALLOW TRUE
     )
     FetchContent_MakeAvailable(fmt)
-    set(BUILD_SHARED_LIBS "${_bg_build_shared_libs}")
+    set(BUILD_SHARED_LIBS "${_hg_build_shared_libs}")
     get_target_property(fmt_type fmt TYPE)
     if(NOT fmt_type STREQUAL "SHARED_LIBRARY")
-        message(FATAL_ERROR "BG_BUNDLE_FMT requires fmt to be built as a shared library")
+        message(FATAL_ERROR "HG_BUNDLE_FMT requires fmt to be built as a shared library")
     endif()
 else()
     find_package(fmt CONFIG REQUIRED)
@@ -47,9 +63,9 @@ else()
     set(native_library_install_rpath "$ORIGIN")
 endif()
 
-option(BG_BUILD_PYTHON "Build the Python extension module" OFF)
-option(BG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
-option(BG_BUILD_WEB "Build the HTTP extension" OFF)
+option(HG_BUILD_PYTHON "Build the Python extension module" OFF)
+option(HG_BUILD_BENCHMARKS "Build performance benchmarks" OFF)
+option(HG_BUILD_WEB "Build the HTTP extension" OFF)
 
 set(QUILL_BUILD_TESTS OFF CACHE BOOL "" FORCE)
 set(QUILL_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
@@ -80,7 +96,7 @@ FetchContent_Declare(
 FetchContent_MakeAvailable(quill)
 
 add_library(
-    bg SHARED
+    hg SHARED
     src/compiled_graph.cpp
     src/context.cpp
     src/evaluation_profile.cpp
@@ -205,20 +221,20 @@ add_library(
     src/wired_output.cpp
     src/wiring_template.cpp
 )
-add_library(bg::bg ALIAS bg)
+add_library(hg::hg ALIAS hg)
 
-target_compile_features(bg PUBLIC cxx_std_23)
-target_compile_definitions(bg PRIVATE BG_BUILDING_ENGINE BG_VERSION="${PROJECT_VERSION}" QUILL_DLL_EXPORT)
-target_link_libraries(bg PUBLIC ddv::ddvisitor fmt::fmt PRIVATE quill::quill Threads::Threads)
+target_compile_features(hg PUBLIC cxx_std_23)
+target_compile_definitions(hg PRIVATE HG_BUILDING_ENGINE HG_VERSION="${PROJECT_VERSION}" QUILL_DLL_EXPORT)
+target_link_libraries(hg PUBLIC ddv::ddvisitor fmt::fmt PRIVATE quill::quill Threads::Threads)
 target_include_directories(
-    bg
+    hg
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 set_target_properties(
-    bg
+    hg
     PROPERTIES
         CXX_EXTENSIONS OFF
         WINDOWS_EXPORT_ALL_SYMBOLS ON
@@ -228,7 +244,7 @@ set_target_properties(
 )
 
 add_library(
-    bg_library SHARED
+    hg_library SHARED
     src/library/logical.cpp
     src/library/numeric.cpp
     src/library/conversion.cpp
@@ -251,20 +267,20 @@ add_library(
     src/library/collection_reduction.cpp
     src/library/log.cpp
 )
-add_library(bg::library ALIAS bg_library)
+add_library(hg::library ALIAS hg_library)
 
-target_compile_features(bg_library PUBLIC cxx_std_23)
-target_compile_definitions(bg_library PRIVATE BG_BUILDING_LIBRARY)
-target_link_libraries(bg_library PUBLIC bg::bg PRIVATE ICU::uc ICU::i18n fmt::fmt)
+target_compile_features(hg_library PUBLIC cxx_std_23)
+target_compile_definitions(hg_library PRIVATE HG_BUILDING_LIBRARY)
+target_link_libraries(hg_library PUBLIC hg::hg PRIVATE ICU::uc ICU::i18n fmt::fmt)
 target_include_directories(
-    bg_library
+    hg_library
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 set_target_properties(
-    bg_library
+    hg_library
     PROPERTIES
         CXX_EXTENSIONS OFF
         EXPORT_NAME library
@@ -277,35 +293,35 @@ if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-if(BG_BUILD_PYTHON)
+if(HG_BUILD_PYTHON)
     add_subdirectory(bindings/python)
 endif()
 
-if(BG_BUILD_WEB)
+if(HG_BUILD_WEB)
     add_subdirectory(extensions/web)
 endif()
 
-if(BG_BUILD_BENCHMARKS)
+if(HG_BUILD_BENCHMARKS)
     add_subdirectory(benchmarks)
 endif()
 
 include(CMakePackageConfigHelpers)
 
 configure_package_config_file(
-    cmake/bgConfig.cmake.in
-    "${CMAKE_CURRENT_BINARY_DIR}/bgConfig.cmake"
-    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/bg"
+    cmake/hgConfig.cmake.in
+    "${CMAKE_CURRENT_BINARY_DIR}/hgConfig.cmake"
+    INSTALL_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hg"
 )
 
 write_basic_package_version_file(
-    "${CMAKE_CURRENT_BINARY_DIR}/bgConfigVersion.cmake"
+    "${CMAKE_CURRENT_BINARY_DIR}/hgConfigVersion.cmake"
     VERSION ${PROJECT_VERSION}
     COMPATIBILITY SameMajorVersion
 )
 
 install(
-    TARGETS bg bg_library
-    EXPORT bgTargets
+    TARGETS hg hg_library
+    EXPORT hgTargets
     ARCHIVE DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
@@ -315,15 +331,15 @@ install(
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 install(
-    EXPORT bgTargets
-    FILE bgTargets.cmake
-    NAMESPACE bg::
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/bg"
+    EXPORT hgTargets
+    FILE hgTargets.cmake
+    NAMESPACE hg::
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hg"
 )
 
 install(
     FILES
-        "${CMAKE_CURRENT_BINARY_DIR}/bgConfig.cmake"
-        "${CMAKE_CURRENT_BINARY_DIR}/bgConfigVersion.cmake"
-    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/bg"
+        "${CMAKE_CURRENT_BINARY_DIR}/hgConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/hgConfigVersion.cmake"
+    DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/hg"
 )

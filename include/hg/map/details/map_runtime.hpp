@@ -1,21 +1,21 @@
 #pragma once
 
-#include <bg/graph/details/nested_graph_context.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/map/details/map_entries.hpp>
-#include <bg/map/details/map_node_definition.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/details/nested_graph_context.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/map/details/map_entries.hpp>
+#include <hg/map/details/map_node_definition.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cstdint>
 #include <functional>
 #include <memory_resource>
 #include <span>
 
-namespace bg::details {
+namespace hg::details {
 
 // Applies mapped-input, pass-through-input, and key-set changes to map entries.
 // The owning node decides when an entry starts or stops and how ready entries are evaluated.
@@ -262,4 +262,4 @@ class MapRuntime {
     std::optional<NestedGraphConstantInput> nested_constant_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

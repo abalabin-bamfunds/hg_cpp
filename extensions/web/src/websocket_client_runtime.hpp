@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/queue.hpp>
-#include <bg/scalar/bundle/type.hpp>
-#include <bg/web/websocket_client.hpp>
+#include <hg/queue.hpp>
+#include <hg/scalar/bundle/type.hpp>
+#include <hg/web/websocket_client.hpp>
 
 #include <memory>
 #include <optional>
 #include <string>
 #include <string_view>
 
-namespace bg::web {
+namespace hg::web {
 
 class WebSocketClientImplementation;
 
@@ -38,4 +38,4 @@ class WebSocketClientRuntime {
     i64 next_sequence_{};
 };
 
-} // namespace bg::web
+} // namespace hg::web

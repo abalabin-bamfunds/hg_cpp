@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/literal/scalar_literal.hpp>
+#include <hg/literal/scalar_literal.hpp>
 
 namespace literal {
 

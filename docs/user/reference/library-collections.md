@@ -22,8 +22,8 @@ selects an optional overload that skips invalid items:
 :sync: python
 
 ```python
-from bg import opt
-from bg.operators import sum_
+from hg import opt
+from hg.operators import sum_
 
 complete_total = sum_(values)
 available_total = sum_(opt(values))
@@ -74,8 +74,8 @@ treats an invalid root as empty:
 :sync: python
 
 ```python
-from bg import opt
-from bg.operators import all_, any_
+from hg import opt
+from hg.operators import all_, any_
 
 complete = all_(values)
 available = any_(opt(values))
@@ -190,8 +190,8 @@ Find the first matching position without changing list indices:
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import index_of
+from hg import graph, run_graph
+from hg.operators import index_of
 
 @graph
 def position(values: tuple[int, ...], item: int) -> int:
@@ -215,12 +215,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto position(wp<TS<List<i64>>> values, wp<TS<i64>> item) {
@@ -244,7 +244,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -264,8 +264,8 @@ Count distinct current values, retaining a value until its last contributing key
 :sync: python
 
 ```python
-from bg import INVALID, REMOVE, TS, TSD, TSS, graph, run_graph
-from bg.operators import len_, values_
+from hg import INVALID, REMOVE, TS, TSD, TSS, graph, run_graph
+from hg.operators import len_, values_
 
 @graph
 def distinct_count(items: TSD[str, TS[int]]) -> int:
@@ -295,14 +295,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto distinct_count(wp<TSD<string, TS<i64>>> items) {
     return len_(values_[type<TSS<i64>>](items));
@@ -331,7 +331,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -373,8 +373,8 @@ not have optional-root overloads.
 :sync: python
 
 ```python
-from bg import opt
-from bg.operators import is_empty
+from hg import opt
+from hg.operators import is_empty
 
 shared = lhs & rhs
 available = opt(lhs) | opt(rhs)
@@ -495,8 +495,8 @@ change information. The result type is explicit. C++ uses `combine[type<OUT>]`.
 :sync: python
 
 ```python
-from bg import TS, TSL, graph, run_graph
-from bg.operators import combine, sum_
+from hg import TS, TSL, graph, run_graph
+from hg.operators import combine, sum_
 
 @graph
 def pair_total(left: int, right: int) -> int:
@@ -520,13 +520,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto pair_total(wp<TS<i64>> left, wp<TS<i64>> right) {
@@ -551,7 +551,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -592,8 +592,8 @@ them.
 :sync: python
 
 ```python
-from bg import TS, graph, run_graph
-from bg.operators import collect, emit
+from hg import TS, graph, run_graph
+from hg.operators import collect, emit
 
 @graph
 def collected(values: tuple[int, ...]) -> tuple[int, ...]:
@@ -617,13 +617,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto collected(wp<TS<List<i64>>> values) {
@@ -648,7 +648,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

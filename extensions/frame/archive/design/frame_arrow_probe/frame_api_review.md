@@ -2,16 +2,16 @@
 
 Status: design review and recommendations, not approved design or implementation.
 Reviewed the [I/O proposal](frame_io_api_proposal.md), the associated column and
-utility proposals, and BG root revision `aef312f1`. The experiment lane is at
+utility proposals, and HG root revision `aef312f1`. The experiment lane is at
 `17153ce2`; framework links below refer to the current root. External sources
 were read on 2026-10-02. API names in this review are illustrative.
 
 ## Assessment
 
 Keep the four types: scalar `Column<T>` and `Frame<SCHEMA>`, incremental
-`TSC<T>` and `TSF<SCHEMA>`. They fit BG's distinction between a scalar value and
+`TSC<T>` and `TSF<SCHEMA>`. They fit HG's distinction between a scalar value and
 a time series with collection changes. Keep representation choices behind the
-runtime type, and use BG's scheduler and publication rules.
+runtime type, and use HG's scheduler and publication rules.
 
 The proposal is not ready to implement. The principal gaps concern observable
 state, identity, and delta consumption. Arrow buffer compatibility alone cannot
@@ -30,15 +30,15 @@ resolve these. The following changes should precede implementation:
 
 ## What to borrow
 
-| System | Useful design | Application to BG | Boundary |
+| System | Useful design | Application to HG | Boundary |
 | --- | --- | --- | --- |
-| Arrow [A1, A2] | Typed column buffers, independent null validity, slices, dictionaries, batch kernels | Interchange and compatible batch execution; retain multiple BG runtime layouts | Arrow's array format does not define BG row identity or table mutations |
-| Polars [P1, P2] | Expression planning, projection and predicate pushdown, common subplan elimination, batch execution | Resolve expressions at wiring; process only required columns; fuse compatible expressions within frame nodes | Streaming query execution in batches does not supply persistent insert/update/delete maintenance for BG |
-| kdb+ [K1, K2] | Tables built from column lists; optional keyed tables; column operations and keyed upsert | Keep user keys optional; put keyed ingestion and indexes in nodes; support column batches | A q table's row position is insufficient as stable identity after BG deletion or compaction |
-| Perspective [V1, V2] | Mutable tables, live configured views, indexed partial updates, Arrow row-update callbacks, pivot column paths | Separate stored data from view configuration; share source columns; distinguish omitted updates from null values | Its documented update callback is not a complete specification of arbitrary BG derived-view deletions or identity |
-| Deephaven [D1] | Row sets, shared column sources, column redirection, modified column sets, cycle-scoped previous values | Closest comparison for incremental TSF nodes; use its lifecycle and state costs to test our contracts | Its ordered row keys and shift protocol need not become BG row IDs or an in-place reorder API |
+| Arrow [A1, A2] | Typed column buffers, independent null validity, slices, dictionaries, batch kernels | Interchange and compatible batch execution; retain multiple HG runtime layouts | Arrow's array format does not define HG row identity or table mutations |
+| Polars [P1, P2] | Expression planning, projection and predicate pushdown, common subplan elimination, batch execution | Resolve expressions at wiring; process only required columns; fuse compatible expressions within frame nodes | Streaming query execution in batches does not supply persistent insert/update/delete maintenance for HG |
+| kdb+ [K1, K2] | Tables built from column lists; optional keyed tables; column operations and keyed upsert | Keep user keys optional; put keyed ingestion and indexes in nodes; support column batches | A q table's row position is insufficient as stable identity after HG deletion or compaction |
+| Perspective [V1, V2] | Mutable tables, live configured views, indexed partial updates, Arrow row-update callbacks, pivot column paths | Separate stored data from view configuration; share source columns; distinguish omitted updates from null values | Its documented update callback is not a complete specification of arbitrary HG derived-view deletions or identity |
+| Deephaven [D1] | Row sets, shared column sources, column redirection, modified column sets, cycle-scoped previous values | Closest comparison for incremental TSF nodes; use its lifecycle and state costs to test our contracts | Its ordered row keys and shift protocol need not become HG row IDs or an in-place reorder API |
 | DuckDB [U1] | Flat, constant, dictionary, and sequence vectors with a common access interface | Let kernels read selected and encoded batches without immediately gathering them | Its dictionary selection vector is an execution representation; it is not an Arrow table row-selection feature |
-| Feldera / DBSP [F1, F2] | Stateful incremental query evaluation and explicit insert/delete changes | Use delta algebra and retained indexes to derive aggregation and join nodes | Translating a BG modification into a retraction requires the old contribution |
+| Feldera / DBSP [F1, F2] | Stateful incremental query evaluation and explicit insert/delete changes | Use delta algebra and retained indexes to derive aggregation and join nodes | Translating a HG modification into a retraction requires the old contribution |
 
 ### Perspective in particular
 
@@ -46,9 +46,9 @@ Perspective's `TableInitOptions.index` chooses insert-or-update behavior by
 column value. Its optional `limit` overwrites the earliest inserted rows.
 `Table::update` accepts partial column updates for indexed tables, while the
 table schema remains fixed. `View` keeps its query configuration fixed while
-incrementally updating its data. These are useful separations for BG [V1, V2].
+incrementally updating its data. These are useful separations for HG [V1, V2].
 
-BG should keep business-key lookup outside internal row identity. A bounded
+HG should keep business-key lookup outside internal row identity. A bounded
 table should express eviction as a removal followed by a distinct insertion;
 reusing a physical slot must not silently preserve the evicted row's identity.
 
@@ -60,14 +60,14 @@ That can remain a later extension to the fixed-schema design.
 The inspected Perspective source documents Arrow updated-row callbacks and a
 separate removal callback carrying source index values. The latter describes
 indexed-table remove, replace, and clear operations. It does not establish a
-general protocol for rows leaving a filtered or pivoted BG result. Adopt the
-table/view separation; specify BG result deltas independently.
+general protocol for rows leaving a filtered or pivoted HG result. Adopt the
+table/view separation; specify HG result deltas independently.
 
 ### kdb+ column operations and maintained indexes
 
 kdb+'s table representation makes whole-column expressions natural, and its
 sorted, unique, parted, and grouped attributes describe useful data properties
-or support lookup [K1]. For BG, the useful application is to retain a join or
+or support lookup [K1]. For HG, the useful application is to retain a join or
 group index across ticks and update only affected entries. Ordered time data
 can support specialized searches when the operator maintains that ordering.
 
@@ -115,7 +115,7 @@ continue borrowing changing cells after publication. A deduplicated selected
 output needs proof from its sources or value comparisons supported by retained
 state. Runtime representation choice must not weaken the declared guarantee.
 
-This follows BG's [evaluation contract](../../../../docs/evaluation.md) and
+This follows HG's [evaluation contract](../../../../docs/evaluation.md) and
 [validity contract](../../../../docs/time-series-validity.md). Selected frames
 are distinct logical outputs with their own membership and change record;
 column projections of one TSF expose that parent's authoritative child state.
@@ -134,7 +134,7 @@ deleted contribution. This can happen even with an active source input.
 **Recommendation:** expose an opaque current publication token and the base
 token to which the current delta applies. Tokens include logical-series
 incarnation; bindings must also expose resampling. They need not be counters
-if BG's time and reference state supply equivalent information. This is
+if HG's time and reference state supply equivalent information. This is
 constant metadata per series, with sampling state on its binding and a retained
 token per consuming input. Also
 report whether that delta is still available in the current cycle. Once its
@@ -154,13 +154,13 @@ available delta with matching base  -> apply the current row delta
 On rebuild, discard or reconcile old consumer state before loading the current
 value. Rebinding between two selections of the same source needs this rule
 even though both selections use the same row-ID domain. An accepted mutation
-with empty final row sets can still advance publication under BG's rules.
+with empty final row sets can still advance publication under HG's rules.
 
-Integrate this with BG's
+Integrate this with HG's
 [reference sampling](../../../../docs/time-series-references.md#input-sampling).
 Do not make nodes infer target changes from data pointers, and do not imply
 that deltas accumulate until a passive consumer reads them. A rebuild marker
-is a proposed extension for frame inputs, not an existing BG facility.
+is a proposed extension for frame inputs, not an existing HG facility.
 
 ## 3. Identity, membership, order, and lookup are separate
 
@@ -229,11 +229,11 @@ the same state for modifications does not cover append/remove workloads or
 the aggregate cost across many consumers.
 
 Deephaven requires prior values for both modifications and removals, valid only
-within the update phase [D1]. A BG source could retain the first old value for
+within the update phase [D1]. A HG source could retain the first old value for
 each overwritten cell in a cycle, plus removed cells. This would cost in
 proportion to changed payload for that cycle rather than a permanent matrix of
 per-cell timestamps. Derived selections would also need previous membership
-and source access. That is substantial machinery and a change to BG's normal
+and source access. That is substantial machinery and a change to HG's normal
 modification contract; it is not free retention supplied by Arrow.
 
 **Recommendation:** compare IDs-only consumer caches with projected,
@@ -266,7 +266,7 @@ For a completed publication, require:
 
 Deephaven communicates a modified row set and a modified column set [D1].
 This inexpensive combination can conservatively describe a rectangle of cells.
-For BG, the current promise that a child changes only when that column is
+For HG, the current promise that a child changes only when that column is
 written is stronger: sparse edits to different columns need exact per-column
 ID subsets or an equivalent representation. Do not quietly substitute the
 row/column cross product for that promise.
@@ -325,10 +325,10 @@ property; the representation needs measurement.
 The owned writer needs complete-row batch insertion and column updates by ID.
 The row-preserving expression writer needs batch writes for inherited IDs.
 The selected writer needs source binding and membership changes. All publish
-through the same BG completion boundary and apply the same delta rules.
+through the same HG completion boundary and apply the same delta rules.
 
 Null-aware indexed fallback also needs care: an Arrow bit-packed Boolean has
-no addressable BG `bool` object. Returning only `optional<Scalar<T>>` is not
+no addressable HG `bool` object. Returning only `optional<Scalar<T>>` is not
 yet a sufficient specification for every layout. Define typed reads or
 callback-scoped decoded cell access without fabricating long-lived references.
 
@@ -340,21 +340,21 @@ or reject that guarantee during wiring. Hashing need not be universal.
 
 ## 8. Framework integration must be explicit
 
-BG already separates semantic and runtime types. Preserve that separation,
+HG already separates semantic and runtime types. Preserve that separation,
 including Arrow-backed scalar values and selected time series layouts.
 The following integration points need a focused proposal:
 
-| BG facility | Work required |
+| HG facility | Work required |
 | --- | --- |
 | Scalar providers and dispatch | Register Column/Frame semantics, copy/ownership behavior, equality capabilities, runtime input compatibility, and batch dispatch |
 | Schema model | Reuse named field declarations and typed field access; define Frame matching and SCHEMA resolution explicitly |
 | Time series type registration | Support guarantee resolution, invalidation, matching, common types, diagnostics, and the runtime resolver |
 | Input/output visitors | Handle TSF/TSC through a deliberate extension path; current dispatch enumerates built-in families |
-| Collection items | Expose fixed TSF columns as TSC children; BG item IDs identify columns, while frame row IDs belong to the extension |
+| Collection items | Expose fixed TSF columns as TSC children; HG item IDs identify columns, while frame row IDs belong to the extension |
 | Publication and subscriptions | Publish affected children; keep root and child deltas coherent; support dynamic column references |
 | Reference representations | Support rebinding across runtime layouts, resampling, invalidation, and removal cleanup |
 | Output construction | Select a layout compatible with the producer's writer, independent of compatible input layouts |
-| Runtime lifecycle | Use BG allocation, initialization, finalization, and deferred cleanup; release selections before source storage |
+| Runtime lifecycle | Use HG allocation, initialization, finalization, and deferred cleanup; release selections before source storage |
 
 The current compiler's `find_output_runtime_type` passes input runtime types to
 `resolve_time_series_runtime_type`, which can select the first exact semantic
@@ -368,7 +368,7 @@ output-only capability declaration for third-party nodes. Do not expose cell
 mutation methods that fail merely because the producer received a selected
 runtime. All consumers continue to accept `In<TSF<SCHEMA>>` or `In<TSC<T>>`.
 
-Use BG's existing schema field syntax where possible. A required frame column
+Use HG's existing schema field syntax where possible. A required frame column
 containing null cells is different from an optional Bundle field or an optional
 node input. Full-row construction, partial cell updates, and patch omission
 must not share an ambiguous optional value. Fixed-schema matching should be
@@ -376,11 +376,11 @@ exact initially; broader schema projection should be an explicit operation
 until safe read/write compatibility has been specified.
 
 The relevant implementation boundaries are
-[type visitation](../../../../include/bg/type/type.hpp),
-[input visitation](../../../../include/bg/time_series/time_series_input.hpp),
+[type visitation](../../../../include/hg/type/type.hpp),
+[input visitation](../../../../include/hg/time_series/time_series_input.hpp),
 [runtime resolution](../../../../src/time_series/time_series_runtime_type.cpp),
 [output layout selection](../../../../src/compiled_graph.cpp), and
-[TSB field access](../../../../include/bg/time_series/tsb/tsb_input.hpp).
+[TSB field access](../../../../include/hg/time_series/tsb/tsb_input.hpp).
 Typed Column/Frame scalar extensions can use existing provider facilities;
 fully generic TSF/TSC integration needs framework work. An extension library
 should not own a second scheduler.
@@ -412,7 +412,7 @@ dJ = dL join R + L join dR + dL join dR
 
 Equivalently process `dL` against old `R`, then `dR` against updated `L`.
 Processing each delta against both updated sides double-counts cross changes.
-BG's completed-predecessor rule supplies consistent current inputs; the node
+HG's completed-predecessor rule supplies consistent current inputs; the node
 still needs retained state to implement this algebra. Equal-valued duplicate
 rows remain distinct through row or match identity. Outer joins need additional
 unmatched-row bookkeeping.
@@ -443,24 +443,24 @@ execution.
 
 Polars' documented optimizations operate on query plans [P1]. A claimed 100x
 advantage must identify workload, plan, conversion, and allocation costs.
-BG should borrow expression planning and column pruning, then compare complete
+HG should borrow expression planning and column pruning, then compare complete
 equivalent pipelines. O(changed rows) maintenance can dominate the choice of
 an O(all rows) scan backend, subject to output size and operator fanout.
 
 Arrow export must distinguish shared value buffers from copied descriptors,
 validity, decoding, and gathering. Boolean packing, offsets, alignment, and
 dictionary domains require type-specific adapters [A1]. Arrays backed by
-mutable BG storage are borrowed only for the invocation; release callbacks or
+mutable HG storage are borrowed only for the invocation; release callbacks or
 an Arrow wrapper do not freeze those cells. Retained scalar/Python values need
-stable ownership. This does not add a retention requirement to ordinary BG reads.
+stable ownership. This does not add a retention requirement to ordinary HG reads.
 
 Symbols are good candidates for dictionary encoding, as column systems
-demonstrate, but BG symbol handles are not automatically Arrow dictionary
+demonstrate, but HG symbol handles are not automatically Arrow dictionary
 indices. Specify dictionary identity and code translation; compare values
 across differing dictionaries. General strings need a bytes/UTF-8 policy and
 an adapter for the selected Arrow string representation. Null, empty string,
 and empty symbol must have deliberate semantics. kdb+'s type-specific null
-representations [K3] should not replace Arrow-style validity in BG columns.
+representations [K3] should not replace Arrow-style validity in HG columns.
 
 An external delta value eventually needs an identity domain/incarnation, base
 and result publication tokens, removed IDs, and changed values with explicit

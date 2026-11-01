@@ -16,7 +16,7 @@ For example, map can select one field from each Bundle with the operator
 template directly:
 
 ```cpp
-auto fields = bg::map(bg::operators::getattr, values, bg::util::symbol{"field"});
+auto fields = hg::map(hg::operators::getattr, values, hg::util::symbol{"field"});
 ```
 
 Map's operator implementation converts a graph function to a graph argument
@@ -43,21 +43,21 @@ the semantic type and value without exposing its original C++ wrapper type.
 `MapArgument::pass_through` applies the normal pass-through behavior.
 
 ```cpp
-const bg::WiringTemplate &runtime_graph = graph_template;
-std::vector<bg::MapArgument> arguments{
-    {bg::WiringArgument{values}},
-    {bg::WiringArgument{factors}, true},
+const hg::WiringTemplate &runtime_graph = graph_template;
+std::vector<hg::MapArgument> arguments{
+    {hg::WiringArgument{values}},
+    {hg::WiringArgument{factors}, true},
 };
 
-auto result = bg::map(runtime_graph, std::span<const bg::MapArgument>{arguments});
+auto result = hg::map(runtime_graph, std::span<const hg::MapArgument>{arguments});
 ```
 
 A runtime named argument stores its name in the `WiringArgument`. This includes
 map options:
 
 ```cpp
-arguments.push_back({bg::WiringArgument{
-    bg::util::symbol{"__key_set_arg__"}, std::int64_t{0}}});
+arguments.push_back({hg::WiringArgument{
+    hg::util::symbol{"__key_set_arg__"}, std::int64_t{0}}});
 ```
 
 Generic C++ lambdas use the typed call because their call interface exists only

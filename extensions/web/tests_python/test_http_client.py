@@ -3,9 +3,9 @@ import socket
 from threading import Event, Thread
 from datetime import timedelta
 
-import bg
+import hg
 import pytest
-from bg_web import (
+from hg_web import (
     Auth,
     BearerAuth,
     ClientAuthRegex,
@@ -42,15 +42,15 @@ def test_http_client_service_isolated_across_repeated_runtime_runs():
     replies = []
     stop_sources = []
 
-    @bg.compute_node
-    def observe(response: bg.TS[HttpResponse]) -> None:
+    @hg.compute_node
+    def observe(response: hg.TS[HttpResponse]) -> None:
         value = response.value
         replies.append((value.status, list(value.headers), bytes(value.body)))
         stop_sources[-1].request_stop()
 
-    @bg.graph
+    @hg.graph
     def application() -> None:
-        request = bg.operators.const_(
+        request = hg.operators.const_(
             HttpClientRequest(
                 f"http://127.0.0.1:{server.server_port}/echo",
                 method="POST",
@@ -60,15 +60,15 @@ def test_http_client_service_isolated_across_repeated_runtime_runs():
         )
         observe(http_client(request))
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     catalogue.register_impl(http_client, http_client_impl())
     try:
         for _ in range(2):
-            stop_sources.append(bg.StopSource())
-            bg.run_graph(
+            stop_sources.append(hg.StopSource())
+            hg.run_graph(
                 application,
                 catalogue=catalogue,
-                engine=bg.EvaluationEngine.realtime,
+                engine=hg.EvaluationEngine.realtime,
                 run_time=timedelta(seconds=5),
                 stop_token=stop_sources[-1].get_token(),
             )
@@ -113,15 +113,15 @@ def test_http_client_overlaps_requests_and_delivers_completion_order(separate_cl
     server_thread = Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
     replies = []
-    stop = bg.StopSource()
+    stop = hg.StopSource()
 
-    @bg.queue
-    def client_requests(writer: bg.Queue = None) -> bg.TS[HttpClientRequest]:
+    @hg.queue
+    def client_requests(writer: hg.Queue = None) -> hg.TS[HttpClientRequest]:
         assert writer.write(HttpClientRequest(f"http://127.0.0.1:{server.server_port}/slow"))
         assert writer.write(HttpClientRequest(f"http://127.0.0.1:{server.server_port}/fast"))
 
-    @bg.compute_node
-    def observe(response: bg.TS[HttpResponse]) -> None:
+    @hg.compute_node
+    def observe(response: hg.TS[HttpResponse]) -> None:
         body = bytes(response.value.body)
         replies.append(body)
         if body == b"fast":
@@ -129,13 +129,13 @@ def test_http_client_overlaps_requests_and_delivers_completion_order(separate_cl
         if len(replies) == 2:
             stop.request_stop()
 
-    @bg.graph
+    @hg.graph
     def application() -> None:
         if separate_clients:
-            slow = bg.operators.const_(
+            slow = hg.operators.const_(
                 HttpClientRequest(f"http://127.0.0.1:{server.server_port}/slow")
             )
-            fast = bg.operators.const_(
+            fast = hg.operators.const_(
                 HttpClientRequest(f"http://127.0.0.1:{server.server_port}/fast")
             )
             observe(http_client(slow))
@@ -143,13 +143,13 @@ def test_http_client_overlaps_requests_and_delivers_completion_order(separate_cl
         else:
             observe(http_client(client_requests()))
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     catalogue.register_impl(http_client, http_client_impl())
     try:
-        bg.run_graph(
+        hg.run_graph(
             application,
             catalogue=catalogue,
-            engine=bg.EvaluationEngine.realtime,
+            engine=hg.EvaluationEngine.realtime,
             run_time=timedelta(seconds=5),
             stop_token=stop.get_token(),
         )
@@ -199,34 +199,34 @@ def test_http_client_returns_599_for_invalid_requests_and_transport_failures():
         HttpClientRequest(f"http://127.0.0.1:{server.server_port}/slow"),
     ]
     replies = []
-    stop = bg.StopSource()
+    stop = hg.StopSource()
 
-    @bg.queue
-    def requests(writer: bg.Queue = None) -> bg.TS[HttpClientRequest]:
+    @hg.queue
+    def requests(writer: hg.Queue = None) -> hg.TS[HttpClientRequest]:
         for request in request_values:
             assert writer.write(request)
 
-    @bg.compute_node
-    def observe(response: bg.TS[HttpResponse]) -> None:
+    @hg.compute_node
+    def observe(response: hg.TS[HttpResponse]) -> None:
         value = response.value
         replies.append((value.status, bytes(value.body)))
         if len(replies) == len(request_values):
             stop.request_stop()
 
-    @bg.graph
+    @hg.graph
     def application() -> None:
         observe(http_client(requests()))
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     catalogue.register_impl(
         http_client,
         http_client_impl(timeout=timedelta(milliseconds=500), max_response_body_size=3),
     )
     try:
-        bg.run_graph(
+        hg.run_graph(
             application,
             catalogue=catalogue,
-            engine=bg.EvaluationEngine.realtime,
+            engine=hg.EvaluationEngine.realtime,
             run_time=timedelta(seconds=5),
             stop_token=stop.get_token(),
         )
@@ -254,7 +254,7 @@ def test_http_client_returns_599_for_invalid_requests_and_transport_failures():
 def test_http_client_graph_stop_discards_pending_request():
     request_started = Event()
     release_request = Event()
-    stop = bg.StopSource()
+    stop = hg.StopSource()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -270,22 +270,22 @@ def test_http_client_graph_stop_discards_pending_request():
     server_thread.start()
     replies = []
 
-    @bg.compute_node
-    def observe(response: bg.TS[HttpResponse]) -> None:
+    @hg.compute_node
+    def observe(response: hg.TS[HttpResponse]) -> None:
         replies.append(bytes(response.value.body))
 
-    @bg.graph
+    @hg.graph
     def application() -> None:
-        request = bg.operators.const_(HttpClientRequest(f"http://127.0.0.1:{server.server_port}/pending"))
+        request = hg.operators.const_(HttpClientRequest(f"http://127.0.0.1:{server.server_port}/pending"))
         observe(http_client(request))
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     catalogue.register_impl(http_client, http_client_impl())
     try:
-        bg.run_graph(
+        hg.run_graph(
             application,
             catalogue=catalogue,
-            engine=bg.EvaluationEngine.realtime,
+            engine=hg.EvaluationEngine.realtime,
             run_time=timedelta(seconds=5),
             stop_token=stop.get_token(),
         )
@@ -301,7 +301,7 @@ def test_http_client_graph_stop_discards_pending_request():
 
 def test_client_transports_and_auth_registration_integrate_with_python_services():
     received_authorization = []
-    stop = bg.StopSource()
+    stop = hg.StopSource()
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self):
@@ -320,31 +320,31 @@ def test_client_transports_and_auth_registration_integrate_with_python_services(
     server_thread = Thread(target=server.serve_forever, daemon=True)
     server_thread.start()
 
-    @bg.graph
-    def credentials(origin: bg.TS[str]) -> bg.TS[Auth]:
+    @hg.graph
+    def credentials(origin: hg.TS[str]) -> hg.TS[Auth]:
         del origin
-        return bg.operators.const_(BearerAuth("python-token"))
+        return hg.operators.const_(BearerAuth("python-token"))
 
-    @bg.compute_node
-    def describe(response: bg.TS[HttpResponse]) -> bg.TS[str]:
+    @hg.compute_node
+    def describe(response: hg.TS[HttpResponse]) -> hg.TS[str]:
         value = response.value
         stop.request_stop()
         return f"{value.status}:{bytes(value.body).decode()}"
 
-    @bg.graph
-    def application() -> bg.TS[str]:
+    @hg.graph
+    def application() -> hg.TS[str]:
         origin = f"http://127.0.0.1:{server.server_port}"
         register_client_auth("python-client-auth", ClientAuthRegex(r"http://127\.0\.0\.1:[0-9]+"), credentials)
-        request = bg.operators.const_(HttpClientRequest(f"{origin}/private"))
+        request = hg.operators.const_(HttpClientRequest(f"{origin}/private"))
         return describe(http_client(request))
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     register_client_transports(catalogue, "python-client-auth", timeout=timedelta(seconds=2))
     try:
-        replies = bg.run_graph(
+        replies = hg.run_graph(
             application,
             catalogue=catalogue,
-            engine=bg.EvaluationEngine.realtime,
+            engine=hg.EvaluationEngine.realtime,
             run_time=timedelta(seconds=4),
             stop_token=stop.get_token(),
             capture_output=True,

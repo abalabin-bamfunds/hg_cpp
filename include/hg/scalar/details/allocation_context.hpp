@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include <cstddef>
 
-namespace bg::details {
+namespace hg::details {
 
 class ScalarAllocationPool;
 
@@ -36,4 +36,4 @@ ScalarAllocationPool *current_scalar_allocation_pool() noexcept;
 void record_context_scalar_allocation(const void *value);
 void check_context_scalar_deallocation(const void *value);
 
-} // namespace bg::details
+} // namespace hg::details

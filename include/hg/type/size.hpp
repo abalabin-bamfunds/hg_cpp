@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 struct Size {
     std::size_t value;
@@ -10,4 +10,4 @@ struct Size {
     bool operator==(const Size &) const = default;
 };
 
-} // namespace bg
+} // namespace hg

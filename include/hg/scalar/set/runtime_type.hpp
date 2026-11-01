@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/scalar/construction.hpp>
-#include <bg/scalar/runtime_type.hpp>
+#include <hg/scalar/construction.hpp>
+#include <hg/scalar/runtime_type.hpp>
 
 #include <cassert>
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class ScalarSetRuntimeType : public ScalarRuntimeType {
   protected:
@@ -69,4 +69,4 @@ class ScalarSetRuntimeType : public ScalarRuntimeType {
     const ScalarRuntimeType *item_{};
 };
 
-} // namespace bg
+} // namespace hg

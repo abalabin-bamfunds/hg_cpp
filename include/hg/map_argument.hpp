@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename T> struct pass_through_argument {
     T value;
@@ -20,4 +20,4 @@ struct MapArgument {
     bool pass_through{};
 };
 
-} // namespace bg
+} // namespace hg

@@ -2,7 +2,7 @@
 
 #include <nanobind/nanobind.h>
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 void register_delta_types(nanobind::handle set_delta_type, nanobind::handle removed_type,
                           nanobind::handle remove_sentinel, nanobind::handle invalid_sentinel);
@@ -14,4 +14,4 @@ nanobind::handle remove_sentinel();
 nanobind::handle invalid_sentinel();
 nanobind::object make_set_delta(nanobind::handle added, nanobind::handle removed);
 
-} // namespace bg::python::details
+} // namespace hg::python::details

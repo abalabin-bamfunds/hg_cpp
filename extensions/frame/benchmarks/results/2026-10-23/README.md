@@ -15,8 +15,8 @@ measures its additional Arrow export improvement separately.
 The baseline frame revision is `47adc693`; the measured optimized revision is
 `2f180034`. The optimization commits are `e858e5fa` (filter reevaluation),
 `38e0248b` (row spans), and `2f180034` (Arrow validity allocation).
-Both versions use the fixed BG revision `5d48e914`, installed in
-`dependencies/bg-frame-core-release-install`. The baseline executables and their
+Both versions use the fixed HG revision `5d48e914`, installed in
+`dependencies/hg-frame-core-release-install`. The baseline executables and their
 matching extension libraries were preserved before rebuilding. The manifest
 records their hashes and resolved libraries.
 The measured optimized binaries are also preserved under
@@ -90,7 +90,7 @@ split proven spans. Row order, row counts, values, and nulls are preserved.
 ## Reproduction
 
 Run from `.lanes/frame-field-access`. Build the current consumers with the
-matching Release BG install and `-j12`, using the configurations documented in
+matching Release HG install and `-j12`, using the configurations documented in
 the [earlier benchmark notes](../2026-10-22/README.md#build-and-run-commands).
 
 The executables contain absolute ELF `DT_RPATH` entries. To run preserved
@@ -99,20 +99,20 @@ with the executable's RPATH disabled. `LD_LIBRARY_PATH` alone does not override
 this RPATH. For example:
 
 ```sh
-BG_FRAME_RUNTIME="$PWD/build/frame-optimisation-2026-10-22/before-runtime/arrow-on"
-BG_FRAME_LIBRARY_PATH="$BG_FRAME_RUNTIME:$PWD/dependencies/bg-frame-core-release-install/lib64:/home/abalabin/miniforge3/envs/bg-build/lib:/home/abalabin/miniforge3/envs/hg-build/lib"
+HG_FRAME_RUNTIME="$PWD/build/frame-optimisation-2026-10-22/before-runtime/arrow-on"
+HG_FRAME_LIBRARY_PATH="$HG_FRAME_RUNTIME:$PWD/dependencies/hg-frame-core-release-install/lib64:/home/abalabin/miniforge3/envs/hg-build/lib:/home/abalabin/miniforge3/envs/hg-build/lib"
 /lib64/ld-linux-x86-64.so.2 --inhibit-rpath '' \
-  --library-path "$BG_FRAME_LIBRARY_PATH" --list \
-  "$BG_FRAME_RUNTIME/bg_frame_arrow_benchmark"
+  --library-path "$HG_FRAME_LIBRARY_PATH" --list \
+  "$HG_FRAME_RUNTIME/hg_frame_arrow_benchmark"
 /lib64/ld-linux-x86-64.so.2 --inhibit-rpath '' \
-  --library-path "$BG_FRAME_LIBRARY_PATH" \
-  "$BG_FRAME_RUNTIME/bg_frame_arrow_benchmark" \
+  --library-path "$HG_FRAME_LIBRARY_PATH" \
+  "$HG_FRAME_RUNTIME/hg_frame_arrow_benchmark" \
   --report /tmp/before-arrow.md --csv /tmp/before-arrow.csv
 ```
 
-For the measured optimized run, set `BG_FRAME_RUNTIME` to
+For the measured optimized run, set `HG_FRAME_RUNTIME` to
 `$PWD/build/frame-optimisation-2026-10-22/pre-bounded-runtime/arrow-on` and
-rebuild `BG_FRAME_LIBRARY_PATH`.
+rebuild `HG_FRAME_LIBRARY_PATH`.
 For expressions, use the corresponding `arrow-off` directory and
-`bg_frame_expression_benchmark`. Verify that `--list` resolves each frame
+`hg_frame_expression_benchmark`. Verify that `--list` resolves each frame
 library to the selected runtime directory before measurement.

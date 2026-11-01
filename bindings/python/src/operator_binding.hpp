@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/operator.hpp>
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/operator.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -9,11 +9,11 @@
 #include <string>
 #include <vector>
 
-namespace bg::python {
+namespace hg::python {
 class PythonWiringPoint;
 }
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 class PythonOperator {
   public:
@@ -41,4 +41,4 @@ void bind_operators(nanobind::module_ &module);
 void register_python_object_operators();
 nanobind::object getitem(const PythonWiringPoint &collection, nanobind::handle key);
 
-} // namespace bg::python::details
+} // namespace hg::python::details

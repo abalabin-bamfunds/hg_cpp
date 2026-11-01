@@ -25,7 +25,7 @@ use the combined 303 samples.
 - Sum-node measurements: 2026-10-28.
 - CPU: AMD EPYC 7R13 virtual machine.
 - Compiler: GCC 14.3.0 from `hg-build`.
-- BG and frame extension: matching Release builds, `-O3 -DNDEBUG`.
+- HG and frame extension: matching Release builds, `-O3 -DNDEBUG`.
 - Frame source: incremental sum changes on base `5169a8d5`; the sum-node
   profiling harness starts from `3f23e24c`.
 - Arrow 24 is enabled in the build; the measured graphs use native batches.
@@ -46,7 +46,7 @@ Times are milliseconds per complete evaluation cycle. Ratios compare medians.
 
 ## Sum-node results
 
-The `--profile-nodes` mode records BG's `EvaluationProfile` and reads
+The `--profile-nodes` mode records HG's `EvaluationProfile` and reads
 `EvaluationProfiler::node_totals()` after each cycle. The selected sum node's
 wiring identity is mapped to its compiled node index. Each sample requires
 exactly one evaluation of that node. Reader processing, result validation, and
@@ -54,9 +54,9 @@ profiler queries run between evaluations. Warmup and sample counts match the
 complete-cycle measurement.
 
 These intervals exclude source, filter, and sink evaluation and cycle cleanup.
-BG checkpoints occur before output publication, so each interval includes
+HG checkpoints occur before output publication, so each interval includes
 intervening publication and scheduling and ends before the sum's publication.
-Profiling overhead is included. See BG's
+Profiling overhead is included. See HG's
 [profiling contract](../../../docs/evaluation.md#evaluation-profiling).
 
 On this x86 machine, checkpoints use the timestamp counter. Each repeat
@@ -89,10 +89,10 @@ incremental updates avoid that complete traversal.
 
 ## Run
 
-Configure a Release frame build with `BG_FRAME_BUILD_BENCHMARKS=ON`, then run:
+Configure a Release frame build with `HG_FRAME_BUILD_BENCHMARKS=ON`, then run:
 
 ```sh
-cmake --build <release-build> --target bg_frame_incremental_sum_benchmark -j12
-<release-build>/bg_frame_incremental_sum_benchmark
-<release-build>/bg_frame_incremental_sum_benchmark --profile-nodes
+cmake --build <release-build> --target hg_frame_incremental_sum_benchmark -j12
+<release-build>/hg_frame_incremental_sum_benchmark
+<release-build>/hg_frame_incremental_sum_benchmark --profile-nodes
 ```

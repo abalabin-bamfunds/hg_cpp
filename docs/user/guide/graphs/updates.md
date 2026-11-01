@@ -16,7 +16,7 @@ previous position. `None` in Python and `SKIP` in C++ supply no input update.
 :sync: python
 
 ```python
-from bg import graph, run_graph
+from hg import graph, run_graph
 
 
 @graph
@@ -48,12 +48,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
+using namespace hg;
 
 auto calibrated_temperature(wp<TS<i64>> reading, int offset) {
     return reading + offset;
@@ -84,7 +84,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -107,7 +107,7 @@ output at every position.
 
 ## Multiple inputs
 
-One sequence per input describes independent updates. BG evaluates a calculation
+One sequence per input describes independent updates. HG evaluates a calculation
 when its required inputs have values and an active dependency updates.
 
 <!-- runnable-example -->
@@ -118,7 +118,7 @@ when its required inputs have values and an active dependency updates.
 :sync: python
 
 ```python
-from bg import graph, run_graph
+from hg import graph, run_graph
 
 
 @graph
@@ -154,12 +154,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
+using namespace hg;
 using namespace literal;
 
 auto calibrated_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
@@ -192,7 +192,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -219,8 +219,8 @@ which downstream calculations observe repeated input values.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import dedup
+from hg import graph, run_graph
+from hg.operators import dedup
 
 
 @graph
@@ -247,13 +247,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto reported_temperature(wp<TS<i64>> reading) {
@@ -279,7 +279,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -305,8 +305,8 @@ Changes to `value` alone do not publish a sampled result.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import sample
+from hg import graph, run_graph
+from hg.operators import sample
 
 
 @graph
@@ -337,13 +337,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto sampled_temperature(wp<TS<i64>> reading, wp<TS<bool>> signal) {
@@ -372,7 +372,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

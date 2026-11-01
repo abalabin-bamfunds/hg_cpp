@@ -5,7 +5,7 @@ Status: superseded by [extension-owned output options](0038-extension-owned-outp
 ## Context
 
 Extension libraries can define time-series families whose semantic types and
-storage runtimes are not built into BG. A graph output also needs to select
+storage runtimes are not built into HG. A graph output also needs to select
 its runtime independently of the representation used by its inputs.
 
 ## Decision

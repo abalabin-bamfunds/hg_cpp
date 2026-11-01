@@ -1,5 +1,5 @@
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <algorithm>
 #include <array>
@@ -14,7 +14,7 @@
 namespace {
 
 using value_type = std::int64_t;
-using position_type = bg::util::occupancy_index::size_type;
+using position_type = hg::util::occupancy_index::size_type;
 
 struct benchmark_chunk {
     std::uintptr_t values;
@@ -22,8 +22,8 @@ struct benchmark_chunk {
 };
 
 struct benchmark_state {
-    bg::util::occupancy_index live;
-    bg::util::sparse_bunch<value_type> values;
+    hg::util::occupancy_index live;
+    hg::util::sparse_bunch<value_type> values;
     std::pmr::memory_resource &memory{*std::pmr::new_delete_resource()};
 
     benchmark_state(position_type extent, const position_type *positions, std::size_t count) {
@@ -101,15 +101,15 @@ struct chunk {
 };
 
 struct state {
-    bg::util::occupancy_index live;
-    bg::util::occupancy_index measurement_positions;
-    bg::util::occupancy_index edge_live;
-    bg::util::occupancy_index edge_constructed;
-    bg::util::index<> nullable;
-    bg::util::index<> edge_validity;
-    bg::util::sparse_bunch<value_type> ids;
-    bg::util::sparse_bunch<value_type> measurements;
-    bg::util::sparse_bunch<value_type> edge_values;
+    hg::util::occupancy_index live;
+    hg::util::occupancy_index measurement_positions;
+    hg::util::occupancy_index edge_live;
+    hg::util::occupancy_index edge_constructed;
+    hg::util::index<> nullable;
+    hg::util::index<> edge_validity;
+    hg::util::sparse_bunch<value_type> ids;
+    hg::util::sparse_bunch<value_type> measurements;
+    hg::util::sparse_bunch<value_type> edge_values;
     std::vector<chunk> id_chunks;
     std::vector<chunk> measurement_chunks;
     std::pmr::memory_resource &memory{*std::pmr::new_delete_resource()};
@@ -156,7 +156,7 @@ struct state {
     }
 
     template <typename Column>
-    std::vector<chunk> make_chunks(const Column &column, const bg::util::occupancy_index &constructed,
+    std::vector<chunk> make_chunks(const Column &column, const hg::util::occupancy_index &constructed,
                                    bool with_validity) const {
         std::vector<chunk> result;
         auto current = chunk{};

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/type/time_series_guarantee.hpp>
-#include <bg/util/compile_time_string.hpp>
+#include <hg/type/time_series_guarantee.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <concepts>
 #include <optional>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <util::compile_time_string Name, auto Minimum = std::nullopt>
     requires(std::same_as<std::remove_cv_t<decltype(Minimum)>, std::nullopt_t> ||
@@ -33,4 +33,4 @@ concept guarantee_variable_declaration = is_guarantee_variable_declaration<std::
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

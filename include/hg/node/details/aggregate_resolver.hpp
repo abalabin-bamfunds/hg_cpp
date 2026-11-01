@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/node/details/resolver.hpp>
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/details/scalar_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
+#include <hg/node/details/resolver.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/details/scalar_type.hpp>
+#include <hg/type/details/time_series_type.hpp>
 
 #include <algorithm>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Definition, typename Declaration>
 void add_resolver(std::vector<VariableResolver> &resolvers, const Variable &variable) {
@@ -29,4 +29,4 @@ void append_aggregate_resolvers(std::vector<VariableResolver> &resolvers) {
     });
 }
 
-} // namespace bg::details
+} // namespace hg::details

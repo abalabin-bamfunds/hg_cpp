@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/graph/runtime_graph_input.hpp>
-#include <bg/time_series/time_series_state.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/graph/runtime_graph_input.hpp>
+#include <hg/time_series/time_series_state.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 class RuntimeGraph;
@@ -149,4 +149,4 @@ static_assert(sizeof(OutputNotification) == 2 * sizeof(void *));
 static_assert(sizeof(InputNotificationSubscriber) == 3 * sizeof(void *));
 static_assert(sizeof(ControlledInputSubscriber) == sizeof(void *));
 
-} // namespace bg
+} // namespace hg

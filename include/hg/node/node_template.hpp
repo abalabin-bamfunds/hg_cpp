@@ -1,22 +1,22 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/evaluation_function.hpp>
-#include <bg/graph/output_notification.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/node/invalidation.hpp>
-#include <bg/node/node_template_identity.hpp>
-#include <bg/node/state_layout.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/evaluation_function.hpp>
+#include <hg/graph/output_notification.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node/invalidation.hpp>
+#include <hg/node/node_template_identity.hpp>
+#include <hg/node/state_layout.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstddef>
 #include <optional>
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class ScalarType;
 
@@ -113,4 +113,4 @@ class NodeTemplate : public WiringTemplate {
     NodeTemplateIdentity definition_identity_;
 };
 
-} // namespace bg
+} // namespace hg

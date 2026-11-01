@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/time_series/item_id.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class FixedItemTimeSeriesType : public TimeSeriesType {
   public:
@@ -20,4 +20,4 @@ class FixedItemTimeSeriesType : public TimeSeriesType {
     using TimeSeriesType::TimeSeriesType;
 };
 
-} // namespace bg
+} // namespace hg

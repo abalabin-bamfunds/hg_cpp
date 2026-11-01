@@ -1,5 +1,5 @@
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <algorithm>
 #include <array>
@@ -16,7 +16,7 @@
 namespace {
 
 using clock_type = std::chrono::steady_clock;
-using Dictionary = bg::Dict<bg::i64, bg::i64>;
+using Dictionary = hg::Dict<hg::i64, hg::i64>;
 constexpr auto SmallBatchSize = std::size_t{16};
 constexpr auto LargeBatchSize = std::size_t{64};
 constexpr auto LookupCount = std::size_t{100'000};
@@ -43,26 +43,26 @@ template <typename Function> double median_nanoseconds_per_call(Function &&funct
 }
 
 struct Snapshot {
-    std::vector<bg::ScalarDictRuntimeType::BatchEntry> *entries;
+    std::vector<hg::ScalarDictRuntimeType::BatchEntry> *entries;
 };
 
-void append_snapshot(void *context, bg::ScalarDictRuntimeType::Entry entry) {
+void append_snapshot(void *context, hg::ScalarDictRuntimeType::Entry entry) {
     auto &snapshot = *static_cast<Snapshot *>(context);
     snapshot.entries->push_back({entry.key.data, entry.value.data});
 }
 
-std::uint64_t sum_entry(const bg::ScalarDictRuntimeType::BatchEntry &entry) {
+std::uint64_t sum_entry(const hg::ScalarDictRuntimeType::BatchEntry &entry) {
     return static_cast<std::uint64_t>(*static_cast<const std::int64_t *>(entry.key) +
                                        *static_cast<const std::int64_t *>(entry.mapped));
 }
 
-template <std::size_t Size> double benchmark_cursor(const bg::Scalar<Dictionary> &dictionary) {
+template <std::size_t Size> double benchmark_cursor(const hg::Scalar<Dictionary> &dictionary) {
     return median_nanoseconds_per_call(
         [&] {
             auto sum = std::uint64_t{};
             for (auto pass = std::size_t{}; pass < FullPassCount; ++pass) {
                 auto cursor = dictionary.make_cursor();
-                auto buffer = std::array<bg::ScalarDictRuntimeType::BatchEntry, Size>{};
+                auto buffer = std::array<hg::ScalarDictRuntimeType::BatchEntry, Size>{};
                 for (auto count = cursor->next_batch(buffer); count != 0; count = cursor->next_batch(buffer)) {
                     for (const auto &entry : std::span{buffer}.first(count)) {
                         sum += sum_entry(entry);
@@ -81,7 +81,7 @@ void benchmark(std::size_t size) {
         entries.emplace_back(key, key + 1);
     }
 
-    const auto value = bg::ScalarValue<Dictionary>{entries};
+    const auto value = hg::ScalarValue<Dictionary>{entries};
     const auto dictionary = value.view();
     auto queries = std::vector<std::int64_t>(LookupCount);
     for (auto index = std::size_t{}; index < queries.size(); ++index) {
@@ -128,7 +128,7 @@ void benchmark(std::size_t size) {
         [&] {
             auto sum = std::uint64_t{};
             for (auto pass = std::size_t{}; pass < FullPassCount; ++pass) {
-                auto snapshot = std::vector<bg::ScalarDictRuntimeType::BatchEntry>{};
+                auto snapshot = std::vector<hg::ScalarDictRuntimeType::BatchEntry>{};
                 snapshot.reserve(size);
                 auto state = Snapshot{&snapshot};
                 dictionary.runtime_type().for_each(dictionary.data(), &state, append_snapshot);
@@ -146,9 +146,9 @@ void benchmark(std::size_t size) {
     std::cout << std::setw(7) << size << "  " << std::setw(10) << std::fixed << std::setprecision(1) << find_ns
               << "  " << std::setw(13) << contains_and_at_ns << "  " << std::setw(12) << for_each_ns << "  "
               << std::setw(12) << snapshot_ns << "  " << std::setw(12) << cursor_16_ns << "  " << std::setw(12)
-              << cursor_64_ns << "  " << std::setw(10) << size * sizeof(bg::ScalarDictRuntimeType::BatchEntry)
-              << "  " << std::setw(12) << SmallBatchSize * sizeof(bg::ScalarDictRuntimeType::BatchEntry) << "  "
-              << std::setw(12) << LargeBatchSize * sizeof(bg::ScalarDictRuntimeType::BatchEntry) << '\n';
+              << cursor_64_ns << "  " << std::setw(10) << size * sizeof(hg::ScalarDictRuntimeType::BatchEntry)
+              << "  " << std::setw(12) << SmallBatchSize * sizeof(hg::ScalarDictRuntimeType::BatchEntry) << "  "
+              << std::setw(12) << LargeBatchSize * sizeof(hg::ScalarDictRuntimeType::BatchEntry) << '\n';
 }
 
 } // namespace

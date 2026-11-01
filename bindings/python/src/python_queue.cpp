@@ -2,14 +2,14 @@
 
 #include "python_literal_builder.hpp"
 
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <stdexcept>
 
 namespace nb = nanobind;
 using namespace nanobind::literals;
 
-namespace bg::python {
+namespace hg::python {
 
 PythonQueue::PythonQueue(const PythonQueue &other)
     : output_type_{other.output_type_}, mode_{other.mode_} {
@@ -46,4 +46,4 @@ void bind_python_queue(nb::module_ &module) {
         .def("__copy__", [](const PythonQueue &queue) { return PythonQueue{queue}; });
 }
 
-} // namespace bg::python
+} // namespace hg::python

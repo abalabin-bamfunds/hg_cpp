@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node/details/aggregate_node_descriptor.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node/details/aggregate_node_descriptor.hpp>
 
 #include <stdexcept>
 #include <memory>
 
-namespace bg {
+namespace hg {
 
 template <typename Definition>
 concept AggregateNodeClass = details::aggregate_node_class<Definition>::value;
@@ -115,4 +115,4 @@ class AggregateNodeTemplate final
     [[no_unique_address]] Label label_;
 };
 
-} // namespace bg
+} // namespace hg

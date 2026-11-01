@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 // Reports which inner graph became runnable to its owning node.
 struct RuntimeGraphSchedulingHandler {
@@ -13,4 +13,4 @@ struct RuntimeGraphSchedulingHandler {
     void (*inner_scheduled)(void *receiver, token_type token) noexcept;
 };
 
-} // namespace bg
+} // namespace hg

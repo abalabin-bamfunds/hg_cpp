@@ -1,7 +1,7 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 enum class QueueMode { standard, elide, batch };
 
-} // namespace bg
+} // namespace hg

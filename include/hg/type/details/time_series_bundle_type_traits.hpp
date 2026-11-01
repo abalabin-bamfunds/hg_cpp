@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/type/schema_variable_instance.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/type/schema_variable_instance.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <type_traits>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Scope, TimeSeriesTypeRole Role,
           template <template <typename, auto...> typename> typename Schema,
@@ -27,8 +27,8 @@ std::vector<SchemaField> direct_bundle_fields(GuaranteeParameter guarantee, std:
 
 template <typename Scope, TimeSeriesTypeRole Role,
           template <template <typename, auto...> typename> typename Schema>
-const bg::Schema &cpp_bundle_schema(GuaranteeParameter guarantee) {
-    const bg::Schema *base = nullptr;
+const hg::Schema &cpp_bundle_schema(GuaranteeParameter guarantee) {
+    const hg::Schema *base = nullptr;
     if constexpr (bundle_has_base<Schema>) {
         using Base = bundle_base_t<Schema>;
         base = &cpp_bundle_schema<Scope, Role, Base::template apply>(guarantee);
@@ -37,7 +37,7 @@ const bg::Schema &cpp_bundle_schema(GuaranteeParameter guarantee) {
     const auto fields = direct_bundle_fields<Scope, Role, Schema>(
         guarantee, std::make_index_sequence<direct_bundle_field_count<Schema>>{});
     auto metadata = declared_schema_metadata<Schema, bundle_schema_field>();
-    return bg::schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
+    return hg::schema(util::symbol{util::unqualified_type_name<Schema<bundle_schema_field>>()},
                       std::type_index{typeid(Schema<schema_identity_field>)}, base, fields, std::move(metadata));
 }
 
@@ -148,13 +148,13 @@ struct declaration_variable_traits<TSB<Schema, Properties...>> {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg::details {
+namespace hg::details {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const SchemaType &time_series_schema_type() {
     return TSB<Schema>::type().schema_type();
 }
 
-} // namespace bg::details
+} // namespace hg::details

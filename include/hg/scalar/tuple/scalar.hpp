@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/scalar/tuple/storage_traits.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/scalar/tuple/storage_traits.hpp>
 
 #include <cstddef>
 #include <tuple>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename... Items> class Scalar<Tuple<Items...>> {
   public:
@@ -114,9 +114,9 @@ template <> class Scalar<TUPLE> {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg {
+namespace hg {
 
 template <typename... Items>
 auto scalar_storage_traits<Tuple<Items...>>::read(const stored_type &value) -> value_type {
@@ -159,4 +159,4 @@ void scalar_storage_traits<Tuple<Items...>>::destroy(stored_type *value, allocat
     cpp_scalar_runtime_type<Tuple<Items...>>().destroy(value, memory);
 }
 
-} // namespace bg
+} // namespace hg

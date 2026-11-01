@@ -1,12 +1,12 @@
-#include <bg/evaluation_context.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
 
 #include <algorithm>
 #include <array>
@@ -29,29 +29,29 @@ constexpr auto SampleCount = std::size_t{7};
 struct RegexTextSource {
     static constexpr bool uses_timed_scheduling = true;
 
-    bg::Scalar<bool> found;
-    bg::Out<bg::TS<bg::string>> output;
+    hg::Scalar<bool> found;
+    hg::Out<hg::TS<hg::string>> output;
 
-    void start(bg::EvaluationContext *context) const { context->schedule_now(); }
+    void start(hg::EvaluationContext *context) const { context->schedule_now(); }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         output.set(found.value() ? "prefix-needle-suffix" : "prefix-missing-suffix");
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 };
 
-std::size_t wire_graph(bg::GraphWiring &wiring, bool found, std::string_view pattern, bool captures) {
-    static const auto source = bg::node<RegexTextSource>();
-    auto output_identity = std::optional<bg::NodeCallIdentity>{};
+std::size_t wire_graph(hg::GraphWiring &wiring, bool found, std::string_view pattern, bool captures) {
+    static const auto source = hg::node<RegexTextSource>();
+    auto output_identity = std::optional<hg::NodeCallIdentity>{};
     {
-        auto context = bg::WiringContext{wiring};
+        auto context = hg::WiringContext{wiring};
         const auto text = source(found);
         if (captures) {
-            const auto output = bg::operators::match_(pattern, text);
-            output_identity = wiring.node_call_identity(static_cast<bg::WiringPoint>(output));
+            const auto output = hg::operators::match_(pattern, text);
+            output_identity = wiring.node_call_identity(static_cast<hg::WiringPoint>(output));
         } else {
-            const auto output = bg::operators::matches(pattern, text);
-            output_identity = wiring.node_call_identity(static_cast<bg::WiringPoint>(output));
+            const auto output = hg::operators::matches(pattern, text);
+            output_identity = wiring.node_call_identity(static_cast<hg::WiringPoint>(output));
         }
     }
 
@@ -72,11 +72,11 @@ class RegexBenchmarkGraph {
         }
     }
 
-    void start() { runtime_.start(bg::MIN_DT + std::chrono::microseconds{1}); }
+    void start() { runtime_.start(hg::MIN_DT + std::chrono::microseconds{1}); }
 
     void run(std::size_t first_cycle, std::size_t cycle_count) {
         for (auto cycle = first_cycle; cycle < first_cycle + cycle_count; ++cycle) {
-            const auto time = bg::MIN_DT + std::chrono::microseconds{static_cast<std::int64_t>(cycle)};
+            const auto time = hg::MIN_DT + std::chrono::microseconds{static_cast<std::int64_t>(cycle)};
             runtime_.evaluate(time);
         }
     }
@@ -106,12 +106,12 @@ class RegexBenchmarkGraph {
     void stop() { runtime_.stop(); }
 
   private:
-    bg::GraphWiring wiring_;
+    hg::GraphWiring wiring_;
     std::size_t output_node_index_;
     bool captures_;
-    bg::CompiledGraph compiled_;
-    bg::GlobalState global_state_;
-    bg::RuntimeGraph runtime_;
+    hg::CompiledGraph compiled_;
+    hg::GlobalState global_state_;
+    hg::RuntimeGraph runtime_;
 };
 
 double median(std::array<double, SampleCount> samples) {

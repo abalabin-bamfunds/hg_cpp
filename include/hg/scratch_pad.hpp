@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <memory>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 class EvaluationScratch;
@@ -41,4 +41,4 @@ class ScratchPad {
     void *frame_{};
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/variadic_parameter.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/variadic_parameter.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <compare>
 #include <functional>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphArgumentConstraint;
 class WiringArguments;
@@ -233,4 +233,4 @@ namespace details {
     std::span<const Type *const> right_supplied_types, std::size_t parameter_count);
 }
 
-} // namespace bg
+} // namespace hg

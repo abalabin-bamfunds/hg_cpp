@@ -151,35 +151,35 @@ calculation.
 
 ## Implementations
 
-The adapters are [BG C++](high_count_map_benchmark.cpp),
-[BG Python](../bindings/python/benchmarks/high_count_map.py),
+The adapters are [HG C++](high_count_map_benchmark.cpp),
+[HG Python](../bindings/python/benchmarks/high_count_map.py),
 [current hgraph C++](hgraph_current_high_count_map/native.cpp),
 [current hgraph Python](hgraph_latest_high_count_map/run.py), and
 [hgraph 0.5 Python/C++ runtime](hgraph_05_high_count_map/high_count_map.py).
 The [historical 10,000-cycle comparison](results/high_count_map/clean_250k_10k_2026-10-17.md)
 records the measured configurations and their limits.
 
-## Running BG
+## Running HG
 
 Build and validate a small run:
 
 ```bash
 cmake --preset benchmark
-cmake --build --preset benchmark --target bg_high_count_map_benchmark
-build/benchmark/benchmarks/bg_high_count_map_benchmark --verify-workload
-build/benchmark/benchmarks/bg_high_count_map_benchmark --profile smoke --cycles 120
+cmake --build --preset benchmark --target hg_high_count_map_benchmark
+build/benchmark/benchmarks/hg_high_count_map_benchmark --verify-workload
+build/benchmark/benchmarks/hg_high_count_map_benchmark --profile smoke --cycles 120
 ```
 
 Run the comparison profile:
 
 ```bash
-taskset -c 0 build/benchmark/benchmarks/bg_high_count_map_benchmark --profile 250k --cycles 10000
+taskset -c 0 build/benchmark/benchmarks/hg_high_count_map_benchmark --profile 250k --cycles 10000
 ```
 
-To measure the cost of BG evaluation profiling, repeat the same command with
+To measure the cost of HG evaluation profiling, repeat the same command with
 `--record-evaluations`. A reader polls the committed recording once per second.
 Compare `measured_cycles_ns` and peak RSS with the plain run from the same
-build; `profile_recorded_bytes` reports the recording volume. This mode is a BG
+build; `profile_recorded_bytes` reports the recording volume. This mode is a HG
 instrumentation comparison, not an engine-neutral workload metric.
 
 Use an available CPU instead of CPU 0 when required. Redirect standard output

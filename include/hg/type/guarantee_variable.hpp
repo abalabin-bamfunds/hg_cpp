@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class GuaranteeVariable final : public Variable {
   public:
@@ -54,4 +54,4 @@ class GuaranteeVariable final : public Variable {
     std::optional<TimeSeriesGuarantee> minimum_;
 };
 
-} // namespace bg
+} // namespace hg

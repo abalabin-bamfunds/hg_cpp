@@ -1,11 +1,11 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <bg/frame/expression.hpp>
-#include <bg/frame/frame.hpp>
-#include <bg/graph.hpp>
-#include <bg/operators.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/list/scalar.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/graph.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/list/scalar.hpp>
 
 #include <algorithm>
 #include <array>
@@ -15,9 +15,9 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct Quotes {
     Field<i64> id;
@@ -1114,7 +1114,7 @@ TEST_CASE("explicit project metadata replaces keyed source metadata",
     const auto &frame_type = dynamic_cast<const FrameSeriesType &>(projected.type());
     const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
 
-    CHECK(schema.metadata().find("bg.frame.key") == nullptr);
+    CHECK(schema.metadata().find("hg.frame.key") == nullptr);
     CHECK(schema.metadata().find("frame.target") != nullptr);
     static_cast<void>(context);
 }
@@ -1144,10 +1144,10 @@ TEST_CASE("select and drop preserve unrelated metadata when omitting key columns
     const auto &selected_schema = schema_of(selected_without_key);
     const auto &dropped_schema = schema_of(dropped);
     const auto &anonymous_schema = schema_of(dropped_from_anonymous);
-    CHECK(retained_schema.metadata().find("bg.frame.key") != nullptr);
-    CHECK(selected_schema.metadata().find("bg.frame.key") == nullptr);
-    CHECK(dropped_schema.metadata().find("bg.frame.key") == nullptr);
-    CHECK(anonymous_schema.metadata().find("bg.frame.key") == nullptr);
+    CHECK(retained_schema.metadata().find("hg.frame.key") != nullptr);
+    CHECK(selected_schema.metadata().find("hg.frame.key") == nullptr);
+    CHECK(dropped_schema.metadata().find("hg.frame.key") == nullptr);
+    CHECK(anonymous_schema.metadata().find("hg.frame.key") == nullptr);
     CHECK(marker_value(retained_schema) == 42);
     CHECK(marker_value(selected_schema) == 42);
     CHECK(marker_value(dropped_schema) == 42);
@@ -1166,7 +1166,7 @@ TEST_CASE("select preserves key metadata for accessor and column expression alia
     const auto key_names = [](const auto &point) {
         const auto &frame_type = dynamic_cast<const FrameSeriesType &>(point.type());
         const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
-        const auto *key = schema.metadata().find("bg.frame.key");
+        const auto *key = schema.metadata().find("hg.frame.key");
         if (key == nullptr)
             return std::vector<std::string>{};
         const auto values = Scalar<List<string>>::from(key->runtime_type(), key->data());
@@ -1194,7 +1194,7 @@ TEST_CASE("select uses the first selected alias for a duplicated key column",
     const auto key_names = [](const auto &point) {
         const auto &frame_type = dynamic_cast<const FrameSeriesType &>(point.type());
         const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
-        const auto *key = schema.metadata().find("bg.frame.key");
+        const auto *key = schema.metadata().find("hg.frame.key");
         if (key == nullptr)
             return std::vector<std::string>{};
         const auto values = Scalar<List<string>>::from(key->runtime_type(), key->data());
@@ -1221,7 +1221,7 @@ TEST_CASE("select preserves source key tuple order when output aliases are reord
                                         "tenant_second"_n = source["tenant"]);
     const auto &frame_type = dynamic_cast<const FrameSeriesType &>(selected.type());
     const auto &schema = dynamic_cast<const Schema &>(frame_type.schema_type());
-    const auto *key = schema.metadata().find("bg.frame.key");
+    const auto *key = schema.metadata().find("hg.frame.key");
     REQUIRE(key != nullptr);
     const auto values = Scalar<List<string>>::from(key->runtime_type(), key->data());
     auto key_names = std::vector<std::string>{};

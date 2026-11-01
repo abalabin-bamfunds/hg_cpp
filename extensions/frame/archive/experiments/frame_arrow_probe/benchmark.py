@@ -86,11 +86,11 @@ def hardware_report():
         f"- NumPy: `{np.__version__}`",
         f"- Fixed seed: `{SEED}`",
         f"- Physical rows per case: `{PHYSICAL_ROWS:,}`",
-        "- Warmups: 1 for each sparse export, 5 for BG copy and dense exports, 2 for compute; repetitions: "
-        "3 when chunk count is at least 10,000, otherwise 5 for each sparse export; 31 for BG copy and "
+        "- Warmups: 1 for each sparse export, 5 for HG copy and dense exports, 2 for compute; repetitions: "
+        "3 when chunk count is at least 10,000, otherwise 5 for each sparse export; 31 for HG copy and "
         "each dense export; "
         "7 for compute",
-        "- Exact command: `conda run -n bg-build bash "
+        "- Exact command: `conda run -n hg-build bash "
         "extensions/frame/archive/experiments/frame_arrow_probe/benchmark.sh`",
     ]
 
@@ -231,10 +231,10 @@ def main():
         *hardware_report(),
         "",
         "Timings are milliseconds as `median [minimum, maximum]` over repeated runs.",
-        "Sparse export scans occupied positions, discovers BG spans, and creates PyArrow chunks; its timing includes "
+        "Sparse export scans occupied positions, discovers HG spans, and creates PyArrow chunks; its timing includes "
         "Python per-chunk wrapper construction. The allocation variant also allocates a zero-filled descriptor "
         "array with capacity for every live row.",
-        "BG copy visits live positions and copies values into a preallocated NumPy buffer. "
+        "HG copy visits live positions and copies values into a preallocated NumPy buffer. "
         "Dense export adds PyArrow wrapping to that copy. "
         "Dense export with allocation creates a fresh NumPy buffer inside each timed call.",
         "Compute inputs are built before timing. The single-chunk baseline is the same live values. A native adapter "
@@ -242,7 +242,7 @@ def main():
         "",
         "| Dead ratio | Pattern | Live | Dead | Live runs | Arrow chunks | Sparse reps | Sparse preallocated | "
         "Sparse with allocation | "
-        "BG copy | Dense preallocated | Dense with allocation | Sum sparse | Sum single | Filter sparse | Filter single |",
+        "HG copy | Dense preallocated | Dense with allocation | Sum sparse | Sum single | Filter sparse | Filter single |",
         "|---:|:---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|",
     ]
 
@@ -274,7 +274,7 @@ def main():
         [
             "",
             "All cases assert identical values, sums, multiplied values, and filtered outputs before timing.",
-            "Chunk count includes splits at deleted-row gaps and BG value-block boundaries.",
+            "Chunk count includes splits at deleted-row gaps and HG value-block boundaries.",
             "",
             "## Derived one-export plus one-operator comparison",
             "",

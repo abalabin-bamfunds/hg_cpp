@@ -1,47 +1,47 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/node.hpp>
-#include <bg/node/details/aggregate_resolver.hpp>
-#include <bg/node/input.hpp>
-#include <bg/node/output.hpp>
-#include <bg/node/state.hpp>
-#include <bg/node/state_layout.hpp>
-#include <bg/queue_handle.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/time_series/ref/dynamic_reference_input.hpp>
-#include <bg/time_series/dynamic_value_input.hpp>
-#include <bg/time_series/ref/ref_runtime_type.hpp>
-#include <bg/time_series/input_data.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_runtime_type.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/time_series/tsd/tsd_runtime_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/node/details/aggregate_resolver.hpp>
+#include <hg/node/input.hpp>
+#include <hg/node/output.hpp>
+#include <hg/node/state.hpp>
+#include <hg/node/state_layout.hpp>
+#include <hg/queue_handle.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/time_series/ref/dynamic_reference_input.hpp>
+#include <hg/time_series/dynamic_value_input.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/input_data.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_runtime_type.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/tsd_runtime_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <algorithm>
 #include <concepts>
@@ -53,7 +53,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct dynamic_value_binding_time_series : std::false_type {};
 
@@ -1202,4 +1202,4 @@ void invalidate_aggregate_output(const CompiledNode &node, void *runtime_storage
                                             std::make_index_sequence<util::aggregate_member_count<Definition>>{});
 }
 
-} // namespace bg::details
+} // namespace hg::details

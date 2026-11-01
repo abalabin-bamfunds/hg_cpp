@@ -1,7 +1,7 @@
 # Numeric frame and Arrow benchmark
 
 Sample collected on 2026-10-03, AMD EPYC 7R13 (x86_64, KVM), GCC 14.3.0,
-Arrow 24.0.0, and committed BG `b5a241f6`. See the
+Arrow 24.0.0, and committed HG `b5a241f6`. See the
 [build instructions](../README.md#performance-sample) and
 [CSV](arrow_benchmark_results.csv).
 
@@ -29,7 +29,7 @@ Each case starts with 100,000 all-valid rows. The 50% cases delete 128 rows per 
 Payload updates use IDs below 10,000 at stride 97: 104 selected updates per cycle for clustered 50% and dense selections, 52 for scattered 50%, and 11 for the 10% scattered case.
 Graph construction and 100,000-row source seeding are excluded. Two warmup cycles are excluded; eleven steady cycles are measured.
 Source mutation time covers frame set/erase calls. Graph-cycle time covers the complete RuntimeGraph evaluation, including source mutation and the consumer. Consumer time covers the selected sum path. The plain Arrow baseline uses a prebuilt one-chunk array of the final selected values and runs outside graph timing. Selected-row and chunk counts are from the final measured cycle. Consumer timing includes Arrow export or dense-gather allocation and destruction.
-Native sum and Arrow sum each rescan all selected values; there is no incremental aggregate yet. Extension and benchmark code use Release (-O3); installed libbg is Debug. All times are median [min, max] milliseconds.
+Native sum and Arrow sum each rescan all selected values; there is no incremental aggregate yet. Extension and benchmark code use Release (-O3); installed libhg is Debug. All times are median [min, max] milliseconds.
 
 | Selection and deletion | Method | Final-cycle selected rows | Final-cycle chunks visited/exported | Source mutation ms | Graph cycle ms | Consumer sum ms | Plain Arrow sum ms |
 |:---|:---|---:|---:|---:|---:|---:|---:|

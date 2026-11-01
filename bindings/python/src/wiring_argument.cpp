@@ -1,13 +1,13 @@
 #include "wiring_argument.hpp"
 
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/operators.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/python/wiring_point.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/type.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/operators.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/python/wiring_point.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/type.hpp>
 
 #include <array>
 #include <stdexcept>
@@ -16,7 +16,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 WiringArgument wiring_argument(const Type &expected, nb::handle value, allocator &memory, GraphWiring &wiring) {
     if (nb::isinstance<PythonWiringPoint>(value)) {
@@ -95,12 +95,12 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
 
     for (auto index = std::size_t{}; index < nb::len(positional_values); ++index) {
         auto argument = wiring_argument(positional_values[index], memory, wiring);
-        argument.set_variadic_name(util::symbol{std::to_string(index)}, bg::details::VariadicMode::positional);
+        argument.set_variadic_name(util::symbol{std::to_string(index)}, hg::details::VariadicMode::positional);
         arguments.push_back(std::move(argument));
     }
 
-    const auto positional_parameter = signature.variadic_parameter(bg::details::VariadicMode::positional);
-    const auto named_parameter = signature.variadic_parameter(bg::details::VariadicMode::named);
+    const auto positional_parameter = signature.variadic_parameter(hg::details::VariadicMode::positional);
+    const auto named_parameter = signature.variadic_parameter(hg::details::VariadicMode::named);
     for (const auto [name, value] : named_values) {
         auto argument = wiring_argument(value, memory, wiring);
         const auto argument_name = util::symbol{nb::cast<std::string>(name)};
@@ -108,20 +108,20 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
             (positional_parameter && signature.parameter(*positional_parameter).name == argument_name) ||
             (named_parameter && signature.parameter(*named_parameter).name == argument_name);
         if (exact_parameter && argument.is_time_series() &&
-            bg::details::variadic_wiring_record(argument.time_series()) != nullptr) {
+            hg::details::variadic_wiring_record(argument.time_series()) != nullptr) {
             argument.clear_name();
         } else {
-            argument.set_variadic_name(argument_name, exact_parameter ? bg::details::VariadicMode::none
-                                                                      : bg::details::VariadicMode::named);
+            argument.set_variadic_name(argument_name, exact_parameter ? hg::details::VariadicMode::none
+                                                                      : hg::details::VariadicMode::named);
         }
         arguments.push_back(std::move(argument));
     }
     return arguments;
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details
 
-namespace bg::python {
+namespace hg::python {
 
 WiringArgument PythonWiringPoint::argument(const GraphWiring &wiring) const {
     const auto point = get(wiring);
@@ -157,4 +157,4 @@ PythonWiringPoint PythonWiringPoint::as_valid_items() const {
     return {point_, lifetime_, requires_optional_, true};
 }
 
-} // namespace bg::python
+} // namespace hg::python

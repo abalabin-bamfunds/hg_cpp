@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/construction.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/construction.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class ScalarTupleRuntimeType : public ScalarRuntimeType {
   public:
@@ -38,4 +38,4 @@ void initialize_fixed_tuple_runtime_type(ScalarTupleRuntimeType &runtime_type,
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

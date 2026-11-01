@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/variadic_parameter.hpp>
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/graph/variadic_parameter.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <optional>
 
-namespace bg::details {
+namespace hg::details {
 
 // Describes one flat argument exposed to wiring-time resolvers and requirements.
 // A direct collection binding can describe its items without creating item wiring records.
@@ -56,4 +56,4 @@ class WiringArgumentDescriptor {
     WiringAnnotations annotations_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

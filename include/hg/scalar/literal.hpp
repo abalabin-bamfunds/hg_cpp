@@ -1,20 +1,20 @@
 #pragma once
 
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/scalar/literal_operations.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/scalar/literal_operations.hpp>
 
-#include <bg/scalar/dict/runtime_type.hpp>
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/runtime_type.hpp>
-#include <bg/scalar/set/type.hpp>
-#include <bg/scalar/bundle/runtime_type.hpp>
-#include <bg/scalar/struct/runtime_type.hpp>
-#include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/scalar/bundle/runtime_type.hpp>
+#include <hg/scalar/struct/runtime_type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cstddef>
 #include <span>
@@ -22,7 +22,7 @@
 #include <string_view>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 using literal::ScalarLiteral;
 using literal::ScalarLiteralItem;
@@ -32,24 +32,24 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
     explicit ScalarLiteralConstructionContext(const LiteralType &literal, bool explicit_allocator = false) noexcept
         : literal_{&literal}, explicit_allocator_{explicit_allocator} {}
 
-    static void callback(void *context, const bg::ScalarRuntimeType &runtime_type, void *destination,
-                         bg::allocator &memory) {
+    static void callback(void *context, const hg::ScalarRuntimeType &runtime_type, void *destination,
+                         hg::allocator &memory) {
         static_cast<const ScalarLiteralConstructionContext *>(context)->construct(runtime_type, destination, memory);
     }
 
-    void construct(const bg::ScalarRuntimeType &runtime_type, void *destination, bg::allocator &memory) const {
+    void construct(const hg::ScalarRuntimeType &runtime_type, void *destination, hg::allocator &memory) const {
         literal_->visit(
             [&](const typename LiteralType::leaf_type &item) {
                 item.visit_scalar([&](auto *source) {
-                    runtime_type.construct_from_input(destination, bg::details::scalar_data(*source), memory);
+                    runtime_type.construct_from_input(destination, hg::details::scalar_data(*source), memory);
                 });
             },
             [&](std::span<const LiteralType> children) {
                 runtime_type.type().visit(
-                    [&](const bg::ListScalarType *) {
-                        const auto &list_runtime_type = static_cast<const bg::ScalarListRuntimeType &>(runtime_type);
+                    [&](const hg::ListScalarType *) {
+                        const auto &list_runtime_type = static_cast<const hg::ScalarListRuntimeType &>(runtime_type);
                         list_runtime_type.construct_runtime_value(destination, memory);
-                        auto rollback = bg::util::scope_exit{
+                        auto rollback = hg::util::scope_exit{
                             [&]() noexcept { list_runtime_type.destroy(destination, memory); }};
                         for (const auto &child : children) {
                             auto child_context = ScalarLiteralConstructionContext{child, explicit_allocator_};
@@ -58,10 +58,10 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
                         }
                         rollback.release();
                     },
-                    [&](const bg::DictScalarType *) {
-                        const auto &dict_runtime_type = static_cast<const bg::ScalarDictRuntimeType &>(runtime_type);
+                    [&](const hg::DictScalarType *) {
+                        const auto &dict_runtime_type = static_cast<const hg::ScalarDictRuntimeType &>(runtime_type);
                         dict_runtime_type.construct_runtime_value(destination, memory);
-                        auto rollback = bg::util::scope_exit{
+                        auto rollback = hg::util::scope_exit{
                             [&]() noexcept { dict_runtime_type.destroy(destination, memory); }};
                         for (const auto &entry : children) {
                             entry.visit(
@@ -87,10 +87,10 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
                         }
                         rollback.release();
                     },
-                    [&](const bg::SetScalarType *) {
-                        const auto &set_runtime_type = static_cast<const bg::ScalarSetRuntimeType &>(runtime_type);
+                    [&](const hg::SetScalarType *) {
+                        const auto &set_runtime_type = static_cast<const hg::ScalarSetRuntimeType &>(runtime_type);
                         set_runtime_type.construct_runtime_value(destination, memory);
-                        auto rollback = bg::util::scope_exit{
+                        auto rollback = hg::util::scope_exit{
                             [&]() noexcept { set_runtime_type.destroy(destination, memory); }};
                         for (const auto &child : children) {
                             auto child_context = ScalarLiteralConstructionContext{child, explicit_allocator_};
@@ -99,35 +99,35 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
                         }
                         rollback.release();
                     },
-                    [&](const bg::StructScalarType *struct_type) {
+                    [&](const hg::StructScalarType *struct_type) {
                         auto fields = NamedFieldConstructionContext{*this, children, struct_type, nullptr};
                         fields.validate();
-                        static_cast<const bg::StructScalarRuntimeType &>(runtime_type).construct_fields_with(
+                        static_cast<const hg::StructScalarRuntimeType &>(runtime_type).construct_fields_with(
                             destination, memory, {&fields, &NamedFieldConstructionContext::callback});
                     },
-                    [&](const bg::TupleScalarType *tuple_type) {
+                    [&](const hg::TupleScalarType *tuple_type) {
                         if (children.size() != tuple_type->size()) {
                             throw std::invalid_argument{"tuple literal item count does not match its type"};
                         }
                         auto fields = PositionalFieldConstructionContext{*this, children};
-                        static_cast<const bg::ScalarTupleRuntimeType &>(runtime_type).construct_fields_with(
+                        static_cast<const hg::ScalarTupleRuntimeType &>(runtime_type).construct_fields_with(
                             destination, memory, {&fields, &PositionalFieldConstructionContext::callback});
                     },
-                    [&](const bg::HierarchicalScalarType *) {
-                        if (!explicit_allocator_ && bg::details::current_scalar_allocation_owner() == nullptr) {
+                    [&](const hg::HierarchicalScalarType *) {
+                        if (!explicit_allocator_ && hg::details::current_scalar_allocation_owner() == nullptr) {
                             throw std::logic_error{"constructing a Bundle literal requires an explicit allocator"};
                         }
                         const auto &hierarchical_type =
-                            static_cast<const bg::HierarchicalScalarRuntimeType &>(runtime_type).type();
+                            static_cast<const hg::HierarchicalScalarRuntimeType &>(runtime_type).type();
                         auto fields = NamedFieldConstructionContext{*this, children, nullptr, &hierarchical_type};
                         fields.validate();
-                        static_cast<const bg::HierarchicalScalarRuntimeType &>(runtime_type).construct_fields_with(
+                        static_cast<const hg::HierarchicalScalarRuntimeType &>(runtime_type).construct_fields_with(
                             destination, memory, {&fields, &NamedFieldConstructionContext::callback});
                     },
                     [&](auto *) {
                         if constexpr (std::same_as<LiteralType, literal::ScalarLiteral>) {
                             const auto *operations =
-                                bg::ScalarDispatch<bg::ScalarLiteralOperations>::instance().find(runtime_type);
+                                hg::ScalarDispatch<hg::ScalarLiteralOperations>::instance().find(runtime_type);
                             if (operations != nullptr) {
                                 operations->construct(*literal_, runtime_type, destination, memory);
                                 return;
@@ -155,11 +155,11 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
   private:
     template <typename Value, typename ScalarView, typename Function>
     static bool read_name(const ScalarView &source, Function &&function) {
-        const auto &data = bg::details::scalar_data(source);
+        const auto &data = hg::details::scalar_data(source);
         alignas(Value) std::byte storage[sizeof(Value)];
         data.runtime_type().read_value(data.mode(), data.data_word(), storage);
         auto *value = std::launder(reinterpret_cast<Value *>(storage));
-        auto cleanup = bg::util::scope_exit{[value]() noexcept { std::destroy_at(value); }};
+        auto cleanup = hg::util::scope_exit{[value]() noexcept { std::destroy_at(value); }};
         return function(*value);
     }
 
@@ -172,8 +172,8 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
         const ScalarLiteralConstructionContext &parent;
         std::span<const LiteralType> items;
 
-        static bool callback(void *context, std::size_t field_index, const bg::ScalarRuntimeType &runtime_type,
-                             void *destination, bg::allocator &memory) {
+        static bool callback(void *context, std::size_t field_index, const hg::ScalarRuntimeType &runtime_type,
+                             void *destination, hg::allocator &memory) {
             const auto &fields = *static_cast<const PositionalFieldConstructionContext *>(context);
             if (field_index >= fields.items.size()) {
                 return false;
@@ -188,8 +188,8 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
     struct NamedFieldConstructionContext {
         const ScalarLiteralConstructionContext &parent;
         std::span<const LiteralType> entries;
-        const bg::StructScalarType *struct_type;
-        const bg::ResolvedHierarchicalScalarType *hierarchical_type;
+        const hg::StructScalarType *struct_type;
+        const hg::ResolvedHierarchicalScalarType *hierarchical_type;
 
         std::size_t field_count() const noexcept {
             return struct_type != nullptr ? struct_type->field_count() : hierarchical_type->field_count();
@@ -204,8 +204,8 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
             return hierarchical_type != nullptr && hierarchical_type->field(index).optional;
         }
 
-        static bool callback(void *context, std::size_t field_index, const bg::ScalarRuntimeType &runtime_type,
-                             void *destination, bg::allocator &memory) {
+        static bool callback(void *context, std::size_t field_index, const hg::ScalarRuntimeType &runtime_type,
+                             void *destination, hg::allocator &memory) {
             const auto &fields = *static_cast<const NamedFieldConstructionContext *>(context);
             const auto expected_name = fields.field_name(field_index);
             for (const auto &entry : fields.entries) {
@@ -254,13 +254,13 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
             [&](const typename LiteralType::leaf_type &item) {
                 return item.visit_scalar([&](auto *source) -> bool {
                     using View = std::remove_cvref_t<decltype(*source)>;
-                    if constexpr (std::same_as<View, bg::Scalar<bg::string>>) {
+                    if constexpr (std::same_as<View, hg::Scalar<hg::string>>) {
                         return read_name<std::string_view>(*source, std::forward<Function>(function));
-                    } else if constexpr (std::same_as<View, bg::Scalar<bg::symbol>>) {
-                        return read_name<bg::symbol>(*source, [&](const bg::symbol &value) {
+                    } else if constexpr (std::same_as<View, hg::Scalar<hg::symbol>>) {
+                        return read_name<hg::symbol>(*source, [&](const hg::symbol &value) {
                             return function(value.text());
                         });
-                    } else if constexpr (std::same_as<View, bg::Scalar<>>) {
+                    } else if constexpr (std::same_as<View, hg::Scalar<>>) {
                         throw std::invalid_argument{"named scalar literal field name must be a string or symbol"};
                     } else {
                         throw std::invalid_argument{"named scalar literal field name must be a string or symbol"};
@@ -302,7 +302,7 @@ template <typename LiteralType> class ScalarLiteralConstructionContext {
 
 } // namespace details
 
-namespace bg {
+namespace hg {
 
 template <typename T>
 ScalarValue<T> ScalarValue<T>::from_literal(const literal::ScalarLiteral &literal)
@@ -360,4 +360,4 @@ ScalarValue<> ScalarValue<>::from_literal(const ScalarRuntimeType &runtime_type,
     return ScalarValue<>{context.make_value(runtime_type, &memory)};
 }
 
-} // namespace bg
+} // namespace hg

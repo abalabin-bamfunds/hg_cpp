@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/type/signature.hpp>
 
 #include <compare>
 #include <cstddef>
@@ -10,7 +10,7 @@
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class WiringTemplate;
@@ -56,4 +56,4 @@ void require_concrete_materialisation_forms(GraphWiring &wiring, const WiringTem
                                             std::span<const TimeSeriesType *const> selected_forms);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

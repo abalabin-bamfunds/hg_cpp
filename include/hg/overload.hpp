@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/graph/operator.hpp>
-#include <bg/node.hpp>
-#include <bg/util/reflection.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/node.hpp>
+#include <hg/util/reflection.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <array>
 #include <concepts>
@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <auto &OP, typename Definition = void>
     requires std::derived_from<std::remove_cvref_t<decltype(OP)>, Operator>
@@ -97,4 +97,4 @@ template <typename Group> void register_overloads() {
     details::name_overloads(registrations, std::make_index_sequence<Members>{});
 }
 
-} // namespace bg
+} // namespace hg

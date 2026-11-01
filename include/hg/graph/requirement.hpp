@@ -5,7 +5,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class RequirementResult {
   public:
@@ -56,4 +56,4 @@ struct CallableRequirementName {
 
 inline constexpr auto require = details::CallableRequirementName{};
 
-} // namespace bg
+} // namespace hg

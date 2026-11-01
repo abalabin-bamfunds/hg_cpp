@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/declaration.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/declaration.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 // Defines the intrinsic operations exposed by a scalar handle. Collections propagate the item requirements.
 template <typename T> struct scalar_handle_traits {
@@ -24,4 +24,4 @@ template <typename T> struct scalar_handle_traits {
     }();
 };
 
-} // namespace bg::details
+} // namespace hg::details

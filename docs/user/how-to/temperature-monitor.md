@@ -15,8 +15,8 @@ Prerequisites: [Graph functions](../guide/graphs/composition.md#graph-functions)
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import dedup
+from hg import graph, run_graph
+from hg.operators import dedup
 
 @graph
 def temperature_alarm(reading: int, limit: int) -> bool:
@@ -45,12 +45,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto temperature_alarm(wp<TS<i64>> reading, i64 limit) {
@@ -78,7 +78,7 @@ Output:
 :::{tab-item} Build and run
 
 The [C++ example project](../guide/installation.md#c-example-project)
-builds this example as `main.cpp`, linked to `bg::library`.
+builds this example as `main.cpp`, linked to `hg::library`.
 :::
 ::::
 :::::

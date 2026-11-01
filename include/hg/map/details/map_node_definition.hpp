@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/graph/nested_graph.hpp>
-#include <bg/map/details/map_graph_wiring.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/map/details/map_graph_wiring.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <memory_resource>
 #include <optional>
 
-namespace bg::details {
+namespace hg::details {
 
 struct CompiledMapInput {
     MapInputKind kind;
@@ -46,4 +46,4 @@ class MapNodeDefinition {
     std::unique_ptr<Signature> signature_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

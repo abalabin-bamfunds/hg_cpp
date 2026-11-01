@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/reduce/details/default_reduce_wiring.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/reduce/details/default_reduce_wiring.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <concepts>
 #include <functional>
@@ -16,7 +16,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Argument> struct reduce_callable_argument {
     using item_type = void;
@@ -190,4 +190,4 @@ struct reduce_operator_implementation {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

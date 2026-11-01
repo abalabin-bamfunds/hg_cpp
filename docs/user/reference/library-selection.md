@@ -1,7 +1,7 @@
 # Selection and validity
 
 These operators decide which values or updates reach downstream calculations. Python
-imports them from `bg.operators`; C++ uses `bg::operators` from `<bg/library.hpp>`.
+imports them from `hg.operators`; C++ uses `hg::operators` from `<hg/library.hpp>`.
 Inputs can include compatible reference connections.
 
 ## valid
@@ -86,8 +86,8 @@ Select the current input for a changing condition:
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import if_then_else
+from hg import graph, run_graph
+from hg.operators import if_then_else
 
 @graph
 def chosen(condition: bool, first: int, second: int) -> int:
@@ -111,12 +111,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto chosen(wp<TS<bool>> condition, wp<TS<i64>> first, wp<TS<i64>> second) {
@@ -140,7 +140,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -156,8 +156,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 `false_value` reference fields. A valid condition routes `value` to the matching field
 and invalidates the other field. An invalid condition invalidates both fields. Access a
 field with `getattr(result, symbol("true_value"))` in Python or
-`getattr(result, "true_value"_sym)` in C++. The native schema is `bg.IfResult` in Python
-and `bg::operators::if_result` in C++.
+`getattr(result, "true_value"_sym)` in C++. The native schema is `hg.IfResult` in Python
+and `hg::operators::if_result` in C++.
 
 Observe the true branch of a routed value:
 
@@ -169,8 +169,8 @@ Observe the true branch of a routed value:
 :sync: python
 
 ```python
-from bg import graph, run_graph, symbol
-from bg.operators import getattr, if_
+from hg import graph, run_graph, symbol
+from hg.operators import getattr, if_
 
 @graph
 def when_true(condition: bool, value: int) -> int:
@@ -195,14 +195,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto when_true(wp<TS<bool>> condition, wp<TS<i64>> value) {
     auto routed = if_(condition, value);
@@ -226,7 +226,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -253,8 +253,8 @@ Turn true condition ticks into a signal:
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import if_true
+from hg import graph, run_graph
+from hg.operators import if_true
 
 @graph
 def signal(condition: bool) -> bool:
@@ -278,12 +278,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto signal(wp<TS<bool>> condition) {
@@ -307,7 +307,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -337,8 +337,8 @@ Keep the earliest valid publisher until it becomes invalid:
 :sync: python
 
 ```python
-from bg import graph, run_graph, INVALID
-from bg.operators import race
+from hg import graph, run_graph, INVALID
+from hg.operators import race
 
 @graph
 def publisher(primary: int, backup: int) -> int:
@@ -362,12 +362,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto publisher(wp<TS<i64>> primary, wp<TS<i64>> backup) {
@@ -391,7 +391,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -429,8 +429,8 @@ Observe slot zero while the selected destination changes:
 :sync: python
 
 ```python
-from bg import TS, TSL, graph, run_graph
-from bg.operators import getitem, route_by_index
+from hg import TS, TSL, graph, run_graph
+from hg.operators import getitem, route_by_index
 
 @graph
 def slot_zero(index: int, value: int) -> int:
@@ -455,14 +455,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto slot_zero(wp<TS<i64>> index, wp<TS<i64>> value) {
     auto routed = route_by_index[type<TSL<TS<i64>, 3>>](index, value);
@@ -486,7 +486,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -559,8 +559,8 @@ take and returns the input unchanged for drop.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import step
+from hg import graph, run_graph
+from hg.operators import step
 
 @graph
 def every_other(value: int) -> int:
@@ -584,13 +584,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto every_other(wp<TS<i64>> value) {
@@ -615,7 +615,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -636,8 +636,8 @@ Limit forwarding to three microseconds from the first valid value:
 
 ```python
 from datetime import timedelta
-from bg import graph, run_graph
-from bg.operators import take
+from hg import graph, run_graph
+from hg.operators import take
 
 @graph
 def initial_interval(value: int) -> int:
@@ -661,14 +661,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto initial_interval(wp<TS<i64>> value) {
     return take(value, timedelta_t{3});
@@ -691,7 +691,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -724,8 +724,8 @@ Select a bounded range of valid input ticks:
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import slice_
+from hg import graph, run_graph
+from hg.operators import slice_
 
 @graph
 def window(value: int) -> int:
@@ -749,12 +749,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto window(wp<TS<i64>> value) {
@@ -778,7 +778,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

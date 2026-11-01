@@ -19,12 +19,12 @@ and from an invalid time series. An empty string is a valid value.
 ## Scalar values
 
 `Column<T>` and `Frame<Schema>` are immutable owning scalars. A frame schema declares
-the name and cell type of each column. Include `<bg/frame/column.hpp>`,
-`<bg/frame/frame.hpp>`, and `<bg/frame/literal.hpp>`.
+the name and cell type of each column. Include `<hg/frame/column.hpp>`,
+`<hg/frame/frame.hpp>`, and `<hg/frame/literal.hpp>`.
 
 ```cpp
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 template <template <typename, auto...> typename Field> struct Quotes {
     Field<double> bid;
@@ -52,7 +52,7 @@ Use a keyed `TSF` when application keys identify records. Schema metadata declar
 key columns. An update inserts an absent key or patches a present key. Omitted
 non-key fields are null on insertion and unchanged on a patch. `REMOVE` deletes a row.
 
-<!-- example-libraries: bg::frame -->
+<!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
 <!-- runnable-example: cpp -->
 ::::::{tab-set}
@@ -66,16 +66,16 @@ non-key fields are null on insertion and unchanged on a patch. `REMOVE` deletes 
 :::{tab-item} Code
 
 ```cpp
-#include <bg/frame/frame.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::operators;
 using namespace literal;
 
 template <template <typename, auto...> typename Field> struct Trades {
@@ -109,7 +109,7 @@ Output:
 The [C++ example project](index.md#frame) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install -DBG_SOURCE_DIR=/path/to/bg
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install -DHG_SOURCE_DIR=/path/to/hg
 cmake --build build --config Release
 ```
 

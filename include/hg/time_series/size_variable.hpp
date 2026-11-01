@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/util/compile_time_string.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <util::compile_time_string Name> struct SizeVariableDeclaration {
     static constexpr auto name = Name;
@@ -24,4 +24,4 @@ concept size_variable_declaration = is_size_variable_declaration<std::remove_cv_
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

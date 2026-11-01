@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/literal/sentinel.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/util/lifetimebound.hpp>
+#include <hg/allocator.hpp>
+#include <hg/literal/sentinel.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/util/lifetimebound.hpp>
 
 #include <concepts>
 #include <deque>
@@ -20,7 +20,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 struct GraphRunInput {
     const ScalarRuntimeType &runtime_type;
@@ -76,10 +76,10 @@ class GraphRunLiteralInput {
 
   public:
     // Tick storage and borrowed scalar sources must survive the enclosing evaluation.
-    GraphRunLiteralInput(std::initializer_list<literal::TimeSeriesLiteral> ticks BG_LIFETIMEBOUND) noexcept
+    GraphRunLiteralInput(std::initializer_list<literal::TimeSeriesLiteral> ticks HG_LIFETIMEBOUND) noexcept
         : ticks_{ticks.begin(), ticks.size()} {}
 
-    GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral> ticks BG_LIFETIMEBOUND) noexcept
+    GraphRunLiteralInput(std::span<const literal::TimeSeriesLiteral> ticks HG_LIFETIMEBOUND) noexcept
         : ticks_{ticks} {}
 
     GraphRunLiteralInput(const GraphRunLiteralInput &source) : time_series_type{source.time_series_type} {
@@ -139,22 +139,22 @@ template <std::ranges::viewable_range Range>
 }
 
 [[nodiscard]] inline const GraphRunLiteralInput &ticks(
-    GraphRunLiteralInput &&input BG_LIFETIMEBOUND) noexcept {
+    GraphRunLiteralInput &&input HG_LIFETIMEBOUND) noexcept {
     return input;
 }
 
 // Annotates the temporary descriptor in place and returns it by reference for the run_graph call.
 template <typename TimeSeries>
-[[nodiscard]] const GraphRunLiteralInput &input(GraphRunLiteralInput &&source BG_LIFETIMEBOUND) {
+[[nodiscard]] const GraphRunLiteralInput &input(GraphRunLiteralInput &&source HG_LIFETIMEBOUND) {
     const auto &type = TimeSeries::type();
     source.time_series_type = &type;
     return source;
 }
 
 [[nodiscard]] inline const GraphRunLiteralInput &input(
-    const TimeSeriesType &time_series_type, GraphRunLiteralInput &&source BG_LIFETIMEBOUND) {
+    const TimeSeriesType &time_series_type, GraphRunLiteralInput &&source HG_LIFETIMEBOUND) {
     source.time_series_type = &time_series_type;
     return source;
 }
 
-} // namespace bg
+} // namespace hg

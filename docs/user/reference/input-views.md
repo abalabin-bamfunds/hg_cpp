@@ -87,7 +87,7 @@ A valid root alone permits missing child values.
 :sync: python
 
 ```python
-from bg import INVALID, TS, TSL, compute_node, graph, run_graph
+from hg import INVALID, TS, TSL, compute_node, graph, run_graph
 
 @compute_node(all_valid=("values",))
 def total(values: TSL[TS[int], 2]) -> TS[int]:
@@ -115,16 +115,16 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
-const auto total = node([](In<TSL<TS<i64>, 2>, bg::all_valid> values) {
+const auto total = node([](In<TSL<TS<i64>, 2>, hg::all_valid> values) {
     return *values[0] + *values[1];
 });
 
@@ -150,7 +150,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

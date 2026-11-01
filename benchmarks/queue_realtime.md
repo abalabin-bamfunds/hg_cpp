@@ -1,13 +1,13 @@
 # Queue and real-time benchmark
 
-`bg_queue_realtime_benchmark` measures queue write throughput, graph drain cost,
+`hg_queue_realtime_benchmark` measures queue write throughput, graph drain cost,
 real-time queue delivery latency, and simulation timer-cycle overhead with and
 without a 50 ms periodic callback. Build it with the `benchmark` preset:
 
 ```sh
 cmake --preset benchmark
-cmake --build --preset benchmark --target bg_queue_realtime_benchmark
-build/benchmark/benchmarks/bg_queue_realtime_benchmark
+cmake --build --preset benchmark --target hg_queue_realtime_benchmark
+build/benchmark/benchmarks/hg_queue_realtime_benchmark
 ```
 
 The default run uses 100,000 messages, 1,000 latency samples per run, 1,000,000

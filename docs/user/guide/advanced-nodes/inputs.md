@@ -16,7 +16,7 @@ Python `@compute_node` passes a view for each time series parameter. C++
 :sync: python
 
 ```python
-from bg import TS, compute_node, graph, run_graph
+from hg import TS, compute_node, graph, run_graph
 
 @compute_node
 def reading_changed(reading: TS[int], offset: TS[int]) -> TS[bool]:
@@ -44,13 +44,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto reading_changed = node([](In<TS<i64>> reading, In<TS<i64>> offset) {
@@ -79,7 +79,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -112,7 +112,7 @@ parameters are useful when only a fallback value is required.
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def correct(reading: int, offset: int | None) -> int:
@@ -140,15 +140,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 #include <optional>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto correct = node([](i64 reading, std::optional<i64> offset) {
@@ -177,7 +177,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -203,7 +203,7 @@ before accessing the value.
 :sync: python
 
 ```python
-from bg import INVALID, TS, compute_node, graph, run_graph
+from hg import INVALID, TS, compute_node, graph, run_graph
 
 @compute_node(valid=("reading",))
 def uses_offset(reading: TS[int], offset: TS[int]) -> TS[bool]:
@@ -231,13 +231,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto uses_offset = node([](In<TS<i64>> reading, In<TS<i64>, optional> offset) {
@@ -265,7 +265,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -294,7 +294,7 @@ current state when another input or a timer schedules evaluation.
 :sync: python
 
 ```python
-from bg import TS, compute_node, graph, run_graph
+from hg import TS, compute_node, graph, run_graph
 
 @compute_node(active=("request",))
 def snapshot(request: TS[bool], reading: TS[int]) -> TS[int]:
@@ -322,13 +322,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto snapshot = node([](In<TS<bool>> request, In<TS<i64>, passive> reading) {
@@ -357,7 +357,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

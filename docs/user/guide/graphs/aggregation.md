@@ -25,8 +25,8 @@ A changed item replaces its contribution. A removed item stops contributing.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, run_graph
-from bg.operators import sum_
+from hg import REMOVE, TS, TSD, graph, run_graph
+from hg.operators import sum_
 
 @graph
 def total(readings: TSD[int, TS[int]]) -> int:
@@ -50,14 +50,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto total(wp<TSD<i64, TS<i64>>> readings) {
@@ -82,7 +82,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -110,8 +110,8 @@ For an empty collection, `all_` is true and `any_` is false.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, run_graph
-from bg.operators import all_
+from hg import REMOVE, TS, TSD, graph, run_graph
+from hg.operators import all_
 
 @graph
 def enabled(sensors: TSD[int, TS[bool]]) -> bool:
@@ -135,13 +135,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto enabled(wp<TSD<i64, TS<bool>>> sensors) {
@@ -167,7 +167,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -190,7 +190,7 @@ a reducer graph. Python uses a collection node for the equivalent product.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, compute_node, graph, run_graph
+from hg import REMOVE, TS, TSD, compute_node, graph, run_graph
 
 @compute_node
 def product(values: TSD[int, TS[int]]) -> TS[int]:
@@ -221,16 +221,16 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/reduce.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/reduce.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::operators;
 using namespace literal;
 
 auto multiply(wp<TS<i64>> left, wp<TS<i64>> right) {
@@ -259,7 +259,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -286,8 +286,8 @@ view is explained in [advanced nodes](../advanced-nodes/collections.md).
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import count
+from hg import graph, run_graph
+from hg.operators import count
 
 
 @graph
@@ -313,13 +313,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto reading_count(wp<TS<i64>> reading) {
@@ -344,7 +344,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -362,8 +362,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import lag
+from hg import graph, run_graph
+from hg.operators import lag
 
 
 @graph
@@ -390,13 +390,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto previous_temperature(wp<TS<i64>> reading) {
@@ -422,7 +422,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -447,8 +447,8 @@ publish that final retained value without another input event.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import sums
+from hg import graph, run_graph
+from hg.operators import sums
 
 
 @graph
@@ -475,13 +475,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto temperature_total(wp<TS<i64>> reading) {
@@ -507,7 +507,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -525,8 +525,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import means
+from hg import graph, run_graph
+from hg.operators import means
 
 
 @graph
@@ -553,13 +553,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto average_temperature(wp<TS<i64>> reading) {
@@ -585,7 +585,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -611,8 +611,8 @@ calculation starts the new history with that value.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import sums
+from hg import graph, run_graph
+from hg.operators import sums
 
 @graph
 def session_total(reading: int, reset: bool) -> int:
@@ -636,14 +636,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::operators;
 using namespace literal;
 
 auto session_total(wp<TS<i64>> reading, wp<TS<bool>> reset) {
@@ -668,7 +668,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

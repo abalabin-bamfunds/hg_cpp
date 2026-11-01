@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_instance_id.hpp>
-#include <bg/graph/dynamic_node_subscriber.hpp>
-#include <bg/graph/node.hpp>
-#include <bg/graph/runtime_graph_scheduling.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_instance_id.hpp>
+#include <hg/graph/dynamic_node_subscriber.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/graph/runtime_graph_scheduling.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -16,7 +16,7 @@
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 struct DynamicSubscribers;
@@ -92,8 +92,8 @@ class RuntimeGraph {
                                                           details::EvaluationScratch &evaluation_scratch,
                                                           const WallClock &wall_clock,
                                                           EvaluationProfile *evaluation_profile = nullptr) noexcept;
-    bg::allocator &allocation() noexcept { return allocator_; }
-    const bg::allocator &allocation() const noexcept { return allocator_; }
+    hg::allocator &allocation() noexcept { return allocator_; }
+    const hg::allocator &allocation() const noexcept { return allocator_; }
     void *storage_at(std::size_t offset) noexcept { return storage_ + offset; }
     Node node(std::size_t index) noexcept { return {compiled_graph_->node(index), storage_}; }
     Node node(const CompiledNode &compiled_node) noexcept { return {compiled_node, storage_}; }
@@ -200,7 +200,7 @@ class RuntimeGraph {
     void stop_nodes(std::size_t node_count, EvaluationContext &context) noexcept;
     bool inputs_are_valid(const CompiledNode &node, const EvaluationContext &context) const;
     const CompiledGraph *compiled_graph_;
-    bg::allocator allocator_;
+    hg::allocator allocator_;
     RuntimeGraphEvaluator *evaluator_;
     GraphInstanceId instance_id_;
     std::byte *storage_{};
@@ -223,4 +223,4 @@ class RuntimeGraph {
 
 static_assert(sizeof(RuntimeGraph) == 96);
 
-} // namespace bg
+} // namespace hg

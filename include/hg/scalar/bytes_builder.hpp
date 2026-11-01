@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/bytes.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/bytes.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <cstddef>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 class BytesStorage;
@@ -39,4 +39,4 @@ class BytesBuilder {
     details::BytesStorage *storage_{};
 };
 
-} // namespace bg
+} // namespace hg

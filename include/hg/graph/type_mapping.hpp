@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/scalar/type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_parameter.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_parameter.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include <cstddef>
 #include <tuple>
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename Declaration> struct type_token;
 
@@ -235,4 +235,4 @@ template <typename Target, typename... Parameters> class TypeParameterizedWiring
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

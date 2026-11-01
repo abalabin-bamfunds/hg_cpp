@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/scalar/list/mutable.hpp>
+#include <hg/scalar/list/mutable.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename T> decltype(auto) MutableList<T>::operator[](std::size_t index) const noexcept {
     auto &stored = mutable_storage().items[static_cast<std::uint32_t>(index)];
@@ -13,4 +13,4 @@ template <typename T> decltype(auto) MutableList<T>::operator[](std::size_t inde
     }
 }
 
-} // namespace bg
+} // namespace hg

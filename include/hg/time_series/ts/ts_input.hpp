@@ -1,21 +1,21 @@
 #pragma once
 
-#include <bg/node/details/input_properties.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/dynamic_value_input.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/dynamic_value_input.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
 #include <string_view>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <details::scalar_variable Variable, auto... TimeSeriesProperties, auto... Properties>
 class In<TS<Variable, TimeSeriesProperties...>, Properties...>
@@ -48,9 +48,7 @@ class In<TS<Variable, TimeSeriesProperties...>, Properties...>
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
-    }
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
 
     using time_series_type = TS<Variable, TimeSeriesProperties...>;
     using value_type = Variable;
@@ -197,4 +195,4 @@ class In<TS<T, TimeSeriesProperties...>, Properties...>
 static_assert(sizeof(In<TS<int>>) == 3 * sizeof(void *));
 static_assert(sizeof(In<TS<int>, dynamic_activity>) == 4 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

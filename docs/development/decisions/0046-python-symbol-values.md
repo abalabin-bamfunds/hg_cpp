@@ -10,7 +10,7 @@ the null symbol must remain distinct from empty text.
 
 ## Decision
 
-Represent `bg.Symbol` as a non-subclassable `str` subclass. Non-null symbols use
+Represent `hg.Symbol` as a non-subclassable `str` subclass. Non-null symbols use
 normal string equality and hashing. A null symbol compares equal only to
 another null symbol and converts to the empty Python string through `str()`.
 

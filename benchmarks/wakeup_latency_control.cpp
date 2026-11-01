@@ -1,4 +1,4 @@
-#include <bg/details/engine_wakeup.hpp>
+#include <hg/details/engine_wakeup.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -102,7 +102,7 @@ int main(int argc, char **argv) {
     }
 
     auto semaphore_wakeup = BinarySemaphoreWakeup{};
-    auto engine_wakeup = bg::details::EngineWakeup{};
+    auto engine_wakeup = hg::details::EngineWakeup{};
     const auto semaphore_valid = run_case("binary_semaphore", semaphore_wakeup, warmup_count, sample_count);
     const auto engine_valid = run_case("engine_wakeup", engine_wakeup, warmup_count, sample_count);
     return semaphore_valid && engine_valid ? 0 : 1;

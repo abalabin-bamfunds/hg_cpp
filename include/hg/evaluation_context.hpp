@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/details/evaluation_context.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/extension/invocation_end_callback.hpp>
-#include <bg/graph/runtime_graph_input.hpp>
-#include <bg/schedule_handle.hpp>
-#include <bg/scratch_pad.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/details/evaluation_context.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/extension/invocation_end_callback.hpp>
+#include <hg/graph/runtime_graph_input.hpp>
+#include <hg/schedule_handle.hpp>
+#include <hg/scratch_pad.hpp>
+#include <hg/wall_clock.hpp>
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 class RuntimeGraphEvaluator;
@@ -119,4 +119,4 @@ class EvaluationContext {
     const RuntimeGraphInput *runtime_graph_inputs_{};
 };
 
-} // namespace bg
+} // namespace hg

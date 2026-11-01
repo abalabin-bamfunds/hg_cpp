@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/construction.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/details/value_storage.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/type.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/construction.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/details/value_storage.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/type.hpp>
 #include <concepts>
 #include <cstddef>
 #include <cstdint>
@@ -20,7 +20,7 @@ class ScalarLiteralItem;
 using ScalarLiteral = Literal<ScalarLiteralItem>;
 } // namespace literal
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -65,7 +65,7 @@ template <typename T> class ScalarValue {
         })};
     }
 
-    // Definitions are provided by <bg/scalar/literal.hpp>.
+    // Definitions are provided by <hg/scalar/literal.hpp>.
     [[nodiscard]] static ScalarValue from_literal(const literal::ScalarLiteral &literal)
         requires(!details::generic_scalar<T>);
     [[nodiscard]] static ScalarValue from_literal(const literal::ScalarLiteral &literal, allocator &memory)
@@ -422,4 +422,4 @@ static_assert(sizeof(ScalarValue<EvaluationTime>) == 2 * sizeof(void *));
 static_assert(sizeof(ScalarValue<string>) == 2 * sizeof(void *));
 static_assert(sizeof(ScalarValue<>) == 2 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

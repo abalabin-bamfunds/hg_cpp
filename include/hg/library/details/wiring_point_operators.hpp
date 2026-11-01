@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/library/operators.hpp>
+#include <hg/library/operators.hpp>
 
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace details {
 
 template <typename T>
@@ -149,4 +149,4 @@ auto abs(POINT &&value) {
     return operators::abs(std::forward<POINT>(value));
 }
 
-} // namespace bg
+} // namespace hg

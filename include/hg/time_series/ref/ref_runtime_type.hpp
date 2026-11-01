@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
 
 #include <memory>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesReferenceRuntimeType : public TimeSeriesRuntimeType {
   public:
@@ -38,4 +38,4 @@ const TimeSeriesRuntimeType &routed_time_series_reference_runtime_type(const Tim
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

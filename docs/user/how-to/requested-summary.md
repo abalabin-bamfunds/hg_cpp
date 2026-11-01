@@ -15,8 +15,8 @@ Prerequisites: [Sampling](../guide/graphs/updates.md#signal-driven-publication),
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import means, sample
+from hg import graph, run_graph
+from hg.operators import means, sample
 
 @graph
 def requested_average(reading: int, request: bool) -> float:
@@ -46,12 +46,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto requested_average(wp<TS<i64>> reading, wp<TS<bool>> request) {
@@ -79,7 +79,7 @@ Output:
 :::{tab-item} Build and run
 
 The [C++ example project](../guide/installation.md#c-example-project)
-builds this example as `main.cpp`, linked to `bg::library`.
+builds this example as `main.cpp`, linked to `hg::library`.
 :::
 ::::
 :::::

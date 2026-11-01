@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/details/collection_storage.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/details/collection_storage.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
 
 #include <cstdint>
 #include <memory>
@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class Scalar;
 
@@ -142,6 +142,6 @@ template <typename... Items> struct scalar_storage_traits<Tuple<Items...>> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-static_assert(sizeof(bg::scalar_storage_traits<bg::Tuple<int>>::stored_type) == sizeof(void *));
+static_assert(sizeof(hg::scalar_storage_traits<hg::Tuple<int>>::stored_type) == sizeof(void *));

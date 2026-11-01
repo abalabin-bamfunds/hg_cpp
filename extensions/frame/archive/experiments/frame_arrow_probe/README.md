@@ -9,7 +9,7 @@ historical proposals and are not current API documentation.
 Run it from the repository root with:
 
 ```sh
-conda run -n bg-build bash extensions/frame/archive/experiments/frame_arrow_probe/run.sh
+conda run -n hg-build bash extensions/frame/archive/experiments/frame_arrow_probe/run.sh
 ```
 
 The test exports each contiguous live value span as a PyArrow chunk. It splits
@@ -38,7 +38,7 @@ constructed positions. It builds a per-chunk Arrow validity bitmap from
 `index<>`, so the value buffers are shared while the validity bitmap is copied.
 The direct span for an interior null works because it lies in the same
 allocated block as constructed values on both sides. A null-only prefix has no
-BG value address, so the probe adds a synthetic Arrow chunk for that prefix.
+HG value address, so the probe adds a synthetic Arrow chunk for that prefix.
 The Python view is used only while the C++ storage remains alive. This tests
 PyArrow buffer construction, not the Arrow C Data Interface.
 
@@ -47,10 +47,10 @@ PyArrow buffer construction, not the Arrow C Data Interface.
 Run the fixed-seed benchmark with:
 
 ```sh
-conda run -n bg-build bash extensions/frame/archive/experiments/frame_arrow_probe/benchmark.sh
+conda run -n hg-build bash extensions/frame/archive/experiments/frame_arrow_probe/benchmark.sh
 ```
 
-It populates 100,000 physical rows for each case, then measures BG copy, sparse
+It populates 100,000 physical rows for each case, then measures HG copy, sparse
 export with and without descriptor-array allocation, and dense export with and
 without NumPy destination allocation. The allocation measurements use normal
 allocators after warmup, so memory may be reused. It also measures
@@ -62,7 +62,7 @@ results. The command writes the machine details and full results to
 Sparse export timing includes per-chunk Python wrapper creation. A native C++
 adapter could lower that cost. Dense gather does not construct or inspect Arrow
 chunks. At 20% dead rows, both patterns contain 80,000 live rows. The current
-run measured BG copy alone at 0.196 ms for clustered deletion and 0.192 ms for
+run measured HG copy alone at 0.196 ms for clustered deletion and 0.192 ms for
 scattered deletion. The small difference lies in traversal and copying, and is
 sensitive to row layout and measurement conditions. The chunk count is relevant
 to sparse export and subsequent Arrow compute.

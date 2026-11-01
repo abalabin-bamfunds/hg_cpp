@@ -18,7 +18,7 @@ input representations.
 
 ## Consequences
 
-BG core supports configured outputs without defining frame-specific options.
+HG core supports configured outputs without defining frame-specific options.
 Node code uses the provider's typed mutation operations. Provider declarations
 control both output interfaces and storage.
 

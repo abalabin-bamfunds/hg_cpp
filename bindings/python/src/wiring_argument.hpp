@@ -1,20 +1,20 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <nanobind/nanobind.h>
 
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 class GraphWiring;
 class Type;
 class Signature;
-} // namespace bg
+} // namespace hg
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 WiringArgument wiring_argument(const Type &expected, nanobind::handle value, allocator &memory, GraphWiring &wiring);
 WiringArgument wiring_argument(nanobind::handle value, allocator &memory, GraphWiring &wiring);
@@ -23,4 +23,4 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nanobin
                                              allocator &memory, GraphWiring &wiring,
                                              std::span<const Type *const> parameter_types = {});
 
-} // namespace bg::python::details
+} // namespace hg::python::details

@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesType;
 
@@ -12,4 +12,4 @@ template <typename Declaration> struct time_series_type_access {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

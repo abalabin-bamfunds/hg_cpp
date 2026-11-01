@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/node/input.hpp>
-#include <bg/python/callback_scope.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/node/input.hpp>
+#include <hg/python/callback_scope.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
 
-namespace bg::python {
+namespace hg::python {
 
 class NB_HIDDEN InputView {
   public:
@@ -163,4 +163,4 @@ class NB_HIDDEN ReferenceValue {
     std::uint64_t generation_;
 };
 
-} // namespace bg::python
+} // namespace hg::python

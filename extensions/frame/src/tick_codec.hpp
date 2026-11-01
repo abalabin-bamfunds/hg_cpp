@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/frame/frame.hpp>
-#include <bg/time_series/tick_serializer.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/time_series/tick_serializer.hpp>
 
 #include <algorithm>
 #include <cstdint>
@@ -10,13 +10,13 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame::details::tick_codec {
+namespace hg::frame::details::tick_codec {
 
 using Cell = std::variant<std::monostate, std::optional<bool>, std::optional<i64>, std::optional<double>,
                           std::optional<std::string_view>, std::optional<symbol>>;
 
 struct FrameChange {
-    bg::details::TickOperation operation;
+    hg::details::TickOperation operation;
     row_id_t id{};
     std::vector<KeyValue> key;
     std::vector<Cell> cells;
@@ -98,8 +98,8 @@ void write_cell(const std::optional<cell_value_t<T>> &cell, ScalarBufferWriteCon
     }
 }
 
-inline const bg::Schema &read_schema(util::buffer_reader &reader) {
-    return *reader.read_raw<const bg::Schema *>();
+inline const hg::Schema &read_schema(util::buffer_reader &reader) {
+    return *reader.read_raw<const hg::Schema *>();
 }
 
 inline std::vector<std::uint32_t> read_changed_columns(util::buffer_reader &reader) {
@@ -170,14 +170,14 @@ inline void read_key(util::buffer_reader &reader, const NativeFrameLayout &layou
     }
 }
 
-inline FrameChange read_change(util::buffer_reader &reader, const bg::Schema &schema,
-                               const NativeFrameLayout &layout, bg::details::TickHeader header) {
+inline FrameChange read_change(util::buffer_reader &reader, const hg::Schema &schema,
+                               const NativeFrameLayout &layout, hg::details::TickHeader header) {
     auto change = FrameChange{header.operation, reader.read_raw<row_id_t>(), {},
                               std::vector<Cell>(schema.field_count())};
-    if (header.operation != bg::details::TickOperation::remove)
+    if (header.operation != hg::details::TickOperation::remove)
         read_key(reader, layout, change.key);
 
-    if (header.operation == bg::details::TickOperation::add) {
+    if (header.operation == hg::details::TickOperation::add) {
         for (auto key_position = std::size_t{}; key_position != layout.key_fields.size(); ++key_position) {
             const auto index = layout.key_fields[key_position];
             change.cells[index] = cell_from_key(change.key[key_position], *layout.fields[index].cell_type);
@@ -189,7 +189,7 @@ inline FrameChange read_change(util::buffer_reader &reader, const bg::Schema &sc
         return change;
     }
 
-    if (header.operation != bg::details::TickOperation::tick)
+    if (header.operation != hg::details::TickOperation::tick)
         return change;
 
     const auto field_count = reader.read_raw<std::uint32_t>();
@@ -200,4 +200,4 @@ inline FrameChange read_change(util::buffer_reader &reader, const bg::Schema &sc
     return change;
 }
 
-} // namespace bg::frame::details::tick_codec
+} // namespace hg::frame::details::tick_codec

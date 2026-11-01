@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/string.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/string.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <cstddef>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 class StringStorage;
@@ -35,4 +35,4 @@ class StringBuilder {
     details::StringStorage *storage_{};
 };
 
-} // namespace bg
+} // namespace hg

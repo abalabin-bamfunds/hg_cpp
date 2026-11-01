@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
 
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesListType;
 class TimeSeriesType;
@@ -28,4 +28,4 @@ struct variadic_wiring_operations_traits<TSL<Item, Size, Properties...>> {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

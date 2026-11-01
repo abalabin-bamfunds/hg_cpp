@@ -6,7 +6,7 @@ already express.
 
 ## Reading current values and changes
 
-`In<TSC<T>>` and `In<TSF<Schema>>` provide the ordinary BG validity and modification
+`In<TSC<T>>` and `In<TSF<Schema>>` provide the ordinary HG validity and modification
 queries plus row access. Null cell reads return `std::optional`; reading a missing row
 throws. Check optional cells before reading their values.
 
@@ -20,7 +20,7 @@ throws. Check optional cells before reading their values.
 | `cell(id)` on a column | Read one nullable cell |
 | `cell<Index>(id)` on a frame | Read one nullable field |
 
-<!-- example-libraries: bg::frame -->
+<!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
 <!-- runnable-example: cpp -->
 ::::::{tab-set}
@@ -34,15 +34,15 @@ throws. Check optional cells before reading their values.
 :::{tab-item} Code
 
 ```cpp
-#include <bg/frame/tsc.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 using namespace literal;
 
 int main() {
@@ -73,7 +73,7 @@ Output:
 The [C++ example project](index.md#frame) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install -DBG_SOURCE_DIR=/path/to/bg
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install -DHG_SOURCE_DIR=/path/to/hg
 cmake --build build --config Release
 ```
 
@@ -147,8 +147,8 @@ Computed outputs borrow source membership and own selected calculated cells. Use
 
 ## Arrow interchange
 
-Build with `BG_FRAME_BUILD_ARROW=ON`, provide an Arrow CMake package exporting
-`Arrow::arrow_shared`, and link `bg::frame_arrow`. Include `<bg/frame/arrow.hpp>`.
+Build with `HG_FRAME_BUILD_ARROW=ON`, provide an Arrow CMake package exporting
+`Arrow::arrow_shared`, and link `hg::frame_arrow`. Include `<hg/frame/arrow.hpp>`.
 The adapter converts scalar values; row IDs and time series deltas are not exported.
 
 | Operation | Result |
@@ -156,13 +156,13 @@ The adapter converts scalar values; row IDs and time series deltas are not expor
 | `borrow_arrow(column_view)` | Arrow chunked array borrowing compatible cell storage |
 | `borrow_arrow(frame_view)` | Arrow table borrowing compatible column storage |
 | `copy_to_arrow(view)` | Owning Arrow values, gathered into one dense chunk per column |
-| `from_arrow<T>(array)` | Owning BG column scalar |
-| `from_arrow<Schema>(table)` | Owning BG frame scalar with a declared schema |
-| `from_arrow(table)` | Owning BG frame scalar with an inferred schema |
+| `from_arrow<T>(array)` | Owning HG column scalar |
+| `from_arrow<Schema>(table)` | Owning HG frame scalar with a declared schema |
+| `from_arrow(table)` | Owning HG frame scalar with an inferred schema |
 
 These functions return `arrow::Result`. Handle its error before using the result.
 An imported value retains its Arrow owners. A borrowed export has the lifetime of the
-BG view; use `copy_to_arrow` when the result must survive source mutation or leave the
+HG view; use `copy_to_arrow` when the result must survive source mutation or leave the
 node invocation.
 
 ```cpp

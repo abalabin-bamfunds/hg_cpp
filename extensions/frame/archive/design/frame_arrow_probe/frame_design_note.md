@@ -1,6 +1,6 @@
 # Frame extension working note
 
-Status: discussion and experiment, not an approved BG design. `frame` is a
+Status: discussion and experiment, not an approved HG design. `frame` is a
 working name. This note records the constraints and questions that should
 survive the Arrow probe. The [README](README.md) describes the probe, and
 [benchmark results](benchmark_results.md) contain its measurements. A separate
@@ -18,7 +18,7 @@ proposals.
 
 ## Purpose and agreed constraints
 
-- Build a library of frame-manipulating BG nodes. A frame is conceptually a
+- Build a library of frame-manipulating HG nodes. A frame is conceptually a
   columnar representation of a time series with structured row values. Rows
   can be added, removed, and modified without copying the complete frame on
   each tick.
@@ -182,7 +182,7 @@ For a `size` column, `q.size > 10` has the semantic wiring type
 `wp<TSC<bool>>`; it need not allocate a Boolean column. Operators record typed
 operands, constants, null behaviour, and row dependencies.
 
-Use BG's existing wiring-record materialisation mechanism when an ordinary
+Use HG's existing wiring-record materialisation mechanism when an ordinary
 node needs a concrete `TSC`. Plan batch execution at that boundary and reuse
 compatible existing materialisations. A variable assignment alone does not
 force materialisation. Expression structure must retain shared subexpressions
@@ -265,7 +265,7 @@ Polars supplies the [expression/context model](https://docs.pola.rs/user-guide/c
 [shared-expression analysis](https://docs.pola.rs/api/python/stable/reference/lazyframe/api/polars.LazyFrame.collect.html),
 and operation properties such as
 [elementwise evaluation](https://docs.pola.rs/api/python/stable/reference/expressions/api/polars.Expr.map_batches.html).
-BG additionally needs
+HG additionally needs
 affected-row rules and state retained across cycles. An aggregate such as
 `mean(bid)` can affect every row of `bid / mean(bid)`; input column sets alone
 cannot determine the affected rows for all expressions. The first expression
@@ -303,9 +303,9 @@ physical slot movement alone is not a row change.
 ## Arrow evidence and limits
 
 The probe exports fixed-width `sparse_bunch<std::int64_t>` values as Arrow
-chunks sharing BG value buffers. It splits at deleted-row gaps and BG block
+chunks sharing HG value buffers. It splits at deleted-row gaps and HG block
 boundaries. It copies `index<>` validity into Arrow bitmaps; an all-null span
-without constructed BG values needs a synthetic values buffer. Arrow arrays
+without constructed HG values needs a synthetic values buffer. Arrow arrays
 have a validity bitmap for null cells, not a separate live-row index. The
 probe uses PyArrow buffer construction and has not tested the Arrow C Data
 Interface. The probe's shared blocks can include unconstructed null slots;
@@ -313,7 +313,7 @@ an export sent outside the process must initialize or sanitize those bytes.
 
 `Column<T>` and `Frame<SCHEMA>` can have Arrow-backed scalar runtime types that
 retain Arrow buffers. An Arrow-backed scalar can expose a compatible Arrow
-array or table without copying cell buffers. A BG-backed scalar can also share
+array or table without copying cell buffers. A HG-backed scalar can also share
 compatible buffers on export, as the probe demonstrates for fixed-width
 values. Building chunks, converting validity, skipping dead rows, and packing
 strings or symbols may still allocate or copy. Zero-copy Arrow export is thus a
@@ -332,14 +332,14 @@ The [benchmark](benchmark_results.md) uses 100,000 physical positions and
 fixed-width values. It compares sparse chunk export, a dense gather, and
 Arrow sum/filter on already-built arrays. The allocation variants include a
 new descriptor array for sparse export and a new NumPy values array for dense
-export. Sparse export includes Python per-chunk wrapper construction; BG row
+export. Sparse export includes Python per-chunk wrapper construction; HG row
 construction, mutation, a native Arrow adapter, Polars, and network transfer
 are outside the measurement.
 
 Chunk count matters more than deleted-row percentage in this probe. At 0.1%
 scattered deletions, 115 chunks made allocation-inclusive export plus sum
 about 1.8 times the dense path. At 1%, about 1,000 chunks made it about seven
-times the dense path. Clustered deletion remained near the BG block count.
+times the dense path. Clustered deletion remained near the HG block count.
 There is no validated 0.5% cutoff. An adaptive choice between shared chunks,
 dense gather, and eventual compaction is plausible; its rule needs native
 measurements and operator workloads. The probe does not compare Polars with
@@ -353,19 +353,19 @@ parts. This might support runtime column sets without treating each pivot
 result as a new static schema. The exact schema, type resolution, and operator
 interfaces remain open.
 
-BG strings use `std::pmr::string`, which is not Arrow's offsets-and-bytes
+HG strings use `std::pmr::string`, which is not Arrow's offsets-and-bytes
 layout. Exporting ordinary Arrow strings requires packing offsets and bytes.
 Interned symbols may suit Arrow dictionary encoding. PyArrow 24 did not
 provide every tested compute kernel for `string_view` or dictionary strings.
-Whether BG strings and symbols guarantee UTF-8 is unresolved. No string or
+Whether HG strings and symbols guarantee UTF-8 is unresolved. No string or
 symbol representation has been selected.
 
 ## Integration and external use
 
 The [implementation plan](frame_implementation_plan.md) starts with the remaining
-utility run/block access, then numeric column storage and its BG type
+utility run/block access, then numeric column storage and its HG type
 integration, fixed-schema frames, selected views, and expressions.
-BG's current runtime resolver enumerates
+HG's current runtime resolver enumerates
 built-in time series forms, so integration must identify the smallest missing
 type/provider hooks. The plan remains a proposal for implementation.
 

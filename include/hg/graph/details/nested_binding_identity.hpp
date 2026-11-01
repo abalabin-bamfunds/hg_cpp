@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/util/symbol.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <functional>
 #include <string_view>
 #include <variant>
 
-namespace bg::details {
+namespace hg::details {
 
 // Identifies a binding inherited through nested graph boundaries by lexical name or owning object.
 class NestedBindingIdentity {
@@ -33,4 +33,4 @@ class NestedBindingIdentity {
     std::variant<util::symbol, const void *> value_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

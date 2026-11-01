@@ -1,6 +1,6 @@
 # Errors and diagnostics
 
-A wiring failure means BG could not construct a compatible graph. An evaluation
+A wiring failure means HG could not construct a compatible graph. An evaluation
 failure means a callback or library calculation failed while processing values.
 The runner propagates either failure after cleanup.
 
@@ -21,8 +21,8 @@ The full error also lists the rejected overloads and their reasons.
 :sync: python
 
 ```python
-from bg import TS, graph, run_graph
-from bg.operators import convert
+from hg import TS, graph, run_graph
+from hg.operators import convert
 
 @graph
 def mixed_types(reading: int) -> float:
@@ -59,15 +59,15 @@ Arguments: (lhs: TS<i64>, rhs: double)
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/graph/wiring_error.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/graph/wiring_error.hpp>
 #include <iostream>
 #include <sstream>
 #include <string>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto mixed_types(wp<TS<i64>> reading) {
@@ -104,7 +104,7 @@ Arguments: (lhs: TS<i64>, rhs: double)
 :::{tab-item} Build and run
 
 The [C++ example project](../guide/installation.md#c-example-project)
-builds this example as `main.cpp`, linked to `bg::library`.
+builds this example as `main.cpp`, linked to `hg::library`.
 :::
 ::::
 :::::
@@ -123,7 +123,7 @@ Keep the complete diagnostic when reporting a failure.
 
 ## Evaluation errors
 
-A zero divisor is a valid integer input to BG. Application code must decide
+A zero divisor is a valid integer input to HG. Application code must decide
 whether to reject it, publish a fallback, or skip publication. This example
 first rejects zero, then implements a policy that skips the result for zero.
 
@@ -135,7 +135,7 @@ first rejects zero, then implements a policy that skips the result for zero.
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
+from hg import graph, node, run_graph
 
 @node
 def ratio(reading: int, divisor: int) -> int:
@@ -181,13 +181,13 @@ ValueError: divisor must be nonzero
 :::{tab-item} Code
 
 ```cpp
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
 #include <optional>
 #include <stdexcept>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto ratio = node([](i64 reading, i64 divisor) {
@@ -234,7 +234,7 @@ divisor must be nonzero
 :::{tab-item} Build and run
 
 The [C++ example project](../guide/installation.md#c-example-project)
-builds this example as `main.cpp`, linked to `bg::library`.
+builds this example as `main.cpp`, linked to `hg::library`.
 :::
 ::::
 :::::

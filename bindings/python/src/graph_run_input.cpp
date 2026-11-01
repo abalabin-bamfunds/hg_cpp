@@ -1,22 +1,22 @@
 #include "graph_run_input.hpp"
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/python/wiring_point.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/python/wiring_point.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
 #include "delta.hpp"
 
@@ -29,7 +29,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 namespace {
 
 bool is_mapping(nb::handle value) {
@@ -171,7 +171,7 @@ bool time_series_delta_shape(const TimeSeriesType &type, nb::handle value) {
 
 GraphRunInputs::GraphRunInputs(const Signature &signature, std::span<const Type *const> wiring_parameter_types,
                                nb::sequence fixed_values, nb::sequence positional_values, nb::dict named_values)
-    : ticks_type_{nb::module_::import_("bg").attr("_Ticks")} {
+    : ticks_type_{nb::module_::import_("hg").attr("_Ticks")} {
     const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
     if (nb::len(fixed_values) != fixed_count) {
         throw std::invalid_argument{"run_graph received the wrong number of fixed arguments"};
@@ -186,7 +186,7 @@ GraphRunInputs::GraphRunInputs(const Signature &signature, std::span<const Type 
     }
 
     positional_values_.reserve(nb::len(positional_values));
-    const auto positional_parameter = signature.variadic_parameter(bg::details::VariadicMode::positional);
+    const auto positional_parameter = signature.variadic_parameter(hg::details::VariadicMode::positional);
     for (auto index = std::size_t{}; index < nb::len(positional_values); ++index) {
         if (!positional_parameter) {
             throw std::invalid_argument{"run_graph received positional values for a graph without *args"};
@@ -202,7 +202,7 @@ GraphRunInputs::GraphRunInputs(const Signature &signature, std::span<const Type 
     }
 
     named_values_.reserve(nb::len(named_values));
-    const auto named_parameter = signature.variadic_parameter(bg::details::VariadicMode::named);
+    const auto named_parameter = signature.variadic_parameter(hg::details::VariadicMode::named);
     for (const auto [name, value] : named_values) {
         if (!named_parameter) {
             throw std::invalid_argument{"run_graph received named values for a graph without **kwargs"};
@@ -294,7 +294,7 @@ GraphRunInputs::Argument GraphRunInputs::prepare(nb::handle value, const Type &p
 
     if (nb::isinstance<PythonWiringPoint>(value) || type_cast<ScalarType>(&parameter_type) != nullptr) {
         if (force_ticks) {
-            throw std::invalid_argument{"bg.ticks requires a time-series graph input"};
+            throw std::invalid_argument{"hg.ticks requires a time-series graph input"};
         }
         return {nb::borrow<nb::object>(value), std::nullopt};
     }
@@ -326,7 +326,7 @@ nb::object GraphRunInputs::argument_value(const Argument &argument) const {
     if (!argument.input_index) {
         return nb::borrow<nb::object>(argument.value);
     }
-    const auto point = bg::graph_run_input(inputs_[*argument.input_index]);
+    const auto point = hg::graph_run_input(inputs_[*argument.input_index]);
     return nb::cast(PythonWiringPoint{point, PythonWiringScope::current()});
 }
 
@@ -354,4 +354,4 @@ nb::dict GraphRunInputs::named_values() const {
     return result;
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details

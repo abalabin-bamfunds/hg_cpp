@@ -2,7 +2,7 @@
 
 Proposal, 2026-10-05. API names are provisional. This document updates the
 wiring mechanism proposed in the [frame working note](frame_design_note.md).
-It does not describe implemented BG behavior.
+It does not describe implemented HG behavior.
 
 ## Model
 
@@ -24,7 +24,7 @@ to different consumers.
 `Union<"name", A, B, ...>` gives the constraint an explicit identity. Distinct
 labels give union constraints independent outer bindings. Variables shared
 inside their alternatives still constrain both arguments. Reusing the same
-constraint retains BG's existing requirement that its concrete type binding
+constraint retains HG's existing requirement that its concrete type binding
 agree. `Union` aliases the existing named `TypeVariable` declaration.
 
 | Boundary | Effect |
@@ -126,7 +126,7 @@ retain source point identities and leave representation-dependent expression
 processing to the materialisation callback. Forced materialisation requirements
 recorded after early inspection remain available to that callback when it starts.
 
-This uses the existing `materialisation_option` API with one option. BG reads
+This uses the existing `materialisation_option` API with one option. HG reads
 the selected callbacks' input declarations and collects their requirements
 before expression preparation. A callback must declare every upstream input
 whose materialisation it requires. Concrete input declarations require a form;
@@ -143,7 +143,7 @@ union declarations keep compatible alternatives available.
 - Shared variables and the semantic output must be determined during
   collection. An expression schema must expose its result type. Differing
   viable output types remain an ambiguity to resolve during collection.
-- Proposed ranking: preserve BG's fixed-before-variadic candidate grouping;
+- Proposed ranking: preserve HG's fixed-before-variadic candidate grouping;
   within that group prefer the lowest total option cost, counting an identical
   point/option binding once. Use existing specificity rules at equal cost;
   an unresolved tie is ambiguous. A union accepts a broader set than one of
@@ -171,7 +171,7 @@ concrete input types.
 ### Extension authors
 
 Add the following APIs, with typed convenience forms and erased forms taking
-BG type objects. These APIs are for graph construction and extensions; node
+HG type objects. These APIs are for graph construction and extensions; node
 evaluation code uses ordinary `In<>` and `Out<>` access.
 
 ```cpp
@@ -202,7 +202,7 @@ return result;
 ```
 
 `prepare_expression` represents frame-extension expression preparation, not a
-new BG API. The callback executes during materialisation.
+new HG API. The callback executes during materialisation.
 
 | API | Contract |
 | --- | --- |
@@ -217,11 +217,11 @@ the operation descriptor as wiring data. Existing free and variadic bundle
 records provide relevant behavior; extend their supported access APIs where
 needed. An arbitrary runtime TSB does not promise an inspectable expression.
 
-### BG implementation
+### HG implementation
 
 | Existing component | Required change |
 | --- | --- |
-| `WiringPoint`, `wp`, `details::WiringRecord` | Store option data and origins on owned records. Expose the extension APIs without requiring direct use of `bg::details`. Keep the point itself a handle. |
+| `WiringPoint`, `wp`, `details::WiringRecord` | Store option data and origins on owned records. Expose the extension APIs without requiring direct use of `hg::details`. Keep the point itself a handle. |
 | `Signature`, `SignatureResolution`, declaration reflection | Add union parameter matching and per-argument viable forms with their type bindings. Keep the semantic result fixed and final runtime signatures concrete. |
 | `WiringArgument`, `WiringArguments` | Retain the original point alongside the forms considered for binding. Expose these read-only to resolvers and requirements; do not masquerade a TSC point as a TSB. |
 | `Operator::invoke` | Probe options, rank candidates, and record requirements only for the winner. Include option descriptors/costs in cache keys; store argument binding choices in cache entries. |
@@ -234,11 +234,11 @@ needed. An arbitrary runtime TSB does not promise an inspectable expression.
 ## Review boundary
 
 Union signatures expose accepted input forms. They do not expose arbitrary
-callback bodies. BG collects declared input requirements before executing
+callback bodies. HG collects declared input requirements before executing
 callbacks. Requirements discovered through later callback expansion preserve
 committed materialisations as described in [Phases](#phases).
 
-BG owns types, overload selection, wiring, materialisation, and execution.
+HG owns types, overload selection, wiring, materialisation, and execution.
 The frame extension supplies expression schemas, operation descriptors,
 traversal, batch functions, and computation nodes.
 
@@ -283,7 +283,7 @@ required changes and declaration migration.
 ## Implementation status
 
 Work remains uncommitted in `.lanes/wiring-materialisation`, based on
-`e52a981b`. On 2026-10-06, the Python-enabled `bg-build` build with `-j12`
+`e52a981b`. On 2026-10-06, the Python-enabled `hg-build` build with `-j12`
 succeeded. The full CTest suite passed **1,230 tests with zero failures**:
 **1,229 C++ tests** and a Python aggregate containing **118 passing Python tests**.
 
@@ -345,4 +345,4 @@ Nodes select a concrete scalar-or-time-series parameter form. Unions between
 time series forms remain graph-only. Python 3.13+ is required; wiring failures
 preserve Python exceptions and attach context notes without duplicating tracebacks.
 Final review is complete. Integration remains separate from this uncommitted implementation.
-The BG work does not complete the downstream frame extension implementation.
+The HG work does not complete the downstream frame extension implementation.

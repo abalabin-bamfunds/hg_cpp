@@ -2,7 +2,7 @@
 
 The published documentation uses Sphinx, MyST Markdown, Sphinx Design, and Furo.
 The [documentation map](../README.md) provides build and preview commands.
-The build needs Python 3.13 or later. It does not import BG or compile the engine.
+The build needs Python 3.13 or later. It does not import HG or compile the engine.
 `.readthedocs.yaml` uses `docs/user/conf.py` and `docs/requirements.txt`.
 Publication requires importing this repository into Read the Docs.
 
@@ -35,8 +35,8 @@ instructions to modify an earlier program.
 
 Use complete Python and C++ examples with equivalent inputs and expected behavior.
 Start with plain types. Add explicit time series declarations when their contracts
-are needed. Python imports names directly. C++ uses `using namespace bg;` and the
-required `bg::operators`, `literal`, or `bg::literals` imports. Use literal input
+are needed. Python imports names directly. C++ uses `using namespace hg;` and the
+required `hg::operators`, `literal`, or `hg::literals` imports. Use literal input
 sequences for `run_graph`.
 
 Print captured results with Python `print(result)` and C++ `std::cout << result`.
@@ -68,15 +68,15 @@ blocks. Its download table has no Python source file.
 Extension pages declare CMake dependencies once per page:
 
 ```html
-<!-- example-libraries: bg::frame -->
+<!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
 ```
 
-`example-libraries` lists space-separated targets; its default is `bg::library`.
-`example-source` adds one directory relative to `BG_SOURCE_DIR` with `add_subdirectory`.
+`example-libraries` lists space-separated targets; its default is `hg::library`.
+`example-source` adds one directory relative to `HG_SOURCE_DIR` with `add_subdirectory`.
 The checker supplies the current checkout; downloaded projects ask the consumer to set
-that path. The web extension uses `bg::web` without a source directory because its
-target belongs to the installed BG package.
+that path. The web extension uses `hg::web` without a source directory because its
+target belongs to the installed HG package.
 
 ## Verification
 
@@ -87,7 +87,7 @@ python -m unittest discover -s docs/tools/tests -v
 python -m sphinx -E -a -b html --fail-on-warning --keep-going docs/user build/docs/html
 ```
 
-Use a Python environment containing a BG build from the same revision to execute
+Use a Python environment containing a HG build from the same revision to execute
 examples. Supply its native CMake installation to compile the C++ examples:
 
 ```sh
@@ -96,7 +96,7 @@ python docs/tools/check_examples.py --cmake-prefix /absolute/path/to/install --j
 
 `--cpp-compiler` selects a C++23 compiler and `--cmake` selects CMake. Without
 `--cmake-prefix`, the checker executes Python and extracts C++ sources. An existing
-CMake cache must resolve `bg_DIR` to the requested installation.
+CMake cache must resolve `hg_DIR` to the requested installation.
 
 Review the rendered desktop and mobile layouts, both languages, nested build tabs,
 search, diagrams, and downloadable source projects. The native extension example has

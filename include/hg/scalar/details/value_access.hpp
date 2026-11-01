@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <array>
 #include <bit>
@@ -15,7 +15,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 concept scalar_exposes_value = requires(const Scalar<T> &scalar) { scalar.value(); };
@@ -117,4 +117,4 @@ template <typename T>
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

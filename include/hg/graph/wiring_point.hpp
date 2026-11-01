@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/variadic_parameter.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node/details/input_properties.hpp>
-#include <bg/time_series/time_series_variable.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/graph/variadic_parameter.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/time_series/time_series_variable.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class Signature;
@@ -101,7 +101,7 @@ template <typename TimeSeries, auto... Properties>
 struct valid_items_wiring_point<wp<TimeSeries, Properties...>> {
     static constexpr bool already_annotated = (false || ... || is_valid_items<decltype(Properties)>);
     using type = std::conditional_t<already_annotated, wp<TimeSeries, Properties...>,
-                                    wp<TimeSeries, Properties..., bg::valid_items>>;
+                                    wp<TimeSeries, Properties..., hg::valid_items>>;
 };
 
 } // namespace details
@@ -150,11 +150,11 @@ template <typename Target> struct annotated_wiring_point<Target, true, false> {
 };
 
 template <typename Target> struct annotated_wiring_point<Target, false, true> {
-    using type = wp<Target, bg::valid_items>;
+    using type = wp<Target, hg::valid_items>;
 };
 
 template <typename Target> struct annotated_wiring_point<Target, true, true> {
-    using type = wp<Target, optional, bg::valid_items>;
+    using type = wp<Target, optional, hg::valid_items>;
 };
 
 } // namespace details
@@ -255,7 +255,7 @@ template <typename Point> auto ValidItems::operator()(Point &&point) const {
     } else {
         static_assert(requires { static_cast<WiringPoint>(point); },
                       "valid_items requires a typed or erased wiring point");
-        return wp<TS_T, bg::valid_items>{static_cast<WiringPoint>(point)};
+        return wp<TS_T, hg::valid_items>{static_cast<WiringPoint>(point)};
     }
 }
 
@@ -275,4 +275,4 @@ auto opt(Point point) {
     return Result::from_validated(static_cast<WiringPoint>(point));
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,49 +1,49 @@
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/library/key_value.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/operators.hpp>
-#include <bg/evaluation_engine.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/evaluation_profiler.hpp>
-#include <bg/python/graph_definition.hpp>
-#include <bg/python/gil.hpp>
-#include <bg/python/module.hpp>
-#include <bg/python/node_definition.hpp>
-#include <bg/python/object.hpp>
-#include <bg/python/schema.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/python/service.hpp>
-#include <bg/python/service_catalogue.hpp>
-#include <bg/python/wiring_point.hpp>
-#include <bg/service.hpp>
-#include <bg/service_feedback.hpp>
-#include <bg/service_catalogue.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsl/details/wiring.hpp>
-#include <bg/type/size_variable.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_guarantee.hpp>
-#include <bg/type/time_series_list_type.hpp>
-#include <bg/type/time_series_reference_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/version.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/library/key_value.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/operators.hpp>
+#include <hg/evaluation_engine.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/evaluation_profiler.hpp>
+#include <hg/python/graph_definition.hpp>
+#include <hg/python/gil.hpp>
+#include <hg/python/module.hpp>
+#include <hg/python/node_definition.hpp>
+#include <hg/python/object.hpp>
+#include <hg/python/schema.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/python/service.hpp>
+#include <hg/python/service_catalogue.hpp>
+#include <hg/python/wiring_point.hpp>
+#include <hg/service.hpp>
+#include <hg/service_feedback.hpp>
+#include <hg/service_catalogue.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsl/details/wiring.hpp>
+#include <hg/type/size_variable.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_guarantee.hpp>
+#include <hg/type/time_series_list_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/version.hpp>
 
 #include "delta.hpp"
 #include "graph_run_input.hpp"
@@ -83,7 +83,7 @@
 namespace nb = nanobind;
 using namespace nanobind::literals;
 
-namespace bg::python {
+namespace hg::python {
 namespace {
 
 PeriodicCallback python_periodic_callback() {
@@ -298,9 +298,9 @@ class PythonServiceDefinition {
 };
 
 class PythonFeedbackGraphAdapter final : public WiringTemplate,
-                                         public bg::details::TypeParameterizedWiring<PythonFeedbackGraphAdapter> {
+                                         public hg::details::TypeParameterizedWiring<PythonFeedbackGraphAdapter> {
   public:
-    using result_type = wp<bg::details::SERVICE_FEEDBACK_OUTPUT>;
+    using result_type = wp<hg::details::SERVICE_FEEDBACK_OUTPUT>;
 
     explicit PythonFeedbackGraphAdapter(std::shared_ptr<const PythonGraphDefinition> implementation)
         : implementation_{std::move(implementation)} {}
@@ -325,7 +325,7 @@ class PythonFeedbackServiceImplementation {
         }
 
         auto adapter = PythonFeedbackGraphAdapter{std::move(implementation)};
-        auto definition = bg::feedback_service_implementation(service, adapter);
+        auto definition = hg::feedback_service_implementation(service, adapter);
         graph_ = std::make_shared<const decltype(definition)>(std::move(definition));
     }
 
@@ -512,7 +512,7 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
         parameter.accepts_absent_scalar = parameter_type.accepts_absent_scalar();
         if (parameter_type.valid_items()) {
             if (type_cast<TimeSeriesDictionaryType>(type) == nullptr) {
-                throw std::invalid_argument{"bg.valid_items requires a TSD input annotation"};
+                throw std::invalid_argument{"hg.valid_items requires a TSD input annotation"};
             }
             parameter.valid_items = true;
         }
@@ -533,11 +533,11 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
             parameter.validity = InputValidity::all_valid;
         }
         if (!variadic.empty()) {
-            auto mode = bg::details::VariadicMode::none;
+            auto mode = hg::details::VariadicMode::none;
             if (variadic == "positional") {
-                mode = bg::details::VariadicMode::positional;
+                mode = hg::details::VariadicMode::positional;
             } else if (variadic == "named") {
-                mode = bg::details::VariadicMode::named;
+                mode = hg::details::VariadicMode::named;
             } else {
                 throw std::invalid_argument{"a Python variadic parameter has an invalid mode"};
             }
@@ -548,9 +548,9 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
             }
 
             if (type_cast<TimeSeriesListType>(time_series) != nullptr) {
-                parameter.variadic_operations = &bg::details::time_series_list_variadic_wiring_operations();
+                parameter.variadic_operations = &hg::details::time_series_list_variadic_wiring_operations();
             } else if (type_cast<TimeSeriesBundleType>(time_series) != nullptr) {
-                parameter.variadic_operations = &bg::details::time_series_bundle_variadic_wiring_operations();
+                parameter.variadic_operations = &hg::details::time_series_bundle_variadic_wiring_operations();
             } else {
                 throw std::invalid_argument{"a Python variadic parameter requires a TSL or TSB annotation"};
             }
@@ -629,7 +629,7 @@ nb::object run_graph(const PythonGraphDefinition &definition, nb::sequence fixed
     };
 
     try {
-        const auto options = bg::GraphRunOptions{
+        const auto options = hg::GraphRunOptions{
             .services = service_catalogue != nullptr ? &service_catalogue->catalogue() : nullptr,
             .recorder = recorder != nullptr ? std::optional<EvaluationProfiler::Recorder>{*recorder} : std::nullopt,
             .engine = engine,
@@ -642,7 +642,7 @@ nb::object run_graph(const PythonGraphDefinition &definition, nb::sequence fixed
         };
         auto results = [&] {
             auto release_gil = nb::gil_scoped_release{};
-            return bg::run_graph(run, options);
+            return hg::run_graph(run, options);
         }();
         if (!capture_output || !signature.has_output()) {
             return nb::none();
@@ -801,7 +801,7 @@ void export_schema(nb::handle python_type, const Schema &time_series_schema, con
         throw std::invalid_argument{"a native schema registration requires a Python type"};
     }
 
-    const auto bg_package = nb::module_::import_("bg");
+    const auto hg_package = nb::module_::import_("hg");
     const auto class_dict = nb::getattr(python_type, "__dict__");
     const auto get_class_attribute = nb::getattr(class_dict, "get");
     const auto time_series_binding = get_class_attribute("_native_time_series_schema", nb::none());
@@ -861,7 +861,7 @@ void export_schema(nb::handle python_type, const Schema &time_series_schema, con
     }
 
     if (effective_scalar_schema != nullptr && PyMapping_HasKeyString(class_dict.ptr(), "__init__") == 0) {
-        const auto schema_constructor = bg_package.attr("_schema_constructor");
+        const auto schema_constructor = hg_package.attr("_schema_constructor");
         nb::setattr(python_type, "__init__", schema_constructor(field_name_tuple, optional_fields));
     }
 }
@@ -901,7 +901,7 @@ void bind_core(nb::module_ &module) {
         .def("request_stop", &std::stop_source::request_stop)
         .def("stop_requested", &std::stop_source::stop_requested);
 
-    module.def("version", [] { return std::string{bg::version()}; });
+    module.def("version", [] { return std::string{hg::version()}; });
     nb::class_<PythonServiceDefinition>(module, "_PythonServiceDefinition");
     nb::class_<PythonFeedbackServiceImplementation>(module, "_PythonFeedbackServiceImplementation");
     nb::class_<PythonServiceCatalogue>(module, "_ServiceCatalogue").def(nb::init<>());
@@ -1014,7 +1014,7 @@ void bind_core(nb::module_ &module) {
     });
     module.def("_with_valid_items", [](const TypeDescriptor &value) {
         if (type_cast<TimeSeriesDictionaryType>(&value.type()) == nullptr) {
-            throw std::invalid_argument{"bg.valid_items requires a TSD input annotation"};
+            throw std::invalid_argument{"hg.valid_items requires a TSD input annotation"};
         }
         return TypeDescriptor{value.type(), value.accepts_absent_scalar(), value.minimum_guarantee(), true};
     });
@@ -1711,4 +1711,4 @@ void bind_core(nb::module_ &module) {
     details::bind_higher_order(module);
 }
 
-} // namespace bg::python
+} // namespace hg::python

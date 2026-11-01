@@ -37,18 +37,18 @@ for index, example in enumerate(examples):
 cmake = [
     "cmake_minimum_required(VERSION 3.31)",
     "project(documentation_examples LANGUAGES CXX)",
-    "find_package(bg CONFIG REQUIRED)",
+    "find_package(hg CONFIG REQUIRED)",
 ]
 sources = dict.fromkeys(example.cmake_source for example in examples if example.cmake_source)
 if sources:
     cmake.extend((
         'set(BUILD_TESTING OFF CACHE BOOL "" FORCE)',
-        'if(NOT DEFINED BG_SOURCE_DIR)',
-        '    message(FATAL_ERROR "Set BG_SOURCE_DIR to the BG source tree")',
+        'if(NOT DEFINED HG_SOURCE_DIR)',
+        '    message(FATAL_ERROR "Set HG_SOURCE_DIR to the HG source tree")',
         'endif()',
     ))
     cmake.extend(
-        f'add_subdirectory("${{BG_SOURCE_DIR}}/{source}" bg_extension_{index})'
+        f'add_subdirectory("${{HG_SOURCE_DIR}}/{source}" hg_extension_{index})'
         for index, source in enumerate(sources)
     )
 batches = []
@@ -69,7 +69,7 @@ for start in range(0, len(examples), 8):
         bodies.append(f"namespace example_{index} {{\n{body}\n}}\n")
         calls.extend((
             f"    example_{index}::run();",
-            f'    std::cout << "\\nBG_DOC_EXAMPLE_{index}\\n";'
+            f'    std::cout << "\\nHG_DOC_EXAMPLE_{index}\\n";'
         ))
 
     target = f"examples_{start // 8}"
@@ -92,7 +92,7 @@ if args.cmake_prefix:
     configure = [args.cmake, "-S", str(project), "-B", str(build),
                  "-DCMAKE_BUILD_TYPE=Debug", "-DCMAKE_CXX_FLAGS_DEBUG=-O0 -g0",
                  f"-DCMAKE_PREFIX_PATH={args.cmake_prefix.resolve()}",
-                 f"-DBG_SOURCE_DIR={root}"]
+                 f"-DHG_SOURCE_DIR={root}"]
     if args.cpp_compiler:
         configure.append(f"-DCMAKE_CXX_COMPILER={args.cpp_compiler}")
     subprocess.run(configure, check=True)

@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/map/details/map_invoke.hpp>
-#include <bg/mesh/details/default_mesh_wiring.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/map/details/map_invoke.hpp>
+#include <hg/mesh/details/default_mesh_wiring.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <concepts>
 #include <span>
@@ -10,7 +10,7 @@
 #include <string_view>
 #include <utility>
 
-namespace bg {
+namespace hg {
 namespace details {
 
 class MeshDependencySelector {
@@ -109,4 +109,4 @@ struct mesh_operator_implementation {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

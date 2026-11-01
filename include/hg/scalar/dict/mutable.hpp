@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/mutable_traits.hpp>
-#include <bg/scalar/details/storage_traits.hpp>
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/mutable_traits.hpp>
+#include <hg/scalar/details/storage_traits.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/value.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename K, typename V> class MutableDict : public Dict<K, V> {
     using Base = Dict<K, V>;
@@ -73,9 +73,9 @@ template <typename K, typename V> class MutableDict : public Dict<K, V> {
     Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename K, typename V>
     requires(!generic_scalar<Dict<K, V>>)
@@ -84,4 +84,4 @@ struct scalar_mutable_traits<Dict<K, V>> {
     using view_type = MutableDict<K, V>;
 };
 
-} // namespace bg::details
+} // namespace hg::details

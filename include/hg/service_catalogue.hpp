@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/service.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/graph/service.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <array>
 #include <concepts>
@@ -12,7 +12,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 
@@ -156,4 +156,4 @@ class ServiceCatalogue {
     std::shared_ptr<State> state_;
 };
 
-} // namespace bg
+} // namespace hg

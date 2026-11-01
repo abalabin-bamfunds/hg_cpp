@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/map_argument.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/map_argument.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -21,7 +21,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class ScalarType;
 
@@ -224,4 +224,4 @@ template <typename... Arguments> auto group_map_call_arguments(Arguments &&...ar
 }
 
 } // namespace details
-} // namespace bg
+} // namespace hg

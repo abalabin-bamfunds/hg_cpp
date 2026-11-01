@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/export.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/time_series/dispatch.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/allocator.hpp>
+#include <hg/export.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/time_series/dispatch.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <functional>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 // Queue operations encode literal payloads and consume queued payloads for a provider-defined time series.
 // Project, write, conflicts, and apply belong to the exact runtime registration. Discard belongs to the semantic
@@ -113,7 +113,7 @@ struct TimeSeriesQueueOperations {
     Discard discard_;
 };
 
-template <> BG_EXPORT TimeSeriesDispatch<TimeSeriesQueueOperations> &
+template <> HG_EXPORT TimeSeriesDispatch<TimeSeriesQueueOperations> &
 TimeSeriesDispatch<TimeSeriesQueueOperations>::instance() noexcept;
 
-} // namespace bg
+} // namespace hg

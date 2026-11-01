@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/time_series/details/output_path.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/time_series/details/output_path.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cstdint>
 #include <memory>
 
-namespace bg::details {
+namespace hg::details {
 
 // Owns an output state in invocation scratch storage or borrows an existing state from another output view.
 template <typename State> class output_proxy {
@@ -52,4 +52,4 @@ template <typename State> class output_proxy {
     util::tagged_ptr<State, 1, Ownership> state_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

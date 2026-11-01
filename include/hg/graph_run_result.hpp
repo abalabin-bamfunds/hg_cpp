@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/details/graph_run.hpp>
-#include <bg/scalar/format.hpp>
-#include <bg/time_series/tick_format.hpp>
+#include <hg/details/graph_run.hpp>
+#include <hg/scalar/format.hpp>
+#include <hg/time_series/tick_format.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -15,11 +15,11 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 class LiteralMatcher;
 }
 
-namespace bg {
+namespace hg {
 
 template <typename T = void> class GraphRunResult {
   public:
@@ -42,8 +42,8 @@ template <typename T = void> class GraphRunResult {
         }
 
         auto reader = util::buffer_reader{*event};
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation != bg::details::TickOperation::tick) {
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation != hg::details::TickOperation::tick) {
             throw std::invalid_argument{"graph run result tick does not start with a tick header"};
         }
 
@@ -63,8 +63,8 @@ template <typename T = void> class GraphRunResult {
         }
         const auto &event_time = event_times[index];
         auto reader = util::buffer_reader{captured_.event_data(index)};
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation != bg::details::TickOperation::tick) {
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation != hg::details::TickOperation::tick) {
             throw std::invalid_argument{"graph run event does not start with a tick header"};
         }
 
@@ -98,7 +98,7 @@ template <typename T = void> class GraphRunResult {
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
     bool equals(
-        std::initializer_list<std::optional<std::remove_cvref_t<typename bg::scalar_storage_traits<Value>::value_type>>>
+        std::initializer_list<std::optional<std::remove_cvref_t<typename hg::scalar_storage_traits<Value>::value_type>>>
             expected) const {
         if (size() != expected.size()) {
             return false;
@@ -126,7 +126,7 @@ template <typename T = void> class GraphRunResult {
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
     bool operator==(
-        std::initializer_list<std::optional<std::remove_cvref_t<typename bg::scalar_storage_traits<Value>::value_type>>>
+        std::initializer_list<std::optional<std::remove_cvref_t<typename hg::scalar_storage_traits<Value>::value_type>>>
             expected) const {
         return equals(expected);
     }
@@ -151,7 +151,7 @@ template <typename T = void> class GraphRunResult {
             if (value_type == nullptr) {
                 throw std::invalid_argument{"graph run result tick is a collection"};
             }
-            present = bg::details::TimeSeriesTickScalarRead::visit(reader, value_type->value_type(),
+            present = hg::details::TimeSeriesTickScalarRead::visit(reader, value_type->value_type(),
                                                                     std::forward<Function>(function));
         });
         return present;
@@ -198,4 +198,4 @@ bool GraphRunResult<T>::equals(std::initializer_list<literal::TimeSeriesLiteral>
         captured_, captured_.type(), std::span{expected.begin(), expected.size()});
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,22 +1,22 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
 
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
   public:
@@ -240,4 +240,4 @@ template <typename K, auto... Properties> class Out<TSS<K, Properties...>> {
     TimeSeriesOutputBinding state_;
 };
 
-} // namespace bg
+} // namespace hg

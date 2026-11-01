@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/run_graph.hpp>
 
 #include <array>
 #include <cmath>
@@ -12,9 +12,9 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 struct IntegerSourceState {
     row_id_t first{no_row};

@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/linear_hash_table.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/runtime_bunch.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/linear_hash_table.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/runtime_bunch.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 enum class time_series_set_change {
     none,
@@ -373,4 +373,4 @@ class time_series_set_storage {
 
 static_assert(util::byte_copy_initializable<time_series_set_storage>);
 
-} // namespace bg::details
+} // namespace hg::details

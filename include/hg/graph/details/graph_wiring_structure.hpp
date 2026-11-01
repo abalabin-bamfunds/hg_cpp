@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/graph/wiring_point.hpp>
+#include <hg/graph/wiring_point.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <optional>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class TimeSeriesType;
@@ -57,4 +57,4 @@ bool equivalent_wiring_bodies(const GraphWiring &left, std::span<const WiringPoi
                               std::span<const TimeSeriesType *const> input_types);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

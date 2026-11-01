@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/details/value_storage.hpp>
-#include <bg/scalar/dict/runtime_type.hpp>
-#include <bg/scalar/scalar.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/details/value_storage.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/scalar.hpp>
 
 #include <functional>
 #include <memory>
@@ -11,7 +11,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename K, typename V> class Scalar<Dict<K, V>> {
   public:
@@ -129,4 +129,4 @@ template <typename K, typename V> class Scalar<Dict<K, V>> {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg

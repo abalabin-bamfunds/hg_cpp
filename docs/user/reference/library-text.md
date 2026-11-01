@@ -1,7 +1,7 @@
 # Text operations
 
-Python imports text operators from `bg.operators`. C++ imports `bg::operators` from
-`<bg/library.hpp>`. Text operands can be scalar strings or string time series.
+Python imports text operators from `hg.operators`. C++ imports `hg::operators` from
+`<hg/library.hpp>`. Text operands can be scalar strings or string time series.
 Symbol operands are accepted by character and case operations; produced text is a
 string. Required input invalidation invalidates the result. Operations propagate
 the weakest observed input guarantee unless stated otherwise.
@@ -33,8 +33,8 @@ Unicode. Case folding also does not normalize Unicode.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import substr, upper
+from hg import graph, run_graph
+from hg.operators import substr, upper
 
 @graph
 def prefix(name: str) -> str:
@@ -58,13 +58,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto prefix(wp<TS<string>> name) {
@@ -89,7 +89,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -103,7 +103,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 `format_(pattern, *values, **named)` uses `{fmt}` format specifications. The pattern
 and formatting arguments must be valid. Scalar-only calls evaluate at graph start.
-C++ named arguments use `"name"_n = value` with `bg::literals` imported.
+C++ named arguments use `"name"_n = value` with `hg::literals` imported.
 
 `print_(pattern, *values, **named)` writes formatted text followed by a newline and
 has no output. `__std_err__=True` selects standard error; this option is a fixed
@@ -123,7 +123,7 @@ strings. A scalar string remains a format pattern. To format a string-series
 pattern, supply at least one formatting argument.
 
 `log_(series)` and `log_(pattern, *values, **named)` send the same tick data and
-formatted messages to the process-level `bg` logger. The fixed string option
+formatted messages to the process-level `hg` logger. The fixed string option
 `__level__` selects severity and defaults to `"info"`.
 Accepted values are `"trace"`, `"debug"`, `"info"`, `"warning"`, `"error"`,
 `"critical"`, and `"off"`. Unknown levels are wiring errors.
@@ -140,16 +140,16 @@ log_("book={}", book, "__level__"_n = "debug");
 
 Disabled levels skip data capture. Enabled messages capture their data during
 graph evaluation and format it on a logging thread. Logging can finish after
-graph execution returns. Call `bg::logging::flush()` to wait for queued messages.
+graph execution returns. Call `hg::logging::flush()` to wait for queued messages.
 
-C++ nodes log ordinary values through `<bg/logging.hpp>`:
+C++ nodes log ordinary values through `<hg/logging.hpp>`:
 
 ```cpp
-#include <bg/logging.hpp>
+#include <hg/logging.hpp>
 
 // Inside a node's evaluation function:
-bg::log::debug("received {} items", count);
-bg::log::warning("missing key {}", key);
+hg::log::debug("received {} items", count);
+hg::log::warning("missing key {}", key);
 ```
 
 These functions use the same logger and level filter as `log_`. They accept
@@ -162,28 +162,28 @@ available until queued messages have been released. Use `log_` to capture time
 series ticks. Disabled calls skip argument capture; C++ still
 evaluates the argument expressions.
 
-Use `BG_LOG_TRACE`, `BG_LOG_DEBUG`, `BG_LOG_INFO`, `BG_LOG_WARNING`,
-`BG_LOG_ERROR`, or `BG_LOG_CRITICAL` to skip argument evaluation when the level
+Use `HG_LOG_TRACE`, `HG_LOG_DEBUG`, `HG_LOG_INFO`, `HG_LOG_WARNING`,
+`HG_LOG_ERROR`, or `HG_LOG_CRITICAL` to skip argument evaluation when the level
 is disabled. These statement macros accept the same arguments as the functions:
 
 ```cpp
-BG_LOG_DEBUG("received {} items", expensive_count());
-BG_LOG_INFO("ready");
+HG_LOG_DEBUG("received {} items", expensive_count());
+HG_LOG_INFO("ready");
 ```
 
 Applications configure logging before its first use:
 
 ```cpp
-#include <bg/logging.hpp>
+#include <hg/logging.hpp>
 
-bg::logging::initialize({
-    .level = bg::logging::Level::debug,
+hg::logging::initialize({
+    .level = hg::logging::Level::debug,
     .file = "graph.log"
 });
-bg::logging::set_level(bg::logging::Level::info);
+hg::logging::set_level(hg::logging::Level::info);
 ```
 
-`initialize` accepts `bg::logging::Config`. Its fields are:
+`initialize` accepts `hg::logging::Config`. Its fields are:
 
 | Field | Default | Meaning |
 | --- | --- | --- |
@@ -196,7 +196,7 @@ bg::logging::set_level(bg::logging::Level::info);
 
 The pattern supports `{time}`, `{level}`, `{logger}`, and `{message}`, with
 optional width and alignment specifications. Each field can appear once.
-Doubled braces produce literal braces. The logger name is `bg`. The default omits thread ID and source location
+Doubled braces produce literal braces. The logger name is `hg`. The default omits thread ID and source location
 and uses microsecond timestamps. Invalid patterns throw `std::invalid_argument`.
 
 Logging initializes with these defaults on first use if `initialize` was not
@@ -213,8 +213,8 @@ Accepted levels are `trace`, `debug`, `info`, `warning`, `error`, `critical`, an
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import format_
+from hg import graph, run_graph
+from hg.operators import format_
 
 @graph
 def label(value: int) -> str:
@@ -238,13 +238,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto label(wp<TS<i64>> value) {
@@ -269,7 +269,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -304,8 +304,8 @@ invalidates every item. Capture guarantees limit const to final.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import matches
+from hg import graph, run_graph
+from hg.operators import matches
 
 @graph
 def valid_name(name: str) -> bool:
@@ -329,13 +329,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto valid_name(wp<TS<string>> name) {
@@ -360,7 +360,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -394,8 +394,8 @@ empty string.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import join, split
+from hg import graph, run_graph
+from hg.operators import join, split
 
 @graph
 def path(text: str) -> str:
@@ -419,13 +419,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto path(wp<TS<string>> text) {
@@ -450,7 +450,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

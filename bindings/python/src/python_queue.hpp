@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/queue.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/queue.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <nanobind/nanobind.h>
 
 #include <utility>
 
-namespace bg::python {
+namespace hg::python {
 
 class PythonQueue {
   public:
-    PythonQueue(bg::Queue queue, const TimeSeriesType &output_type, QueueMode mode) noexcept
+    PythonQueue(hg::Queue queue, const TimeSeriesType &output_type, QueueMode mode) noexcept
         : queue_{std::move(queue)}, output_type_{&output_type}, mode_{mode} {}
 
     PythonQueue(const PythonQueue &other);
@@ -22,7 +22,7 @@ class PythonQueue {
     bool write(nanobind::handle value);
 
   private:
-    bg::Queue queue_;
+    hg::Queue queue_;
     const TimeSeriesType *output_type_;
     QueueMode mode_;
     // Python calls serialize under the GIL; this flag spans the GIL-released native write.
@@ -31,4 +31,4 @@ class PythonQueue {
 
 void bind_python_queue(nanobind::module_ &module);
 
-} // namespace bg::python
+} // namespace hg::python

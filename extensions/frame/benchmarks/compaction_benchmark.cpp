@@ -1,5 +1,5 @@
-#include <bg/frame/arrow.hpp>
-#include <bg/frame/frame.hpp>
+#include <hg/frame/arrow.hpp>
+#include <hg/frame/frame.hpp>
 
 #include <arrow/compute/api.h>
 #include <arrow/compute/initialize.h>
@@ -23,8 +23,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 constexpr auto row_count = std::size_t{32'768};
 constexpr auto computed_row_count = std::size_t{8'192};
@@ -273,11 +273,11 @@ FrameView<Schema> frame_view(const NativeFrame<Schema> &frame) {
     using view_columns = typename FrameView<Schema>::columns_type;
     auto columns = view_columns{};
     const auto storage = frame.scalar_storage();
-    auto source = bg::frame::details::frame_schema_reflection<Schema>::fields(storage.columns);
-    auto destination = bg::frame::details::frame_schema_reflection<Schema>::fields(columns);
+    auto source = hg::frame::details::frame_schema_reflection<Schema>::fields(storage.columns);
+    auto destination = hg::frame::details::frame_schema_reflection<Schema>::fields(columns);
     [&]<std::size_t... Index>(std::index_sequence<Index...>) {
-        ((std::get<Index>(destination) = bg::scalar_storage_traits<
-              typename bg::frame::details::frame_column_storage<std::remove_cvref_t<decltype(std::get<Index>(source))>>::
+        ((std::get<Index>(destination) = hg::scalar_storage_traits<
+              typename hg::frame::details::frame_column_storage<std::remove_cvref_t<decltype(std::get<Index>(source))>>::
                   scalar_type>::read(std::get<Index>(source))),
          ...);
     }(std::make_index_sequence<NativeFrame<Schema>::field_count>{});
@@ -527,8 +527,8 @@ ComputedCaseSample run_computed_sample(bool reverse_mapping) {
                                             computed_right.modified(), source.rows().removed(), remove_time};
     const auto view = FrameView<ComputedPairRows>{
         typename FrameView<ComputedPairRows>::columns_type{
-            bg::scalar_storage_traits<Column<i64>>::read(left_storage),
-            bg::scalar_storage_traits<Column<i64>>::read(right_storage)},
+            hg::scalar_storage_traits<Column<i64>>::read(left_storage),
+            hg::scalar_storage_traits<Column<i64>>::read(right_storage)},
         source.size()};
     const auto source_size_before = source.size();
 
@@ -783,7 +783,7 @@ int main() {
         std::cerr << "benchmark checksum: " << sink.value << '\n';
         return 0;
     } catch (const std::exception &error) {
-        std::cerr << "bg_frame_compaction_benchmark: " << error.what() << '\n';
+        std::cerr << "hg_frame_compaction_benchmark: " << error.what() << '\n';
         return 1;
     }
 }

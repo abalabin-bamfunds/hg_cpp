@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/node/details/aggregate_node.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/compile_time_string.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/node/details/aggregate_node.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/compile_time_string.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <cstddef>
 #include <optional>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Scope> struct CallableOutputGuarantee {
     static constexpr util::compile_time_string name{"callable_output"};
@@ -278,4 +278,4 @@ Signature make_callable_signature(util::symbol name, std::vector<VariableResolve
         schedule_on_start);
 }
 
-} // namespace bg::details
+} // namespace hg::details

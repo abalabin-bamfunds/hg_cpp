@@ -1,13 +1,13 @@
-# Column expressions use BG materialisation
+# Column expressions use HG materialisation
 
 Status: accepted
 
 ## Decision
 
-Column operators use BG overload resolution, declared dependencies, and
+Column operators use HG overload resolution, declared dependencies, and
 materialisation options. Concrete column demands define where expression
 compilation stops. A shared computation node evaluates the selected operations
-over aligned blocks. Captured scalar time series use an ordinary BG node to
+over aligned blocks. Captured scalar time series use an ordinary HG node to
 publish a typed parameter bundle.
 
 See the [block-operation contract](../../block_operation_proposal.md) and
@@ -15,7 +15,7 @@ See the [block-operation contract](../../block_operation_proposal.md) and
 
 ## Reason
 
-BG must retain ownership of scheduling, validity, and intermediate reuse.
+HG must retain ownership of scheduling, validity, and intermediate reuse.
 Block evaluation reduces intermediate column allocation. Requiring a shared
 row domain and visible selection lets operands align through their existing
 row mappings; filters maintain their selected rows in source order.

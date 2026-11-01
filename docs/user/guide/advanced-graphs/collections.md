@@ -24,7 +24,7 @@ current value and update information.
 :sync: python
 
 ```python
-from bg import TS, TSL, graph, run_graph
+from hg import TS, TSL, graph, run_graph
 
 @graph
 def first_sensor(readings: TSL[TS[int], 2]) -> int:
@@ -48,14 +48,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto first_sensor(wp<TSL<TS<i64>, 2>> readings) {
@@ -80,7 +80,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -107,8 +107,8 @@ field names and types.
 :sync: python
 
 ```python
-from bg import TSB, graph, schema, symbol, run_graph
-from bg.operators import getattr
+from hg import TSB, graph, schema, symbol, run_graph
+from hg.operators import getattr
 
 @schema
 class Sensor:
@@ -137,14 +137,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 template <template <typename, auto...> typename Field>
@@ -176,7 +176,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -203,7 +203,7 @@ A supplied mapping is a delta: omitted keys remain unchanged.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, run_graph
+from hg import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def sensor_one(readings: TSD[int, TS[int]]) -> int:
@@ -227,14 +227,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
@@ -259,7 +259,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -286,8 +286,8 @@ for removal; C++ literals use `REMOVED`.
 :sync: python
 
 ```python
-from bg import Removed, TSS, graph, run_graph
-from bg.operators import contains_
+from hg import Removed, TSS, graph, run_graph
+from hg.operators import contains_
 
 @graph
 def sensor_one_active(sensors: TSS[int]) -> bool:
@@ -311,14 +311,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tss/tss_type.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto sensor_one_active(wp<TSS<i64>> sensors) {
@@ -343,7 +343,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -369,8 +369,8 @@ valid immediate items. An optional reduction ignores unavailable items.
 :sync: python
 
 ```python
-from bg import INVALID, TS, TSD, graph, opt, run_graph
-from bg.operators import sum_
+from hg import INVALID, TS, TSD, graph, opt, run_graph
+from hg.operators import sum_
 
 @graph
 def total(values: TSD[int, TS[int]]) -> int:
@@ -394,13 +394,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto total(wp<TSD<i64, TS<i64>>> values) {
@@ -425,7 +425,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

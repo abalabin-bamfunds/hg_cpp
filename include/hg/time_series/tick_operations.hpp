@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/export.hpp>
-#include <bg/scalar/buffer_operations.hpp>
-#include <bg/time_series/dispatch.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/allocator.hpp>
+#include <hg/export.hpp>
+#include <hg/scalar/buffer_operations.hpp>
+#include <hg/time_series/dispatch.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <concepts>
 #include <functional>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 struct TimeSeriesTickOperations {
     using Write = std::function<void(const In<TS_T> &, ScalarBufferWriteContext &, allocator &)>;
@@ -109,7 +109,7 @@ struct TimeSeriesTickOperations {
     Discard discard_;
 };
 
-template <> BG_EXPORT TimeSeriesDispatch<TimeSeriesTickOperations> &
+template <> HG_EXPORT TimeSeriesDispatch<TimeSeriesTickOperations> &
 TimeSeriesDispatch<TimeSeriesTickOperations>::instance() noexcept;
 
-} // namespace bg
+} // namespace hg

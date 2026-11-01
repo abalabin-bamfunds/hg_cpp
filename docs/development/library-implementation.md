@@ -6,7 +6,7 @@ Use these guidelines when implementing library operator overloads. Prioritize
 correct graph evaluation, execution performance and memory use, then readable
 code, following the [project priorities](project.md#priorities).
 
-Examples omit includes and use `using namespace bg;`. Class excerpts belong
+Examples omit includes and use `using namespace hg;`. Class excerpts belong
 inside an aggregate node definition.
 
 ## Define observable behavior

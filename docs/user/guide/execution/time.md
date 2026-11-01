@@ -16,8 +16,8 @@ Time operations schedule results independently of input arrival. Durations use
 
 ```python
 from datetime import timedelta
-from bg import graph, run_graph
-from bg.operators import count, schedule
+from hg import graph, run_graph
+from hg.operators import count, schedule
 
 @graph
 def requests() -> int:
@@ -41,14 +41,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::operators;
 using namespace literal;
 
 auto requests() {
@@ -73,7 +73,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -84,7 +84,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 The default first signal occurs one period after graph start. `initial_delay=False`
-includes a signal at graph start. C++ named arguments use `_n` from `bg::literals`.
+includes a signal at graph start. C++ named arguments use `_n` from `hg::literals`.
 Connect the signal to `sample` for periodic snapshots.
 [`resample`](../../reference/library-time.md#resample) combines those operations; its
 example uses a run limit to stop the periodic source.
@@ -103,8 +103,8 @@ order, including repeated values.
 
 ```python
 from datetime import timedelta
-from bg import graph, run_graph
-from bg.operators import delay
+from hg import graph, run_graph
+from hg.operators import delay
 
 @graph
 def delayed(reading: int) -> int:
@@ -128,13 +128,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto delayed(wp<TS<i64>> reading) {
@@ -159,7 +159,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -186,8 +186,8 @@ input event to publish the preceding event.
 
 ```python
 from datetime import timedelta
-from bg import graph, run_graph
-from bg.operators import throttle
+from hg import graph, run_graph
+from hg.operators import throttle
 
 @graph
 def reported(reading: int) -> int:
@@ -211,13 +211,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto reported(wp<TS<i64>> reading) {
@@ -242,7 +242,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

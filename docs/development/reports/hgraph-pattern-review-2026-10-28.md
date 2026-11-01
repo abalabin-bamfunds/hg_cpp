@@ -1,6 +1,6 @@
 # hgraph graph-pattern review
 
-This review uses hgraph tests to select additional BG behavior tests. It focuses
+This review uses hgraph tests to select additional HG behavior tests. It focuses
 on references across nested graph boundaries, free bundles and fixed lists, and
 compositions of map, switch, mesh, and reduce. Implementation changes require a
 separate decision after review.
@@ -16,17 +16,17 @@ The upstream references were fetched from
 
 | Source | Revision |
 | --- | --- |
-| BG initial baseline | `11ba59a4` |
-| BG 2026-10-28 suite validation base | `8058a013` |
-| BG 2026-10-29 reference investigation base | `cab5c342` |
-| BG post-library-merge retarget validation base | `c8b33979` |
+| HG initial baseline | `11ba59a4` |
+| HG 2026-10-28 suite validation base | `8058a013` |
+| HG 2026-10-29 reference investigation base | `cab5c342` |
+| HG post-library-merge retarget validation base | `c8b33979` |
 | hgraph `release/0.5`, latest tag `v_0.5.42` | [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be) |
 | hgraph `main`, latest tag `0.8.37` | [`b9305bb23f8e54337cd1941447b940e5fd43ec59`](https://github.com/hhenson/hgraph/tree/b9305bb23f8e54337cd1941447b940e5fd43ec59) |
 
 The 0.5 release branch still points to 0.5.42. The 0.8 snapshot includes changes
 through 2026-10-28. The earlier
 [functionality survey](hgraph-functionality-survey-2026-10-21.md) uses different
-BG and 0.8 revisions and does not establish the results of this review.
+HG and 0.8 revisions and does not establish the results of this review.
 
 The root branch advanced during the review. The review lane was rebased onto
 `8058a013`, which adds print and logging behavior. These commits do not change
@@ -36,19 +36,19 @@ map, switch, mesh, reduce, or reference runtime implementations.
 
 | Status | Evidence required |
 | --- | --- |
-| Added, passing | A new BG test runs and asserts the behavior. |
-| Already covered | An identified existing BG test asserts the same requirement. Source inspection alone is not a new verification run. |
-| Reproduced failure | A supported graph produces a trace or failure that contradicts an identified BG contract. Keep its reproduction and expected result. |
-| Semantic difference | The source expectation differs from BG's documented contract. State both expectations. |
-| Unsupported, skipped | The source pattern requires an operation or declaration outside BG's supported API. State that requirement. |
+| Added, passing | A new HG test runs and asserts the behavior. |
+| Already covered | An identified existing HG test asserts the same requirement. Source inspection alone is not a new verification run. |
+| Reproduced failure | A supported graph produces a trace or failure that contradicts an identified HG contract. Keep its reproduction and expected result. |
+| Semantic difference | The source expectation differs from HG's documented contract. State both expectations. |
+| Unsupported, skipped | The source pattern requires an operation or declaration outside HG's supported API. State that requirement. |
 | Harness limitation | The graph behavior cannot be established through the selected capture or input mechanism. |
 | Unverified | The pattern has not been run or its intended behavior remains unresolved. |
 
-The source tests select requirements; they are not an automatic oracle for BG.
+The source tests select requirements; they are not an automatic oracle for HG.
 In particular, the three versions have different reduction rules for empty and
-singleton collections. BG follows its [reduce contract](../design/reduce.md).
+singleton collections. HG follows its [reduce contract](../design/reduce.md).
 
-Each lane report maps source tests to BG tests or records why they were not
+Each lane report maps source tests to HG tests or records why they were not
 ported. This source traceability is separate from the structured Catch2 tags,
 which remain the [coverage source](../testing.md#coverage-model).
 
@@ -81,10 +81,10 @@ approved defect or implementation task.
 Passing additions exercise key removal/readdition, independent reference-backed
 contexts, leaf updates and validity, nested free structures, pass-through
 selection identity, and map/switch/mesh/reduce combinations. The detailed
-reports identify exact ports, partial coverage, and new BG combinations.
+reports identify exact ports, partial coverage, and new HG combinations.
 
 The [retargeting investigation](reference-retarget-investigation-2026-10-29.md)
-preserves the failure on BG `cab5c342` and records the passing result on
+preserves the failure on HG `cab5c342` and records the passing result on
 `c8b33979`. Dereferenced dictionary item access now uses the shared
 `observed_state()` operation to include the reference's binding time. No
 production fix was added by this review. The other findings and complete-suite
@@ -94,7 +94,7 @@ rebuilt-list recheck below.
 ## Verification boundaries
 
 The original complete-suite validation uses a freshly built Release runtime
-from BG `8058a013` and test objects rebuilt against that revision's headers,
+from HG `8058a013` and test objects rebuilt against that revision's headers,
 with matching `NDEBUG`.
 This checks correctness; it is not a performance measurement.
 
@@ -110,10 +110,10 @@ This checks correctness; it is not a performance measurement.
 Commands used for the original validation in the review lane:
 
 ```sh
-build/verification/bg_tests
-build/verification/bg_library_tests
-build/verification/bg_tests '[repro]'
-build/verification/bg_library_tests '[repro]'
+build/verification/hg_tests
+build/verification/hg_library_tests
+build/verification/hg_tests '[repro]'
+build/verification/hg_library_tests '[repro]'
 ```
 
 The two reproduction commands intentionally return a failing status. Logs and
@@ -123,9 +123,9 @@ coverage reports are in the lane's `build/verification` directory, including
 The branch is `agent/hgraph-pattern-review`. Only tests and development reports
 changed; the review has not been merged into the root worktree.
 
-The review ports selected patterns to BG and runs BG tests. It does not claim
+The review ports selected patterns to HG and runs HG tests. It does not claim
 to rerun either complete hgraph suite, establish Python authoring parity from a
-C++ test, or measure runtime performance. Source parameterizations and new BG
+C++ test, or measure runtime performance. Source parameterizations and new HG
 test cases are counted separately.
 
 The post-library-merge check rebuilds the Release runtime and the map test
@@ -153,30 +153,30 @@ commands in the relevant report. Passing tests run in the ordinary suite.
 
 ## Reduction semantics
 
-These source expectations are not used as BG failure oracles.
+These source expectations are not used as HG failure oracles.
 
-| Source expectation | BG contract | Classification |
+| Source expectation | HG contract | Classification |
 | --- | --- | --- |
 | 0.5 `_wiring/test_reduce.py::test_tsd_reduce_no_zero` expects `0` before any dictionary tick and after removing the final item. | Without a default, an invalid TSD or a valid TSD without valid items produces an invalid result. | Semantic difference. |
-| 0.8 `ported/_wiring/test_reduce.py::test_tsd_reduce_zero_is_used_only_for_empty_and_singleton` expects `111` for singleton `1`, explicit zero `10`, and the associative combiner `left + right + 100`. | A singleton is forwarded directly, so BG produces `1`; the default is used only when the valid TSD has no valid items. | Semantic difference. |
+| 0.8 `ported/_wiring/test_reduce.py::test_tsd_reduce_zero_is_used_only_for_empty_and_singleton` expects `111` for singleton `1`, explicit zero `10`, and the associative combiner `left + right + 100`. | A singleton is forwarded directly, so HG produces `1`; the default is used only when the valid TSD has no valid items. | Semantic difference. |
 
 ## Scope assessment
 
-The remaining source patterns below were assessed against BG `2de7d53f` but
-were not executed as exact BG reproductions. The `test_reduce_map` and
+The remaining source patterns below were assessed against HG `2de7d53f` but
+were not executed as exact HG reproductions. The `test_reduce_map` and
 `test_reduce_from_switch` compositions were checked in the [latest
 recheck](hgraph-pattern-recheck-2026-10-30.md#upstream-pattern-mapping).
 Non-scalar TSD reduction is now supported.
 
 | Source test | Required functionality | Disposition |
 | --- | --- | --- |
-| 0.5 `_wiring/test_map.py::test_tsl_map_wiring`, `test_tsl_map_wiring_no_key`; 0.5/0.8 `_wiring/test_reduce.py::test_tsl_reduce*` | Higher-order map/reduce over fixed TSL | BG's [map](../design/map.md) and [reduce](../design/reduce.md) operate on TSD. Fixed TSL storage and free TSL construction have separate tests. |
+| 0.5 `_wiring/test_map.py::test_tsl_map_wiring`, `test_tsl_map_wiring_no_key`; 0.5/0.8 `_wiring/test_reduce.py::test_tsl_reduce*` | Higher-order map/reduce over fixed TSL | HG's [map](../design/map.md) and [reduce](../design/reduce.md) operate on TSD. Fixed TSL storage and free TSL construction have separate tests. |
 | 0.5 `_wiring/test_reduce.py::test_reduce_map`; 0.8 `test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | Reduce `TSD<K, TSD<J, TS<V>>>` into a TSD using a mapped reducer. | Ported and passing as `reduce maps and combines nested dictionaries` and `reduce maps a projected bundle of nested dictionaries`; see the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#upstream-pattern-mapping). |
-| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | The populated sequence passes. The empty-dictionary and invalid-item variants produce `SKIP` on the initial BG tick, then match the remaining values; their tests now assert that BG result. See the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#current-integrated-verification). |
+| 0.5 `_wiring/test_switch.py::test_reduce_from_switch` | Reduce mapped `TSB` items containing switch outputs into one TSB, then select a field. | The populated sequence passes. The empty-dictionary and invalid-item variants produce `SKIP` on the initial HG tick, then match the remaining values; their tests now assert that HG result. See the [latest recheck](hgraph-pattern-recheck-2026-10-30.md#current-integrated-verification). |
 | 0.5 `_wiring/test_reduce.py::test_reduce_tuple` | Ordered fold of each `TS<tuple<int, ...>>` tick into a string, starting from a `TS<string>` seed. | Unsupported fold. Current reduce consumes a TSD and returns an item-compatible time series. A scalar-item reduction accepts a scalar default. This source case requires a scalar-collection fold, a different accumulator type, and a time-series seed. Tuple values themselves are supported. |
-| 0.8 `test_reduce_zero_semantics.py::test_ordered_reduce_retains_delayed_source_schedules` | Ordered, non-associative reduction and a time series zero. | Unsupported reduction semantics. BG reduce requires an associative and commutative operation. Its scalar-item path accepts a scalar default. |
-| 0.8 `ported/_wiring/test_context.py::test_context_crosses_stacked_try_except_boundaries` | A graph boundary that captures exceptions as output | BG [exception handling](../design/evaluation.md#exceptions) stops the graph and propagates the exception. No `try_except` operation was found in the public API. |
-| 0.8 `test_distributed_map.py::test_state_churn_and_quiet_cycles`, `test_default_hosting_uses_a_separate_process` | Worker processes and distributed graph execution | The public BG map API runs local inner graphs. Local map lifecycle coverage does not establish distributed execution. |
+| 0.8 `test_reduce_zero_semantics.py::test_ordered_reduce_retains_delayed_source_schedules` | Ordered, non-associative reduction and a time series zero. | Unsupported reduction semantics. HG reduce requires an associative and commutative operation. Its scalar-item path accepts a scalar default. |
+| 0.8 `ported/_wiring/test_context.py::test_context_crosses_stacked_try_except_boundaries` | A graph boundary that captures exceptions as output | HG [exception handling](../design/evaluation.md#exceptions) stops the graph and propagates the exception. No `try_except` operation was found in the public API. |
+| 0.8 `test_distributed_map.py::test_state_churn_and_quiet_cycles`, `test_default_hosting_uses_a_separate_process` | Worker processes and distributed graph execution | The public HG map API runs local inner graphs. Local map lifecycle coverage does not establish distributed execution. |
 
 Checkpoint recovery, external adapters, rolling-window operators, and the full
 operator-by-reference Cartesian product are outside this round. Services,

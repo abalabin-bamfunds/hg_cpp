@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/index.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/index.hpp>
 
-namespace bg {
+namespace hg {
 
 class CompiledNode;
 
@@ -22,4 +22,4 @@ static_assert(util::byte_copy_initializable<free_fixed_time_series_list_storage>
 static_assert(sizeof(free_fixed_time_series_list_storage) == 24);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

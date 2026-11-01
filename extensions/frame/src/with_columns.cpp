@@ -1,12 +1,12 @@
-#include <bg/frame/frame.hpp>
-#include <bg/graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/operators.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/operators.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <algorithm>
 #include <array>
@@ -17,18 +17,18 @@
 #include <string_view>
 #include <vector>
 
-namespace bg::operators {
+namespace hg::operators {
 
 operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> with_columns{"with_columns", {"source", "assignments"}};
 operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> select{"select", {"source", "selections"}};
 operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> rename{"rename", {"source", "mappings"}};
 
-} // namespace bg::operators
+} // namespace hg::operators
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field>
 using SOURCE_SCHEMA = SchemaVariableDeclaration<"FRAME_WITH_COLUMNS_SOURCE_SCHEMA">;
@@ -36,7 +36,7 @@ template <template <typename, auto...> typename Field>
 using ASSIGNMENT_SCHEMA = BundleSchemaVariableDeclaration<"FRAME_WITH_COLUMNS_ASSIGNMENT_SCHEMA", Field>;
 
 std::optional<std::vector<std::string>> key_names(const Schema &schema) {
-    const auto *key = schema.metadata().find("bg.frame.key");
+    const auto *key = schema.metadata().find("hg.frame.key");
     if (key == nullptr)
         return std::nullopt;
 
@@ -229,13 +229,13 @@ SchemaMetadata projected_metadata(const Schema &source_schema,
             break;
         }
         if (!match) {
-            return source_schema.metadata().copy_with({}, {"bg.frame.key"});
+            return source_schema.metadata().copy_with({}, {"hg.frame.key"});
         }
         output_keys.push_back(match->text());
     }
 
     const auto value = ScalarValue<List<string>>{std::span<const std::string_view>{output_keys}};
-    const auto key_override = make_schema_metadata({schema_metadata_entry("bg.frame.key", value)});
+    const auto key_override = make_schema_metadata({schema_metadata_entry("hg.frame.key", value)});
     return source_schema.metadata().copy_with(key_override);
 }
 
@@ -279,7 +279,7 @@ WiringPoint wire_projection(WiringPoint source, std::span<const SchemaField> fie
     }
 
     auto type_map = TypeMap{};
-    type_map.set(bg::details::schema_variable_instance<frame::RESULT>(), &result_schema);
+    type_map.set(hg::details::schema_variable_instance<frame::RESULT>(), &result_schema);
     const auto indices = ScalarValue<Opaque<std::vector<std::size_t>>>{
         std::vector<std::size_t>{source_indices.begin(), source_indices.end()}};
     return projection_node(type_map, wp<TSF<SOURCE_SCHEMA>>{source}, indices);
@@ -423,7 +423,7 @@ std::vector<WiringArgument> bundle_arguments(WiringPoint bundle) {
     auto arguments = std::vector<WiringArgument>{};
     arguments.reserve(type.item_count());
     for (auto index = std::size_t{}; index != type.item_count(); ++index) {
-        auto argument = bg::details::time_series_bundle_argument(bundle, index);
+        auto argument = hg::details::time_series_bundle_argument(bundle, index);
         argument.set_name(type.item_name(index));
         arguments.push_back(std::move(argument));
     }
@@ -439,7 +439,7 @@ WiringPoint build_with_columns(WiringPoint source, std::span<const WiringArgumen
 
     validate_assignment_result_schema(source_frame_schema(source), assigned_type, *result_schema);
     auto type_map = TypeMap{};
-    type_map.set(bg::details::schema_variable_instance<frame::RESULT>(), result_schema);
+    type_map.set(hg::details::schema_variable_instance<frame::RESULT>(), result_schema);
     return with_columns_node(type_map, source, wp<TSB<ASSIGNMENT_SCHEMA>>{assigned_bundle});
 }
 
@@ -533,7 +533,7 @@ WiringPoint select(WiringPoint source, std::span<const WiringArgument> selection
     const auto &output_schema = result_schema == nullptr ? inferred_schema : *result_schema;
     validate_assignment_result_schema(projected_schema, assignment_schema, output_schema);
     auto type_map = TypeMap{};
-    type_map.set(bg::details::schema_variable_instance<frame::RESULT>(), &output_schema);
+    type_map.set(hg::details::schema_variable_instance<frame::RESULT>(), &output_schema);
     return with_columns_node(type_map, projected, wp<TSB<ASSIGNMENT_SCHEMA>>{assigned_bundle});
 }
 
@@ -597,44 +597,44 @@ WiringPoint drop(WiringPoint source, std::span<const util::symbol> names, const 
 
 } // namespace
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 const auto registered_with_columns = operators::with_columns.overload(graph<OUT>(
     "name"_n = "frame_with_columns",
     require = [](const WiringArguments &arguments) {
         return details::require_frame_output(
-            arguments, bg::details::resolver_variable<OUT>());
+            arguments, hg::details::resolver_variable<OUT>());
     },
     [](const WiringArguments &arguments,
        wp<TSF<SCHEMA>, "source"_n> source, wp<TSB<operators::FIELDS>, "assignments"_n> assignments) -> wp<OUT> {
         const auto fields = details::bundle_arguments(assignments);
         return wp<OUT>{details::build_with_columns(
             source, fields, details::requested_frame_schema(
-                               arguments.type_map(), bg::details::resolver_variable<OUT>()))};
+                               arguments.type_map(), hg::details::resolver_variable<OUT>()))};
     }));
 
 const auto registered_select = operators::select.overload(graph<OUT>(
     "name"_n = "frame_select",
     require = [](const WiringArguments &arguments) {
-        return details::require_frame_output(arguments, bg::details::resolver_variable<OUT>());
+        return details::require_frame_output(arguments, hg::details::resolver_variable<OUT>());
     },
     [](const WiringArguments &arguments,
        wp<TSF<SCHEMA>, "source"_n> source, wp<TSB<operators::FIELDS>, "selections"_n> selections) -> wp<OUT> {
         const auto fields = details::bundle_arguments(selections);
         return wp<OUT>{details::select(
             source, fields, details::requested_frame_schema(
-                               arguments.type_map(), bg::details::resolver_variable<OUT>()))};
+                               arguments.type_map(), hg::details::resolver_variable<OUT>()))};
     }));
 
 const auto registered_rename = operators::rename.overload(graph<OUT>(
     "name"_n = "frame_rename",
     require = [](const WiringArguments &arguments) {
-        return details::require_frame_output(arguments, bg::details::resolver_variable<OUT>());
+        return details::require_frame_output(arguments, hg::details::resolver_variable<OUT>());
     },
     [](const WiringArguments &arguments,
        wp<TSF<SCHEMA>, "source"_n> source, wp<TSB<operators::FIELDS>, "mappings"_n> mappings) -> wp<OUT> {
@@ -649,13 +649,13 @@ const auto registered_rename = operators::rename.overload(graph<OUT>(
         }
         return wp<OUT>{details::rename(
             source, names, details::requested_frame_schema(
-                               arguments.type_map(), bg::details::resolver_variable<OUT>()))};
+                               arguments.type_map(), hg::details::resolver_variable<OUT>()))};
     }));
 
 const auto registered_drop = operators::drop.overload(graph<OUT>(
     "name"_n = "frame_drop",
     require = [](const WiringArguments &arguments) {
-        return details::require_frame_output(arguments, bg::details::resolver_variable<OUT>());
+        return details::require_frame_output(arguments, hg::details::resolver_variable<OUT>());
     },
     [](const WiringArguments &arguments, wp<TSF<SCHEMA>, "value"_n> source, Scalar<List<symbol>> names) -> wp<OUT> {
         auto removed = std::vector<util::symbol>{};
@@ -664,7 +664,7 @@ const auto registered_drop = operators::drop.overload(graph<OUT>(
             removed.push_back(names[index].value());
         return wp<OUT>{details::drop(
             source, removed, details::requested_frame_schema(
-                                arguments.type_map(), bg::details::resolver_variable<OUT>()))};
+                                arguments.type_map(), hg::details::resolver_variable<OUT>()))};
     }));
 
 const auto frame_column_accessors_registered = [] {
@@ -680,4 +680,4 @@ const auto frame_column_accessors_registered = [] {
 }();
 
 } // namespace
-} // namespace bg::frame
+} // namespace hg::frame

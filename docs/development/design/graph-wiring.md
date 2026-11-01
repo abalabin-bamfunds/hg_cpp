@@ -77,22 +77,22 @@ fixed TSL selects its contained wiring point without adding a node. A time
 series index, or a TSD key supplied as either a scalar or time series, creates a
 node that tracks the selected item.
 
-`bg::tsl(a, b, ...)` groups item wiring points without creating item storage.
+`hg::tsl(a, b, ...)` groups item wiring points without creating item storage.
 The receiving parameter determines whether each item is a value or a reference.
 Wiring then creates one TSL output over the selected items.
 A typed TSL wiring point exposes its resolved item count through `size()`.
 Inferred value items use the [dereferenced guarantees](type-system.md#reference-guarantees)
 that consumers can observe, rather than a reference target's guarantees alone.
 
-`bg::tsl(items)` accepts a vector or span of `WiringPoint` or typed `wp`
+`hg::tsl(items)` accepts a vector or span of `WiringPoint` or typed `wp`
 items. Its fixed size is the number of supplied items. An empty list requires
-an explicit item type: `bg::tsl<TS<i64>>()` or `bg::tsl(item_type)`, where
+an explicit item type: `hg::tsl<TS<i64>>()` or `hg::tsl(item_type)`, where
 `item_type` is a resolved `TimeSeriesType`.
 
 The logical output preserves dependency ordering. Item updates schedule it as a
 normal node. It combines updates from the same cycle and copies no item value.
 
-`bg::bundle("name"_n = a, "value"_n = b)` and `bg::bundle(fields)` create the
+`hg::bundle("name"_n = a, "value"_n = b)` and `hg::bundle(fields)` create the
 same free TSB wiring point. Both forms accept named time series and scalar
 fields. Wiring creates one TSB output when the bundle is consumed; scalar
 fields project to const time series. `args(bundle)` and `kwargs(bundle)` retain
@@ -100,10 +100,10 @@ the original scalar arguments and wiring annotations when expanding the
 bundle. Field names can be determined during wiring:
 
 ```cpp
-auto fields = std::vector<bg::WiringArgument>{};
-fields.emplace_back(bg::util::symbol{"price"}, price);
-fields.emplace_back(bg::util::symbol{"quantity"}, 10);
-auto result = bg::bundle(fields);
+auto fields = std::vector<hg::WiringArgument>{};
+fields.emplace_back(hg::util::symbol{"price"}, price);
+fields.emplace_back(hg::util::symbol{"quantity"}, 10);
+auto result = hg::bundle(fields);
 ```
 
 The bundle retains its time-series wiring points and owns scalar values; the
@@ -111,14 +111,14 @@ vector or span's underlying storage need not outlive the call. An absent
 optional scalar field is omitted. An empty field range constructs an empty
 TSB.
 
-`bg::bundle<Schema>(arguments...)` uses the declared schema. When every
+`hg::bundle<Schema>(arguments...)` uses the declared schema. When every
 argument is a scalar and `Schema` is a valid hierarchical scalar schema, it
 constructs `ScalarValue<Bundle<Schema>>`. A wiring point or type-erased wiring
 argument selects `wp<TSB<Schema>>`; scalar fields are lifted to const time
 series. If only the TSB interpretation is valid, scalar arguments also select
 it.
 
-`bg::bundle<TSB<Schema>>(arguments...)` explicitly constructs a TSB and lifts
+`hg::bundle<TSB<Schema>>(arguments...)` explicitly constructs a TSB and lifts
 all scalar fields. This form is required to construct an all-constant TSB from
 a schema that is also valid for `Bundle<Schema>`.
 
@@ -250,10 +250,10 @@ adds no runtime or compilation behavior.
 `WiringContext` makes one `GraphWiring` active on the current thread:
 
 ```cpp
-bg::GraphWiring wiring;
+hg::GraphWiring wiring;
 
 {
-    bg::WiringContext context{wiring};
+    hg::WiringContext context{wiring};
 
     auto input = source();
     auto output = transform(input);
@@ -294,11 +294,11 @@ Callable nodes and graphs declare parameter names and defaults in one
 initializer list:
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-const auto identity = bg::graph(
-    {"value"_n = bg::i64{7}},
-    [](bg::wp<bg::TS<bg::i64>> value) { return value; });
+const auto identity = hg::graph(
+    {"value"_n = hg::i64{7}},
+    [](hg::wp<hg::TS<hg::i64>> value) { return value; });
 
 auto defaulted = identity();
 ```
@@ -312,8 +312,8 @@ for time-series inputs. C++ function default expressions are not available
 through callable type information.
 
 ```cpp
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 struct defaulted_node {
     In<TS<i64>> value;
@@ -332,8 +332,8 @@ const auto copy = node<defaulted_node>();
 Callable nodes use the same declarations before `eval`:
 
 ```cpp
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 const auto copy = node(
     {"value"_n = i64{7}},
@@ -352,8 +352,8 @@ an implementation default.
 An operator prototype declares defaults in its parameter list:
 
 ```cpp
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 auto add = operator_<auto(TS<i64>, TS<i64>) -> TS<i64>>{
     "add", {"lhs"_n, "rhs"_n = i64{0}}};
@@ -375,10 +375,10 @@ intermediate graph call. Callable definitions put the name and `context` on the
 parameter:
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-auto use_one = bg::node([](bg::In<bg::TS<int>, "one"_n, bg::context> one,
-                           bg::Out<bg::TS<int>> output) {
+auto use_one = hg::node([](hg::In<hg::TS<int>, "one"_n, hg::context> one,
+                           hg::Out<hg::TS<int>> output) {
     output.set(*one);
 });
 ```
@@ -387,8 +387,8 @@ An aggregate node uses its reflected field name:
 
 ```cpp
 struct UseOne {
-    bg::In<bg::TS<int>, bg::context> one;
-    bg::Out<bg::TS<int>> output;
+    hg::In<hg::TS<int>, hg::context> one;
+    hg::Out<hg::TS<int>> output;
 };
 ```
 
@@ -396,8 +396,8 @@ struct UseOne {
 lifted to a const time series.
 
 ```cpp
-bg::with_context("one"_n = value, [&] { return graph_x(); });
-auto scope = bg::with_context("one"_n = 1);
+hg::with_context("one"_n = value, [&] { return graph_x(); });
+auto scope = hg::with_context("one"_n = 1);
 ```
 
 The nearest binding with the requested name is authoritative. An incompatible
@@ -410,9 +410,9 @@ A graph context parameter also establishes that binding while its graph
 function runs:
 
 ```cpp
-auto graph_x = bg::graph(
+auto graph_x = hg::graph(
     "name"_n = "graph_x",
-    [](bg::wp<bg::TS<int>, "one"_n, bg::context>) { return use_one(); });
+    [](hg::wp<hg::TS<int>, "one"_n, hg::context>) { return use_one(); });
 
 graph_x("one"_n = value);
 ```
@@ -478,13 +478,13 @@ Callable nodes and graphs can declare ordered type parameters before their
 function. Aggregate forms declare them before the definition:
 
 ```cpp
-using RESULT = bg::TimeSeriesVariable<"RESULT">;
+using RESULT = hg::TimeSeriesVariable<"RESULT">;
 
-auto callable_node = bg::node<RESULT>(function);
-auto callable_graph = bg::graph<RESULT>("name"_n = "source", function);
+auto callable_node = hg::node<RESULT>(function);
+auto callable_graph = hg::graph<RESULT>("name"_n = "source", function);
 
-auto aggregate_node = bg::node<RESULT, NodeDefinition>();
-auto aggregate_graph = bg::graph<RESULT, GraphDefinition>();
+auto aggregate_node = hg::node<RESULT, NodeDefinition>();
+auto aggregate_graph = hg::graph<RESULT, GraphDefinition>();
 ```
 
 A callable graph may take `const WiringArguments&` as its first function
@@ -554,23 +554,23 @@ parameter type and its constraint before invoking the graph function.
 
 A lambda graph infers its name from the callable type unless `"name"_n`
 supplies a name. Its optional label uses `"label"_n`; its optional requirement
-uses `bg::require`. Use `bg::resolve<VARIABLE> = callback` for variables that
+uses `hg::require`. Use `hg::resolve<VARIABLE> = callback` for variables that
 input matching cannot determine, following the [resolver contract](operators.md#resolvers).
 The graph function is the only positional argument:
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-inline const auto scaled = bg::graph(
+inline const auto scaled = hg::graph(
     "name"_n = "scaled",
-    "label"_n = [](bg::wp<bg::TS<float>>, float factor) {
+    "label"_n = [](hg::wp<hg::TS<float>>, float factor) {
         return std::to_string(factor);
     },
-    bg::require = [](const bg::WiringArguments &arguments) {
-        return bg::scalar_cast<float>(*arguments.scalar(1)).value() > 0.0F;
+    hg::require = [](const hg::WiringArguments &arguments) {
+        return hg::scalar_cast<float>(*arguments.scalar(1)).value() > 0.0F;
     },
-    [](bg::wp<bg::TS<float>> input,
-       float factor) -> bg::wp<bg::TS<float>> {
+    [](hg::wp<hg::TS<float>> input,
+       float factor) -> hg::wp<hg::TS<float>> {
         return scale(input, factor);
     });
 ```
@@ -587,22 +587,22 @@ the graph code and returns `wp<TS_T>` or `void`:
 
 ```cpp
 struct scaled {
-    bg::wp<bg::TS<float>> input;
+    hg::wp<hg::TS<float>> input;
     float factor;
 
-    bg::wp<bg::TS<float>> wire() const {
+    hg::wp<hg::TS<float>> wire() const {
         return scale(input, factor);
     }
 };
 
-inline const auto scaled_graph = bg::graph<scaled>();
+inline const auto scaled_graph = hg::graph<scaled>();
 ```
 
 ## Direct execution
 
 `run_graph(function)` wires and compiles the graph, then runs it with the selected
 evaluation engine. Pass `GraphRunOptions` from
-`<bg/graph_run_options.hpp>` as the second argument to configure the run:
+`<hg/graph_run_options.hpp>` as the second argument to configure the run:
 
 ```cpp
 auto options = GraphRunOptions{

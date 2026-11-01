@@ -1,6 +1,6 @@
 #include "python_wiring_error.hpp"
 
-#include <bg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_error.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -10,7 +10,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 namespace {
 
 std::exception_ptr python_error_cause(std::exception_ptr cause) {
@@ -46,7 +46,7 @@ bool has_python_error(const WiringError &error) {
     } catch (nb::python_error &python_exception) {
         auto preserved = nb::python_error{python_exception};
         if (!error.contexts().empty()) {
-            const auto context = WiringError::from_exception("BG wiring context", error.contexts(), {});
+            const auto context = WiringError::from_exception("HG wiring context", error.contexts(), {});
             try {
                 const auto add_note = nb::getattr(nb::borrow<nb::object>(PyExc_BaseException), "add_note");
                 add_note(preserved.value(), nb::str{context.what()});
@@ -61,4 +61,4 @@ bool has_python_error(const WiringError &error) {
     std::terminate();
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details

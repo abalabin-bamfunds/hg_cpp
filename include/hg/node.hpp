@@ -1,19 +1,19 @@
 #pragma once
 
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/node/aggregate_node_template.hpp>
-#include <bg/node/details/callable_node.hpp>
-#include <bg/node/details/callable_node_options.hpp>
-#include <bg/node/invalidation.hpp>
-#include <bg/node/runtime_signature_node_template.hpp>
-#include <bg/node/state.hpp>
-#include <bg/type/type_parameter.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/node/aggregate_node_template.hpp>
+#include <hg/node/details/callable_node.hpp>
+#include <hg/node/details/callable_node_options.hpp>
+#include <hg/node/invalidation.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/node/state.hpp>
+#include <hg/type/type_parameter.hpp>
 
 #include <initializer_list>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename... Declaration> struct aggregate_node_declaration {
     using Parsed = type_parameterized_declaration<Declaration...>;
@@ -44,9 +44,9 @@ template <typename... Declaration, typename Label, std::size_t... Index>
         std::forward<Label>(label)};
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <typename... Declaration>
     requires(sizeof...(Declaration) != 0 && details::aggregate_node_declaration<Declaration...>::valid)
@@ -102,4 +102,4 @@ template <typename... TypeParameters, details::callable_node Function, typename.
         Definition{std::move(evaluation.function), parameters, std::move(options)...}};
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/graph/nested_graph.hpp>
-#include <bg/reduce/details/reduce_graph_argument.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/reduce/details/reduce_graph_argument.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <memory_resource>
 #include <optional>
 
-namespace bg::details {
+namespace hg::details {
 
 struct CompiledCompactReduceGraph {
     std::shared_ptr<const CompiledGraph> graph;
@@ -67,4 +67,4 @@ class CompactReduceNodeDefinition {
     std::optional<std::uint32_t> default_parameter_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

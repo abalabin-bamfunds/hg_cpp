@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include <atomic>
 #include <cstddef>
 #include <memory_resource>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class ScalarData;
 class BytesBuilder;
@@ -33,7 +33,7 @@ class BytesStorage {
     void release() noexcept;
 
   private:
-    friend class ::bg::BytesBuilder;
+    friend class ::hg::BytesBuilder;
 
     BytesStorage(std::pmr::memory_resource &memory, ScalarAllocationPool *owner, std::size_t size,
                  std::size_t capacity) noexcept;
@@ -55,4 +55,4 @@ class BytesStorage {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

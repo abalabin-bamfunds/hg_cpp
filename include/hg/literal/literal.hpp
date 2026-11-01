@@ -2,7 +2,7 @@
 
 #include <ddv/serial_visitor.h>
 
-#include <bg/util/lifetimebound.hpp>
+#include <hg/util/lifetimebound.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -21,10 +21,10 @@ template <typename Leaf> class Literal {
 
     Literal() noexcept = default;
 
-    Literal(sequence_type elements BG_LIFETIMEBOUND) noexcept
+    Literal(sequence_type elements HG_LIFETIMEBOUND) noexcept
         : value_{std::in_place_index<1>, SequenceStorage{elements.data(), elements.size()}} {}
 
-    Literal(std::initializer_list<Literal> elements BG_LIFETIMEBOUND) noexcept
+    Literal(std::initializer_list<Literal> elements HG_LIFETIMEBOUND) noexcept
         : value_{std::in_place_index<1>, SequenceStorage{elements.begin(), elements.size()}} {}
 
     template <typename Source>

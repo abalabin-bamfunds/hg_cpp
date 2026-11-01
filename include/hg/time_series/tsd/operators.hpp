@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 class Operator;
 
@@ -9,4 +9,4 @@ namespace details {
 void register_time_series_dict_operators(Operator &getitem);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

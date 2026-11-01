@@ -4,7 +4,7 @@ Status: accepted
 
 ## Decision
 
-`Out<TSF<Schema>, frame::computed<>>` uses BG's output runtime type hook to
+`Out<TSF<Schema>, frame::computed<>>` uses HG's output runtime type hook to
 select computed fields from wiring arguments or immutable node configuration.
 Without the hook, wiring rejects the declaration. The frame runtime factory
 resolves names against the output schema, rejects absent and duplicate names,

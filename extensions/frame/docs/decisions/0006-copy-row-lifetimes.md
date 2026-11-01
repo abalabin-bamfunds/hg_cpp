@@ -22,7 +22,7 @@ create a new destination lifetime, even when the numeric source ID matches a
 previously copied row.
 
 Independent cell storage lets downstream nodes retain the last published value
-while the source continues changing. This is required for BG's sampling and
+while the source continues changing. This is required for HG's sampling and
 tick-selection operators.
 
 The [integration proposal](../../projection_library_proposal.md#copying-and-retained-ticks)

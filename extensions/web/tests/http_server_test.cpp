@@ -1,24 +1,24 @@
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library.hpp>
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/map.hpp>
-#include <bg/map_argument.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/queue.hpp>
-#include <bg/realtime_evaluation_engine.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/http_server.hpp>
-#include <bg/web/auth.hpp>
-#include <bg/wall_clock.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/map.hpp>
+#include <hg/map_argument.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/queue.hpp>
+#include <hg/realtime_evaluation_engine.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/http_server.hpp>
+#include <hg/web/auth.hpp>
+#include <hg/wall_clock.hpp>
 
 #include "../src/http_server_internal.hpp"
 
@@ -46,9 +46,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::web;
 
 namespace {
 
@@ -810,7 +810,7 @@ TEST_CASE("HTTP authentication keeps pending keys out of handlers and removes st
     const auto test_graph = [&](wp<TS<i64>> cycle) {
         const auto requests = request_source(cycle);
         const auto decisions = decision_source(cycle);
-        const auto projection = bg::web::details::http_authenticate_requests(requests, decisions);
+        const auto projection = hg::web::details::http_authenticate_requests(requests, decisions);
         observe(operators::getattr(projection, util::symbol{"requests"}),
                 operators::getattr(projection, util::symbol{"identities"}));
         return cycle;
@@ -894,7 +894,7 @@ TEST_CASE("HTTP authentication tracks request and decision validity transitions"
     const auto test_graph = [&](wp<TS<i64>> cycle) {
         const auto requests = request_source(cycle);
         const auto decisions = decision_source(cycle);
-        const auto projection = bg::web::details::http_authenticate_requests(requests, decisions);
+        const auto projection = hg::web::details::http_authenticate_requests(requests, decisions);
         observe(requests, operators::getattr(projection, util::symbol{"requests"}),
                 operators::getattr(projection, util::symbol{"identities"}),
                 operators::getattr(projection, util::symbol{"rejections"}));

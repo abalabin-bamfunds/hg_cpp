@@ -1,7 +1,7 @@
 #pragma once
 
-namespace bg {
+namespace hg {
 
 struct bytes {};
 
-} // namespace bg
+} // namespace hg

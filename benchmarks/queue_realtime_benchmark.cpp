@@ -1,13 +1,13 @@
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/periodic_callback.hpp>
-#include <bg/queue.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/simulation_evaluation_engine.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/periodic_callback.hpp>
+#include <hg/queue.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/simulation_evaluation_engine.hpp>
 
 #include <algorithm>
 #include <atomic>
@@ -33,7 +33,7 @@ using Clock = std::chrono::steady_clock;
 using Nanoseconds = std::chrono::nanoseconds;
 
 struct LiteralBatch {
-    std::vector<bg::i64> values;
+    std::vector<hg::i64> values;
     std::vector<::literal::TimeSeriesLiteral> literals;
 };
 
@@ -50,7 +50,7 @@ struct Options {
 };
 
 struct QueueResults {
-    std::vector<bg::i64> values;
+    std::vector<hg::i64> values;
 };
 
 [[nodiscard]] auto expected_sum(std::size_t count) -> std::uint64_t {
@@ -63,7 +63,7 @@ struct QueueResults {
     auto batch = LiteralBatch{};
     batch.values.reserve(per_producer);
     for (auto sequence = std::size_t{}; sequence < per_producer; ++sequence) {
-        batch.values.push_back(static_cast<bg::i64>(producer * per_producer + sequence + 1));
+        batch.values.push_back(static_cast<hg::i64>(producer * per_producer + sequence + 1));
     }
     batch.literals.reserve(per_producer);
     for (const auto &value : batch.values) {
@@ -99,32 +99,32 @@ void check_producer_sequences(const QueueResults &results, std::size_t producers
 }
 
 struct RuntimeQueue {
-    bg::GraphWiring wiring;
-    bg::WiringPoint output;
-    bg::CompiledGraph compiled;
-    bg::GlobalState global_state;
-    bg::RuntimeGraph runtime;
-    bg::Queue queue;
+    hg::GraphWiring wiring;
+    hg::WiringPoint output;
+    hg::CompiledGraph compiled;
+    hg::GlobalState global_state;
+    hg::RuntimeGraph runtime;
+    hg::Queue queue;
     QueueResults results;
 
-    explicit RuntimeQueue(bg::QueueMode mode)
+    explicit RuntimeQueue(hg::QueueMode mode)
         : wiring{}, compiled{[&] {
-              const auto queue_node = bg::queue<bg::TS<bg::i64>>(
-                  bg::start = [this](bg::Queue handle) { queue = std::move(handle); }, bg::mode = mode);
-              const auto sink = bg::node([this](bg::In<bg::TS<bg::i64>> input) {
+              const auto queue_node = hg::queue<hg::TS<hg::i64>>(
+                  hg::start = [this](hg::Queue handle) { queue = std::move(handle); }, hg::mode = mode);
+              const auto sink = hg::node([this](hg::In<hg::TS<hg::i64>> input) {
                   results.values.push_back(*input);
               });
               {
-                  auto context = bg::WiringContext{wiring};
+                  auto context = hg::WiringContext{wiring};
                   output = queue_node();
                   sink(output);
               }
               wiring.finalize();
-              return bg::CompiledGraph{wiring};
+              return hg::CompiledGraph{wiring};
           }()},
           runtime{compiled, global_state} {}
 
-    void start() { runtime.start(bg::MIN_DT + std::chrono::microseconds{1}); }
+    void start() { runtime.start(hg::MIN_DT + std::chrono::microseconds{1}); }
     void stop() { runtime.stop(); }
 };
 
@@ -133,7 +133,7 @@ struct RuntimeQueue {
 }
 
 void drain_standard(RuntimeQueue &graph, std::size_t messages) {
-    const auto start_time = bg::MIN_DT + std::chrono::microseconds{1};
+    const auto start_time = hg::MIN_DT + std::chrono::microseconds{1};
     for (auto message = std::size_t{}; message < messages; ++message) {
         graph.runtime.evaluate(start_time + std::chrono::microseconds{static_cast<std::int64_t>(message + 2)});
     }
@@ -161,10 +161,10 @@ void report_samples(std::string_view workload, std::size_t variant, const std::v
 }
 
 [[nodiscard]] auto run_write_sample(std::size_t producers, std::size_t messages) -> std::int64_t {
-    auto graph = RuntimeQueue{bg::QueueMode::standard};
+    auto graph = RuntimeQueue{hg::QueueMode::standard};
     graph.results.values.reserve(messages);
     graph.start();
-    auto queues = std::vector<bg::Queue>(producers, graph.queue);
+    auto queues = std::vector<hg::Queue>(producers, graph.queue);
     auto payloads = std::vector<LiteralBatch>{};
     payloads.reserve(producers);
     for (auto producer = std::size_t{}; producer < producers; ++producer) {
@@ -229,35 +229,35 @@ void benchmark_writes(std::size_t total_messages, std::size_t samples, std::size
 
 void benchmark_batch_drain(std::size_t messages, std::size_t samples);
 
-[[nodiscard]] auto run_scalar_drain(bg::QueueMode mode, std::size_t messages) -> std::int64_t {
+[[nodiscard]] auto run_scalar_drain(hg::QueueMode mode, std::size_t messages) -> std::int64_t {
     auto graph = RuntimeQueue{mode};
     graph.results.values.reserve(messages);
     graph.start();
     for (auto message = std::size_t{}; message < messages; ++message) {
-        const auto value = static_cast<bg::i64>(message + 1);
+        const auto value = static_cast<hg::i64>(message + 1);
         if (!graph.queue.write(::literal::TimeSeriesLiteral(value))) {
             throw std::runtime_error{"queue write was rejected during preload"};
         }
     }
 
     const auto started = Clock::now();
-    if (mode == bg::QueueMode::standard) {
+    if (mode == hg::QueueMode::standard) {
         drain_standard(graph, messages);
     } else {
-        graph.runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
+        graph.runtime.evaluate(hg::MIN_DT + std::chrono::microseconds{2});
     }
     const auto finished = Clock::now();
-    const auto expected_count = mode == bg::QueueMode::standard ? messages : std::size_t{1};
-    const auto expected_last = static_cast<bg::i64>(messages);
+    const auto expected_count = mode == hg::QueueMode::standard ? messages : std::size_t{1};
+    const auto expected_last = static_cast<hg::i64>(messages);
     const auto checksum = std::ranges::fold_left(
         graph.results.values, std::uint64_t{}, [](auto sum, auto value) { return sum + value; });
-    const auto expected_checksum = mode == bg::QueueMode::standard ? expected_sum(messages)
+    const auto expected_checksum = mode == hg::QueueMode::standard ? expected_sum(messages)
                                                                     : static_cast<std::uint64_t>(messages);
     if (graph.results.values.size() != expected_count || graph.results.values.back() != expected_last ||
         checksum != expected_checksum) {
         throw std::runtime_error{"queue graph drain count or final value mismatch"};
     }
-    if (mode == bg::QueueMode::standard) {
+    if (mode == hg::QueueMode::standard) {
         check_producer_sequences(graph.results, 1, messages);
     }
     graph.stop();
@@ -265,8 +265,8 @@ void benchmark_batch_drain(std::size_t messages, std::size_t samples);
 }
 
 void benchmark_graph_drain(std::size_t messages, std::size_t samples) {
-    for (const auto mode : {bg::QueueMode::standard, bg::QueueMode::elide}) {
-        const auto variant = mode == bg::QueueMode::standard ? std::size_t{0} : std::size_t{1};
+    for (const auto mode : {hg::QueueMode::standard, hg::QueueMode::elide}) {
+        const auto variant = mode == hg::QueueMode::standard ? std::size_t{0} : std::size_t{1};
         (void)run_scalar_drain(mode, std::min(messages, std::size_t{2'000}));
         auto ns_per_message = std::vector<double>{};
         ns_per_message.reserve(samples);
@@ -274,9 +274,9 @@ void benchmark_graph_drain(std::size_t messages, std::size_t samples) {
             const auto elapsed = run_scalar_drain(mode, messages);
             const auto per_message = static_cast<double>(elapsed) / messages;
             ns_per_message.push_back(per_message);
-            const auto output_ticks = mode == bg::QueueMode::standard ? messages : std::size_t{1};
+            const auto output_ticks = mode == hg::QueueMode::standard ? messages : std::size_t{1};
             std::cout << "{\"kind\":\"sample\",\"workload\":\"graph_drain\",\"mode\":\""
-                      << (mode == bg::QueueMode::standard ? "standard" : "elide") << "\",\"sample\":" << sample
+                      << (mode == hg::QueueMode::standard ? "standard" : "elide") << "\",\"sample\":" << sample
                       << ",\"messages\":" << messages << ",\"output_ticks\":" << output_ticks
                       << ",\"elapsed_ns\":" << elapsed << ",\"ns_per_message\":" << per_message << "}\n";
         }
@@ -287,21 +287,21 @@ void benchmark_graph_drain(std::size_t messages, std::size_t samples) {
 }
 
 struct BatchRuntime {
-    bg::GraphWiring wiring;
-    bg::WiringPoint output;
-    bg::CompiledGraph compiled;
-    bg::GlobalState global_state;
-    bg::RuntimeGraph runtime;
-    bg::Queue queue;
+    hg::GraphWiring wiring;
+    hg::WiringPoint output;
+    hg::CompiledGraph compiled;
+    hg::GlobalState global_state;
+    hg::RuntimeGraph runtime;
+    hg::Queue queue;
     std::size_t value_count{};
     std::uint64_t checksum{};
-    bg::i64 last_value{};
+    hg::i64 last_value{};
 
     BatchRuntime()
         : wiring{}, compiled{[&] {
-              const auto queue_node = bg::queue<bg::TS<bg::List<bg::i64>>>(
-                  bg::start = [this](bg::Queue handle) { queue = std::move(handle); }, bg::mode = bg::QueueMode::batch);
-              const auto sink = bg::node([this](bg::In<bg::TS<bg::List<bg::i64>>> input) {
+              const auto queue_node = hg::queue<hg::TS<hg::List<hg::i64>>>(
+                  hg::start = [this](hg::Queue handle) { queue = std::move(handle); }, hg::mode = hg::QueueMode::batch);
+              const auto sink = hg::node([this](hg::In<hg::TS<hg::List<hg::i64>>> input) {
                   const auto values = input.value_view();
                   value_count = values.size();
                   for (auto index = std::size_t{}; index < values.size(); ++index) {
@@ -311,16 +311,16 @@ struct BatchRuntime {
                   }
               });
               {
-                  auto context = bg::WiringContext{wiring};
+                  auto context = hg::WiringContext{wiring};
                   output = queue_node();
                   sink(output);
               }
               wiring.finalize();
-              return bg::CompiledGraph{wiring};
+              return hg::CompiledGraph{wiring};
           }()},
           runtime{compiled, global_state} {}
 
-    void start() { runtime.start(bg::MIN_DT + std::chrono::microseconds{1}); }
+    void start() { runtime.start(hg::MIN_DT + std::chrono::microseconds{1}); }
     void stop() { runtime.stop(); }
 };
 
@@ -328,17 +328,17 @@ struct BatchRuntime {
     auto graph = BatchRuntime{};
     graph.start();
     for (auto message = std::size_t{}; message < messages; ++message) {
-        const auto value = static_cast<bg::i64>(message + 1);
+        const auto value = static_cast<hg::i64>(message + 1);
         if (!graph.queue.write(::literal::TimeSeriesLiteral(value))) {
             throw std::runtime_error{"batch queue write was rejected during preload"};
         }
     }
 
     const auto started = Clock::now();
-    graph.runtime.evaluate(bg::MIN_DT + std::chrono::microseconds{2});
+    graph.runtime.evaluate(hg::MIN_DT + std::chrono::microseconds{2});
     const auto finished = Clock::now();
     if (graph.value_count != messages || graph.checksum != expected_sum(messages) ||
-        graph.last_value != static_cast<bg::i64>(messages)) {
+        graph.last_value != static_cast<hg::i64>(messages)) {
         throw std::runtime_error{"batch queue graph drain count or checksum mismatch"};
     }
     graph.stop();
@@ -364,11 +364,11 @@ void benchmark_batch_drain(std::size_t messages, std::size_t samples) {
 struct LatencyState {
     std::mutex mutex;
     std::condition_variable changed;
-    bg::Queue queue;
+    hg::Queue queue;
     bool ready{};
     bool finished{};
     std::exception_ptr error;
-    bg::i64 observed_value{};
+    hg::i64 observed_value{};
     Clock::time_point observed_at{};
 };
 
@@ -388,7 +388,7 @@ void wait_for_queue(LatencyState &state) {
     }
 }
 
-[[nodiscard]] auto deliver_and_measure(LatencyState &state, bg::Queue &queue, bg::i64 value,
+[[nodiscard]] auto deliver_and_measure(LatencyState &state, hg::Queue &queue, hg::i64 value,
                                        std::chrono::milliseconds idle_gap, bool record)
     -> std::int64_t {
     const auto started = Clock::now();
@@ -425,14 +425,14 @@ void benchmark_realtime_latency(std::size_t messages, std::size_t samples, std::
     for (auto sample = std::size_t{}; sample < samples; ++sample) {
         auto state = LatencyState{};
         auto stop_source = std::stop_source{};
-        const auto queue_node = bg::queue<bg::TS<bg::i64>>(
-            bg::start = [&state](bg::Queue queue) {
+        const auto queue_node = hg::queue<hg::TS<hg::i64>>(
+            hg::start = [&state](hg::Queue queue) {
                 auto lock = std::lock_guard{state.mutex};
                 state.queue = std::move(queue);
                 state.ready = true;
                 state.changed.notify_all();
             });
-        const auto sink = bg::node([&state](bg::In<bg::TS<bg::i64>> input) {
+        const auto sink = hg::node([&state](hg::In<hg::TS<hg::i64>> input) {
             auto lock = std::lock_guard{state.mutex};
             state.observed_value = *input;
             state.observed_at = Clock::now();
@@ -441,8 +441,8 @@ void benchmark_realtime_latency(std::size_t messages, std::size_t samples, std::
 
         auto graph_thread = std::thread{[&] {
             try {
-                bg::run_graph([&] { sink(queue_node()); },
-                              bg::GraphRunOptions{.engine = bg::EvaluationEngine::realtime,
+                hg::run_graph([&] { sink(queue_node()); },
+                              hg::GraphRunOptions{.engine = hg::EvaluationEngine::realtime,
                                                   .stop_token = stop_source.get_token()});
             } catch (...) {
                 auto lock = std::lock_guard{state.mutex};
@@ -460,13 +460,13 @@ void benchmark_realtime_latency(std::size_t messages, std::size_t samples, std::
                 return state.queue;
             }();
             for (auto message = std::size_t{}; message < warmup_messages; ++message) {
-                (void)deliver_and_measure(state, queue, static_cast<bg::i64>(message + 1), idle_gap, false);
+                (void)deliver_and_measure(state, queue, static_cast<hg::i64>(message + 1), idle_gap, false);
             }
 
             auto latencies = std::vector<std::int64_t>{};
             latencies.reserve(messages);
             for (auto message = std::size_t{}; message < messages; ++message) {
-                const auto value = static_cast<bg::i64>(warmup_messages + message + 1);
+                const auto value = static_cast<hg::i64>(warmup_messages + message + 1);
                 latencies.push_back(deliver_and_measure(state, queue, value, idle_gap, true));
             }
             stop_source.request_stop();
@@ -508,11 +508,11 @@ void benchmark_realtime_latency(std::size_t messages, std::size_t samples, std::
 struct TimerChainNode {
     static constexpr bool uses_timed_scheduling = true;
 
-    void start(bg::EvaluationContext *context) const {
+    void start(hg::EvaluationContext *context) const {
         context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
     }
 
-    void evaluate(bg::EvaluationContext *context) const {
+    void evaluate(hg::EvaluationContext *context) const {
         ++evaluation_count;
         if (evaluation_count < target_cycles) {
             context->schedule_at(context->evaluation_time() + std::chrono::microseconds{1});
@@ -526,15 +526,15 @@ struct TimerChainNode {
 [[nodiscard]] auto run_timer_chain(std::size_t cycles, bool callback_enabled) -> std::pair<std::int64_t, std::size_t> {
     TimerChainNode::evaluation_count = 0;
     TimerChainNode::target_cycles = cycles;
-    const auto source = bg::node<TimerChainNode>();
+    const auto source = hg::node<TimerChainNode>();
     auto callback_count = std::size_t{};
     const auto callback = callback_enabled
-                              ? bg::PeriodicCallback{.callback = [&] { ++callback_count; },
+                              ? hg::PeriodicCallback{.callback = [&] { ++callback_count; },
                                                       .interval = std::chrono::milliseconds{50}}
-                              : bg::PeriodicCallback{};
+                              : hg::PeriodicCallback{};
     const auto started = Clock::now();
-    bg::run_graph([&] { (void)source(); },
-                  bg::GraphRunOptions{.periodic_callback = callback});
+    hg::run_graph([&] { (void)source(); },
+                  hg::GraphRunOptions{.periodic_callback = callback});
     const auto finished = Clock::now();
     if (TimerChainNode::evaluation_count != cycles) {
         throw std::runtime_error{"timer chain cycle count mismatch"};
@@ -649,7 +649,7 @@ int main(int argc, char **argv) {
         benchmark_periodic_callback(options.timer_cycles, options.samples, options.warmup_timer_cycles);
         return 0;
     } catch (const std::exception &error) {
-        std::cerr << "bg_queue_realtime_benchmark: " << error.what() << '\n';
+        std::cerr << "hg_queue_realtime_benchmark: " << error.what() << '\n';
         return 1;
     }
 }

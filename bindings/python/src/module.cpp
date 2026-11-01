@@ -1,6 +1,6 @@
-#include <bg/python/module.hpp>
+#include <hg/python/module.hpp>
 
-NB_MODULE(_bg, module) {
-    module.doc() = "Python bindings for bg";
-    bg::python::bind_core(module);
+NB_MODULE(_hg, module) {
+    module.doc() = "Python bindings for hg";
+    hg::python::bind_core(module);
 }

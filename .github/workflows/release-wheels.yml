@@ -108,9 +108,9 @@ jobs:
         run: |
           auditwheel repair \
             --plat manylinux_2_28_x86_64 \
-            --exclude libbg.so.0 \
-            --exclude libbg_library.so.0 \
-            --exclude libbg_python.so.0 \
+            --exclude libhg.so.0 \
+            --exclude libhg_library.so.0 \
+            --exclude libhg_python.so.0 \
             --exclude libfmt.so.12 \
             --wheel-dir dist \
             raw-wheel/*.whl

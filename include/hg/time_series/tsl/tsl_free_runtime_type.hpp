@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/node.hpp>
-#include <bg/time_series/tsl/tsl_free_storage.hpp>
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/graph/node.hpp>
+#include <hg/time_series/tsl/tsl_free_storage.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
 
 #include <stdexcept>
 
-namespace bg::details {
+namespace hg::details {
 
 Node free_list_node(const free_fixed_time_series_list_storage &storage) noexcept;
 bool free_list_valid(const free_fixed_time_series_list_storage &storage) noexcept;
@@ -42,4 +42,4 @@ class FreeFixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
 
 const TimeSeriesRuntimeType &free_fixed_time_series_list_runtime_type(const TimeSeriesListType &type);
 
-} // namespace bg::details
+} // namespace hg::details

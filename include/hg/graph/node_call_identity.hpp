@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 // Identifies a collected node call before GraphWiring binds it to a concrete node.
 struct NodeCallIdentity {
@@ -11,4 +11,4 @@ struct NodeCallIdentity {
     friend bool operator==(const NodeCallIdentity &, const NodeCallIdentity &) = default;
 };
 
-} // namespace bg
+} // namespace hg

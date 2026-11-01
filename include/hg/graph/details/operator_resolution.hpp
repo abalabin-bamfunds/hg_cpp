@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/wiring_error.hpp>
-#include <bg/graph/wiring_template.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_template.hpp>
 
 #include <optional>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct OperatorResolutionMatch {
     const WiringTemplate *implementation;
@@ -21,4 +21,4 @@ struct OperatorResolutionResult {
     bool ambiguous{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

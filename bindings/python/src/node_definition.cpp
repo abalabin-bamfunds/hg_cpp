@@ -1,22 +1,22 @@
-#include <bg/python/node_definition.hpp>
+#include <hg/python/node_definition.hpp>
 
 #include "delta.hpp"
 #include "python_queue.hpp"
 
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/node/output.hpp>
-#include <bg/time_series/ref/ref_output.hpp>
-#include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tsl/tsl_output.hpp>
-#include <bg/time_series/tss/tss_output.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/node/output.hpp>
+#include <hg/time_series/ref/ref_output.hpp>
+#include <hg/time_series/tsb/tsb_output.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/time_series/tsl/tsl_output.hpp>
+#include <hg/time_series/tss/tss_output.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/chrono.h>
@@ -32,7 +32,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::python {
+namespace hg::python {
 
 using Invocation = NodeInvocation<PythonNodeDefinition::compiled_data_type, PythonNodeDefinition::state_type>;
 
@@ -637,7 +637,7 @@ PythonNodeDefinition::CompiledData PythonNodeDefinition::compile(const ResolvedS
         if (signature.output == nullptr) {
             throw std::invalid_argument{"a Python queue node requires a time-series output"};
         }
-        bg::details::validate_queue_output_type(*signature.output, queue_mode_);
+        hg::details::validate_queue_output_type(*signature.output, queue_mode_);
     }
 
     auto parameter_conversions = std::vector<ParameterConversion>{};
@@ -717,4 +717,4 @@ void PythonNodeDefinition::destroy_state(NodeInvocation<compiled_data_type, stat
     Object::release_reference(static_cast<PyObject *>(std::exchange(storage, nullptr)));
 }
 
-} // namespace bg::python
+} // namespace hg::python

@@ -1,23 +1,23 @@
 #pragma once
 
-#include <bg/node/details/input_properties.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/time_series/details/guarantee_variable_traits.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/time_series/details/guarantee_variable_traits.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
+#include <typeinfo>
 #include <ddv/serial_visitor.h>
 #include <ddv/visitable.h>
 
 #include <string_view>
-#include <typeinfo>
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <details::time_series_variable Variable, auto... Properties>
 class In<Variable, Properties...>
@@ -88,16 +88,16 @@ class In<Variable, Properties...>
 static_assert(sizeof(In<TS_T>) == 3 * sizeof(void *));
 static_assert(sizeof(In<TS_T, dynamic_activity>) == 4 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/time_series/ref/ref_input.hpp>
-#include <bg/time_series/ts/ts_input.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/time_series/tsd/tsd_input.hpp>
-#include <bg/time_series/tsl/tsl_input.hpp>
-#include <bg/time_series/tss/tss_input.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/ts/ts_input.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsd/tsd_input.hpp>
+#include <hg/time_series/tsl/tsl_input.hpp>
+#include <hg/time_series/tss/tss_input.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Input>
 concept direct_time_series_input = requires(const TimeSeriesState &last_updated,
@@ -114,9 +114,9 @@ inline constexpr bool input_requires_runtime_type<In<TimeSeries, Properties...>>
     contains_guarantee_variable_v<TimeSeries> || is_time_series_set<TimeSeries> ||
     time_series_scalar_supports_alternative_layouts<TimeSeries>;
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 using TimeSeriesInputTypes = ddv::mux<In<TS<SCALAR>>, In<TSL<TS_T, SIZE>>, In<TSB<SCHEMA>>, In<TSS<SCALAR>>,
                                       In<TSD<SCALAR, TS_T>>, In<REF<TS_T>>, In<TS_T>>;
@@ -163,4 +163,4 @@ auto In<Variable, Properties...>::visit(Visitor &&visitor, Arguments &&...argume
     }
 }
 
-} // namespace bg
+} // namespace hg

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/declaration.hpp>
-#include <bg/util/contiguous_bunch.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/util/contiguous_bunch.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <functional>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class MutableList;
 
@@ -82,18 +82,18 @@ template <typename T> struct is_list<List<T>> : std::true_type {};
 
 template <typename T> inline constexpr bool is_list_v = is_list<T>::value;
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> inline constexpr bool generic_scalar<List<T>> = generic_scalar<T>;
 
-} // namespace bg::details
+} // namespace hg::details
 
-template <typename T> struct std::hash<bg::List<T>> {
-    std::size_t operator()(const bg::List<T> &value) const {
-        return bg::scalar_storage_traits<bg::List<T>>::hash(value);
+template <typename T> struct std::hash<hg::List<T>> {
+    std::size_t operator()(const hg::List<T> &value) const {
+        return hg::scalar_storage_traits<hg::List<T>>::hash(value);
     }
 };
 
-static_assert(sizeof(bg::List<int>) == sizeof(void *));
+static_assert(sizeof(hg::List<int>) == sizeof(void *));

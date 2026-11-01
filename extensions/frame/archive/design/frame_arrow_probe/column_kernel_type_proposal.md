@@ -3,7 +3,7 @@
 Status: discussion proposal. `Column<T>`, `TSC<T>`, `TSF<SCHEMA>`, and
 `Nullable<T>` are provisional names, not approved project terminology or an
 implementation commitment. This proposal uses the
-[frame working note](frame_design_note.md) and BG's existing
+[frame working note](frame_design_note.md) and HG's existing
 [type system](../../docs/type-system.md) and [scalar API](../../docs/scalar-api.md).
 The [framework review](frame_api_review.md) supplies the latest recommendations
 on alignment, continuity, borrowed-output validity, and batch access.
@@ -34,8 +34,8 @@ from either time series must borrow its cells without copying them.
 modified, or removed in the current cycle. A modification exposes the current
 cell. Whether removal exposes a prior cell remains open; the
 [input/output API proposal](frame_io_api_proposal.md) recommends an ID only.
-It also has the normal BG validity and last-updated queries. It does not
-create one BG time series per cell. The proposed public delta supplies current
+It also has the normal HG validity and last-updated queries. It does not
+create one HG time series per cell. The proposed public delta supplies current
 modified values; optional cycle-scoped old-value storage remains a review
 question rather than a requirement of this type.
 
@@ -65,7 +65,7 @@ Joining or aligning different row domains is a separate operator. A result
 that preserves rows can share the domain; filtering and sorting nodes define
 their own result row mapping and order.
 
-A frame runtime could expose `TSC` children through BG's collection-item
+A frame runtime could expose `TSC` children through HG's collection-item
 mechanism, giving each child one authoritative time-series state and change
 record. For a fixed schema and fixed name, wiring can resolve the selected
 `TSC<T>` type. An ordinary string-keyed C++ `operator[]` may still return a
@@ -87,14 +87,14 @@ because it tracks changes to that value. `TSL<TS<T>>` would give each cell an
 individual time-series identity and storage contract; this proposal keeps
 cell changes in sparse per-cycle records instead.
 
-An Arrow `Array`, Arrow `ChunkedArray`, BG bunch view, or owned kernel result
+An Arrow `Array`, Arrow `ChunkedArray`, HG bunch view, or owned kernel result
 can implement the same semantic column type through different runtime types.
 Chunk count, buffer alignment, dictionary encoding, and physical sparsity are
 runtime representation facts. They do not change `Column<T>`'s type identity.
 
 ## Why `List<T>` is not enough
 
-BG's `List<T>` is already an ordered, homogeneous scalar collection. Its
+HG's `List<T>` is already an ordered, homogeneous scalar collection. Its
 borrowed view is indexed, and its runtime interface supplies a stored `T` at
 every position. `MutableList<T>` supports append, set, erase, and clear. A
 fixed-width, dense, non-null Arrow array could be adapted to a list in
@@ -102,11 +102,11 @@ principle. A new semantic type is not justified by Arrow storage or vectorized
 execution alone.
 
 Null cells change the value contract: `Scalar<List<T>>::operator[]` returns
-`Scalar<T>` and has no way to report an absent cell. BG has no general nullable
+`Scalar<T>` and has no way to report an absent cell. HG has no general nullable
 scalar type today. `List<Nullable<T>>` could express the nulls if such a scalar
 type were added, but the present list runtime still requires an addressable
 stored item and mutable item operations. Arrow bit-packed Boolean values and
-dictionary-encoded values do not expose a stored BG `T` at each position.
+dictionary-encoded values do not expose a stored HG `T` at each position.
 Making every Arrow-backed list satisfy that interface would require decoding,
 materialization, or a second fast-path interface. A read-only Arrow view also
 cannot honestly implement list mutation without copy-on-write or a separate
@@ -134,14 +134,14 @@ and its logical position range. Keep selection and encoding information
 available to kernels that can consume it; an adapter may gather or decode
 when required. Resolve runtime dispatch per batch. Indexed fallback must
 account for layouts such as bit-packed Boolean cells, which have no stored
-BG `bool` to reference. Kernel code must not assume one contiguous allocation.
+HG `bool` to reference. Kernel code must not assume one contiguous allocation.
 A column that borrows frame storage is valid only for
-the current node invocation, following BG's scalar-view lifetime rule.
+the current node invocation, following HG's scalar-view lifetime rule.
 
-At wiring time, BG operator overloads would resolve element and result types,
+At wiring time, HG operator overloads would resolve element and result types,
 for example `Column<T> -> Column<U>` or `Column<T> -> Nullable<U>` for a
 reduction. Runtime dispatch would choose an implementation for the actual
-buffers and element type. BG's `ScalarDispatch` can register exact semantic or
+buffers and element type. HG's `ScalarDispatch` can register exact semantic or
 runtime handlers, but a useful kernel interface also needs bulk buffer access;
 generic indexed `Scalar<T>` calls alone would discard the performance benefit.
 
@@ -157,7 +157,7 @@ take(Column<T>, Selection)      -> Column<T>
 
 Each kernel must state its null behavior. Arithmetic normally propagates nulls;
 aggregates may skip them and return null when no values contribute. The result
-of an all-null reduction is a *valid computation with a null result*. BG time
+of an all-null reduction is a *valid computation with a null result*. HG time
 series invalidation means absence of a current time series value, so it cannot
 silently stand for that result. A general nullable scalar result type or an
 equivalent explicit result contract is needed for reductions.
@@ -210,14 +210,14 @@ calls, unnecessary gathers, and intermediate allocations, while retaining a
 delta path for small ticks.
 
 The [expression contract](frame_design_note.md#expressions-and-wiring) places
-deferred operations in BG wiring records. Changing scalar inputs construct an
+deferred operations in HG wiring records. Changing scalar inputs construct an
 expression scalar in a separate ordinary node. Kernel execution and retained
 intermediate storage remain implementation choices behind that interface.
 
 ## Type-system work implied by the proposal
 
 1. Define semantic `Column<T>` and `Frame<SCHEMA>` types and matching, plus
-   their scalar runtime interfaces. Register BG-backed and Arrow-backed
+   their scalar runtime interfaces. Register HG-backed and Arrow-backed
    layouts. The current `TypeVisitor` lists built-in scalar forms, so
    structural visitation and diagnostics may need extension.
 2. Define nullable scalar results, or another explicit representation that can
@@ -228,12 +228,12 @@ intermediate storage remain implementation choices behind that interface.
    `State<T>` handle the layouts. A snapshot shared with a mutable `TSF` or
    `TSC` needs retained immutable buffers or copy-on-write.
 4. Add a kernel dispatch boundary that receives typed batches and can adapt
-   Arrow arrays, Arrow chunked arrays, and BG storage. Keep Arrow-specific
+   Arrow arrays, Arrow chunked arrays, and HG storage. Keep Arrow-specific
    types in the extension, not the core scalar interfaces.
 5. Define `TSC<T>` with a zero-copy current `Column<T>` view, row identity,
    and sparse current-cycle row changes. Define `TSF<SCHEMA>` with a zero-copy
    current `Frame<SCHEMA>` view and frame-wide row changes. Check whether its
-   runtime can expose `TSC<T>` children through BG's collection-item mechanism
+   runtime can expose `TSC<T>` children through HG's collection-item mechanism
    while sharing row membership and keeping one authoritative state.
 6. Have column and frame operators carry row IDs alongside column positions
    and explicitly apply selections or permutations. This is independent of

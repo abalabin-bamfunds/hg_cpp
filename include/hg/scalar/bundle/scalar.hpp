@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/scalar/bundle/runtime_type.hpp>
-#include <bg/scalar/bundle/storage_traits.hpp>
-#include <bg/scalar/scalar.hpp>
+#include <hg/scalar/bundle/runtime_type.hpp>
+#include <hg/scalar/bundle/storage_traits.hpp>
+#include <hg/scalar/scalar.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -10,7 +10,7 @@
 #include <string_view>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename Declaration>
     requires details::hierarchical_scalar_declaration<Declaration> || std::same_as<Declaration, HIERARCHICAL>
@@ -86,4 +86,4 @@ class Scalar<Declaration> {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg

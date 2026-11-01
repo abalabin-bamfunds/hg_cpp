@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/python/export.hpp>
+#include <hg/python/export.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -10,10 +10,10 @@
 #include <mutex>
 #include <vector>
 
-namespace bg::python {
+namespace hg::python {
 
 // Keeps a Python reference valid when native graph storage copies or destroys it without the GIL.
-class BG_PYTHON_API Object {
+class HG_PYTHON_API Object {
   public:
     Object() noexcept = default;
     explicit Object(nanobind::handle value);
@@ -36,7 +36,7 @@ class BG_PYTHON_API Object {
 };
 
 // Retains a Python weak reference without requiring the weak reference target to outlive this object.
-class BG_PYTHON_API WeakObject {
+class HG_PYTHON_API WeakObject {
   public:
     WeakObject() noexcept = default;
     explicit WeakObject(nanobind::handle value);
@@ -47,4 +47,4 @@ class BG_PYTHON_API WeakObject {
     Object reference_;
 };
 
-} // namespace bg::python
+} // namespace hg::python

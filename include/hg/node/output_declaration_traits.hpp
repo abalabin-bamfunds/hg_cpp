@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename TimeSeries, auto... Options> class Out;
 
@@ -21,4 +21,4 @@ template <typename TimeSeries> struct output_declaration_traits<Out<TimeSeries>>
     }
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,6 +1,6 @@
 # Installation
 
-BG requires a C++23 compiler and CMake 3.31 or later. Python authoring requires
+HG requires a C++23 compiler and CMake 3.31 or later. Python authoring requires
 Python 3.13 or later. The following commands build from a local repository checkout;
 configuration downloads build dependencies.
 
@@ -19,7 +19,7 @@ or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 
 ```sh
 python -m pip install .
-python -c "from bg import graph, run_graph; print('BG is available')"
+python -c "from hg import graph, run_graph; print('HG is available')"
 ```
 :::
 
@@ -32,7 +32,7 @@ cmake --build build/cpp --config Release
 cmake --install build/cpp --config Release
 ```
 
-The installation contains the `bg::library` CMake target, public headers, and libraries.
+The installation contains the `hg::library` CMake target, public headers, and libraries.
 :::
 ::::
 
@@ -40,18 +40,18 @@ The installation contains the `bg::library` CMake target, public headers, and li
 ## C++ example project
 
 Each C++ example is a complete `main.cpp`. This `CMakeLists.txt` builds it against
-an installed BG package:
+an installed HG package:
 
 ```cmake
 cmake_minimum_required(VERSION 3.31)
 project(example LANGUAGES CXX)
-find_package(bg CONFIG REQUIRED)
+find_package(hg CONFIG REQUIRED)
 add_executable(example main.cpp)
-target_link_libraries(example PRIVATE bg::library)
+target_link_libraries(example PRIVATE hg::library)
 ```
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/hg/install
 cmake --build build --config Release
 ```
 

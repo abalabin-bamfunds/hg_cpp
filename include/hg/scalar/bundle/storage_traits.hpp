@@ -1,19 +1,19 @@
 #pragma once
 
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/details/handle_traits.hpp>
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/list/type.hpp>
-#include <bg/scalar/set/type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/scalar/storage_traits.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/details/handle_traits.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/storage_traits.hpp>
 
 #include <concepts>
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename... T> struct hierarchical_capability_stack {};
 
@@ -97,9 +97,9 @@ concept hierarchical_scalar_handle = requires(const Source &source) {
     { scalar_data(source) } -> std::same_as<const ScalarData &>;
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_storage_traits<Bundle<Schema>> {
@@ -157,4 +157,4 @@ struct scalar_storage_traits<Bundle<Schema>> {
     }
 };
 
-} // namespace bg
+} // namespace hg

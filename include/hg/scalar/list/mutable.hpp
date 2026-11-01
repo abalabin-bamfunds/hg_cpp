@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/mutable_traits.hpp>
-#include <bg/scalar/details/storage_traits.hpp>
-#include <bg/scalar/list/type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/mutable_traits.hpp>
+#include <hg/scalar/details/storage_traits.hpp>
+#include <hg/scalar/list/type.hpp>
 
 #include <cstddef>
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class MutableList : public List<T> {
     using Base = List<T>;
@@ -53,9 +53,9 @@ template <typename T> class MutableList : public List<T> {
     Storage &mutable_storage() const noexcept { return const_cast<Storage &>(Base::storage()); }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
     requires(!generic_scalar<List<T>>)
@@ -64,4 +64,4 @@ struct scalar_mutable_traits<List<T>> {
     using view_type = MutableList<T>;
 };
 
-} // namespace bg::details
+} // namespace hg::details

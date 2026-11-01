@@ -1,13 +1,13 @@
-#include <bg/frame/arrow.hpp>
+#include <hg/frame/arrow.hpp>
 
-#include <bg/util/static_storage.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <mutex>
 #include <stdexcept>
 #include <typeindex>
 #include <unordered_map>
 
-namespace bg::frame::arrow_details {
+namespace hg::frame::arrow_details {
 namespace {
 
 template <cell_type T>
@@ -15,7 +15,7 @@ void construct_arrow_column_literal(const literal::ScalarLiteral &literal, const
                                     void *destination, allocator &memory) {
     const auto &native_runtime = cpp_scalar_runtime_type<Column<T>>();
     auto value = ScalarValue<>::from_literal(native_runtime, literal, memory);
-    const auto column = bg::details::scalar_data_value<Column<T>>(bg::details::scalar_data(value));
+    const auto column = hg::details::scalar_data_value<Column<T>>(hg::details::scalar_data(value));
     auto array = copy_to_arrow(column);
     if (!array.ok())
         throw std::runtime_error{array.status().ToString()};
@@ -37,9 +37,9 @@ void construct_arrow_frame_literal(const literal::ScalarLiteral &literal, const 
     const auto &frame_type = static_cast<const FrameType &>(runtime.type());
     const auto &native_runtime = frame_snapshot_runtime_type(frame_type);
     auto value = ScalarValue<>::from_literal(native_runtime, literal, memory);
-    const auto source = bg::details::scalar_data(value);
+    const auto source = hg::details::scalar_data(value);
     const auto native_storage = static_cast<const FrameScalarRuntimeType &>(native_runtime).read_storage(source);
-    auto frame = details::frame_view<bg::SCHEMA>(native_storage, source);
+    auto frame = details::frame_view<hg::SCHEMA>(native_storage, source);
     auto table = copy_to_arrow(frame);
     if (!table.ok())
         throw std::runtime_error{table.status().ToString()};
@@ -59,8 +59,8 @@ class RuntimeSchemaFrameScalarRuntime final : public FrameScalarRuntimeType {
 
     void read_value(ScalarDataMode mode, std::uintptr_t data, void *destination) const override {
         auto source = ScalarData{*this, data, mode};
-        auto value = details::frame_view<bg::SCHEMA>(read_storage(source), source);
-        std::construct_at(static_cast<FrameView<bg::SCHEMA> *>(destination), std::move(value));
+        auto value = details::frame_view<hg::SCHEMA>(read_storage(source), source);
+        std::construct_at(static_cast<FrameView<hg::SCHEMA> *>(destination), std::move(value));
     }
 
     const ScalarRuntimeType &runtime_type_for_copy(const ScalarData &) const override { return *this; }
@@ -98,14 +98,14 @@ struct RuntimeCaches {
 };
 
 RuntimeCaches &runtime_caches() {
-    static bg::util::static_storage<RuntimeCaches> caches;
+    static hg::util::static_storage<RuntimeCaches> caches;
     return caches.get();
 }
 
 } // namespace
 
 void register_arrow_column_literal_runtime(const ScalarRuntimeType &runtime) {
-    bg::frame::details::register_literal_runtime(runtime, ScalarLiteralOperations{&construct_arrow_column_literal});
+    hg::frame::details::register_literal_runtime(runtime, ScalarLiteralOperations{&construct_arrow_column_literal});
 }
 
 const ScalarRuntimeType &canonical_scalar_runtime(const ScalarType &type, const std::type_info &identity,
@@ -140,10 +140,10 @@ const ScalarRuntimeType &runtime_schema_frame_scalar_runtime(const FrameType &ty
     auto runtime = std::make_unique<RuntimeSchemaFrameScalarRuntime>(type);
     const auto entry = caches.runtime_schema_runtimes.emplace(std::addressof(type), std::move(runtime)).first;
     auto rollback = util::scope_exit{[&]() noexcept { caches.runtime_schema_runtimes.erase(entry); }};
-    bg::frame::details::register_literal_runtime(
+    hg::frame::details::register_literal_runtime(
         *entry->second, ScalarLiteralOperations{&construct_arrow_frame_literal});
     rollback.release();
     return *entry->second;
 }
 
-} // namespace bg::frame::arrow_details
+} // namespace hg::frame::arrow_details

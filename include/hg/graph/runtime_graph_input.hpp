@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/time_series/time_series_state.hpp>
+#include <hg/time_series/time_series_state.hpp>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesRuntimeType;
 
@@ -20,4 +20,4 @@ struct RuntimeGraphInput {
     RuntimeGraphInputChange change;
 };
 
-} // namespace bg
+} // namespace hg

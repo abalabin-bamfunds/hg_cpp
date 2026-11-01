@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/schema_metadata.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/schema_metadata.hpp>
 
 #include <initializer_list>
 #include <span>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 struct SchemaMetadataEntry {
     // The factory copies this borrowed value before returning.
@@ -16,7 +16,7 @@ struct SchemaMetadataEntry {
     ScalarData value;
 };
 
-[[nodiscard]] BG_EXPORT SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries);
+[[nodiscard]] HG_EXPORT SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries);
 
 [[nodiscard]] inline SchemaMetadata make_schema_metadata(std::initializer_list<SchemaMetadataEntry> entries) {
     return make_schema_metadata(std::span{entries.begin(), entries.size()});
@@ -33,4 +33,4 @@ template <typename T>
     return {name, details::scalar_data(value)};
 }
 
-} // namespace bg
+} // namespace hg

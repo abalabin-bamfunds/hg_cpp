@@ -3,7 +3,7 @@
 ## Purpose
 
 A provider adds a time series family from a separate library. It supplies the
-semantic type, runtime representation, and typed input/output access. BG binds
+semantic type, runtime representation, and typed input/output access. HG binds
 those views to graph storage and performs publication through its output
 binding.
 
@@ -16,8 +16,8 @@ same library.
 A provider specializes `time_series_type_traits<Declaration>` to describe the
 semantic type and whether the declaration is supported or generic.
 `TimeSeriesDeclaration<Declaration, Properties...>` supplies `type()` and
-guarantee metadata for declarations with BG guarantee properties. Include
-`<bg/time_series/time_series_type_traits.hpp>` for the customization point.
+guarantee metadata for declarations with HG guarantee properties. Include
+`<hg/time_series/time_series_type_traits.hpp>` for the customization point.
 
 `get<Scope, Index, Role>(GuaranteeParameter)` receives a `TimeSeriesTypeRole`:
 `declaration`, `input`, or `output`. A declaration uses neutral guarantees and
@@ -30,9 +30,9 @@ the declaration role because it does not own that target.
 `declaration_variable_traits<Declaration>::for_each` enumerates variables in
 the declaration. It must include component variables and guarantee variables.
 `for_each_declaration_variable` recurses into a component declaration through
-the same public customization point. Include `<bg/type/declaration_variables.hpp>`
+the same public customization point. Include `<hg/type/declaration_variables.hpp>`
 for these interfaces. `TimeSeriesDeclarationProperties<Properties...>::for_each_variable`
-enumerates guarantee variables using BG's canonical variable objects.
+enumerates guarantee variables using HG's canonical variable objects.
 
 The semantic type implements matching and resolution through `Type`. A
 resolved time series type implements `with_guarantee()` using canonical types.
@@ -52,7 +52,7 @@ contained time series. Family-specific access and mutation operations belong
 to the provider's runtime interface.
 
 A runtime may override `reference_sample_factory()` when dereferencing its
-time series requires a sampled view. BG calls the factory on the runtime
+time series requires a sampled view. HG calls the factory on the runtime
 requested by the receiving input and passes the requested semantic type, the
 previous and current source descriptors, the sampling time, and an allocator.
 The returned sample owns one reference and supplies an input view whose runtime
@@ -103,11 +103,11 @@ reports whether its storage uses variable memory or requires finalization.
 
 ## Output declarations
 
-BG declares `Out<Declaration, Options...>`. Built-in time series implement
+HG declares `Out<Declaration, Options...>`. Built-in time series implement
 `Out<Declaration>`. Providers define any additional options and their matching
 `Out` specializations.
 
-Include `<bg/node/output_declaration_traits.hpp>` and specialize
+Include `<hg/node/output_declaration_traits.hpp>` and specialize
 `output_declaration_traits<Output>` for a configured output. Its
 `time_series_type` identifies the semantic declaration.
 `runtime(resolved_type)` selects the representation and must return a runtime
@@ -131,7 +131,7 @@ selection and use `NodeInvocation::output_as<Output>()` for binding.
 The [node output-runtime hook](node-api.md#output-parameters) replaces trait
 selection when the representation depends on wiring arguments. Custom node
 templates implement `NodeTemplate::output_runtime_type(const WiringArguments &)`;
-BG calls it during wiring and retains its result for compilation.
+HG calls it during wiring and retains its result for compilation.
 The [wiring callback](graph-wiring.md#wiring-template-call) receives this borrowed
 argument view alongside the normalized arguments used for forwarding.
 
@@ -146,7 +146,7 @@ selected runtime type.
 An input accepts `const TimeSeriesInputData&` and an optional activity-control
 pointer. `InputProperties<Properties...>` supplies the declaration's input
 metadata. `InputActivityControl` implements activity changes for inputs that
-declare dynamic activity. Include `<bg/node/input_properties.hpp>` for these
+declare dynamic activity. Include `<hg/node/input_properties.hpp>` for these
 helpers.
 
 `input_data()` exposes the borrowed input binding to engine and extension
@@ -159,16 +159,16 @@ The provider retains that binding as a member of its output view. A binding
 constructed from an existing `OutputState&` borrows the state; that state must
 outlive the binding.
 
-An input exposes BG's [common input operations](node-api.md#complete-time-series-access)
+An input exposes HG's [common input operations](node-api.md#complete-time-series-access)
 alongside its family-specific reads. Its binding refers to `TimeSeriesState`,
 which preserves the latest change time and validity transition. An output
-uses BG's publication and invalidation operations after updating its own
+uses HG's publication and invalidation operations after updating its own
 storage and change information.
 The output binding carries the containing-output path for collection children.
 
-Include `<bg/time_series/input_data.hpp>`,
-`<bg/time_series/output_binding.hpp>`, and
-`<bg/time_series/output_state.hpp>` for these interfaces.
+Include `<hg/time_series/input_data.hpp>`,
+`<hg/time_series/output_binding.hpp>`, and
+`<hg/time_series/output_state.hpp>` for these interfaces.
 These bindings are APIs for extension authors. Node code uses the typed
 `In` and `Out` operations supplied by its provider.
 
@@ -183,7 +183,7 @@ collection.
 ## Literal updates
 
 Providers register `TimeSeriesLiteralOperations` from
-`<bg/time_series/literal_operations.hpp>` with
+`<hg/time_series/literal_operations.hpp>` with
 `TimeSeriesDispatch<TimeSeriesLiteralOperations>::instance()` to support
 `Out<TS_T>::apply(const literal::TimeSeriesLiteral&)`. Lookup prefers an exact
 runtime registration, then its semantic type.
@@ -208,17 +208,17 @@ extension-facing APIs. Scalar literal construction has its own
 ## Queue messages
 
 Providers register `TimeSeriesQueueOperations` from
-`<bg/time_series/queue_operations.hpp>` with
+`<hg/time_series/queue_operations.hpp>` with
 `TimeSeriesDispatch<TimeSeriesQueueOperations>::instance()`.
 This is an extension-facing API. Graph authors use `Queue::write()`.
 
 Register `project`, `write`, `conflicts`, and `apply` for each supported
 exact output runtime. Register `discard` for its semantic time series type.
 Semantic registration does not enable queue writes to other runtime layouts.
-BG validates these registrations when it selects the queue output runtime.
+HG validates these registrations when it selects the queue output runtime.
 Batch queues reject provider-defined time series leaves.
 
-BG owns message framing, scheduling, invalidation, and traversal through
+HG owns message framing, scheduling, invalidation, and traversal through
 built-in collections. Provider callbacks encode and process only their valid
 leaf payload:
 
@@ -230,10 +230,10 @@ leaf payload:
   and encoded values without mutation or destruction. Missing collection items
   have null storage. An invalidation has no payload. Returning `false` for a
   valid payload must advance past that complete payload. Returning `true` may
-  stop early; BG leaves the complete message pending.
+  stop early; HG leaves the complete message pending.
 - `apply(reader, output)` consumes an accepted payload and publishes through
   the output binding. It must consume and destroy or transfer the complete
-  payload even when it throws. BG discards later siblings after a failure.
+  payload even when it throws. HG discards later siblings after a failure.
 - `discard(reader)` advances past one payload and destroys its owning objects.
   During failed-write cleanup, destroy completed objects before an incomplete
   trailing field reports `std::out_of_range`.

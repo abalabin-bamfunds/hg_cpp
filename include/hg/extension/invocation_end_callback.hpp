@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/export.hpp>
+#include <hg/export.hpp>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 
@@ -14,7 +14,7 @@ class InvocationEndCallbackScope;
 namespace extension {
 
 // Deduplicates an invocation-end callback while it is registered. Destroying the owner cancels the callback.
-class BG_EXPORT InvocationEndRegistration {
+class HG_EXPORT InvocationEndRegistration {
   public:
     InvocationEndRegistration() noexcept = default;
     ~InvocationEndRegistration();
@@ -35,4 +35,4 @@ class BG_EXPORT InvocationEndRegistration {
 };
 
 } // namespace extension
-} // namespace bg
+} // namespace hg

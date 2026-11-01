@@ -1,14 +1,15 @@
 #pragma once
 
-#include <bg/scalar/builtins.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/details/handle_traits.hpp>
-#include <bg/scalar/details/data.hpp>
-#include <bg/scalar/details/storage_traits.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/scalar/type.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/details/handle_traits.hpp>
+#include <hg/scalar/details/data.hpp>
+#include <hg/scalar/details/storage_traits.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/type.hpp>
 
+#include <typeinfo>
 #include <ddv/serial_visitor.h>
 #include <ddv/visitable.h>
 
@@ -16,7 +17,7 @@
 #include <memory>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class Scalar;
 template <typename T = void> class ScalarValue;
@@ -180,16 +181,16 @@ template <typename T> class Scalar {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/scalar/dict/scalar.hpp>
-#include <bg/scalar/bundle/scalar.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/set/scalar.hpp>
-#include <bg/scalar/struct/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/bundle/scalar.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/set/scalar.hpp>
+#include <hg/scalar/struct/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename T> void Scalar<T>::accept(ScalarVisitTypes &types) const {
     const auto &semantic_type = type();
@@ -235,4 +236,4 @@ template <typename T> const ScalarData &scalar_data(const Scalar<T> &value) noex
 
 static_assert(sizeof(Scalar<int>) == 2 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

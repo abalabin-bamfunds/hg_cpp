@@ -2,7 +2,7 @@
 
 This follow-up measures the bounded bitmap search added after the
 [initial optimization comparison](../README.md). It compares frame revisions
-`2f180034` and `3b59d9d7`. The BG baseline is `5d48e914`; the new build also
+`2f180034` and `3b59d9d7`. The HG baseline is `5d48e914`; the new build also
 includes the utility-only change `73622fb7` (`de53c9e7` on its separate lane).
 
 The earlier build checks native validity per cell. The new build uses
@@ -44,13 +44,13 @@ functional tests cover mixed validity and native index boundaries.
 
 No task builds ran during measurement. The ELF loader disabled executable
 RPATH as described in the [reproduction instructions](../README.md#reproduction).
-The manifest verifies the frame and BG libraries and records their hashes.
+The manifest verifies the frame and HG libraries and records their hashes.
 
 The earlier runtime is preserved under
 `build/frame-optimisation-2026-10-22/pre-bounded-runtime/arrow-on`, using
-`dependencies/bg-frame-core-release-install`. The new runtime is
+`dependencies/hg-frame-core-release-install`. The new runtime is
 `build/tsf-row-release-arrow-on`, using
-`dependencies/bg-frame-core-bounded-release-install`.
+`dependencies/hg-frame-core-bounded-release-install`.
 
 Final verification passed Release Arrow-off 5/5, Release Arrow-on 6/6, and
 Debug ASan/UBSan Arrow-on 6/6. The utility's focused Catch2 test passed 787

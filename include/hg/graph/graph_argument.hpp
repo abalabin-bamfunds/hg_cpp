@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/type/type.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/type/type.hpp>
 
 #include <concepts>
 #include <compare>
@@ -14,7 +14,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class WiringTemplate;
 
@@ -124,9 +124,9 @@ class GraphArgument {
     const std::type_info *payload_type_;
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 concept graph_argument_facade = requires(const std::remove_cvref_t<T> &value) {
@@ -134,4 +134,4 @@ concept graph_argument_facade = requires(const std::remove_cvref_t<T> &value) {
     { std::remove_cvref_t<T>::type() } -> std::same_as<const GraphArgumentType &>;
 };
 
-} // namespace bg::details
+} // namespace hg::details

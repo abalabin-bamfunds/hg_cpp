@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/scalar/dict/mutable.hpp>
+#include <hg/scalar/dict/mutable.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename K, typename V> decltype(auto) MutableDict<K, V>::at(typename KeyTraits::value_type key) const {
     auto &stored = mutable_storage().items.at(key);
@@ -13,4 +13,4 @@ template <typename K, typename V> decltype(auto) MutableDict<K, V>::at(typename 
     }
 }
 
-} // namespace bg
+} // namespace hg

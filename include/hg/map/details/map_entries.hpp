@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/graph/nested_graph.hpp>
-#include <bg/graph/runtime_graph_evaluator.hpp>
-#include <bg/graph/runtime_graph_scheduling.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/index.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/graph/runtime_graph_evaluator.hpp>
+#include <hg/graph/runtime_graph_scheduling.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/index.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -18,7 +18,7 @@
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 
@@ -99,4 +99,4 @@ class MapEntries {
 static_assert(sizeof(MapEntries::Entry) <= 5 * sizeof(void *));
 
 } // namespace details
-} // namespace bg
+} // namespace hg

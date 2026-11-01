@@ -1,12 +1,12 @@
-#include <bg/frame/expression.hpp>
-#include <bg/frame/frame.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -23,8 +23,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 constexpr auto row_count = std::size_t{100'000};
 constexpr auto hole_count = std::size_t{10'000};
@@ -502,7 +502,7 @@ int main(int argc, char **argv) {
     auto csv_path = std::string_view{"expression_benchmark_results.csv"};
     for (auto argument = 1; argument < argc; argument += 2) {
         if (argument + 1 >= argc) {
-            std::cerr << "usage: bg_frame_expression_benchmark [--report path] [--csv path]\n";
+            std::cerr << "usage: hg_frame_expression_benchmark [--report path] [--csv path]\n";
             return 2;
         }
         const auto option = std::string_view{argv[argument]};

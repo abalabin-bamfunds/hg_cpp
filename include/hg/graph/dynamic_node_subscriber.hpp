@@ -3,7 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 
@@ -49,4 +49,4 @@ struct DynamicNodeSubscriber {
 static_assert(sizeof(DynamicNodeSubscriber) == 2 * sizeof(void *));
 
 } // namespace details
-} // namespace bg
+} // namespace hg

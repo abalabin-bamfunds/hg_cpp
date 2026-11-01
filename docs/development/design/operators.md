@@ -18,20 +18,20 @@ Public headers declare an operator from a function type. The definition supplies
 its name and parameter names:
 
 ```cpp
-namespace bg::operators {
+namespace hg::operators {
 
 extern operator_<auto(SCALAR, SCALAR) -> SCALAR> add;
 
-} // namespace bg::operators
+} // namespace hg::operators
 
-decltype(bg::operators::add) bg::operators::add{"add", {"lhs", "rhs"}};
+decltype(hg::operators::add) hg::operators::add{"add", {"lhs", "rhs"}};
 ```
 
 Local code uses the same declaration form:
 
 ```cpp
-auto add = bg::operator_<auto(bg::SCALAR, bg::SCALAR) -> bg::SCALAR>{"add", {"lhs", "rhs"}};
-add.overload(bg::node<add_integers>());
+auto add = hg::operator_<auto(hg::SCALAR, hg::SCALAR) -> hg::SCALAR>{"add", {"lhs", "rhs"}};
+add.overload(hg::node<add_integers>());
 add.overload(add_numbers_graph);
 ```
 
@@ -44,12 +44,12 @@ An operator can declare ordered type parameters before its prototype. Calls can
 then supply positional type arguments or named mappings:
 
 ```cpp
-using RESULT = bg::TimeSeriesVariable<"RESULT">;
+using RESULT = hg::TimeSeriesVariable<"RESULT">;
 
-auto convert = bg::operator_<RESULT, auto(bg::TS_T) -> RESULT>{"convert", {"value"}};
+auto convert = hg::operator_<RESULT, auto(hg::TS_T) -> RESULT>{"convert", {"value"}};
 
-convert[bg::type<bg::TS<bg::i64>>](value);
-convert[bg::type<RESULT> = bg::type<bg::TS<bg::i64>>](value);
+convert[hg::type<hg::TS<hg::i64>>](value);
+convert[hg::type<RESULT> = hg::type<hg::TS<hg::i64>>](value);
 ```
 
 The optional template argument after the prototype defines C++ call preparation.
@@ -73,7 +73,7 @@ precedence when it conflicts with a prototype name.
 auto result = add(lhs, rhs);
 ```
 
-Including `<bg/library.hpp>` and linking `bg::library` provides the common
+Including `<hg/library.hpp>` and linking `hg::library` provides the common
 operator surface. It includes engine operators such as `const_`, `default_`,
 and `getitem`, alongside C++ library operators. Their implementation
 placement does not create a separate operator API for callers.
@@ -146,7 +146,7 @@ dispatch output contract must resolve before wiring its branches.
 
 ## Overload implementation declarations
 
-`<bg/overload.hpp>` provides declarations for library initialization:
+`<hg/overload.hpp>` provides declarations for library initialization:
 
 - `overload<OP>{arguments...}` forwards the arguments to `node()` and registers
   the resulting node template with `OP`.
@@ -167,11 +167,11 @@ operator:
 
 ```cpp
 struct numeric_overloads {
-    bg::overload<bg::operators::add> add_double{
+    hg::overload<hg::operators::add> add_double{
         [](double lhs, double rhs) { return lhs + rhs; }
     };
 
-    bg::overload<bg::operators::add> add_optional_double{
+    hg::overload<hg::operators::add> add_optional_double{
         [](std::optional<double> lhs, std::optional<double> rhs) {
             return lhs.value_or(0.0) + rhs.value_or(0.0);
         }
@@ -179,7 +179,7 @@ struct numeric_overloads {
 };
 
 void register_numeric_operators() {
-    bg::register_overloads<numeric_overloads>();
+    hg::register_overloads<numeric_overloads>();
 }
 ```
 
@@ -351,17 +351,17 @@ keeps its position. An absent captured scalar is omitted with its pack entry.
 Callable node and graph declarations use a resolver named for its variable:
 
 ```cpp
-using RESULT = bg::ScalarVariable<"RESULT">;
+using RESULT = hg::ScalarVariable<"RESULT">;
 
-bg::node(
-    bg::eval = evaluate,
-    bg::resolve<RESULT> = resolve_result);
+hg::node(
+    hg::eval = evaluate,
+    hg::resolve<RESULT> = resolve_result);
 ```
 
 A schema variable uses `schema_type` because its TSB declaration is a template:
 
 ```cpp
-bg::resolve<bg::schema_type<bg::SCHEMA>> = resolve_schema
+hg::resolve<hg::schema_type<hg::SCHEMA>> = resolve_schema
 ```
 
 An aggregate definition declares overloaded static functions. The variable
@@ -369,13 +369,13 @@ token identifies the result:
 
 ```cpp
 struct implementation {
-    using INPUT = bg::ScalarVariable<"INPUT">;
-    using RESULT = bg::ScalarVariable<"RESULT">;
+    using INPUT = hg::ScalarVariable<"INPUT">;
+    using RESULT = hg::ScalarVariable<"RESULT">;
 
-    bg::In<bg::TS<INPUT>> input;
-    bg::Out<bg::TS<RESULT>> output;
+    hg::In<hg::TS<INPUT>> input;
+    hg::Out<hg::TS<RESULT>> output;
 
-    static const bg::ScalarType *resolve(RESULT, auto arguments);
+    static const hg::ScalarType *resolve(RESULT, auto arguments);
 
     void evaluate() const;
 };
@@ -398,16 +398,16 @@ A requirement can return `bool` or `RequirementResult`. Use `accept` and
 `reject(message)` to construct the latter without spelling its representation:
 
 ```cpp
-static auto require(auto arguments) -> bg::RequirementResult {
+static auto require(auto arguments) -> hg::RequirementResult {
     if (!count_is_valid(arguments)) {
-        return bg::reject("count must be non-negative");
+        return hg::reject("count must be non-negative");
     }
 
-    return bg::accept;
+    return hg::accept;
 }
 ```
 
-Callable declarations use the same protocol through `bg::require`.
+Callable declarations use the same protocol through `hg::require`.
 
 ## Specificity
 
@@ -472,13 +472,13 @@ therefore constrain the complete graph signature and participate in
 specificity.
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
-using VALUE = bg::ScalarVariable<"VALUE">;
+using VALUE = hg::ScalarVariable<"VALUE">;
 
-auto implementation = bg::graph(
+auto implementation = hg::graph(
     "name"_n = "same_type_graph",
-    [](bg::GRAPH<auto(bg::TS<VALUE>, bg::TS<VALUE>) -> bg::TS<VALUE>> function) {
+    [](hg::GRAPH<auto(hg::TS<VALUE>, hg::TS<VALUE>) -> hg::TS<VALUE>> function) {
         // ...
     });
 ```
@@ -493,13 +493,13 @@ structural constraints are unordered.
 construction attaches it to the parameter declared with `GRAPH`:
 
 ```cpp
-inline constexpr auto addition = bg::graph_pattern(
+inline constexpr auto addition = hg::graph_pattern(
     [](auto lhs, auto rhs) {
-        return bg::operators::add(lhs, rhs);
+        return hg::operators::add(lhs, rhs);
     });
 
-using ADDITION = bg::GRAPH<
-    auto(bg::TS<VALUE>, bg::TS<VALUE>) -> bg::TS<VALUE>,
+using ADDITION = hg::GRAPH<
+    auto(hg::TS<VALUE>, hg::TS<VALUE>) -> hg::TS<VALUE>,
     addition>;
 ```
 

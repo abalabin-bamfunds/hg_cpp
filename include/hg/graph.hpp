@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/graph/context.hpp>
-#include <bg/graph/details/graph_factory.hpp>
-#include <bg/graph/graph_type.hpp>
-#include <bg/type/type_parameter.hpp>
+#include <hg/graph/context.hpp>
+#include <hg/graph/details/graph_factory.hpp>
+#include <hg/graph/graph_type.hpp>
+#include <hg/type/type_parameter.hpp>
 
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename Definition>
 concept AggregateGraphClass = details::aggregate_graph_definition<Definition>::value;
@@ -66,4 +66,4 @@ template <typename... Declaration, typename... Arguments>
         std::make_index_sequence<sizeof...(Declaration) - 1>{}, std::forward<Arguments>(arguments)...);
 }
 
-} // namespace bg
+} // namespace hg

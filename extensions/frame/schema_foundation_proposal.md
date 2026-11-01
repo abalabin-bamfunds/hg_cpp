@@ -1,18 +1,18 @@
 # Frame schema foundation
 
 Status: implementation and verification are active in `agent/frame-field-access`.
-The extension consumes the installed BG package at `cc4a3f29`. Current checkpoints
+The extension consumes the installed HG package at `cc4a3f29`. Current checkpoints
 and remaining work are recorded in [HANDOFF.md](HANDOFF.md).
 
 ## Purpose
 
 Use one frame implementation for concrete C++ schemas, schema variables, and
 schemas constructed programmatically. Generic nodes must preserve a captured
-schema through ordinary BG type resolution. Native and Arrow representations
+schema through ordinary HG type resolution. Native and Arrow representations
 must expose the same value and change APIs.
 
 The existing source is preserved in commit `12471d94` on `agent/frame-schema`.
-The [shared BG schema foundation](../../docs/type-system.md#schemas) is merged
+The [shared HG schema foundation](../../docs/type-system.md#schemas) is merged
 into main. Frames use its descriptors, reflection, and canonical factories.
 
 ## Scope
@@ -36,7 +36,7 @@ canonical and registered with process lifetime. A C++ schema declaration
 constructs this descriptor; a programmatic factory constructs one from fields.
 
 ```text
-bg::Schema {
+hg::Schema {
     ordered fields { name, Type, optional presence }
     optional named identity and base schema
 }
@@ -107,7 +107,7 @@ identity. Equal field layouts alone do not erase named identity.
 Reusing the variable requires the same schema. Resolution creates the ordinary
 registered `FrameType` or `FrameSeriesType`, not a generated C++ specialization.
 
-Schemas with scalar variables in individual fields also resolve through BG's
+Schemas with scalar variables in individual fields also resolve through HG's
 type map. The runtime is selected only after all schema fields resolve.
 
 ### Inherited inputs
@@ -134,7 +134,7 @@ and compatible cell types. The input retains the actual anonymous schema.
 The extension declares `supports_alternative_layouts` and implements typed
 `read_value(ScalarData)` to construct the declared `FrameView` from the actual
 representation. Every frame scalar runtime implements
-`FrameScalarRuntimeType::read_storage`. Fixed-layout BG scalars keep their
+`FrameScalarRuntimeType::read_storage`. Fixed-layout HG scalars keep their
 direct read path.
 
 `In<TSF>::value_view()` borrows persistent series storage through its scalar
@@ -185,7 +185,7 @@ Add the corresponding generic surface:
 | Declaration | Access |
 | --- | --- |
 | `Frame<SCHEMA>` value | Resolved schema, row count, columns by name or ordinal |
-| `In<TSF<SCHEMA>>` | Common BG input queries, current scalar view, row IDs, membership changes, column changes |
+| `In<TSF<SCHEMA>>` | Common HG input queries, current scalar view, row IDs, membership changes, column changes |
 | Generic column input | Resolved cell type and checked typed column/batch access |
 | `Out<TSF<SCHEMA>>` | Complete row insertion, sparse cell patch, erase, clear, invalidate |
 | `Out<TSF<SCHEMA>, frame::view>` | Projection/filter bindings over the same source descriptors |
@@ -210,7 +210,7 @@ leaves them unchanged. All current frame columns allow nulls.
 
 Row/RowPatch fields declared with scalar variables store borrowed `Scalar<>`
 handles. Concrete fields store nullable typed values. Adapters validate source
-field declarations through BG type matching and check each present handle
+field declarations through HG type matching and check each present handle
 against its resolved target cell type before mutation. Temporary numeric
 storage decodes generic fields; native table storage retains no handles.
 
@@ -219,7 +219,7 @@ compile-time conveniences resolve names and call the same binding operation.
 
 Live filtering belongs to a node. The expression implementation evaluates
 blocks and supplies row-selection changes to its TSF view output. Expression
-wiring uses BG materialisation options. The existing numeric filter helper is
+wiring uses HG materialisation options. The existing numeric filter helper is
 a probe; the generic foundation does not add a cell callback filter API.
 
 Arrow import gains a schema-inferred form and a form taking an explicit frame
@@ -230,8 +230,8 @@ continue to use the existing lifetime contracts.
 ## Extension boundary
 
 Frame semantic types, field validation, storage, column operations, Arrow
-adapters, and output options belong to the extension. The common BG descriptor
-provides schema identity and field metadata. Report any required BG change for
+adapters, and output options belong to the extension. The common HG descriptor
+provides schema identity and field metadata. Report any required HG change for
 owner review before implementing it.
 
 Ordinary typed TS outputs assign through their configured canonical runtime;
@@ -242,14 +242,14 @@ cells into an independent snapshot.
 
 ## Build order and acceptance
 
-1. Verify the existing numeric extension baseline against latest BG (complete).
-2. Implement the common schema foundation in BG (merged).
+1. Verify the existing numeric extension baseline against latest HG (complete).
+2. Implement the common schema foundation in HG (merged).
 3. Add canonical frame/column semantic descriptors and generic descriptor resolution.
 4. Convert frame storage and mutation to the shared runtime layout; retain
    concrete typed access and existing behavior tests.
 5. Add generic input/output access, programmatic schema sources, views, and
    Arrow import/export through that same implementation.
-6. Verify through an installed BG package with Arrow enabled and disabled.
+6. Verify through an installed HG package with Arrow enabled and disabled.
 
 Required examples include a generic schema-preserving node over a concrete
 C++ source and over a programmatic schema source, mixed numeric columns,

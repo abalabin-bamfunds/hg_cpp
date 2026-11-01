@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/scalar/value.hpp>
-#include <bg/graph/wiring_path.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/type_map.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/graph/wiring_path.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/type_map.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class ServiceDefinition;
 class WiringArgument;
@@ -49,4 +49,4 @@ class ServiceInstanceRegistry {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

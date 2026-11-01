@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/time_series/details/time_series_properties.hpp>
-#include <bg/time_series/details/type_access.hpp>
-#include <bg/time_series/time_series_variable.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/time_series/details/time_series_properties.hpp>
+#include <hg/time_series/details/type_access.hpp>
+#include <hg/time_series/time_series_variable.hpp>
 
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 // Parses the guarantee property accepted by a time series declaration.
 template <auto... Properties>
@@ -82,7 +82,7 @@ using dereferenced_time_series_t = typename dereferenced_time_series<std::remove
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/type/details/time_series_reference_type_traits.hpp>
-#include <bg/type/details/time_series_value_type_traits.hpp>
+#include <hg/type/details/time_series_reference_type_traits.hpp>
+#include <hg/type/details/time_series_value_type_traits.hpp>

@@ -160,7 +160,7 @@ Output:
             page.parent.mkdir(parents=True)
             page.write_text("""# Frame extension
 
-<!-- example-libraries: bg::frame -->
+<!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
 <!-- runnable-example: cpp -->
 
@@ -182,7 +182,7 @@ frame ready
         self.assertEqual(example.python_output, "")
         self.assertEqual(example.cpp, "int main() { return 0; }")
         self.assertEqual(example.cpp_output, "frame ready")
-        self.assertEqual(example.cpp_libraries, ("bg::frame",))
+        self.assertEqual(example.cpp_libraries, ("hg::frame",))
         self.assertEqual(example.cmake_source, "extensions/frame")
 
     def test_cpp_only_page_rejects_python_examples_and_default_marker_stays_paired(self):
@@ -362,7 +362,7 @@ elapsed: ... ns
         self.assertFalse(output_matches("elapsed: 12 ns", "elapsed: 13 ns", False))
 
     def test_cpp_batch_checks_each_output_segment_independently(self):
-        stdout = "elapsed: 12 ns\n\nBG_DOC_EXAMPLE_4\nready\nBG_DOC_EXAMPLE_5\n"
+        stdout = "elapsed: 12 ns\n\nHG_DOC_EXAMPLE_4\nready\nHG_DOC_EXAMPLE_5\n"
         actual = split_cpp_outputs(stdout, 4, 2)
         self.assertTrue(output_matches("elapsed: ... ns", actual[0], True))
         self.assertTrue(output_matches("ready", actual[1]))
@@ -397,8 +397,8 @@ elapsed: ... ns
                 self.assertEqual(set(archive.namelist()), {"main.cpp", "CMakeLists.txt", "README.md"})
                 self.assertEqual(archive.read("main.cpp").decode(), example.cpp + "\n")
                 cmake = archive.read("CMakeLists.txt").decode()
-                self.assertIn("find_package(bg CONFIG REQUIRED)", cmake)
-                self.assertIn("target_link_libraries(example PRIVATE bg::library)", cmake)
+                self.assertIn("find_package(hg CONFIG REQUIRED)", cmake)
+                self.assertIn("target_link_libraries(example PRIVATE hg::library)", cmake)
                 self.assertIn("## Build and run", archive.read("README.md").decode())
 
     def test_downloads_skip_python_and_include_extension_cmake_dependencies(self):
@@ -415,7 +415,7 @@ elapsed: ... ns
             cpp="int main() { return 0; }",
             cpp_output="frame ready",
             cpp_ellipsis=False,
-            cpp_libraries=("bg::frame",),
+            cpp_libraries=("hg::frame",),
             cmake_source="extensions/frame",
         )
         with tempfile.TemporaryDirectory() as temporary:
@@ -429,8 +429,8 @@ elapsed: ... ns
             self.assertNotIn(".py`", catalog)
             with ZipFile(downloads / f"{example.slug}.zip") as archive:
                 cmake = archive.read("CMakeLists.txt").decode()
-                self.assertIn("add_subdirectory(\"${BG_SOURCE_DIR}/extensions/frame\" bg_extension)", cmake)
-                self.assertIn("target_link_libraries(example PRIVATE bg::frame)", cmake)
+                self.assertIn("add_subdirectory(\"${HG_SOURCE_DIR}/extensions/frame\" hg_extension)", cmake)
+                self.assertIn("target_link_libraries(example PRIVATE hg::frame)", cmake)
 
 
 if __name__ == "__main__":

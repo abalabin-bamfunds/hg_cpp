@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/type/type_resolution_error.hpp>
+#include <hg/type/type_resolution_error.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 class ResolverTypeResolutionError final : public TypeResolutionError {
   public:
@@ -10,4 +10,4 @@ class ResolverTypeResolutionError final : public TypeResolutionError {
     explicit ResolverTypeResolutionError(const TypeResolutionError &error) : TypeResolutionError{error} {}
 };
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/time_series/details/time_series_properties.hpp>
-#include <bg/time_series/details/type_access.hpp>
+#include <hg/time_series/details/time_series_properties.hpp>
+#include <hg/time_series/details/type_access.hpp>
 
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T, auto... Properties> struct TSS : details::time_series_type_access<TSS<T, Properties...>> {
   private:
@@ -31,6 +31,6 @@ template <typename T> inline constexpr bool is_time_series_set = time_series_set
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/type/details/time_series_set_type_traits.hpp>
+#include <hg/type/details/time_series_set_type_traits.hpp>

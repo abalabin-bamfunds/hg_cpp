@@ -1,17 +1,17 @@
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/queue_node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/client_auth.hpp>
-#include <bg/web/http_server.hpp>
-#include <bg/web/websocket_client.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/queue_node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/client_auth.hpp>
+#include <hg/web/http_server.hpp>
+#include <hg/web/websocket_client.hpp>
 
 #include "../src/websocket_client_output.hpp"
 #include "../src/websocket_client_runtime.hpp"
@@ -29,9 +29,9 @@
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::web;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::web;
 
 namespace {
 
@@ -41,7 +41,7 @@ using HeaderValues = std::vector<std::pair<std::string, std::string>>;
 struct WebSocketRuntimeSource {
     Scalar<Opaque<WebSocketClientOptions>> options;
     State<WebSocketClientRuntime *> runtime_state;
-    Out<TSB<bg::web::details::WebSocketClientOutput>> output;
+    Out<TSB<hg::web::details::WebSocketClientOutput>> output;
 
     static constexpr bool uses_queue = true;
     static constexpr bool deduplicate_wiring = false;
@@ -116,7 +116,7 @@ TEST_CASE("WebSocket client runtime rejects a base-only authentication value",
         const auto response = client_responses[active_sequence];
         if (!response.valid() || !response.modified()) return;
         status = scalar_cast<i64>(response.value()[0]).value();
-        const auto bytes = scalar_cast<bg::bytes>(response.value()[2]).value();
+        const auto bytes = scalar_cast<hg::bytes>(response.value()[2]).value();
         body.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
         stop.request_stop();
     });
@@ -628,7 +628,7 @@ TEST_CASE("WebSocket close cancels a pending handshake before validating the clo
                 if (!value->connect_response.modified()) return;
                 const auto response = value->connect_response.value();
                 status = scalar_cast<i64>(response[0]).value();
-                const auto bytes = scalar_cast<bg::bytes>(response[2]).value();
+                const auto bytes = scalar_cast<hg::bytes>(response[2]).value();
                 body.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
                 stop.request_stop();
             })(reply);
@@ -737,7 +737,7 @@ TEST_CASE("WebSocket client rejects duplicate subprotocol offers",
                 if (!value->connect_response.modified()) return;
                 const auto response = value->connect_response.value();
                 status = scalar_cast<i64>(response[0]).value();
-                const auto bytes = scalar_cast<bg::bytes>(response[2]).value();
+                const auto bytes = scalar_cast<hg::bytes>(response[2]).value();
                 body.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
                 stop.request_stop();
             })(reply);
@@ -773,7 +773,7 @@ TEST_CASE("WebSocket client rejects control characters decoded from the URL host
                 if (!value->connect_response.modified()) return;
                 const auto response = value->connect_response.value();
                 status = scalar_cast<i64>(response[0]).value();
-                const auto bytes = scalar_cast<bg::bytes>(response[2]).value();
+                const auto bytes = scalar_cast<hg::bytes>(response[2]).value();
                 body.assign(reinterpret_cast<const char *>(bytes.data()), bytes.size());
                 stop.request_stop();
             })(reply);

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/reduce/details/reduce_graph_argument.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/reduce/details/reduce_graph_argument.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstdint>
 #include <memory>
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class NodeTemplate;
 
@@ -23,4 +23,4 @@ namespace details {
                                                                       std::optional<std::uint32_t> default_parameter);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

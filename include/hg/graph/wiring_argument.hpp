@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/export.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/allocator.hpp>
+#include <hg/export.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <concepts>
 #include <memory>
@@ -21,7 +21,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 inline constexpr bool supported_scalar_argument =
@@ -88,9 +88,9 @@ concept opaque_source_argument = [] {
     }
 }();
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 class Signature;
 
@@ -421,9 +421,9 @@ class WiringArgument {
     bool match_fixed_parameter_by_name_{};
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 concept graph_code_argument_value =
@@ -438,10 +438,10 @@ template <typename T>
 concept graph_code_argument = graph_code_argument_value<T> ||
                               (is_named_argument_v<T> && graph_code_argument_value<decltype(std::declval<T>().value)>);
 
-BG_EXPORT void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgumentExpansion expansion);
+HG_EXPORT void append_wiring_arguments(std::vector<WiringArgument> &result, WiringArgumentExpansion expansion);
 
 // Bind generated arguments to a target signature before making an ordinary wiring call.
-BG_EXPORT std::vector<WiringArgument> bind_wiring_arguments(const Signature &signature,
+HG_EXPORT std::vector<WiringArgument> bind_wiring_arguments(const Signature &signature,
                                                             std::span<const WiringArgument> arguments);
 
 template <typename Argument>
@@ -456,9 +456,9 @@ template <typename... Arguments> std::vector<WiringArgument> make_wiring_argumen
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <details::wiring_point_argument Point> auto args(const Point &bundle) {
     constexpr auto annotations = [] {
@@ -492,4 +492,4 @@ template <typename Value>
              details::supported_scalar_value_argument<Value>)
 void opt(Value &&) = delete;
 
-} // namespace bg
+} // namespace hg

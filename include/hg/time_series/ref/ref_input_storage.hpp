@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
 
 #include <bit>
 #include <cstdint>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 struct DeferredReferenceInputState {
     Reference reference{};
@@ -98,4 +98,4 @@ static_assert(std::is_trivially_copyable_v<ReferenceInputStorage>);
 static_assert(sizeof(Reference) == sizeof(std::uintptr_t));
 static_assert(alignof(ReferenceInputStorage) >= 8);
 
-} // namespace bg
+} // namespace hg

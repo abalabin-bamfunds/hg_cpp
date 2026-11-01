@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/scalar/declaration.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/struct/declaration.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/struct/declaration.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <array>
 #include <cstddef>
@@ -14,7 +14,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 struct StructScalarField {
     util::symbol name;
@@ -84,6 +84,6 @@ template <native_struct T> struct scalar_type_traits<T> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>

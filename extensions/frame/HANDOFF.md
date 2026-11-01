@@ -6,16 +6,16 @@ Updated: 2026-10-30.
 
 The agreed standard library integration is complete: projection, row-count
 queries, copying, retained replay, formatting, reference sampling, and native
-queue literals. The [integration audit](projection_library_proposal.md#bg-extension-points-to-review)
+queue literals. The [integration audit](projection_library_proposal.md#hg-extension-points-to-review)
 records supported operations and limits.
 
 At `589e19b3`, the matching Release build with Arrow enabled passed all 14
 frame CTest executables. The queue suite passed 10 cases and 88 assertions.
-`5cc5b9e3` registers the default scalar and time series runtimes through BG's
+`5cc5b9e3` registers the default scalar and time series runtimes through HG's
 existing registration API. Literal inputs select semantic types, not runtime
 layouts.
 
-BG queue support passed 97 cases and 4,921 assertions. Its full Release suite
+HG queue support passed 97 cases and 4,921 assertions. Its full Release suite
 passed 3,001 of 3,002 tests. The remaining test,
 `take keeps the initial map of branches across nested switch replacement`,
 also fails on unchanged main `97dd0e1b` at
@@ -30,8 +30,8 @@ stages. Current build commands are in [Adding and replacing frame columns](#addi
 
 Committed frame work on this lane adds native `copy`/`copy_tick`, typed time-series
 visitation, scalar formatting, and live/retained tick formatting. Native TSC
-and TSF retained replay use BG's existing operation registry and share live
-copying's output-owned row mapping. The separate BG erased-replay fix is
+and TSF retained replay use HG's existing operation registry and share live
+copying's output-owned row mapping. The separate HG erased-replay fix is
 included as `3cc9691b` (original commit `ce14d7c0`).
 
 The complete Release build with Arrow enabled passed using `j12`. All 12 frame
@@ -46,7 +46,7 @@ Native output storage layouts have changed; other build directories require
 rebuilding every frame target before use.
 
 The owner approved inexpensive Derived-to-Base copying. Inherited field
-ordinals permit copying the Base prefix without a column mapping. BG's
+ordinals permit copying the Base prefix without a column mapping. HG's
 [copy contract](../../docs/development/design/node-api.md#output-parameters)
 already requires a compatible input value shape, including the time series
 family. No additional runtime family identification is required. Live copying
@@ -60,13 +60,13 @@ the destination between consecutive delta copies. No additional mutation
 tracking or mixed-edit support is required.
 
 `TimeSeriesTickOperations::typed_replay<Out<TS_T>>` forwards the existing erased
-output directly to its callback. The isolated BG fix passed four Release
+output directly to its callback. The isolated HG fix passed four Release
 provider replay tests with 26 assertions and is included on this lane. The
-matching BG Release build and installation passed. Frame regressions passed for
+matching HG Release build and installation passed. Frame regressions passed for
 long-string feedback, public `gate` transitions between retained replay and
 live copying on one destination, and multiple retained records replayed in one
 evaluation. The latter verifies that child modification flags accumulate.
-`git diff --check` passed. BG support is merged into main at `467c66b3`.
+`git diff --check` passed. HG support is merged into main at `467c66b3`.
 The Release core and library suite passed all 2,934 configured CTest tests;
 Python and Web were disabled. The frame implementation is committed on its
 lane and remains unchanged from checkpoint `5eabd231`. All 12 frame CTest
@@ -75,12 +75,12 @@ targets passed after rebasing onto main.
 Review also requires preserving publication after an addition/removal cancels
 the row delta. TSF retained records must preserve changed-column flags for
 that case; the codec now records those flags once per tick. String replay
-borrows encoded owners while BG's original reader owns their destruction.
+borrows encoded owners while HG's original reader owns their destruction.
 Replay registration belongs only to native destination runtimes; common writing
 and discard belong to the semantic type. Discard, comparison, and formatting
 skip changed-column ordinals without allocating a vector.
 
-Frame TSC and TSF runtime types now provide BG's reference-sampling factory.
+Frame TSC and TSF runtime types now provide HG's reference-sampling factory.
 `reference_sample.cpp` builds sampled child runtimes from the requested frame
 type and the current target's actual schema. `ColumnStorage` and
 `FrameReadStorage` retain the cycle-start row domain so a later switch can
@@ -101,13 +101,13 @@ removal earlier in the cycle.
 
 Verification after rebasing onto main `2de7d53f`:
 
-- The matching BG Release library build and install passed with ICU 78 from the
+- The matching HG Release library build and install passed with ICU 78 from the
   `hg-build` Conda environment.
 - The Arrow-on frame Release build passed.
 - All 13 frame CTest executables passed.
 - `git diff --check` passed.
 
-Native TSC and TSF queued literals use BG's separate
+Native TSC and TSF queued literals use HG's separate
 `TimeSeriesQueueOperations` registration. The
 [queue contract](README.md#queued-literals) defines keyed admission and append
 semantics. `src/queue_operations.cpp` captures the fixed schema and owns encoded
@@ -115,7 +115,7 @@ cell payloads independently of producer storage. Standard admission uses live
 key lookup and a hash index over retained removed keys, including canceled
 same-cycle additions. It does not scan table rows or removed-key tuples.
 
-BG support is committed in `.lanes/queue-extension` as `352c5800`, `0fb3b607`,
+HG support is committed in `.lanes/queue-extension` as `352c5800`, `0fb3b607`,
 and `3c225039`; this lane includes them as `e32ef393`, `aff53548`, and
 `e29a7e1d`. Frame queue operations and tests are committed as `589e19b3`.
 
@@ -138,7 +138,7 @@ validity/tick-count integration are implemented as described below.
 
 Verification after separation:
 
-- Matching Release BG build and install passed.
+- Matching Release HG build and install passed.
 - All 2,852 configured core C++ CTest tests passed. Python bindings were disabled.
 - Arrow-on frame Release build passed; all nine frame CTest executables passed.
 - `git diff --check` passed.
@@ -161,9 +161,9 @@ through the frame provider. TSC inputs expose root validity through
 
 Verification after rebasing onto main `dfe929f0`:
 
-- Matching BG Release library build and install passed using `j12`.
+- Matching HG Release library build and install passed using `j12`.
 - Arrow-on frame Release build passed. All ten frame CTest targets passed.
-- `bg_frame_collection_test` passed four cases and 19 assertions. Cases cover
+- `hg_frame_collection_test` passed four cases and 19 assertions. Cases cover
   null rows, empty values, same-size updates, removals, invalidation and
   revalidation, anonymous schemas, projected/filtered/computed inputs, and
   zero-field frames.
@@ -177,10 +177,10 @@ defines full-copy and delta-copy row lifetimes.
 ## Projection
 
 The [projection proposal](projection_library_proposal.md) defines this stage.
-Changes in `include/bg/frame/frame.hpp` and `src/with_columns.cpp` add
+Changes in `include/hg/frame/frame.hpp` and `src/with_columns.cpp` add
 `select`, `rename`, `drop`, standard column access, and
 `with_columns<TargetSchema>`. The extension declares `select`, `rename`, and
-`with_columns` in `bg::operators` and registers graph implementations. Column
+`with_columns` in `hg::operators` and registers graph implementations. Column
 removal overloads the existing `operators::drop`. C++ wrappers prepare arguments
 and explicit output mappings; selected graphs calculate schemas and wire nodes.
 One projection node handles declared and wiring-time schemas through the
@@ -199,26 +199,26 @@ borrowed-column classification. Column removal passes a scalar `List<symbol>`.
 Key inference uses the first selected borrowed alias for each source key field
 and retains the source key tuple order.
 
-The approved BG metadata API is `SchemaMetadata::copy_with(overrides, remove)`.
+The approved HG metadata API is `SchemaMetadata::copy_with(overrides, remove)`.
 It removes listed names, then applies overrides, and replaces `with_overrides`.
 The original isolated core change is `ff57649a` in `.lanes/schema-metadata-copy`.
 Main includes it as `d413e317`.
 Its Release engine build succeeded; focused schema tests passed 11 cases and
 50 assertions.
 
-Projection uses `copy_with({}, {"bg.frame.key"})` when key columns are omitted,
+Projection uses `copy_with({}, {"hg.frame.key"})` when key columns are omitted,
 preserving unrelated metadata. Regression tests cover declared and anonymous
 schemas. Verification against the core change passed as listed below.
 The projection implementation is included in the completed integration audit.
 
 Verification before rebasing onto `dfe929f0`:
 
-- Matching BG Release build and install succeeded at `28243002`, based on main `68f4b900`.
+- Matching HG Release build and install succeeded at `28243002`, based on main `68f4b900`.
   Its opaque-source constraint excludes span-compatible containers, allowing
   wiring arrays to select the existing span overloads.
 - Release frame build with Arrow enabled succeeded. All nine CTest executables
   passed (0.48 seconds).
-- `bg_frame_with_columns_test` passed 26 cases and 206 assertions. New cases
+- `hg_frame_with_columns_test` passed 26 cases and 206 assertions. New cases
   cover runtime name collections, derived schemas through a base annotation,
   borrowed and computed selections, key aliases, positional target mapping,
   explicit target validation, unselected-column notification suppression,
@@ -237,13 +237,13 @@ change-propagation rules. Implementation and Catch2 tests are on
 
 Verification:
 
-- Combined BG Release build and install succeeded after applying core commit
+- Combined HG Release build and install succeeded after applying core commit
   `5d0d0ba1` as frame-lane commit `05c53244`.
 - Arrow-on frame Release build succeeded. All nine CTest executables passed.
 - `git diff --check` passed.
 
 The current frame build is `build/frame-release`, relative to this implementation
-lane. It uses the BG install at `build/bg-release-install`.
+lane. It uses the HG install at `build/hg-release-install`.
 
 Remaining stages:
 
@@ -279,7 +279,7 @@ Verification for `98ad0b2d`:
   column. A 129-row bool case checks the batch boundary and packed tail.
 - `git diff --check` passed. Main remains at `ac6ab2da`.
 
-GCC emitted `-Wstringop-overflow` warnings at `include/bg/util/buffer.hpp:444`
+GCC emitted `-Wstringop-overflow` warnings at `include/hg/util/buffer.hpp:444`
 during inlined TSB/TSL tick serialization. The build completed successfully.
 
 Run from the frame lane:
@@ -300,16 +300,16 @@ appends new fields, and rejects key replacement.
 The runtime-schema case starts with `literal::SKIP` to test an invalid source.
 `literal::TimeSeriesLiteral{}` represents a valid empty frame.
 
-BG graph-output inference is integrated as `b9541dc6`. Combined verification
+HG graph-output inference is integrated as `b9541dc6`. Combined verification
 passes all nine Arrow-on frame CTest executables. The initial failure exposed
-three BG forwarding issues. `WiringArgument` accepted named arguments by value
+three HG forwarding issues. `WiringArgument` accepted named arguments by value
 and borrowed non-owning scalar values from that constructor-local copy.
 `map_invoke` and `schema_argument_value` used unparenthesized member expressions
 with `decltype(auto)`, which copied values instead of preserving references;
-the map copy was then borrowed by another `WiringArgument`. BG commit
+the map copy was then borrowed by another `WiringArgument`. HG commit
 `5d0d0ba1` adds named-argument overloads that preserve references to the
 caller's named arguments and preserves member references in both helpers. The
-full BG Release CTest suite passed 2,680 tests on the core lane. Frame-lane
+full HG Release CTest suite passed 2,680 tests on the core lane. Frame-lane
 commit `05c53244` contains the core fix. The frame regression test now resolves
 the inferred schema in an enclosing graph template. The frame lane also retains
 direct-form materialisation support in `a0b859b1`.
@@ -338,12 +338,12 @@ Verification on `.lanes/frame-incremental-sum`:
 
 - Release Arrow-on: all seven CTest executables passed (0.30 seconds).
 - Debug ASan/UBSan: the reduction suite passed seven cases and 26 assertions.
-  The extension and test are instrumented and use matching ordinary Debug BG.
+  The extension and test are instrumented and use matching ordinary Debug HG.
   Leak detection is disabled.
 - `git diff --check` passed.
 
 Builds are `build/incremental-sum-release-arrow-on` and
-`build/incremental-sum-debug-asan`. They use the matching Release and Debug BG
+`build/incremental-sum-debug-asan`. They use the matching Release and Debug HG
 installs under `.lanes/frame-field-access/build/arrow-sum/`.
 
 ## Arrow text support
@@ -363,13 +363,13 @@ use native outputs; view and computed outputs are produced by nodes.
 
 All six Release suites passed in
 `.lanes/frame-arrow-text/build/arrow-text-release`. This build uses Arrow 24
-and the fresh Release BG install at
-`.lanes/frame-field-access/build/arrow-sum/bg-release-install`.
+and the fresh Release HG install at
+`.lanes/frame-field-access/build/arrow-sum/hg-release-install`.
 
 The focused Debug build is
-`.lanes/frame-arrow-text/build/arrow-text-debug-asan`, with BG from the matching
-`.lanes/frame-field-access/build/arrow-sum/bg-debug-install` prefix. ASan and UBSan
-instrument the extension and test targets; BG uses its ordinary Debug build.
+`.lanes/frame-arrow-text/build/arrow-text-debug-asan`, with HG from the matching
+`.lanes/frame-field-access/build/arrow-sum/hg-debug-install` prefix. ASan and UBSan
+instrument the extension and test targets; HG uses its ordinary Debug build.
 The column and Arrow suites passed with no sanitizer diagnostics. Leak detection
 is disabled.
 
@@ -400,20 +400,20 @@ source revisions.
 
 Current build paths are relative to `.lanes/frame-field-access`:
 
-| Build | BG install |
+| Build | HG install |
 | --- | --- |
-| `build/core-frame-release` | `build/compaction-optimisation/bg-release-install` |
-| `build/core-frame-debug` | `build/compaction-optimisation/bg-debug-install` |
-| `build/compaction-optimisation/frame-release` | `build/compaction-optimisation/bg-release-install` |
-| `build/compaction-optimisation/frame-debug-asan` | `build/compaction-optimisation/bg-debug-install` |
+| `build/core-frame-release` | `build/compaction-optimisation/hg-release-install` |
+| `build/core-frame-debug` | `build/compaction-optimisation/hg-debug-install` |
+| `build/compaction-optimisation/frame-release` | `build/compaction-optimisation/hg-release-install` |
+| `build/compaction-optimisation/frame-debug-asan` | `build/compaction-optimisation/hg-debug-install` |
 
 The core and frame configurations use ICU 78 from `hg-build`. Do not use
-`build/compaction-optimisation/bg-release`; it was configured against system ICU
+`build/compaction-optimisation/hg-release`; it was configured against system ICU
 67 and cannot provide the correct frame link dependencies. Preserve the
 existing `dependencies/` directory. The other older verification paths below
 are historical.
 
-All six Release suites passed after installing the BG resolver fix: column,
+All six Release suites passed after installing the HG resolver fix: column,
 provider, TSC, frame, Arrow, and expression. The focused Debug column suite
 passed with ASan, UBSan, and LeakSanitizer after the packed-Boolean compaction
 regression was added to the test entry point. Utility relocation passed 31
@@ -421,7 +421,7 @@ Catch2 cases in both Debug and Release.
 
 [The compaction benchmark](benchmarks/compaction.md) records the measured
 operation definitions and retained results. Those timings use frame source
-revision `d8dbd8c3`, before the BG resolver merge; no new timing run was needed
+revision `d8dbd8c3`, before the HG resolver merge; no new timing run was needed
 for the resolver fix.
 
 ## Earlier integration notes
@@ -444,12 +444,12 @@ TSF capture supports native and frame view outputs. TSC capture supports native,
 view, and computed outputs. Writers register by exact runtime and read through
 extension descriptors and borrowed column views. Stateful named row-history
 comparison handles TSC and unkeyed TSF; keyed TSF comparison tracks keys by
-internal row ID so removal records only need the ID. The shared BG comparison
+internal row ID so removal records only need the ID. The shared HG comparison
 state is on main through merge `04518839`.
 
 ## Work locations
 
-[CONSOLIDATION.md](CONSOLIDATION.md) records the integrated BG changes, archive,
+[CONSOLIDATION.md](CONSOLIDATION.md) records the integrated HG changes, archive,
 completed lane retirement, and consumer verification.
 
 The table and build directories below describe earlier checkpoints. Current
@@ -457,22 +457,22 @@ locations and verification are recorded under [Development lanes](#development-l
 
 | Work | Location / branch | State |
 | --- | --- | --- |
-| BG baseline for earlier consumer builds | Lane-local Release and Debug installs | `5d48e914` plus bounded bitmap search `73622fb7`; original optimization comparisons held `5d48e914` fixed |
+| HG baseline for earlier consumer builds | Lane-local Release and Debug installs | `5d48e914` plus bounded bitmap search `73622fb7`; original optimization comparisons held `5d48e914` fixed |
 | Bounded bitmap search | `.lanes/index-bounded-search`, `agent/index-bounded-search` | Original utility commit `de53c9e7`; main includes it as `2d8c2704` |
 | Earlier frame foundation | `.lanes/frame-field-access`, `agent/frame-field-access` | Frame foundation, expressions, scalar literals, native keyed storage, TSF/TSC input literals, and native/view/computed capture |
 | Generic input-view casts | Main | `a17a8ffd`; tested build preserved in `.lanes/generic-input-cast` |
-| Shared schema metadata and BG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
+| Shared schema metadata and HG lifetime fix | Main | `6419e073`, `160f128b`; consumer builds use matching lane-local installs |
 | Test graph output capture | Main | Integrated through `36eb21fb`, including shared extension comparison dispatch |
 | Numeric value extraction | `.lanes/library-numeric-values` | Held; frame does not depend on it |
 | Historical frame work | `extensions/frame/archive/` | Proposals, probe sources, and benchmark results preserved; see its README |
-| Schema field reflection | Main | Integrated and covered by BG schema reflection tests |
+| Schema field reflection | Main | Integrated and covered by HG schema reflection tests |
 
 The earlier frame verification used these consumer directories:
 `build/tsf-row-release-arrow-off` and `build/tsf-row-release-arrow-on` use the
-lane-local Release BG install at `dependencies/bg-frame-core-bounded-release-install`;
+lane-local Release HG install at `dependencies/hg-frame-core-bounded-release-install`;
 `build/tsf-row-debug-asan-arrow-on` uses the matching Debug install at
-`dependencies/bg-frame-core-bounded-debug-install`. Preserve these generated
-dependency installs, the earlier `bg-frame-core-{release,debug}-install` prefixes,
+`dependencies/hg-frame-core-bounded-debug-install`. Preserve these generated
+dependency installs, the earlier `hg-frame-core-{release,debug}-install` prefixes,
 and the existing build caches.
 
 Preserve the existing recovery stashes:
@@ -487,13 +487,13 @@ The latest 2026-10-16 rebase applied without conflicts and restored the
 uncommitted frame changes. The tracked patch and four untracked source files
 matched their saved hashes after restoration. The temporary rebase stash was
 removed; all preexisting stashes remain unchanged. Recovery copies are under
-`/home/abalabin/_bg/build/frame-lane-recovery/2026-10-16-215427-rebase`.
+`/home/abalabin/_hg/build/frame-lane-recovery/2026-10-16-215427-rebase`.
 
 Root retired eight superseded frame checkouts and branches, plus the scalar-copy
 and output-runtime integration checkouts and branches. The active frame lane is
 `.lanes/frame-field-access`. All 11 recovery stashes remain unchanged. The
 recovery archive and retirement manifest are under
-`/home/abalabin/_bg/build/frame-lane-recovery/2026-10-14`.
+`/home/abalabin/_hg/build/frame-lane-recovery/2026-10-14`.
 
 ## Selected design
 
@@ -505,8 +505,8 @@ schema migration and extension boundary.
 the requirements for future automatic scheduling. Packing can proceed in both
 directions while preserving current row order. Algorithms retain previous
 contributions; removed IDs and copied keys do not pin column slots. Automatic
-scheduling is deferred until representative BG pipelines demonstrate enough
-consumer savings. BG provides invocation-end callback registration with the
+scheduling is deferred until representative HG pipelines demonstrate enough
+consumer savings. HG provides invocation-end callback registration with the
 agreed scratch lifetime and pending-evaluation rules.
 
 - `Frame<Schema>` and `Column<T>` are scalar declarations. `TSF<Schema>` and
@@ -540,13 +540,13 @@ agreed scratch lifetime and pending-evaluation rules.
   conveniences use the same binding operation.
 - Live filtering belongs to a node. Expression evaluation operates on blocks;
   the node applies row-selection changes to a TSF view output. Expressions use
-  BG materialisation options. Do not add the proposed public cell callback API.
+  HG materialisation options. Do not add the proposed public cell callback API.
 
 ## Implemented foundation
 
-BG shared reflection provides field construction, offsets, and logical field
+HG shared reflection provides field construction, offsets, and logical field
 access for concrete, inherited, and shadowed schemas. Its `FieldProbe` captures
-field addresses from construction of the actual schema type. BG provides
+field addresses from construction of the actual schema type. HG provides
 alternative scalar reads, borrowing, canonical runtime selection, and the
 `runtime_type_for_copy` selector. These are extension-facing operations;
 node code uses `In`, `Out`, `Scalar`, and `ScalarValue`.
@@ -582,7 +582,7 @@ resolve source and result cell types at wiring.
 The TSF scalar adapter borrows persistent output storage. It is not registered
 as default scalar storage. The default is the immutable snapshot runtime,
 which stores one `FrameSnapshotOwner*`. Owners retain their actual schema,
-columns, allocator, and matching BG allocation owner.
+columns, allocator, and matching HG allocation owner.
 
 Generic `ColumnView`, `Column`, TSC and TSF inputs/outputs, and scalar factories
 share the concrete cell implementations. Generic inputs expose actual schemas,
@@ -597,7 +597,7 @@ perform no schema registration or field-name lookup.
 Row/RowPatch fields declared with a scalar variable accept borrowed `Scalar<>`
 values. These fields use `optional<Scalar<>>`; concrete fields use
 `optional<scalar_storage_traits<T>::value_type>`. Generic row adapters validate the complete source
-schema against the resolved output schema using BG type matching, then decode
+schema against the resolved output schema using HG type matching, then decode
 present borrowed handles into temporary read values before mutation.
 Cell staging remains alive through the native mutation call.
 Constrained and repeated variables retain their normal matching rules.
@@ -605,14 +605,14 @@ Tables never retain the argument handles. Null and omitted patch behavior
 follows the selected Row/RowPatch rules above.
 
 Arrow imports share one runtime-schema backend. Inferred and explicit schemas
-use BG descriptors. Borrowed exports share compatible value buffers and may
+use HG descriptors. Borrowed exports share compatible value buffers and may
 allocate chunk metadata and validity bitmaps. `copy_to_arrow` gathers independent
 owning buffers for off-graph use. Typed owning copies select native snapshots;
 erased Arrow copies preserve Arrow representation.
 
 ## Verification
 
-The 2026-10-23 optimization verification uses BG baseline `5d48e914` plus bounded
+The 2026-10-23 optimization verification uses HG baseline `5d48e914` plus bounded
 bitmap search `73622fb7` and the current lane-local Release and Debug installs:
 
 | Build | Configuration | Result |
@@ -622,7 +622,7 @@ bitmap search `73622fb7` and the current lane-local Release and Debug installs:
 | `build/tsf-row-debug-asan-arrow-on` | Debug, Arrow 24.0.0, ASan/UBSan | Build passed; CTest 6/6 with leak detection; no sanitizer diagnostics |
 
 The sanitizer build instruments the extension and tests, with the matching
-uninstrumented Debug BG dependency. Run its CTest through the approved Conda
+uninstrumented Debug HG dependency. Run its CTest through the approved Conda
 invocation below; direct sandbox execution prevents LeakSanitizer from running.
 
 ```sh
@@ -632,7 +632,7 @@ ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
 ```
 
 Scalar-expression cleanup verification used baseline `146ee478`, the lane-local
-BG installs, and these lane-root build directories:
+HG installs, and these lane-root build directories:
 
 | Build | Configuration | Result |
 | --- | --- | --- |
@@ -642,7 +642,7 @@ BG installs, and these lane-root build directories:
 
 The sanitizer configuration instruments the frame extension and test targets
 with AddressSanitizer and UndefinedBehaviorSanitizer, then links the matching
-Debug BG install; BG itself was built without sanitizer compile flags. CTest used
+Debug HG install; HG itself was built without sanitizer compile flags. CTest used
 `ASAN_OPTIONS=detect_leaks=1` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. It ran outside the sandbox
 because LeakSanitizer cannot operate under sandbox ptrace.
@@ -673,7 +673,7 @@ runtime descriptors, source and column buffer identity, nullable cells, and
 row and column deltas across invocations. Test checkpoint: `bf4d9483`.
 
 Rebase verification against main `52bac941` rebuilt and installed the Release
-BG dependency with `-j12`. Frame compilation exposed the renamed allocation
+HG dependency with `-j12`. Frame compilation exposed the renamed allocation
 pool API; after the extension compatibility change in `cd7b73ad`, the complete
 Release Arrow-on consumer suite passed 6/6. The rebase itself changed no
 extension files. Pool lifetime tests cover snapshots allocated through both
@@ -685,12 +685,12 @@ consumer suite, 6/6. Tests cover inferred and explicit runtimes, typed and gener
 invalidation/revalidation, malformed cells, and unsupported output layouts.
 Debug and Arrow-off verification have not been repeated for that change.
 
-Prior rebase verification against main `a17a8ffd` rebuilt the Release BG dependency
+Prior rebase verification against main `a17a8ffd` rebuilt the Release HG dependency
 and Release Arrow-on consumer with `-j12`; the complete consumer suite passed
 6/6. Extension files were unchanged by the rebase.
 
-At the current production checkpoint, frame `ad4ad92c` on BG main baseline
-`21a0f87c`, root verified the final filter code with lane-local BG installs
+At the current production checkpoint, frame `ad4ad92c` on HG main baseline
+`21a0f87c`, root verified the final filter code with lane-local HG installs
 matching each consumer configuration below.
 
 | Consumer | Build | Test |
@@ -707,7 +707,7 @@ The Debug test target was rebuilt after adding scope-bound `stop()` calls to
 both runtime graphs in `test_compiled_graph_runtime_storage_is_independent`.
 The sanitizer configuration instruments the extension and test targets with
 `-fsanitize=address,undefined -fno-omit-frame-pointer` and links the matching
-Debug BG install, which was built without sanitizer compile flags. CTest ran
+Debug HG install, which was built without sanitizer compile flags. CTest ran
 with `ASAN_OPTIONS=detect_leaks=1` and
 `UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1`. LeakSanitizer ran outside
 the sandbox because it cannot operate under sandbox ptrace.
@@ -717,19 +717,19 @@ At historical frame baseline `b7d52da5`, all six Release Arrow-on
 consumer suites pass after the TSC invalidation compatibility update and literal
 registration cleanup. GCC reports repeated `-Wstringop-overflow` diagnostics
 from the existing `concurrent_buffer_reservation::write_bytes` implementation
-in `bg/util/buffer.hpp:444`; the build succeeds.
+in `hg/util/buffer.hpp:444`; the build succeeds.
 
 The generic input-view cast fix passed its focused provider tests (16 assertions
-in 2 cases) and the complete Release `bg_tests` binary (2,936,101 assertions in
+in 2 cases) and the complete Release `hg_tests` binary (2,936,101 assertions in
 1,886 cases, including shutdown) in `.lanes/generic-input-cast/build/provider-cast`.
 Python was disabled. Root independently reran the new generic-cast test.
 
-BG main `6051cc63` previously passed its complete C++ and Python suite:
-1,720/1,720. Earlier verification built Debug and Release BG dependencies from
-`19403a4d`, with testing, Python, and benchmarks disabled. The complete BG suite
+HG main `6051cc63` previously passed its complete C++ and Python suite:
+1,720/1,720. Earlier verification built Debug and Release HG dependencies from
+`19403a4d`, with testing, Python, and benchmarks disabled. The complete HG suite
 is not repeated for extension verification.
 
-All three consumer caches resolve BG, ddvisitor, and tpack from the matching
+All three consumer caches resolve HG, ddvisitor, and tpack from the matching
 installed prefix. Conda supplies unrelated dependencies including Arrow 24.0.0. Builds
 regenerated their CMake configuration and CTest metadata as needed.
 
@@ -746,7 +746,7 @@ Expression and broadcast Debug ASan/UBSan verification against installed main
 `1a5ff458` passed 6/6 suites. Final verification against installed main
 `19403a4d` on 2026-10-15 covers the shared expression factory, compiler and
 computation node, heterogeneous column alignment and parameter snapshots,
-stored filter row order, BG-managed parameter validity, and double-column
+stored filter row order, HG-managed parameter validity, and double-column
 subtraction with fused addition/subtraction callbacks:
 
 | Consumer | Build | Test |
@@ -755,12 +755,12 @@ subtraction with fused addition/subtraction callbacks:
 | build/field-access-on, Release, Arrow enabled | Passed with -j12 | 6/6 suites passed |
 | build/cc4-checkpoint-off, Release, Arrow disabled | Passed with -j12 | 5/5 suites passed |
 
-Rebase verification against installed main `359e1aee` on 2026-10-16 rebuilt BG
+Rebase verification against installed main `359e1aee` on 2026-10-16 rebuilt HG
 and the Release Arrow-on consumer with `--parallel 12`; all 6 suites passed.
 The deferred-column Union matching regression was recovered from
 `.lanes/frame-source-matching-check` into `tests/expression_test.cpp` and passed.
 That checker lane has no other unique implementation changes.
-The frame expression helpers now use public `bg::bundle(span<const WiringArgument>)`.
+The frame expression helpers now use public `hg::bundle(span<const WiringArgument>)`.
 Explicit target bundle schemas retain the previous field dereferencing.
 At that checkpoint, Debug and Arrow-off consumers had not been rerun against
 that revision. The current consumer verification above covers both configurations for
@@ -768,7 +768,7 @@ the TSF row-literal changes.
 
 Verification against installed main `36eb21fb` rebuilt both extension libraries
 and passed all 6 Arrow-on Release suites after the test-only API adaptation in
-`72679b4d`. BG testing was disabled for the dependency installation.
+`72679b4d`. HG testing was disabled for the dependency installation.
 
 Scalar literal and equality verification at `7db3b2f9` on 2026-10-17 rebuilt
 the Release Arrow-on consumer with `--parallel 12`. All 6 suites passed;
@@ -780,7 +780,7 @@ At that checkpoint, Debug, sanitizer, and Arrow-off consumers had not been
 rerun for the scalar literal and equality changes. The current consumer verification
 above covers those configurations for the TSF row-literal changes.
 
-BG and the extension must use matching build configurations. Debug compiles both
+HG and the extension must use matching build configurations. Debug compiles both
 scalar allocation and deallocation checks; Release compiles neither check.
 
 Sanitizer verification found a fixture that destroyed four node templates
@@ -794,7 +794,7 @@ UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 at an earlier sandbox-limited
 checkpoint. The current Debug Arrow-on verification enables leak detection and
 runs outside the sandbox, as recorded below. The sanitizer configuration
 instruments the frame extension and test targets and links the matching Debug
-BG install, which was built without sanitizer compile flags. Clang and MSVC
+HG install, which was built without sanitizer compile flags. Clang and MSVC
 have not been tested.
 
 Current CTest results are in each consumer's `Testing/Temporary/LastTest.log`.
@@ -828,10 +828,10 @@ Committed prerequisites are `5b846d94` (expression scalar and TSB schema),
 `f384f1eb` (n-ary aligned batches), and `1bc4569e` (batch subspan).
 `src/arithmetic.cpp` provides arithmetic and conversion registrations, and
 `src/column_expression.cpp` provides shared compilation and execution. The
-extension links `bg::library` and registers matching `i64` and `double`
-arithmetic through BG operators. Mixed integer/double operands fail during
+extension links `hg::library` and registers matching `i64` and `double`
+arithmetic through HG operators. Mixed integer/double operands fail during
 wiring unless explicitly converted. Identity conversion retains the source
-wiring point; cross-type conversion uses a mapped BG operator.
+wiring point; cross-type conversion uses a mapped HG operator.
 
 The expression option has cost zero; the computed TSC option has cost one.
 `make_column_expression` creates the expression bundle and concrete recipe
@@ -879,7 +879,7 @@ domains/selections, fusion, and late concrete demands. The late-demand fixture
 combines computed and native columns with distinct physical mappings and
 covers both additions and an existing-row update. Its aggregate node template
 lives in the enclosing test scope through graph compilation, as required by
-[BG's wiring contract](../../docs/development/design/graph-wiring.md#wiring-template-call).
+[HG's wiring contract](../../docs/development/design/graph-wiring.md#wiring-template-call).
 The filter-order test uses the actual output binder and runtime input storage.
 It verifies source order `[2, 1]` after slot reuse and verifies that repeated
 enumeration and positional reads do not traverse the source.
@@ -898,7 +898,7 @@ identifies a named argument. Construction requires no graph or wiring context.
 Conversion records its target scalar type. Scalar expressions contain no
 wiring points, wiring templates, or type maps.
 
-Combining a scalar expression with a wiring point invokes a registered BG
+Combining a scalar expression with a wiring point invokes a registered HG
 operator overload. Its ordinary TSB result holds the constant expression and
 explicit time series bindings. Internal binding references are separate from
 user column and parameter names. Chaining graph operations preserves these
@@ -907,7 +907,7 @@ dependencies without rebuilding expression trees during evaluation.
 `bind_expression(expr, named_arguments...)` resolves names from its arguments.
 `bind_expression(frame, expr, named_arguments...)` also resolves column names
 from the frame. The expression argument can be a scalar expression or a TSB
-carrying its bindings. Binding invokes BG operators to select typed block
+carrying its bindings. Binding invokes HG operators to select typed block
 functions and returns their deferred column wiring point. Each binding resolves
 types independently. Runtime schemas are already resolved during wiring.
 Numeric conversion remains explicit. Graph conversion uses
@@ -915,7 +915,7 @@ Numeric conversion remains explicit. Graph conversion uses
 `frame::convert<T>(expression)`.
 
 Binding resolves scalar operations during graph construction. The column
-expression TSB is the resolved materialisation form of a BG operation. It retains
+expression TSB is the resolved materialisation form of a HG operation. It retains
 declared upstream dependencies. Block evaluation and concrete intermediate reuse
 use the existing expression compilation path. Graph authors use operators and
 binding functions to construct these bundles.
@@ -923,7 +923,7 @@ binding functions to construct these bundles.
 Arithmetic supports matching `i64` or `double` columns, constants, and captured
 `TS<T>` values. Constants use the existing `operators::const_` path. Scalar
 convenience graphs declare their `TSC<T>` result type. Overload requirements
-require a column operand; ordinary BG scalar arithmetic keeps its existing
+require a column operand; ordinary HG scalar arithmetic keeps its existing
 overloads.
 
 Concrete arithmetic, comparison, and logical binary graphs declare disjoint
@@ -939,7 +939,7 @@ TSB. A separate parameter-update node publishes their current values as
 parameter ticks do not change expression structure. Pure column expressions do
 not create this node. Block computation reads the snapshot once per invocation.
 The parameter-update node declares `all_valid`; the computed-column node requires
-its snapshot input. BG applies input validity and output invalidation through the
+its snapshot input. HG applies input validity and output invalidation through the
 [normal node contract](../../docs/development/design/node-api.md#required-input-invalidation).
 Each operand is a column batch or scalar broadcast; broadcasts do not allocate
 column storage. Column changes recompute affected rows; parameter changes
@@ -949,7 +949,7 @@ indices, without wiring points.
 Parameter validity coverage includes an invalid item while another parameter
 keeps the input collection root valid.
 
-BG free TSBs reject direct borrowed graph inputs. `ExpressionCompiler` uses these collections
+HG free TSBs reject direct borrowed graph inputs. `ExpressionCompiler` uses these collections
 for both column leaves and parameters, so direct `GraphWiring::borrowed_input`
 bindings remain unsupported here. Deduplication topology tests use ordinary
 source nodes.
@@ -959,7 +959,7 @@ computed outputs, and Arrow import/export. Matching `i64` and `double` column
 comparisons and expression-based filtering use the shared expression compiler
 and block evaluation path. Matching `i64` and `double` columns now support
 addition, subtraction, multiplication, and division; division returns `double`.
-Explicit column conversion uses the existing mapped BG `operators::convert`
+Explicit column conversion uses the existing mapped HG `operators::convert`
 path. Identity conversion retains its source wiring point. Numeric conversion
 supports `i64` to `double` and `double` to `i64`.
 
@@ -990,7 +990,7 @@ intermediate reuse.
 
 ## Literal support
 
-BG main includes the literal extension APIs through merge `8fb5bcc0`, including
+HG main includes the literal extension APIs through merge `8fb5bcc0`, including
 the sentinel changes through `ee61d6d6`. The standard `test_graph` literal source
 calls erased `Out::apply`.
 
@@ -1008,7 +1008,7 @@ to scalar construction. Leaves use ordinary scalar input construction;
 provider sequence handlers receive the original literal without tree copying.
 
 `literal::Sentinel` is noncopyable. Equality compares singleton addresses; its
-qualified symbol name is diagnostic. BG exports `SKIP`, `INVALID`, `REMOVE`, and
+qualified symbol name is diagnostic. HG exports `SKIP`, `INVALID`, `REMOVE`, and
 `REMOVED` once from its library. Extensions export their own singleton instances
 with static storage duration. Scalar storage retains and copies a singleton
 pointer; typed reads return `const Sentinel&`.
@@ -1030,7 +1030,7 @@ discard and `testing::TickLiteralComparison` handlers registered by resolved
 semantic series type. Capture does not require replay. The framework handles
 invalidation and skipped ticks before calling a comparison handler; successful
 comparison consumes one valid payload without changing its encoded values. See
-[BG testing](../../docs/development/testing.md).
+[HG testing](../../docs/development/testing.md).
 
 Frame writers visit delta row sets through extension descriptors and borrowed
 column views. Each TSF tick stores a pointer to its actual registered schema so
@@ -1093,7 +1093,7 @@ Current paired Release measurements are recorded in
 [the 2026-10-23 optimization results](benchmarks/results/2026-10-23/README.md).
 The report preserves three runs per version for all 30 cases, process-median
 ranges, runtime library hashes and loading commands, and complete timing data.
-Both versions use the same fixed BG dependency. Preserve the baseline runtime
+Both versions use the same fixed HG dependency. Preserve the baseline runtime
 copies under `build/frame-optimisation-2026-10-22/before-runtime`.
 The [bounded validity follow-up](benchmarks/results/2026-10-23/bounded-search/README.md)
 compares `2f180034` with `3b59d9d7` using three further paired Arrow runs per
@@ -1106,9 +1106,9 @@ Earlier matching Release consumer measurements are recorded in
 [the 2026-10-22 benchmark notes](benchmarks/results/2026-10-22/README.md), with
 separate [expression](benchmarks/results/2026-10-22/expression-release-arrow-off.md)
 and [Arrow](benchmarks/results/2026-10-22/arrow-release-arrow-on.md) reports.
-The dated notes record the source revision, BG baseline, compiler and host,
+The dated notes record the source revision, HG baseline, compiler and host,
 commands, measured ranges, and limits. The older archived sample below used a
-Release extension with Debug BG and is not directly comparable.
+Release extension with Debug HG and is not directly comparable.
 
 Subsequent [Callgrind profiles](benchmarks/results/2026-10-22/profiling.md) cover
 all 30 cases using the same binaries. Raw dumps and parsed analyses remain in
@@ -1126,7 +1126,7 @@ extensions/frame/archive/benchmarks/foundation-benchmark/shared-view.csv
 
 The workload starts with 100,000 rows and runs source mutation, filtering,
 selection, and sum. Allocation and destruction are included. This historical
-sample used a Release extension with Debug BG. Rerun it with matching
+sample used a Release extension with Debug HG. Rerun it with matching
 configurations before using its timings as performance evidence.
 
 The earlier schema-hooks comparison and direct sparse-bunch PyArrow probe are
@@ -1136,7 +1136,7 @@ design; they do not replace the consumer verification recorded above.
 
 ## Status and remaining work
 
-BG test-graph output capture, frame scalar literals and content equality,
+HG test-graph output capture, frame scalar literals and content equality,
 TSF row-literal updates, TSC append literals, and keyed TSF result capture and
 delta comparison are implemented. Named TSC and unkeyed TSF row-history
 comparison is implemented and verified for native, view, and computed outputs.
@@ -1172,7 +1172,7 @@ one dense chunk. Release Arrow-on build and all six frame CTest suites passed
 on this lane. The Release Arrow-off consumer passed all five suites. The Debug
 ASan/UBSan consumer passed all six suites with leak detection enabled. The
 sanitizer configuration instruments the extension and test targets and links
-the matching Debug BG install; BG itself was built without sanitizer compile
+the matching Debug HG install; HG itself was built without sanitizer compile
 flags.
 
 Fixed-name `Out<TSF<Schema>, frame::computed<"mid">>` and runtime-selected
@@ -1200,7 +1200,7 @@ remain unticked. Root reviewed the correction and test fixtures.
 Standalone computed TSC outputs use the approved `computed<>` declaration.
 Frame division returns `double` and uses the shared column block callback path.
 
-The two BG changes integrated in this task are scalar copy runtime selection
+The two HG changes integrated in this task are scalar copy runtime selection
 and wiring-time output runtime selection. The frame extension uses scalar copy
 selection for owning frame copies and the output hook to select frame layouts.
 Frame output layout options remain extension-owned.
@@ -1214,8 +1214,8 @@ column expression path. Expression-based filtering is described in
 
 The active frame lane uses main's shared schema metadata and process-lifetime
 ownership of registered type metadata.
-`bg::frame::key_metadata<...>()` records an ordered list of key column names in
-schema metadata under `bg.frame.key`; concrete and runtime schemas use the same
+`hg::frame::key_metadata<...>()` records an ordered list of key column names in
+schema metadata under `hg.frame.key`; concrete and runtime schemas use the same
 representation. Key fields must have `i64`, `string`, or `symbol` cell types; `double` remains
 supported for non-key columns. Schema validation checks key names and types across inherited
 schemas, rejects changes to inherited keys, and requires a keyed parameter to
@@ -1260,9 +1260,9 @@ rejection, and rejection before invalidating a previously bound output.
 The Release Arrow-on build and all six consumer test suites pass for this change.
 
 Registered types, canonical runtime descriptors, and schema metadata follow
-BG's [process-lifetime ownership rule](../../docs/development/decisions/0071-process-lifetime-type-storage.md).
+HG's [process-lifetime ownership rule](../../docs/development/decisions/0071-process-lifetime-type-storage.md).
 Ordinary node and scalar values keep normal destruction. The frame lane uses
-`bg::util::static_storage<T>` for its canonical runtime and layout cache owner,
+`hg::util::static_storage<T>` for its canonical runtime and layout cache owner,
 typed column runtime statics, FrameView scalar and mixed-view runtimes, and
 Arrow runtime cache owner.
 

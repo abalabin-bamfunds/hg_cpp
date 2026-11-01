@@ -5,7 +5,7 @@ Status: superseded by [Positional scalar tuples](0073-positional-scalar-tuples.m
 ## Decision
 
 Python `tuple[T, ...]` and `typing.Tuple[T, ...]` normalize to the existing
-`bg::List<T>` scalar type. Scalar list values materialize as Python tuples.
+`hg::List<T>` scalar type. Scalar list values materialize as Python tuples.
 Mutable list annotations and fixed tuple annotations are unsupported. See the
 [Python scalar conversion contract](../design/python.md).
 

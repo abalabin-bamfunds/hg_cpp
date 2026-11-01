@@ -29,8 +29,8 @@ Skipping an update preserves it. `valid` exposes availability as a Boolean resul
 :sync: python
 
 ```python
-from bg import INVALID, graph, run_graph
-from bg.operators import valid
+from hg import INVALID, graph, run_graph
+from hg.operators import valid
 
 @graph
 def has_temperature(reading: int) -> bool:
@@ -54,13 +54,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto has_temperature(wp<TS<i64>> reading) {
@@ -85,7 +85,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -131,8 +131,8 @@ scalar sequence's two positions independent time series outputs.
 :sync: python
 
 ```python
-from bg import TS, TSL, graph, run_graph
-from bg.operators import convert
+from hg import TS, TSL, graph, run_graph
+from hg.operators import convert
 
 @graph
 def first(prices: tuple[int, ...]) -> int:
@@ -157,13 +157,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto first(wp<TS<List<i64>>> prices) {
@@ -189,7 +189,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

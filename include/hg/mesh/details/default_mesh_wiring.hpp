@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/map/details/map_graph_argument.hpp>
-#include <bg/graph/details/mesh_node.hpp>
-#include <bg/graph/graph_argument.hpp>
+#include <hg/map/details/map_graph_argument.hpp>
+#include <hg/graph/details/mesh_node.hpp>
+#include <hg/graph/graph_argument.hpp>
 
 #include <memory>
 #include <optional>
@@ -10,7 +10,7 @@
 #include <string_view>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct DefaultMeshWiring {
     MapGraphWiring graph;
@@ -28,4 +28,4 @@ GraphArgument build_mesh_graph_argument(const WiringTemplate &function, Resolved
 
 WiringPoint mesh_dependency_selection(WiringArgument key, std::string_view name = {});
 
-} // namespace bg::details
+} // namespace hg::details

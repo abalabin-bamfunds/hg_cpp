@@ -1,20 +1,20 @@
 #pragma once
 
-#include <bg/graph/requirement.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
+#include <hg/graph/requirement.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
 
 #include <concepts>
 #include <functional>
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class WiringArguments;
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Function> struct CallableEvaluation {
     Function function;
@@ -107,9 +107,9 @@ template <typename Declaration> struct CallableResolverName {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 inline constexpr auto eval = details::CallableEvaluationName{};
 inline constexpr auto deduplicate_wiring = details::CallableWiringDeduplicationName{};
@@ -118,4 +118,4 @@ inline constexpr auto output_runtime_type = details::CallableOutputRuntimeTypeNa
 
 template <typename Declaration> inline constexpr auto resolve = details::CallableResolverName<Declaration>{};
 
-} // namespace bg
+} // namespace hg

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/node/node_template_identity.hpp>
-#include <bg/queue_mode.hpp>
-#include <bg/python/export.hpp>
-#include <bg/python/input_view.hpp>
-#include <bg/python/python_node_injection.hpp>
-#include <bg/python/object.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/node/node_template_identity.hpp>
+#include <hg/queue_mode.hpp>
+#include <hg/python/export.hpp>
+#include <hg/python/input_view.hpp>
+#include <hg/python/python_node_injection.hpp>
+#include <hg/python/object.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/type/signature.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -22,9 +22,9 @@
 #include <variant>
 #include <vector>
 
-namespace bg::python {
+namespace hg::python {
 
-class BG_PYTHON_API PythonNodeDefinition {
+class HG_PYTHON_API PythonNodeDefinition {
   public:
     struct SignatureDefinition {
         SignatureDefinition(std::vector<const Type *> wiring_parameter_types, Signature signature)
@@ -165,4 +165,4 @@ class BG_PYTHON_API PythonNodeDefinition {
     QueueMode queue_mode_{QueueMode::standard};
 };
 
-} // namespace bg::python
+} // namespace hg::python

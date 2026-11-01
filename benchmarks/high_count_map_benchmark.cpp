@@ -1,15 +1,15 @@
-#include <bg/evaluation_context.hpp>
-#include <bg/evaluation_profile.hpp>
-#include <bg/global_state.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/evaluation_profile.hpp>
+#include <hg/global_state.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 #include "high_count_map_workload.hpp"
 
 #include <algorithm>
@@ -49,8 +49,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 using clock_type = std::chrono::steady_clock;
 using nanoseconds = std::chrono::duration<double, std::nano>;
@@ -634,7 +634,7 @@ int run(const Arguments &arguments) {
     std::cout << "{\n";
     std::cout << "  \"schema_version\": 1,\n";
     std::cout << "  \"benchmark\": \"portable_high_count_map\",\n";
-    std::cout << "  \"engine\": \"bg\",\n";
+    std::cout << "  \"engine\": \"hg\",\n";
     std::cout << "  \"runtime\": \"native-cpp\",\n";
     std::cout << "  \"profile\": \"" << workload.selected_profile.name << "\",\n";
     std::cout << "  \"record_evaluations\": " << (evaluation_profile ? "true" : "false") << ",\n";
@@ -690,7 +690,7 @@ int main(int argument_count, char **argument_values) {
     try {
         const auto arguments = parse_arguments(argument_count, argument_values);
         if (arguments.help) {
-            std::cout << "usage: bg_high_count_map_benchmark [--profile smoke|25k|100k|250k] [--cycles N] "
+            std::cout << "usage: hg_high_count_map_benchmark [--profile smoke|25k|100k|250k] [--cycles N] "
                          "[--record-evaluations] [--reader-cpu N (Linux)] [--verify-workload]\n";
             return EXIT_SUCCESS;
         }
@@ -700,7 +700,7 @@ int main(int argument_count, char **argument_values) {
         }
         return run(arguments);
     } catch (const std::exception &error) {
-        std::cerr << "bg_high_count_map_benchmark: " << error.what() << '\n';
+        std::cerr << "hg_high_count_map_benchmark: " << error.what() << '\n';
         return EXIT_FAILURE;
     }
 }

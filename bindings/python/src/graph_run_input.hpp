@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph_run_input.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph_run_input.hpp>
+#include <hg/type/signature.hpp>
 
 #include "python_literal_builder.hpp"
 
@@ -12,7 +12,7 @@
 #include <span>
 #include <vector>
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 class GraphRunInputs {
   public:
@@ -44,4 +44,4 @@ class GraphRunInputs {
     std::size_t input_length_{};
 };
 
-} // namespace bg::python::details
+} // namespace hg::python::details

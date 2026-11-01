@@ -1,23 +1,23 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/scalar/declaration.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/input_data.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/util/compile_time_string.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/index.hpp>
-#include <bg/util/occupancy_index.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/sparse_bunch.hpp>
-#include <bg/util/byte_copy.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/input_data.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/util/compile_time_string.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/index.hpp>
+#include <hg/util/occupancy_index.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/sparse_bunch.hpp>
+#include <hg/util/byte_copy.hpp>
 
 #include <algorithm>
 #include <array>
@@ -39,11 +39,11 @@
 #include <variant>
 #include <vector>
 
-namespace bg::util {
+namespace hg::util {
 class buffer_reader;
 }
 
-namespace bg::frame {
+namespace hg::frame {
 struct view_option {};
 inline constexpr view_option view{};
 template <util::compile_time_string... Names> struct computed_option {
@@ -254,13 +254,13 @@ class SelectedRows {
     std::size_t size_{};
 };
 template <typename T, auto... Properties>
-struct TSC : bg::TimeSeriesDeclaration<TSC<T, Properties...>, Properties...> {};
+struct TSC : hg::TimeSeriesDeclaration<TSC<T, Properties...>, Properties...> {};
 
-template <cell_type T> const bg::TimeSeriesType &column_time_series_type(bg::TimeSeriesGuarantee guarantee);
+template <cell_type T> const hg::TimeSeriesType &column_time_series_type(hg::TimeSeriesGuarantee guarantee);
 template <cell_type T>
-const bg::TimeSeriesRuntimeType &column_time_series_runtime_type(const bg::TimeSeriesType &type);
+const hg::TimeSeriesRuntimeType &column_time_series_runtime_type(const hg::TimeSeriesType &type);
 template <cell_type T>
-const bg::TimeSeriesRuntimeType &column_view_time_series_runtime_type(const bg::TimeSeriesType &type);
+const hg::TimeSeriesRuntimeType &column_view_time_series_runtime_type(const hg::TimeSeriesType &type);
 
 template <typename T> class ColumnSnapshotValues {
   public:
@@ -557,7 +557,7 @@ template <typename T = void> class ColumnView {
     using cell_type = std::optional<cell_value_t<T>>;
     using Batch = ColumnBatch<T>;
     ColumnView() = default;
-    ColumnView(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    ColumnView(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     ColumnView(const Column<T> &column) noexcept;
     explicit ColumnView(const ColumnReadSource<T> &source) noexcept : source_{std::addressof(source)} {}
     std::size_t size() const noexcept;
@@ -590,7 +590,7 @@ template <typename T = void> class ColumnView {
     template <typename> friend class NativeColumnData;
     template <typename> friend class Column;
     template <typename> friend struct ColumnStorage;
-    template <typename> friend struct bg::scalar_storage_traits;
+    template <typename> friend struct hg::scalar_storage_traits;
     explicit ColumnView(const ColumnStorage<T> &storage) noexcept;
     explicit ColumnView(const ColumnSnapshot<T> *snapshot) noexcept : snapshot_{snapshot} {}
     const NativeColumnData<T> *native_{};
@@ -605,7 +605,7 @@ template <typename T = void> class ColumnView {
 template <> class ColumnView<void> {
   public:
     ColumnView() = default;
-    ColumnView(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    ColumnView(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     ColumnView(const ColumnView<bool> &view) : value_{view} {}
     ColumnView(const ColumnView<i64> &view) : value_{view} {}
     ColumnView(const ColumnView<double> &view) : value_{view} {}
@@ -636,7 +636,7 @@ template <> class ColumnView<void> {
             value_);
     }
 
-    template <typename T> requires bg::frame::cell_type<T> ColumnView<T> view() const {
+    template <typename T> requires hg::frame::cell_type<T> ColumnView<T> view() const {
         if (const auto *view = std::get_if<ColumnView<T>>(&value_))
             return *view;
         if (std::holds_alternative<std::monostate>(value_))
@@ -646,13 +646,13 @@ template <> class ColumnView<void> {
     }
 
     template <typename T>
-        requires bg::frame::cell_type<T>
+        requires hg::frame::cell_type<T>
     std::optional<cell_value_t<T>> cell(std::size_t position) const {
         return view<T>().cell(position);
     }
 
     template <typename T, typename Function>
-        requires bg::frame::cell_type<T>
+        requires hg::frame::cell_type<T>
     void batches(Function &&function) const {
         view<T>().batches(std::forward<Function>(function));
     }
@@ -665,7 +665,7 @@ template <> class ColumnView<void> {
 template <typename T> struct ColumnStorage {
     static constexpr bool supports_byte_copy_initialization = true;
     ColumnStorage() = default;
-    ColumnStorage(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    ColumnStorage(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     explicit ColumnStorage(const NativeColumnData<T> &value, const NativeRows &rows) noexcept;
     explicit ColumnStorage(ColumnSnapshot<T> *value) noexcept : snapshot{value} {}
     ColumnStorage(const NativeColumnData<T> &value, const NativeRows &physical_rows, RowSet visible,
@@ -718,7 +718,7 @@ template <typename T> class Column {
     using cell_type = std::optional<cell_value_t<T>>;
     using value_type = ColumnView<T>;
     Column() = default;
-    Column(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    Column(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     explicit Column(std::vector<cell_type> cells) : snapshot_{ColumnSnapshot<T>::create(allocator{}, cells.size())} {
         try {
             for (auto position = std::size_t{}; position != cells.size(); ++position) {
@@ -2511,9 +2511,9 @@ template <typename T> inline typename ColumnView<T>::cell_type ColumnView<T>::ce
         return source_->cell(position);
     throw std::out_of_range{"column cell position"};
 }
-} // namespace bg::frame
+} // namespace hg::frame
 
-namespace bg {
+namespace hg {
 template <typename T> struct scalar_type_traits<frame::Column<T>> {
     static const ScalarType &type() {
         if constexpr (frame::cell_type<T>)
@@ -2614,4 +2614,4 @@ template <details::scalar_variable T> struct scalar_storage_traits<frame::Column
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<i64>>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<double>>();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<frame::Column<bool>>();
-} // namespace bg
+} // namespace hg

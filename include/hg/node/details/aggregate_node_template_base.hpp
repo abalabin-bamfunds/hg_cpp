@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/node/node_template.hpp>
+#include <hg/node/node_template.hpp>
 
 #include <span>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 using AggregateStateLayoutFunction = NodeStateLayout (*)(const ResolvedSignature &,
                                                          std::span<const ScalarRuntimeType *const>,
@@ -77,4 +77,4 @@ class AggregateNodeTemplateBase : public NodeTemplate {
     const AggregateNodeDescriptor *descriptor_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

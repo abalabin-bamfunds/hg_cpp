@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/util/named_argument.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/util/named_argument.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <array>
 #include <cstddef>
@@ -10,7 +10,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Argument>
 std::optional<util::symbol> schema_argument_name() {
@@ -70,4 +70,4 @@ template <std::size_t FieldCount, typename Error = std::invalid_argument> class 
     bool named_{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

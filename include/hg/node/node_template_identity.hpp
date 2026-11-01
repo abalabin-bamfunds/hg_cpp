@@ -7,7 +7,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 // Owns the information needed to compare a node definition after its template object is gone.
 class NodeTemplateIdentity {
@@ -91,4 +91,4 @@ class NodeTemplateIdentity {
     std::shared_ptr<const Interface> value_;
 };
 
-} // namespace bg
+} // namespace hg

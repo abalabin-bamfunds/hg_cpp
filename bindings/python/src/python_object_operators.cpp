@@ -1,16 +1,16 @@
 #include "operator_binding.hpp"
 
-#include <bg/graph/requirement.hpp>
-#include <bg/node.hpp>
-#include <bg/operators.hpp>
-#include <bg/python/gil.hpp>
-#include <bg/python/node.hpp>
-#include <bg/python/scalar_conversion.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/scalar/builtins.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/graph/requirement.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/python/gil.hpp>
+#include <hg/python/node.hpp>
+#include <hg/python/scalar_conversion.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -21,7 +21,7 @@
 
 namespace nb = nanobind;
 
-namespace bg::python::details {
+namespace hg::python::details {
 namespace {
 
 using PYOBJECT = ScalarVariable<"PYOBJECT", PythonObject>;
@@ -269,9 +269,9 @@ struct python_object_getattr {
 } // namespace
 
 void register_python_object_operators() {
-    operators::getitem.overload(bg::python::node<python_object_getitem_scalar_key>());
-    operators::getitem.overload(bg::python::node<python_object_getitem_time_series_key>());
-    operators::getattr.overload(bg::python::node<python_object_getattr>());
+    operators::getitem.overload(hg::python::node<python_object_getitem_scalar_key>());
+    operators::getitem.overload(hg::python::node<python_object_getitem_time_series_key>());
+    operators::getattr.overload(hg::python::node<python_object_getattr>());
 }
 
-} // namespace bg::python::details
+} // namespace hg::python::details

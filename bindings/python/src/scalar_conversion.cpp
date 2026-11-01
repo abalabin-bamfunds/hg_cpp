@@ -1,25 +1,25 @@
-#include <bg/python/scalar_conversion.hpp>
+#include <hg/python/scalar_conversion.hpp>
 
 #include "dict_view.hpp"
 
-#include <bg/python/object.hpp>
+#include <hg/python/object.hpp>
 
-#include <bg/scalar/builtins.hpp>
-#include <bg/scalar/bytes.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/details/string_storage.hpp>
-#include <bg/scalar/dict/scalar_type.hpp>
-#include <bg/scalar/dict/runtime_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/scalar_type.hpp>
-#include <bg/scalar/set/scalar_type.hpp>
-#include <bg/scalar/struct/scalar_type.hpp>
-#include <bg/scalar/tuple/runtime_type.hpp>
-#include <bg/scalar/tuple/scalar_type.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/scalar/bytes.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/details/string_storage.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/scalar/tuple/runtime_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <datetime.h>
 #include <nanobind/stl/chrono.h>
@@ -37,7 +37,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::python {
+namespace hg::python {
 namespace {
 
 using details::StringStorage;
@@ -51,7 +51,7 @@ int bytes_exporter_getbuffer(PyObject *self, Py_buffer *view, int flags) noexcep
     auto *exporter = nanobind::inst_ptr<BytesExporter>(nanobind::handle{self});
     const auto value = exporter->value.view().value();
     if (value.size() > static_cast<std::size_t>(PY_SSIZE_T_MAX)) {
-        PyErr_SetString(PyExc_OverflowError, "BG bytes are too large for Python");
+        PyErr_SetString(PyExc_OverflowError, "HG bytes are too large for Python");
         return -1;
     }
 
@@ -427,11 +427,11 @@ ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const Pytho
             nanobind::raise_python_error();
         }
         const auto bytes = std::span{reinterpret_cast<const std::byte *>(data), static_cast<std::size_t>(size)};
-        return ScalarValue<>{ScalarValue<bg::bytes>{bytes}};
+        return ScalarValue<>{ScalarValue<hg::bytes>{bytes}};
     }
 
     if (!PyMemoryView_Check(value.ptr())) {
-        PyErr_SetString(PyExc_TypeError, "expected bytes or a contiguous memoryview for bg.bytes");
+        PyErr_SetString(PyExc_TypeError, "expected bytes or a contiguous memoryview for hg.bytes");
         nanobind::raise_python_error();
     }
 
@@ -439,7 +439,7 @@ ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const Pytho
     if (PyObject_GetBuffer(value.ptr(), &buffer, PyBUF_CONTIG_RO) < 0) {
         if (PyErr_ExceptionMatches(PyExc_BufferError)) {
             PyErr_Clear();
-            PyErr_SetString(PyExc_TypeError, "bg.bytes requires a contiguous memoryview");
+            PyErr_SetString(PyExc_TypeError, "hg.bytes requires a contiguous memoryview");
         }
         nanobind::raise_python_error();
     }
@@ -450,17 +450,17 @@ ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const Pytho
         auto *exporter = nanobind::inst_ptr<BytesExporter>(base);
         const auto owned = exporter->value.view().value();
         if (buffer.buf == owned.data() && static_cast<std::size_t>(buffer.len) == owned.size()) {
-            return ScalarValue<>{ScalarValue<bg::bytes>{exporter->value.view()}};
+            return ScalarValue<>{ScalarValue<hg::bytes>{exporter->value.view()}};
         }
     }
 
     const auto bytes = std::span{static_cast<const std::byte *>(buffer.buf), static_cast<std::size_t>(buffer.len)};
-    return ScalarValue<>{ScalarValue<bg::bytes>{bytes}};
+    return ScalarValue<>{ScalarValue<hg::bytes>{bytes}};
 }
 
 nanobind::object decode_string(std::string_view text) {
     if (text.size() > static_cast<std::size_t>(PY_SSIZE_T_MAX)) {
-        PyErr_SetString(PyExc_OverflowError, "BG string is too large for Python");
+        PyErr_SetString(PyExc_OverflowError, "HG string is too large for Python");
         nanobind::raise_python_error();
     }
 
@@ -484,14 +484,14 @@ ScalarValue<> from_python_bool(nanobind::handle value, allocator &memory, const 
 ScalarValue<> from_python_byte(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
     const auto converted = nanobind::cast<int>(value);
     if (converted < 0 || converted > 255) {
-        throw std::out_of_range{"a Python integer for bg.byte must be in [0, 255]"};
+        throw std::out_of_range{"a Python integer for hg.byte must be in [0, 255]"};
     }
     return make_scalar<byte>(static_cast<byte>(converted), memory);
 }
 
 ScalarValue<> from_python_i64(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
     if (!PyLong_Check(value.ptr())) {
-        PyErr_SetString(PyExc_TypeError, "expected an integer for bg.i64");
+        PyErr_SetString(PyExc_TypeError, "expected an integer for hg.i64");
         nanobind::raise_python_error();
     }
 
@@ -513,12 +513,12 @@ ScalarValue<> from_python_date_time(nanobind::handle value, allocator &memory, c
         nanobind::raise_python_error();
     }
     if (is_datetime == 0) {
-        PyErr_SetString(PyExc_TypeError, "expected datetime.datetime for bg.date_time_t");
+        PyErr_SetString(PyExc_TypeError, "expected datetime.datetime for hg.date_time_t");
         nanobind::raise_python_error();
     }
 
     if (!value.attr("utcoffset")().is_none()) {
-        PyErr_SetString(PyExc_TypeError, "expected a timezone-naive datetime for bg.date_time_t");
+        PyErr_SetString(PyExc_TypeError, "expected a timezone-naive datetime for hg.date_time_t");
         nanobind::raise_python_error();
     }
 
@@ -532,7 +532,7 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
         nanobind::raise_python_error();
     }
     if (is_timedelta == 0) {
-        PyErr_SetString(PyExc_TypeError, "expected datetime.timedelta for bg.timedelta_t");
+        PyErr_SetString(PyExc_TypeError, "expected datetime.timedelta for hg.timedelta_t");
         nanobind::raise_python_error();
     }
 
@@ -547,7 +547,7 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
             const auto positive_days = static_cast<std::uint64_t>(days);
             const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<i64>::max());
             if (positive_days > (maximum - remainder) / microseconds_per_day) {
-                throw std::overflow_error{"datetime.timedelta is outside the bg.timedelta_t range"};
+                throw std::overflow_error{"datetime.timedelta is outside the hg.timedelta_t range"};
             }
             return static_cast<i64>(positive_days * microseconds_per_day + remainder);
         }
@@ -556,11 +556,11 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
         const auto maximum_magnitude = std::uint64_t{1} << 63;
         const auto whole_days = negative_days - 1;
         if (whole_days > maximum_magnitude / microseconds_per_day) {
-            throw std::overflow_error{"datetime.timedelta is outside the bg.timedelta_t range"};
+            throw std::overflow_error{"datetime.timedelta is outside the hg.timedelta_t range"};
         }
         const auto magnitude = whole_days * microseconds_per_day + (microseconds_per_day - remainder);
         if (magnitude > maximum_magnitude) {
-            throw std::overflow_error{"datetime.timedelta is outside the bg.timedelta_t range"};
+            throw std::overflow_error{"datetime.timedelta is outside the hg.timedelta_t range"};
         }
         if (magnitude == maximum_magnitude) {
             return std::numeric_limits<i64>::min();
@@ -605,7 +605,7 @@ ScalarValue<> from_python_string(nanobind::handle value, allocator &, const Pyth
 ScalarValue<> from_python_symbol(nanobind::handle value, allocator &memory,
                                  const PythonScalarConversions &conversions) {
     if (!PyUnicode_Check(value.ptr())) {
-        PyErr_SetString(PyExc_TypeError, "expected text for a BG symbol");
+        PyErr_SetString(PyExc_TypeError, "expected text for a HG symbol");
         nanobind::raise_python_error();
     }
 
@@ -964,7 +964,7 @@ nanobind::object to_python_view_default(Scalar<> value, const PythonScalarConver
 }
 
 nanobind::object to_python_bytes(Scalar<> value, const PythonScalarConversions &) {
-    auto exporter = nanobind::cast(BytesExporter{ScalarValue<bg::bytes>{unchecked_scalar_cast<bg::bytes>(value)}});
+    auto exporter = nanobind::cast(BytesExporter{ScalarValue<hg::bytes>{unchecked_scalar_cast<hg::bytes>(value)}});
     auto *result = PyMemoryView_FromObject(exporter.ptr());
     if (result == nullptr) {
         nanobind::raise_python_error();
@@ -1095,7 +1095,7 @@ bool PythonScalarConversions::add_python_type(nanobind::handle python_type, cons
     return added;
 }
 
-const ScalarType &PythonScalarConversions::add_python_schema(nanobind::handle python_type, const bg::Schema &schema) {
+const ScalarType &PythonScalarConversions::add_python_schema(nanobind::handle python_type, const hg::Schema &schema) {
     if (!PyType_Check(python_type.ptr())) {
         throw std::invalid_argument{"a Python schema registration requires a Python type"};
     }
@@ -1114,7 +1114,7 @@ const ScalarType &PythonScalarConversions::add_python_schema(nanobind::handle py
     return scalar_type;
 }
 
-nanobind::object PythonScalarConversions::python_schema_class(const bg::Schema &schema) const {
+nanobind::object PythonScalarConversions::python_schema_class(const hg::Schema &schema) const {
     const auto &scalar_type = hierarchical_scalar_type(schema);
     const auto found = impl_->python_schemas.find(&scalar_type);
     if (found == impl_->python_schemas.end()) {
@@ -1190,7 +1190,7 @@ nanobind::object PythonScalarConversions::to_python(Scalar<> value) const {
 
 nanobind::object PythonScalarConversions::symbol_to_python(util::symbol value) const {
     if (!impl_->symbol_python_type) {
-        throw std::logic_error{"bg.Symbol must be registered before converting a symbol"};
+        throw std::logic_error{"hg.Symbol must be registered before converting a symbol"};
     }
 
     auto symbol_class = nanobind::borrow<nanobind::object>(impl_->symbol_python_type.get());
@@ -1342,4 +1342,4 @@ PythonScalarConversions &scalar_conversions() {
     return conversions;
 }
 
-} // namespace bg::python
+} // namespace hg::python

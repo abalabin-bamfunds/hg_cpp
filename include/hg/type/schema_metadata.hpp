@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/export.hpp>
+#include <hg/export.hpp>
 
 #include <cstddef>
 #include <concepts>
@@ -11,14 +11,14 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class ScalarData;
 class SchemaMetadata;
 struct SchemaMetadataEntry;
 
 // Immutable scalar metadata attached to a schema declaration.
-class BG_EXPORT SchemaMetadata {
+class HG_EXPORT SchemaMetadata {
   public:
     SchemaMetadata() noexcept = default;
 
@@ -55,4 +55,4 @@ template <template <template <typename, auto...> typename> typename Schema,
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

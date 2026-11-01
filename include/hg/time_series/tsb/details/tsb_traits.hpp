@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/schema/reflection.hpp>
+#include <hg/schema/reflection.hpp>
 
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <template <template <typename, auto...> typename> typename Schema>
 using bundle_schema_reflection = schema_reflection<Schema, bundle_schema_field>;
@@ -66,4 +66,4 @@ template <template <template <typename, auto...> typename> typename Schema,
     return bundle_schema_reflection<Schema>::template make<Field>(factory);
 }
 
-} // namespace bg::details
+} // namespace hg::details

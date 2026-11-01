@@ -3,14 +3,14 @@
 from functools import cache
 from typing import get_type_hints
 
-import bg
+import hg
 
 from . import HttpResponse
 
 
 def _policy_graphs(policy):
-    if not isinstance(policy, bg._ServiceDefinition):
-        raise TypeError("authentication policy must be a bg.service declaration")
+    if not isinstance(policy, hg._ServiceDefinition):
+        raise TypeError("authentication policy must be a hg.service declaration")
 
     parameters = tuple(policy.signature.parameters.values())
     if len(parameters) != 1:
@@ -22,14 +22,14 @@ def _policy_graphs(policy):
         raise TypeError("an HTTP authentication policy requires request and decision type annotations")
 
     def submit_request(request):
-        client_id = bg.service_client_id()
+        client_id = hg.service_client_id()
         policy.client_requests(client_id, request)
         return client_id
 
     submit_request.__name__ = f"{policy.function.__name__}_http_policy_request"
     submit_request.__annotations__ = {
         "request": annotations[parameter.name],
-        "return": bg.TS[int, bg.const_],
+        "return": hg.TS[int, hg.const_],
     }
 
     def receive_reply(client_id):
@@ -37,10 +37,10 @@ def _policy_graphs(policy):
 
     receive_reply.__name__ = f"{policy.function.__name__}_http_policy_reply"
     receive_reply.__annotations__ = {
-        "client_id": bg.TS[int, bg.const_],
+        "client_id": hg.TS[int, hg.const_],
         "return": annotations["return"],
     }
-    return bg.graph(submit_request), bg.graph(receive_reply)
+    return hg.graph(submit_request), hg.graph(receive_reply)
 
 
 @cache
@@ -77,7 +77,7 @@ def _auth_decision_schema(identity_type):
             "reject": reject,
         },
     )
-    return bg.schema(decision_type)
+    return hg.schema(decision_type)
 
 
 class AuthDecision:

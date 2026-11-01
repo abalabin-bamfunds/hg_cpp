@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/queue_handle.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/queue_mode.hpp>
+#include <hg/queue_handle.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/queue_mode.hpp>
 
 #include <cstddef>
 #include <memory>
 
-namespace bg {
+namespace hg {
 
 namespace util {
 class buffer;
@@ -50,6 +50,6 @@ class QueueControl {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/queue_node.hpp>
+#include <hg/queue_node.hpp>

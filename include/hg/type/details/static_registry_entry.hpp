@@ -1,6 +1,6 @@
 #pragma once
 
-namespace bg::details {
+namespace hg::details {
 
 // Links a process-static object once without allocation during type registration.
 template <typename T> class StaticRegistryEntry {
@@ -26,4 +26,4 @@ template <typename T> class StaticRegistryEntry {
     bool linked_{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

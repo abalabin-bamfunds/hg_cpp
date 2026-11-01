@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/scalar/builtins.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/scalar/builtins.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <concepts>
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -59,4 +59,4 @@ consteval bool valid_native_struct() {
 template <typename T>
 concept native_struct = details::valid_native_struct<std::remove_cvref_t<T>>();
 
-} // namespace bg
+} // namespace hg

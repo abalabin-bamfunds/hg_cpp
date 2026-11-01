@@ -1,6 +1,6 @@
 # Expression-based frame filtering
 
-Status: implemented. The frame overload uses BG's existing filter operator,
+Status: implemented. The frame overload uses HG's existing filter operator,
 the shared expression compiler, and the TSF view output operation.
 
 ## Purpose
@@ -15,7 +15,7 @@ The convenience functions accept a bound predicate or bind an unbound
 expression to a frame:
 
 ```cpp
-auto selected = frame::filter(q, col("size") > bg::i64{10});
+auto selected = frame::filter(q, col("size") > hg::i64{10});
 auto changing_threshold = frame::filter(q, col("size") > min_size);
 
 auto predicate = bind_expression(q, col("ask") - col("bid") < tolerance);
@@ -23,22 +23,22 @@ auto selected_spreads = frame::filter(q, predicate);
 ```
 
 Scalar operands construct an immutable expression and own their scalar values.
-Combining an expression with a wiring point invokes a BG operator overload
+Combining an expression with a wiring point invokes a HG operator overload
 that returns a TSB containing the constant expression and explicit time series
 bindings. A scalar time series update reevaluates the predicate for all current
 rows. Named `param("name")` placeholders remain available for expressions bound
 to different arguments.
 
-Both functions call BG's `operators::filter_(predicate, source)`. The frame
+Both functions call HG's `operators::filter_(predicate, source)`. The frame
 extension supplies the overload for row predicates. Its predicate has semantic
 type `TSC<bool>` and can retain its expression materialisation option. A scalar
-`TS<bool>` has BG's existing tick-selection semantics and is not a row predicate.
+`TS<bool>` has HG's existing tick-selection semantics and is not a row predicate.
 
 The output retains the source schema, key metadata, row identities, and row
 traversal order. A valid null predicate excludes its row, as does false. Only
 true selects a row. Comparison callbacks return null when either cell is null.
 Operand cell types must match. Use `frame::convert<T>(expression)` for scalar
-expression construction or BG's `operators::convert[type<TSC<T>>](column)` for
+expression construction or HG's `operators::convert[type<TSC<T>>](column)` for
 column wiring points when conversion is required.
 
 ## Wiring
@@ -46,13 +46,13 @@ column wiring points when conversion is required.
 The frame overload declares its predicate as a graph-only union of `TSC<bool>`
 and the existing expression bundle form. It creates one deferred frame output
 with one materialisation builder. The builder declares the frame dependency
-and keeps the predicate union open until BG has recorded concrete demands.
+and keeps the predicate union open until HG has recorded concrete demands.
 
 The builder uses the existing expression compiler. It reuses a concrete
-predicate or intermediate when BG has required its materialisation. Otherwise,
+predicate or intermediate when HG has required its materialisation. Otherwise,
 it compiles the predicate into the filter node's block calls. Compilation
 deduplicates column and scalar inputs and wires the existing parameter
-collector. Captured scalar time series remain ordinary BG dependencies.
+collector. Captured scalar time series remain ordinary HG dependencies.
 
 The compiled expression records its result operand explicitly. A result can
 refer directly to a column batch or to an instruction's batch. This is required

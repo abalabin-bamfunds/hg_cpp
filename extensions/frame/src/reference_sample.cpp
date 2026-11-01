@@ -1,8 +1,8 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <memory>
 #include <optional>
@@ -11,8 +11,8 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame::details {
-using bg::details::ResolvedTimeSeries;
+namespace hg::frame::details {
+using hg::details::ResolvedTimeSeries;
 
 namespace {
 
@@ -116,7 +116,7 @@ FrameReadStorage frame_storage(ResolvedTimeSeries source, bool valid) noexcept {
     return result;
 }
 
-template <cell_type Cell> struct SampledColumn final : bg::details::ReferenceSample {
+template <cell_type Cell> struct SampledColumn final : hg::details::ReferenceSample {
     SampledColumn(const TimeSeriesType &type, ResolvedTimeSeries previous, ResolvedTimeSeries current,
                   EvaluationTime evaluation_time, allocator &memory)
         : runtime_type{&column_view_time_series_runtime_type<Cell>(type)}, previous_source{previous},
@@ -200,7 +200,7 @@ class SampledFrameRuntimeType;
 
 using SampledFrameColumnStorage = FrameViewColumnInput::Storage;
 
-struct SampledFrame final : bg::details::ReferenceSample {
+struct SampledFrame final : hg::details::ReferenceSample {
     SampledFrame(const TimeSeriesType &type, ResolvedTimeSeries previous, ResolvedTimeSeries current,
                  EvaluationTime evaluation_time, allocator &memory);
     ~SampledFrame() override;
@@ -362,7 +362,7 @@ void bind_sampled_column(SampledFrameColumnStorage &destination, FrameColumnRead
     });
 }
 
-bg::details::ReferenceSample *create_sampled_frame(const TimeSeriesType &type, ResolvedTimeSeries previous,
+hg::details::ReferenceSample *create_sampled_frame(const TimeSeriesType &type, ResolvedTimeSeries previous,
                                                    ResolvedTimeSeries current, EvaluationTime evaluation_time,
                                                    allocator &memory) {
     if (previous.runtime_type == nullptr && current.runtime_type == nullptr)
@@ -375,7 +375,7 @@ bg::details::ReferenceSample *create_sampled_frame(const TimeSeriesType &type, R
 } // namespace
 
 template <cell_type Cell>
-bg::details::ReferenceSample *create_sampled_column(const TimeSeriesType &type, ResolvedTimeSeries previous,
+hg::details::ReferenceSample *create_sampled_column(const TimeSeriesType &type, ResolvedTimeSeries previous,
                                                     ResolvedTimeSeries current, EvaluationTime evaluation_time,
                                                     allocator &memory) {
     if (!previous.last_updated.valid_before(evaluation_time) && !current.last_updated.valid())
@@ -383,17 +383,17 @@ bg::details::ReferenceSample *create_sampled_column(const TimeSeriesType &type, 
     return memory.new_object<SampledColumn<Cell>>(type, previous, current, evaluation_time, memory);
 }
 
-template bg::details::ReferenceSample *create_sampled_column<bool>(const TimeSeriesType &, ResolvedTimeSeries,
+template hg::details::ReferenceSample *create_sampled_column<bool>(const TimeSeriesType &, ResolvedTimeSeries,
                                                                     ResolvedTimeSeries, EvaluationTime, allocator &);
-template bg::details::ReferenceSample *create_sampled_column<i64>(const TimeSeriesType &, ResolvedTimeSeries,
+template hg::details::ReferenceSample *create_sampled_column<i64>(const TimeSeriesType &, ResolvedTimeSeries,
                                                                    ResolvedTimeSeries, EvaluationTime, allocator &);
-template bg::details::ReferenceSample *create_sampled_column<double>(const TimeSeriesType &, ResolvedTimeSeries,
+template hg::details::ReferenceSample *create_sampled_column<double>(const TimeSeriesType &, ResolvedTimeSeries,
                                                                       ResolvedTimeSeries, EvaluationTime,
                                                                       allocator &);
-template bg::details::ReferenceSample *create_sampled_column<string>(const TimeSeriesType &, ResolvedTimeSeries,
+template hg::details::ReferenceSample *create_sampled_column<string>(const TimeSeriesType &, ResolvedTimeSeries,
                                                                       ResolvedTimeSeries, EvaluationTime,
                                                                       allocator &);
-template bg::details::ReferenceSample *create_sampled_column<symbol>(const TimeSeriesType &, ResolvedTimeSeries,
+template hg::details::ReferenceSample *create_sampled_column<symbol>(const TimeSeriesType &, ResolvedTimeSeries,
                                                                       ResolvedTimeSeries, EvaluationTime,
                                                                       allocator &);
 
@@ -514,12 +514,12 @@ FrameReadStorage SampledFrame::input_storage() const noexcept {
     return result;
 }
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details
 
-namespace bg::frame {
+namespace hg::frame {
 
-bg::details::ReferenceSampleFactory FrameSeriesRuntimeType::reference_sample_factory() const noexcept {
+hg::details::ReferenceSampleFactory FrameSeriesRuntimeType::reference_sample_factory() const noexcept {
     return &details::create_sampled_frame;
 }
 
-} // namespace bg::frame
+} // namespace hg::frame

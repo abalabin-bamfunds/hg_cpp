@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/construction.hpp>
-#include <bg/scalar/runtime_type.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/construction.hpp>
+#include <hg/scalar/runtime_type.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class HierarchicalScalarRuntimeType : public ScalarRuntimeType {
   protected:
@@ -46,4 +46,4 @@ void initialize_composed_hierarchical_scalar_runtime_type(HierarchicalScalarRunt
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

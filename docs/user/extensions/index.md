@@ -19,44 +19,44 @@ The frame extension adds scalar and time series types. Its examples use
 
 ### Web
 
-Build BG with the web option. Python also requires the Python option:
+Build HG with the web option. Python also requires the Python option:
 
 ```sh
-cmake -S . -B build/web -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DBG_BUILD_WEB=ON -DBG_BUILD_PYTHON=ON -DCMAKE_INSTALL_PREFIX=install
+cmake -S . -B build/web -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DHG_BUILD_WEB=ON -DHG_BUILD_PYTHON=ON -DCMAKE_INSTALL_PREFIX=install
 cmake --build build/web --config Release
 cmake --install build/web --config Release
 ```
 
 Configuration requires libcurl 7.85 or later and Boost 1.87 or later. CMake can
 download the required Boost components when a suitable installation is unavailable.
-The installation includes `bg_web`, `<bg/web/...>` headers, and the `bg::web` target
-in the BG CMake package. Python must be able to import packages from the installation
+The installation includes `hg_web`, `<hg/web/...>` headers, and the `hg::web` target
+in the HG CMake package. Python must be able to import packages from the installation
 prefix.
 
 The [C++ example project](../guide/installation.md#c-example-project) uses this target
 for web examples:
 
 ```cmake
-target_link_libraries(example PRIVATE bg::web)
+target_link_libraries(example PRIVATE hg::web)
 ```
 
 ### Frame
 
 The frame extension currently builds from its source directory and has a C++ API.
-With BG installed, a consuming project adds the frame source and links its target:
+With HG installed, a consuming project adds the frame source and links its target:
 
 ```cmake
 cmake_minimum_required(VERSION 3.31)
 project(example LANGUAGES CXX)
-find_package(bg CONFIG REQUIRED)
+find_package(hg CONFIG REQUIRED)
 set(BUILD_TESTING OFF CACHE BOOL "Build tests")
-add_subdirectory("${BG_SOURCE_DIR}/extensions/frame" frame)
+add_subdirectory("${HG_SOURCE_DIR}/extensions/frame" frame)
 add_executable(example main.cpp)
-target_link_libraries(example PRIVATE bg::frame)
+target_link_libraries(example PRIVATE hg::frame)
 ```
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/bg/install -DBG_SOURCE_DIR=/absolute/path/to/bg
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/hg/install -DHG_SOURCE_DIR=/absolute/path/to/hg
 cmake --build build --config Release
 ```
 

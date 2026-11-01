@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 // Describes the ownership and representation of a scalar value for extension and runtime implementers.
 // Node definitions use Scalar and ScalarValue.
@@ -71,4 +71,4 @@ class ScalarData {
 
 static_assert(sizeof(ScalarData) == 2 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

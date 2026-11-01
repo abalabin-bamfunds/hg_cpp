@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/graph/dynamic_node_subscriber_storage.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/time_series/item_id.hpp>
-#include <bg/util/tagged_ptr.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/graph/dynamic_node_subscriber_storage.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/util/tagged_ptr.hpp>
 
 #include <cassert>
 #include <cstdint>
 #include <limits>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 class CompiledNode;
@@ -226,4 +226,4 @@ static_assert(std::is_trivially_copyable_v<Reference>);
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

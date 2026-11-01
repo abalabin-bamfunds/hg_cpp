@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/details/typed_signature.hpp>
-#include <bg/graph/operator.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/type/type_parameter.hpp>
+#include <hg/graph/details/typed_signature.hpp>
+#include <hg/graph/operator.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/type_parameter.hpp>
 
 #include <array>
 #include <concepts>
@@ -19,7 +19,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Prototype> struct operator_typed_prototype;
 
@@ -39,9 +39,9 @@ struct default_operator_implementation {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <typename Prototype, typename Implementation = details::default_operator_implementation,
           typename... TypeParameters>
@@ -174,4 +174,4 @@ template <typename... Parts> struct operator_declaration {
 template <typename... Declaration>
 using operator_ = typename details::operator_declaration<Declaration...>::type;
 
-} // namespace bg
+} // namespace hg

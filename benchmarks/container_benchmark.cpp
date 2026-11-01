@@ -1,5 +1,5 @@
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/linear_hash_table.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/linear_hash_table.hpp>
 
 #include <algorithm>
 #include <charconv>
@@ -98,24 +98,24 @@ void report_slowest_batch(std::string_view container, std::size_t batch_size, do
 void benchmark_hash_index(std::span<const std::uint64_t> keys) {
     auto allocations = tracking_memory_resource{};
     auto memory = std::pmr::unsynchronized_pool_resource{&allocations};
-    auto index = bg::util::linear_hash_table{};
+    auto index = hg::util::linear_hash_table{};
 
     auto position = std::uint32_t{};
     for (const auto key : keys) {
-        index.insert(bg::util::linear_hash_table::hash_code(key), position++, memory);
+        index.insert(hg::util::linear_hash_table::hash_code(key), position++, memory);
     }
 
     auto checksum = std::uint64_t{};
     const auto lookup = measure([&] {
         for (const auto key : keys) {
-            checksum += *index.find(bg::util::linear_hash_table::hash_code(key),
+            checksum += *index.find(hg::util::linear_hash_table::hash_code(key),
                                     [&](auto candidate) { return keys[candidate] == key; });
         }
     });
 
-    report("bg::linear_hash_table", "find by hash", keys.size(), lookup);
-    report_memory("bg::linear_hash_table", keys.size(), allocations.peak_bytes());
-    std::cout << "bg::linear_hash_table\tcheck\t" << checksum << '\n';
+    report("hg::linear_hash_table", "find by hash", keys.size(), lookup);
+    report_memory("hg::linear_hash_table", keys.size(), allocations.peak_bytes());
+    std::cout << "hg::linear_hash_table\tcheck\t" << checksum << '\n';
 
     index.release(memory);
 }
@@ -125,7 +125,7 @@ void benchmark_custom_dictionary(std::span<const std::uint64_t> keys, std::span<
 
     auto allocations = tracking_memory_resource{};
     auto memory = std::pmr::unsynchronized_pool_resource{&allocations};
-    auto values = bg::util::hash_dictionary<std::uint64_t, std::uint64_t>{};
+    auto values = hg::util::hash_dictionary<std::uint64_t, std::uint64_t>{};
 
     const auto insertion = measure_batched(keys.size(), insertion_batch_size, [&](auto index) {
         values.insert_or_assign(keys[index], keys[index], memory);
@@ -158,14 +158,14 @@ void benchmark_custom_dictionary(std::span<const std::uint64_t> keys, std::span<
         }
     });
 
-    report("bg::hash_dictionary", "insert", keys.size(), insertion.seconds);
-    report_slowest_batch("bg::hash_dictionary", insertion_batch_size, insertion.slowest_batch_seconds);
-    report("bg::hash_dictionary", "find", keys.size(), lookup);
-    report("bg::hash_dictionary", "find missing", keys.size(), missing_lookup);
-    report("bg::hash_dictionary", "iterate", keys.size(), iteration);
-    report("bg::hash_dictionary", "erase", keys.size(), erasure);
-    report_memory("bg::hash_dictionary", keys.size(), allocations.peak_bytes());
-    std::cout << "bg::hash_dictionary\tcheck\t" << checksum << ' ' << misses << ' ' << iteration_checksum << '\n';
+    report("hg::hash_dictionary", "insert", keys.size(), insertion.seconds);
+    report_slowest_batch("hg::hash_dictionary", insertion_batch_size, insertion.slowest_batch_seconds);
+    report("hg::hash_dictionary", "find", keys.size(), lookup);
+    report("hg::hash_dictionary", "find missing", keys.size(), missing_lookup);
+    report("hg::hash_dictionary", "iterate", keys.size(), iteration);
+    report("hg::hash_dictionary", "erase", keys.size(), erasure);
+    report_memory("hg::hash_dictionary", keys.size(), allocations.peak_bytes());
+    std::cout << "hg::hash_dictionary\tcheck\t" << checksum << ' ' << misses << ' ' << iteration_checksum << '\n';
 
     values.release(memory);
 }

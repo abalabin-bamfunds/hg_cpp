@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include <atomic>
 #include <cstddef>
@@ -8,7 +8,7 @@
 #include <memory_resource>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 struct string;
 class ScalarData;
@@ -56,7 +56,7 @@ class StringStorage {
     void release() noexcept;
 
   private:
-    friend class ::bg::StringBuilder;
+    friend class ::hg::StringBuilder;
 
     StringStorage(std::pmr::memory_resource &memory, ScalarAllocationPool *owner, std::size_t length,
                   std::size_t capacity) noexcept;
@@ -78,4 +78,4 @@ class StringStorage {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

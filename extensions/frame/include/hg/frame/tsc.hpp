@@ -1,29 +1,29 @@
 #pragma once
 
-#include <bg/frame/column.hpp>
-#include <bg/frame/literal.hpp>
+#include <hg/frame/column.hpp>
+#include <hg/frame/literal.hpp>
 
-#include <bg/scalar/declaration.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/input_data.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/type/declaration_variables.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/node/output_declaration_traits.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/input_data.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/type/declaration_variables.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/node/output_declaration_traits.hpp>
 
-namespace bg {
+namespace hg {
 
 namespace frame {
 
 namespace details {
 template <cell_type T>
-bg::details::ReferenceSample *create_sampled_column(const TimeSeriesType &type,
-                                                    bg::details::ResolvedTimeSeries previous,
-                                                    bg::details::ResolvedTimeSeries current,
+hg::details::ReferenceSample *create_sampled_column(const TimeSeriesType &type,
+                                                    hg::details::ResolvedTimeSeries previous,
+                                                    hg::details::ResolvedTimeSeries current,
                                                     EvaluationTime evaluation_time, allocator &memory);
 }
 
@@ -60,7 +60,7 @@ const ColumnSeriesType &column_series_type(const ScalarType &cell_type, Guarante
 template <cell_type T> class ColumnSeriesRuntimeType : public TimeSeriesRuntimeType {
   public:
     virtual ColumnSeriesView<T> input_view(const void *value) const noexcept = 0;
-    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override {
+    hg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override {
         return &details::create_sampled_column<T>;
     }
 
@@ -766,9 +766,9 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
     TimeSeriesOutputBinding binding_;
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg {
+namespace hg {
 
 template <frame::cell_type T, auto... Properties>
 struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::view>> {
@@ -806,4 +806,4 @@ struct output_declaration_traits<Out<frame::TSC<T, Properties...>, frame::comput
     }
 };
 
-} // namespace bg
+} // namespace hg

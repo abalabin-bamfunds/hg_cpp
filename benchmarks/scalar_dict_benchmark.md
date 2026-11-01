@@ -4,8 +4,8 @@ Build and run the native dictionary lookup and iteration benchmark:
 
 ```sh
 cmake --preset benchmark
-cmake --build --preset benchmark --target bg_scalar_dict_benchmark
-build/benchmark/benchmarks/bg_scalar_dict_benchmark
+cmake --build --preset benchmark --target hg_scalar_dict_benchmark
+build/benchmark/benchmarks/hg_scalar_dict_benchmark
 ```
 
 The benchmark uses 32, 1,000, and 100,000 entries. Lookup results are the

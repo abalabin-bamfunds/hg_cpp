@@ -9,7 +9,7 @@ Queue serialization and application dispatch provider-defined leaves through
 application require an exact output-runtime registration. Discard is registered
 by semantic type.
 
-BG owns framing and recursive built-in collection traversal. A provider owns
+HG owns framing and recursive built-in collection traversal. A provider owns
 its payload grammar and cleanup. Its apply callback consumes the complete
 payload on both success and failure. See the
 [provider queue contract](../design/time-series-providers.md#queue-messages).
@@ -24,4 +24,4 @@ binding.
 
 Queue literals can address mutations differently from retained ticks.
 Separate registrations allow both formats to use their required identities and
-ownership while sharing BG's framing and traversal.
+ownership while sharing HG's framing and traversal.

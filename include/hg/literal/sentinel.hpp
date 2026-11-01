@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/scalar/data.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/util/symbol.hpp>
-#include <bg/util/lifetimebound.hpp>
+#include <hg/export.hpp>
+#include <hg/scalar/data.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/util/symbol.hpp>
+#include <hg/util/lifetimebound.hpp>
 
 #include <cstddef>
 #include <functional>
@@ -24,9 +24,9 @@ struct TaggedLiteral;
 
 class Sentinel {
   public:
-    explicit Sentinel(bg::symbol value) noexcept : name{std::move(value)} {}
+    explicit Sentinel(hg::symbol value) noexcept : name{std::move(value)} {}
 
-    bg::symbol name;
+    hg::symbol name;
 
     Sentinel(const Sentinel &) = delete;
     Sentinel &operator=(const Sentinel &) = delete;
@@ -35,34 +35,34 @@ class Sentinel {
 
     bool operator==(const Sentinel &other) const noexcept { return this == &other; }
 
-    TaggedLiteral operator()(const ScalarLiteral &value BG_LIFETIMEBOUND) const noexcept;
+    TaggedLiteral operator()(const ScalarLiteral &value HG_LIFETIMEBOUND) const noexcept;
 
-    static BG_EXPORT const Sentinel *from(const bg::ScalarData &value) noexcept;
-    static BG_EXPORT const Sentinel *from(const ScalarLiteralItem &value);
-    static BG_EXPORT const Sentinel *from(const ScalarLiteral &value);
+    static HG_EXPORT const Sentinel *from(const hg::ScalarData &value) noexcept;
+    static HG_EXPORT const Sentinel *from(const ScalarLiteralItem &value);
+    static HG_EXPORT const Sentinel *from(const ScalarLiteral &value);
 };
 
 struct TaggedLiteral {
     const Sentinel &sentinel;
     const ScalarLiteral &argument;
 
-    static BG_EXPORT std::optional<TaggedLiteral> from(const bg::ScalarData &value);
-    static BG_EXPORT std::optional<TaggedLiteral> from(const ScalarLiteralItem &value);
-    static BG_EXPORT std::optional<TaggedLiteral> from(const ScalarLiteral &value);
+    static HG_EXPORT std::optional<TaggedLiteral> from(const hg::ScalarData &value);
+    static HG_EXPORT std::optional<TaggedLiteral> from(const ScalarLiteralItem &value);
+    static HG_EXPORT std::optional<TaggedLiteral> from(const ScalarLiteral &value);
 };
 
-inline TaggedLiteral Sentinel::operator()(const ScalarLiteral &value BG_LIFETIMEBOUND) const noexcept {
+inline TaggedLiteral Sentinel::operator()(const ScalarLiteral &value HG_LIFETIMEBOUND) const noexcept {
     return TaggedLiteral{*this, value};
 }
 
-extern BG_EXPORT const Sentinel SKIP;
-extern BG_EXPORT const Sentinel INVALID;
-extern BG_EXPORT const Sentinel REMOVE;
-extern BG_EXPORT const Sentinel REMOVED;
+extern HG_EXPORT const Sentinel SKIP;
+extern HG_EXPORT const Sentinel INVALID;
+extern HG_EXPORT const Sentinel REMOVE;
+extern HG_EXPORT const Sentinel REMOVED;
 
 } // namespace literal
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_storage_traits<literal::Sentinel> {
     using stored_type = const literal::Sentinel *;
@@ -87,11 +87,11 @@ template <> struct scalar_storage_traits<literal::Sentinel> {
 };
 
 template <> struct scalar_type_traits<literal::Sentinel> {
-    static BG_EXPORT const ScalarType &type() noexcept;
+    static HG_EXPORT const ScalarType &type() noexcept;
 };
 
 template <> struct scalar_type_traits<literal::TaggedLiteral> {
-    static BG_EXPORT const ScalarType &type() noexcept;
+    static HG_EXPORT const ScalarType &type() noexcept;
 };
 
 template <> struct scalar_declaration_traits<literal::Sentinel> {
@@ -108,7 +108,7 @@ template <> struct scalar_declaration_traits<literal::TaggedLiteral> {
     static constexpr bool supports_time_series = false;
 };
 
-extern template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::Sentinel>();
-extern template BG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::TaggedLiteral>();
+extern template HG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::Sentinel>();
+extern template HG_EXPORT const ScalarRuntimeType &cpp_scalar_runtime_type<literal::TaggedLiteral>();
 
-} // namespace bg
+} // namespace hg

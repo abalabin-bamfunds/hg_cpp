@@ -1,19 +1,19 @@
 #pragma once
 
-#include <bg/operator.hpp>
-#include <bg/python/export.hpp>
+#include <hg/operator.hpp>
+#include <hg/python/export.hpp>
 
 #include <nanobind/nanobind.h>
 
 #include <span>
 #include <string_view>
 
-namespace bg::python {
+namespace hg::python {
 
 // Exposes a process-lifetime C++ operator through the normal Python wiring interface.
-BG_PYTHON_API void export_operator(nanobind::module_ &module, std::string_view python_name, const Operator &operation);
+HG_PYTHON_API void export_operator(nanobind::module_ &module, std::string_view python_name, const Operator &operation);
 
-BG_PYTHON_API void export_operator(
+HG_PYTHON_API void export_operator(
     nanobind::module_ &module, std::string_view python_name, const Operator &operation,
     std::span<const Type *const> type_parameters);
 
@@ -24,4 +24,4 @@ void export_operator(nanobind::module_ &module, std::string_view python_name, co
     export_operator(module, python_name, operation, type_parameters);
 }
 
-} // namespace bg::python
+} // namespace hg::python

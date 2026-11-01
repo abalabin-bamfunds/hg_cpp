@@ -3,7 +3,7 @@
 #include <cstdint>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 using ScheduleWord = std::uint64_t;
 
@@ -38,4 +38,4 @@ class SchedulingInfo {
 static_assert(sizeof(SchedulingInfo) == 3 * sizeof(ScheduleWord));
 static_assert(std::is_trivially_copyable_v<SchedulingInfo>);
 
-} // namespace bg::details
+} // namespace hg::details

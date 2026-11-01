@@ -29,7 +29,7 @@ connections when the graph stops.
 
 ## Consequences
 
-Graph authors can wire handlers in separate subgraphs and pass ambient inputs or
+Graph authors can wire handlers in separate suhgraphs and pass ambient inputs or
 use additional outputs without a central route table. The service boundary
 correlates transport requests and graph responses. Route conflicts fail during
 graph evaluation.

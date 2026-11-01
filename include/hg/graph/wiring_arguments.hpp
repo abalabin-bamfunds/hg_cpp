@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/details/wiring_argument_descriptor.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstddef>
 #include <optional>
@@ -12,7 +12,7 @@
 #include <string>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 class WiringArguments {
   public:
@@ -120,4 +120,4 @@ class WiringArguments {
     ScalarReadFunction scalar_read_;
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/wiring_template.hpp>
+#include <hg/graph/wiring_template.hpp>
 
 #include <functional>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename ScopeFactory> class ScopedWiringTemplate final : public WiringTemplate {
   public:
@@ -38,4 +38,4 @@ template <typename ScopeFactory> class ScopedWiringTemplate final : public Wirin
 template <typename ScopeFactory>
 ScopedWiringTemplate(const WiringTemplate &, ScopeFactory) -> ScopedWiringTemplate<ScopeFactory>;
 
-} // namespace bg::details
+} // namespace hg::details

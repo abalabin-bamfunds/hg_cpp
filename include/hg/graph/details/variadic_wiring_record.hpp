@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/wiring_argument_descriptor.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/wiring_argument_descriptor.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <memory>
 #include <optional>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 class VariadicWiringRecord final : public WiringRecord {
   public:
@@ -45,4 +45,4 @@ class VariadicWiringRecord final : public WiringRecord {
 
 const VariadicWiringRecord *variadic_wiring_record(WiringPoint point) noexcept;
 
-} // namespace bg::details
+} // namespace hg::details

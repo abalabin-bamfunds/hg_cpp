@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/optionality.hpp>
-#include <bg/util/named_argument.hpp>
-#include <bg/web/types.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/optionality.hpp>
+#include <hg/util/named_argument.hpp>
+#include <hg/web/types.hpp>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
 template <typename IDENTITY> struct AuthDecisionSchema {
     template <template <typename, auto...> typename Field> struct schema {
@@ -16,14 +16,14 @@ template <typename IDENTITY> struct AuthDecisionSchema {
 
 } // namespace details
 
-namespace bg::web {
+namespace hg::web {
 
 template <typename IDENTITY>
 using AuthDecision = Bundle<details::AuthDecisionSchema<IDENTITY>::template schema>;
 
 namespace auth {
 
-using bg::literals::operator""_n;
+using hg::literals::operator""_n;
 
 template <typename IDENTITY>
 [[nodiscard]] ScalarValue<AuthDecision<IDENTITY>> accept(Scalar<IDENTITY> identity) {
@@ -47,4 +47,4 @@ template <typename IDENTITY>
 
 } // namespace auth
 
-} // namespace bg::web
+} // namespace hg::web

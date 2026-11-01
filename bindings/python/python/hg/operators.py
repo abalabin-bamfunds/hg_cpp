@@ -1,6 +1,6 @@
 """Graph operators."""
 
-from ._bg import operators as _native
+from ._hg import operators as _native
 
 add = _native.add
 sub = _native.sub

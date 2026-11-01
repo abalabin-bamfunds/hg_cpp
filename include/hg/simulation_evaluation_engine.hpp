@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/periodic_callback.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/periodic_callback.hpp>
 
 #include <optional>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 class EvaluationProfile;
@@ -24,4 +24,4 @@ class SimulationEvaluationEngine {
              const PeriodicCallback &periodic_callback, std::optional<EvaluationTime> stop_time) const;
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> class OpaqueScalarType final : public ScalarType {
   public:
@@ -25,9 +25,9 @@ template <typename T> const ScalarType &opaque_scalar_type() noexcept {
     return type.get();
 }
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 template <typename T> struct scalar_type_traits<Opaque<T>> {
     static const ScalarType &type() noexcept { return details::opaque_scalar_type<T>(); }
@@ -40,6 +40,6 @@ template <typename T> struct scalar_declaration_traits<Opaque<T>> {
     static constexpr bool supports_time_series = true;
 };
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/scalar/cpp_runtime_type.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>

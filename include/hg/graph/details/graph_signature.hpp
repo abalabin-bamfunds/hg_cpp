@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/guarantee_variable.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/scalar_variable.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/guarantee_variable.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/scalar_variable.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 inline constexpr VariadicMode graph_parameter_variadic_mode = [] {
@@ -202,4 +202,4 @@ template <typename Function>
         name, parameter_names, std::make_index_sequence<graph_callable<Function>::argument_count>{});
 }
 
-} // namespace bg::details
+} // namespace hg::details

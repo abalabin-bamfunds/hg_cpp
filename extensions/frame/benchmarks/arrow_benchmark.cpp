@@ -1,11 +1,11 @@
-#include <bg/frame/arrow.hpp>
-#include <bg/frame/expression.hpp>
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/node.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/frame/arrow.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/node.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <arrow/api.h>
 #include <arrow/compute/api.h>
@@ -26,8 +26,8 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 constexpr auto row_count = std::size_t{100'000};
 constexpr auto update_limit = std::size_t{10'000};
@@ -403,7 +403,7 @@ int main(int argc, char **argv) {
     auto csv_path = std::string_view{"arrow_benchmark_results.csv"};
     for (auto argument = 1; argument < argc; argument += 2) {
         if (argument + 1 >= argc) {
-            std::cerr << "usage: bg_frame_arrow_benchmark [--report path] [--csv path]\n";
+            std::cerr << "usage: hg_frame_arrow_benchmark [--report path] [--csv path]\n";
             return 2;
         }
         const auto option = std::string_view{argv[argument]};

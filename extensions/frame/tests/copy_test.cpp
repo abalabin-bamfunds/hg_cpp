@@ -1,9 +1,9 @@
 #include <catch2/catch_test_macros.hpp>
 
-#include <bg/feedback.hpp>
-#include <bg/frame/frame.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/feedback.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/run_graph.hpp>
 
 #include <array>
 #include <optional>
@@ -12,9 +12,9 @@
 
 namespace {
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct CopyFrame {
     Field<i64> id;
@@ -510,7 +510,7 @@ TEST_CASE("TSF copy_tick copies runtime-schema inheritance into a declared Base"
     });
     const auto graph = [&](wp<TSF<CopyBaseFrame>> input) { return observe(copy(input)); };
     const auto result = run_graph(
-        graph, bg::input(runtime.type(), {literal::TimeSeriesLiteral{},
+        graph, hg::input(runtime.type(), {literal::TimeSeriesLiteral{},
                                    {{{"id", i64{7}}, {"value", i64{70}}, {"extra", i64{700}}}}}));
 
     CHECK(result.equals<i64>({0, 1}));

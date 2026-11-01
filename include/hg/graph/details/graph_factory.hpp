@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/details/aggregate_graph.hpp>
-#include <bg/graph/graph_template.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/node/details/resolver.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/graph/details/aggregate_graph.hpp>
+#include <hg/graph/graph_template.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/node/details/resolver.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <cstddef>
 #include <initializer_list>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename... Arguments>
 inline constexpr std::size_t unnamed_argument_count =
@@ -134,4 +134,4 @@ template <typename Definition, typename... TypeParameters, typename... Arguments
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

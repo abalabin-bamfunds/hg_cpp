@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/tsl/tsl_input.hpp>
-#include <bg/time_series/tsl/tsl_runtime_type.hpp>
-#include <bg/time_series/tsl/tsl_storage.hpp>
-#include <bg/time_series/tsl/tsl_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/tsl/tsl_input.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_storage.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size, Properties...>> {
   public:
@@ -128,4 +128,4 @@ template <typename Item, auto Size, auto... Properties> class Out<TSL<Item, Size
     TimeSeriesOutputBinding state_;
 };
 
-} // namespace bg
+} // namespace hg

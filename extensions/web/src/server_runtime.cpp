@@ -2,12 +2,12 @@
 #include "http_header.hpp"
 #include "runtime_logging.hpp"
 
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/scalar/bundle/scalar.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/list/scalar.hpp>
-#include <bg/scalar/tuple/scalar.hpp>
-#include <bg/scalar/value.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/scalar/bundle/scalar.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/tuple/scalar.hpp>
+#include <hg/scalar/value.hpp>
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -37,7 +37,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::web {
+namespace hg::web {
 namespace {
 
 namespace asio = boost::asio;
@@ -46,7 +46,7 @@ namespace http = beast::http;
 namespace websocket = beast::websocket;
 using tcp = asio::ip::tcp;
 using RequestHeaders = std::vector<std::pair<std::string, std::string>>;
-using namespace bg::literals;
+using namespace hg::literals;
 
 template <typename Target, typename Function>
 auto guarded_callback(std::shared_ptr<Target> target, Function function) {
@@ -1633,4 +1633,4 @@ void ServerRuntime::respond_websocket(service_client_id_t client_id, i64 connect
     implementation_->respond_websocket(client_id, connection_id, std::move(update));
 }
 
-} // namespace bg::web
+} // namespace hg::web

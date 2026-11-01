@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/details/evaluation_context.hpp>
+#include <hg/details/evaluation_context.hpp>
 
 #include <cstdint>
 #include <limits>
 #include <span>
 
-namespace bg::details {
+namespace hg::details {
 
 inline constexpr unsigned char service_binding_section_type{};
 inline constexpr std::uint32_t no_service_binding_provider_node = std::numeric_limits<std::uint32_t>::max();
@@ -20,4 +20,4 @@ struct ServiceBindingSection : EvaluationContextSection {
     std::span<ServiceRequestBinding *const> bindings;
 };
 
-} // namespace bg::details
+} // namespace hg::details

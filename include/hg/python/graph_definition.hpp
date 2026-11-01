@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/graph/wiring_template.hpp>
-#include <bg/python/export.hpp>
-#include <bg/python/node_definition.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/python/export.hpp>
+#include <hg/python/node_definition.hpp>
 
 #include <nanobind/nanobind.h>
 
@@ -10,9 +10,9 @@
 #include <memory>
 #include <span>
 
-namespace bg::python {
+namespace hg::python {
 
-class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
+class HG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
   public:
     PythonGraphDefinition(std::shared_ptr<const PythonNodeDefinition::SignatureDefinition> signature,
                           nanobind::handle function, bool lift_scalar_output);
@@ -32,4 +32,4 @@ class BG_PYTHON_API PythonGraphDefinition final : public WiringTemplate {
     bool lift_scalar_output_;
 };
 
-} // namespace bg::python
+} // namespace hg::python

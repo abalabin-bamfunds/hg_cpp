@@ -4,9 +4,9 @@ Column expressions apply one calculation to all current rows and maintain the re
 when rows change. They return `TSC` connections that can feed ordinary graph nodes,
 reductions, and further expressions.
 
-Include `<bg/frame/frame.hpp>`, `<bg/frame/expression.hpp>`, and
-`<bg/library.hpp>`. Import
-`bg::frame` for expressions and `bg::literals` for named arguments. Build and link
+Include `<hg/frame/frame.hpp>`, `<hg/frame/expression.hpp>`, and
+`<hg/library.hpp>`. Import
+`hg::frame` for expressions and `hg::literals` for named arguments. Build and link
 the [frame extension](index.md#frame).
 
 ## Selecting and calculating columns
@@ -47,7 +47,7 @@ Constants are copied when the expression is constructed.
 Named parameters allow one expression to bind to different graph inputs:
 
 ```cpp
-using namespace bg::literals;
+using namespace hg::literals;
 
 auto formula = col("ask") - col("bid") < param("limit");
 auto narrow = bind_expression(quotes, formula, "limit"_n = tolerance);
@@ -67,7 +67,7 @@ its rows.
 `frame::filter(frame, predicate)` retains rows whose predicate is true. False and null
 exclude a row. Membership updates when cells or captured parameters change.
 
-<!-- example-libraries: bg::frame -->
+<!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
 <!-- runnable-example: cpp -->
 ::::::{tab-set}
@@ -81,16 +81,16 @@ exclude a row. Membership updates when cells or captured parameters change.
 :::{tab-item} Code
 
 ```cpp
-#include <bg/frame/expression.hpp>
-#include <bg/frame/frame.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/run_graph.hpp>
 
 #include <iostream>
 
-using namespace bg;
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::frame;
+using namespace hg::literals;
 
 template <template <typename, auto...> typename Field> struct Quotes {
     Field<i64> id;
@@ -126,7 +126,7 @@ Output:
 The [C++ example project](index.md#frame) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install -DBG_SOURCE_DIR=/path/to/bg
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install -DHG_SOURCE_DIR=/path/to/hg
 cmake --build build --config Release
 ```
 

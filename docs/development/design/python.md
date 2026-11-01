@@ -1,9 +1,9 @@
 # Python integration
 
 The Python package provides initial graph authoring and node callbacks while
-keeping Python and nanobind out of the `bg` engine target. Build it with
-`BG_BUILD_PYTHON=ON`. The installed CMake package then provides `bg::python` in
-addition to `bg::bg`.
+keeping Python and nanobind out of the `hg` engine target. Build it with
+`HG_BUILD_PYTHON=ON`. The installed CMake package then provides `hg::python` in
+addition to `hg::hg`.
 
 ## Build and install
 
@@ -13,7 +13,7 @@ newer in the selected Python environment. Python tests also require pytest.
 
 ```sh
 python -m pip install nanobind pytest
-cmake -S . -B build/python -DBG_BUILD_PYTHON=ON -DBUILD_TESTING=ON
+cmake -S . -B build/python -DHG_BUILD_PYTHON=ON -DBUILD_TESTING=ON
 cmake --build build/python
 ctest --test-dir build/python --output-on-failure -R '^python_tests$'
 ```
@@ -21,17 +21,17 @@ ctest --test-dir build/python --output-on-failure -R '^python_tests$'
 The build-tree package is in `build/python/bindings/python`. A wheel can be
 built with `scikit-build-core` by running `python -m pip wheel .`.
 
-CMake consumers request the Python component with `find_package(bg COMPONENTS
-python REQUIRED)` and link `bg::python` to use the Python-aware C++ support
+CMake consumers request the Python component with `find_package(hg COMPONENTS
+python REQUIRED)` and link `hg::python` to use the Python-aware C++ support
 headers and library. Consumers that do not request the component need neither
 Python nor nanobind. The Python component resolves them from the Python
 environment selected by CMake. A consumer building a nanobind module must also
 use `nanobind_add_module(... NB_SHARED ...)` so that it shares nanobind's runtime
-with `bg::python`.
+with `hg::python`.
 
 ## Distribution
 
-The Python distribution is named `hg_cpp`; its import package remains `bg`.
+The Python distribution is named `hg_cpp`; its import package remains `hg`.
 The distribution workflow builds one `cp312-abi3` wheel for Linux
 `manylinux_2_28_x86_64`, macOS arm64, and Windows amd64, plus a source
 distribution. It audits the wheel ABI and contents, repairs platform
@@ -40,7 +40,7 @@ archive. Installed wheels are tested on Python 3.12, 3.13, and 3.14 on each
 platform, including the full Python suite and C++ and Python SDK consumers.
 
 Wheels include the native runtime dependencies, fmt headers/library/CMake
-package, and BG CMake package and headers required by the installed SDK. The
+package, and HG CMake package and headers required by the installed SDK. The
 workflow does not publish to PyPI.
 
 ## Graph authoring
@@ -49,38 +49,38 @@ The package exports time-series annotations, node and graph decorators,
 `run_graph`, engine operators, `Symbol`, and `symbol`.
 
 ```python
-import bg
+import hg
 from typing import TypeVar
 
-@bg.source_node
-def source() -> bg.TS[int]:
+@hg.source_node
+def source() -> hg.TS[int]:
     return 1
 
-@bg.compute_node
-def add(value: bg.TS[int], amount: int = 2) -> bg.TS[int]:
+@hg.compute_node
+def add(value: hg.TS[int], amount: int = 2) -> hg.TS[int]:
     return value.value + amount
 
-@bg.graph
-def example() -> bg.TS[int]:
+@hg.graph
+def example() -> hg.TS[int]:
     return add(source())
 
-assert bg.run_graph(example) == [3]
+assert hg.run_graph(example) == [3]
 ```
 
 Use standard `typing.TypeVar` declarations for generic graph signatures. An
 unbounded or scalar-constrained TypeVar represents a scalar type; use it inside
 `TS[...]` or as a plain scalar graph parameter. Bind a TypeVar to
-`bg.TimeSeries` when it represents an entire time-series type:
+`hg.TimeSeries` when it represents an entire time-series type:
 
 ```python
 VALUE = TypeVar("VALUE")
-SERIES = TypeVar("SERIES", bound=bg.TimeSeries)
+SERIES = TypeVar("SERIES", bound=hg.TimeSeries)
 
-@bg.graph
-def identity(value: bg.TS[VALUE]) -> bg.TS[VALUE]:
+@hg.graph
+def identity(value: hg.TS[VALUE]) -> hg.TS[VALUE]:
     return value
 
-@bg.graph
+@hg.graph
 def forward(value: SERIES) -> SERIES:
     return value
 ```
@@ -90,17 +90,17 @@ root guarantee, so repeated occurrences require that same type.
 
 TypeVar identity determines which occurrences share a type mapping. Names are
 descriptive only, so separate TypeVar objects with the same name remain
-independent. `bg.TimeSeries` is a typing marker for the TypeVar bound; it is not
+independent. `hg.TimeSeries` is a typing marker for the TypeVar bound; it is not
 a value annotation.
 
 Specialize a generic graph with its fully resolved input types. The resulting
 graph definition can be called from normal wiring and passed to `run_graph`:
 
 ```python
-specialized = graph[bg.TS[int], bg.TSD[int, bg.TS[str]]]
+specialized = graph[hg.TS[int], hg.TSD[int, hg.TS[str]]]
 ```
 
-`bg.operators` is the shared namespace for engine and library operators,
+`hg.operators` is the shared namespace for engine and library operators,
 including higher-order graph operators. Native operators use C++ overload
 resolution for both explicit calls and wiring-point special methods.
 Wiring-point arithmetic and comparison methods call the native operators and
@@ -108,25 +108,25 @@ preserve operand order. See the [standard library](library.md) for supported
 types and wiring syntax.
 
 Wiring points support `/`, `//`, `%`, and `**`; `round(point, ndigits)` and
-`abs(point)` call the corresponding operators. `bg.operators.convert` takes an
+`abs(point)` call the corresponding operators. `hg.operators.convert` takes an
 explicit full result type descriptor:
 
 ```python
-converted = bg.operators.convert[bg.TS[float]](integer_value)
+converted = hg.operators.convert[hg.TS[float]](integer_value)
 ```
 
 The built-in conversions support `int` and `float`. C++ overload registration
 can extend `convert` to other time-series inputs and collection outputs.
 Positional and named arguments can contain wiring points or registered Python
 scalar values. A sink operator returns `None`. The higher-order operators are
-the same objects as `bg.map`, `bg.mesh`, and `bg.switch_`.
+the same objects as `hg.map`, `hg.mesh`, and `hg.switch_`.
 
 ```python
-@bg.graph
-def constant() -> bg.TS[int]:
-    return bg.operators.const_(value=42)
+@hg.graph
+def constant() -> hg.TS[int]:
+    return hg.operators.const_(value=42)
 
-item = collection[key]  # bg.operators.getitem(collection, key)
+item = collection[key]  # hg.operators.getitem(collection, key)
 ```
 
 `getitem` and `getattr` also accept Python-object time series. `getitem` accepts
@@ -134,27 +134,27 @@ a scalar or time-series key. `getattr` accepts a scalar string or symbol name.
 The output scalar type is inferred from the Python `__getitem__` return
 annotation or the selected attribute's annotation; provide an explicit output
 type when inference is unavailable, for example
-`bg.operators.getitem[int](value, key)` or
-`bg.operators.getattr[int](value, "count")`. The bracketed type is the scalar
+`hg.operators.getitem[int](value, key)` or
+`hg.operators.getattr[int](value, "count")`. The bracketed type is the scalar
 value type; these overloads return `TS` of that type.
 Time-series collection overloads do not accept a bracketed output type.
 
-`bg.opt(point)` requires an optional receiving parameter. It returns a new
+`hg.opt(point)` requires an optional receiving parameter. It returns a new
 wiring proxy for the same time series and leaves `point` unchanged. It adds no
 runtime node or fallback value. The selected node defines how it handles an
 invalid input. See [optional arguments](operators.md#optional-arguments).
 
-`Annotated[TSD[K, V], bg.valid_items]` declares a filtered input view.
-`bg.valid_items(point)` requires that annotation on the receiving parameter:
+`Annotated[TSD[K, V], hg.valid_items]` declares a filtered input view.
+`hg.valid_items(point)` requires that annotation on the receiving parameter:
 
 ```python
 from typing import Annotated
 
-@bg.compute_node
-def count(values: Annotated[bg.TSD[int, bg.TS[int]], bg.valid_items]) -> bg.TS[int]:
+@hg.compute_node
+def count(values: Annotated[hg.TSD[int, hg.TS[int]], hg.valid_items]) -> hg.TS[int]:
     return len(values)
 
-count(bg.valid_items(values))
+count(hg.valid_items(values))
 ```
 
 The annotation adds no runtime node and leaves the original wiring point
@@ -186,24 +186,24 @@ requires a wiring point.
 
 `TS[bytes]` outputs are read-only `memoryview` objects backed by native byte
 storage and remain valid after graph execution. Python `bytes` and contiguous
-memoryview inputs are copied into BG storage, except that a full memoryview
-previously exported by BG reuses its native storage. Views that cover only part
+memoryview inputs are copied into HG storage, except that a full memoryview
+previously exported by HG reuses its native storage. Views that cover only part
 of a buffer are copied, and non-contiguous memoryviews are rejected.
 
 Variadic parameters use a collection annotation. The function body receives
 one collection rather than expanded Python arguments:
 
 ```python
-@bg.graph
-def homogeneous(*values: bg.TSL[bg.TS[int], bg.SIZE]) -> bg.TS[int]:
+@hg.graph
+def homogeneous(*values: hg.TSL[hg.TS[int], hg.SIZE]) -> hg.TS[int]:
     return values[0]
 
-@bg.graph
-def positional(*values: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
+@hg.graph
+def positional(*values: hg.TSB[hg.TS_SCHEMA]) -> hg.TS[int]:
     return values[0]
 
-@bg.graph
-def named(**values: bg.TSB[bg.TS_SCHEMA]) -> bg.TS[int]:
+@hg.graph
+def named(**values: hg.TSB[hg.TS_SCHEMA]) -> hg.TS[int]:
     return values["value"]
 ```
 
@@ -231,7 +231,7 @@ type. `INVALID` invalidates TS, TSL, TSB, TSS, or TSD inputs. A scalar collectio
 such as `TS[dict[int, str]]` remains one scalar value and is not interpreted as
 a TSD delta. Generic graph definitions
 require explicit, fully resolved input types, for example
-`run_graph(graph[bg.TS[int], bg.TSD[int, bg.TS[str]]], ...)`.
+`run_graph(graph[hg.TS[int], hg.TSD[int, hg.TS[str]]], ...)`.
 The graph can return `TS`, `TSS`, `TSL`, `TSD`, or `TSB`, including nested
 collections. `GraphRunResult` stores timestamped output events. Its `events` contain
 `(time, value)` pairs; `event_count` reports their count. `start_time` defines
@@ -243,18 +243,18 @@ results use `SetDelta`. Skipped and invalid root ticks become `None`.
 Invalidated collection items use `INVALID` and removed TSD keys use `REMOVE`.
 
 ```python
-@bg.graph
-def identity(values: bg.TSD[int, bg.TS[str]]) -> bg.TSD[int, bg.TS[str]]:
+@hg.graph
+def identity(values: hg.TSD[int, hg.TS[str]]) -> hg.TSD[int, hg.TS[str]]:
     return values
 
-assert bg.run_graph(identity, [{1: "first"}, {1: bg.REMOVE}, None]) == [
-    {1: "first"}, {1: bg.REMOVE}, None,
+assert hg.run_graph(identity, [{1: "first"}, {1: hg.REMOVE}, None]) == [
+    {1: "first"}, {1: hg.REMOVE}, None,
 ]
 ```
 
 `run_graph` wires a graph with normal Python arguments and selects its engine
-through `engine=bg.EvaluationEngine.simulation` or
-`engine=bg.EvaluationEngine.realtime`. Simulation is the default. Scalar
+through `engine=hg.EvaluationEngine.simulation` or
+`engine=hg.EvaluationEngine.realtime`. Simulation is the default. Scalar
 arguments follow the declared parameter types. Returned output is captured by
 default. Pass `capture_output=False` to omit the capture sink and storage.
 Outputless graphs and runs with capture disabled return `None`.
@@ -268,23 +268,23 @@ Input sequences and output capture support both engines. Result positions are
 relative to the run's start time.
 
 Realtime execution waits for work until a run limit or `stop_token` ends the run.
-Create a `bg.StopSource`, pass `source.get_token()` as `stop_token`, and call
+Create a `hg.StopSource`, pass `source.get_token()` as `stop_token`, and call
 `source.request_stop()` from a graph callback or another thread. Cancellation
 follows the [engine lifecycle](evaluation.md#realtime-evaluation).
 
 ```python
-stop_source = bg.StopSource()
+stop_source = hg.StopSource()
 
-@bg.node
+@hg.node
 def finish() -> int:
     stop_source.request_stop()
     return 42
 
-@bg.graph
-def realtime_example() -> bg.TS[int]:
+@hg.graph
+def realtime_example() -> hg.TS[int]:
     return finish()
 
-bg.run_graph(realtime_example, engine=bg.EvaluationEngine.realtime,
+hg.run_graph(realtime_example, engine=hg.EvaluationEngine.realtime,
              stop_token=stop_source.get_token())
 ```
 
@@ -306,8 +306,8 @@ Pass an optional recorder created by `EvaluationProfiler.recorder()` through
 the `recorder` keyword. Profiling follows the selected engine and start time.
 
 ```python
-profiler = bg.EvaluationProfiler()
-bg.run_graph(example, recorder=profiler.recorder())
+profiler = hg.EvaluationProfiler()
+hg.run_graph(example, recorder=profiler.recorder())
 print(profiler.report())
 ```
 
@@ -339,26 +339,26 @@ Register graph implementations with `ServiceCatalogue.register_impl`, then
 pass the catalogue to `run_graph`:
 
 ```python
-@bg.reference_service
-def clock() -> bg.TS[int]:
+@hg.reference_service
+def clock() -> hg.TS[int]:
     pass
 
-@bg.source_node
-def source() -> bg.TS[int]:
+@hg.source_node
+def source() -> hg.TS[int]:
     return 42
 
-@bg.graph
-def clock_implementation() -> bg.TS[int]:
+@hg.graph
+def clock_implementation() -> hg.TS[int]:
     return source()
 
-catalogue = bg.ServiceCatalogue()
+catalogue = hg.ServiceCatalogue()
 catalogue.register_impl(clock, clock_implementation)
 
-@bg.graph
-def client() -> bg.TS[int]:
+@hg.graph
+def client() -> hg.TS[int]:
     return clock()
 
-assert bg.run_graph(client, catalogue=catalogue) == [42]
+assert hg.run_graph(client, catalogue=catalogue) == [42]
 ```
 
 For a request/reply service, the implementation graph receives the request
@@ -370,7 +370,7 @@ implementation graph as installation arguments. The catalogue retains the
 Python service and graph wrappers while its native registrations are in use.
 
 Wrap a request/reply or subscription implementation with
-`bg.feedback_service_implementation(service, implementation)` to delay each
+`hg.feedback_service_implementation(service, implementation)` to delay each
 request by one cycle before the implementation receives it. The returned
 service implementation keeps the service and graph alive. Pass it to
 `ServiceCatalogue.register_impl` with the same scalar filters and installation
@@ -379,7 +379,7 @@ arguments:
 ```python
 catalogue.register_impl(
     echo,
-    bg.feedback_service_implementation(echo, echo_implementation),
+    hg.feedback_service_implementation(echo, echo_implementation),
     mode=2,
     factor=3,
 )
@@ -393,28 +393,28 @@ Connect each service's request and reply ports inside the graph, then register
 the graph and its service claims:
 
 ```python
-@bg.reference_service
-def clock() -> bg.TS[int]:
+@hg.reference_service
+def clock() -> hg.TS[int]:
     pass
 
-@bg.subscription_service
-def lookup(key: bg.TS[int, bg.final]) -> bg.TS[int]:
+@hg.subscription_service
+def lookup(key: hg.TS[int, hg.final]) -> hg.TS[int]:
     pass
 
-@bg.source_node
-def clock_source() -> bg.TS[int]:
+@hg.source_node
+def clock_source() -> hg.TS[int]:
     return 5
 
-@bg.compute_node
-def answer(keys: bg.TSS[int]) -> bg.TSD[int, bg.TS[int]]:
+@hg.compute_node
+def answer(keys: hg.TSS[int]) -> hg.TSD[int, hg.TS[int]]:
     return {key: key * 10 for key in keys.value}
 
-@bg.graph
+@hg.graph
 def implementation() -> None:
     lookup.implementation_replies(answer(lookup.implementation_requests()))
     clock.implementation_replies(clock_source())
 
-catalogue = bg.ServiceCatalogue()
+catalogue = hg.ServiceCatalogue()
 registration = catalogue.register_multiservice(implementation)
 registration.register_impl(clock)
 registration.register_impl(lookup)
@@ -430,8 +430,8 @@ by the Python multiservice API. Scalar filters passed to
 parameters.
 
 A subscription key uses a final-or-stronger time series, for example
-`bg.TS[int, bg.final]`. Its implementation receives `bg.TSS[int]` and returns
-`bg.TSD[int, R]` for the declared result type `R`. See
+`hg.TS[int, hg.final]`. Its implementation receives `hg.TSS[int]` and returns
+`hg.TSD[int, R]` for the declared result type `R`. See
 [graph services](services.md) for the signatures and request behavior.
 
 ## Time-series types
@@ -444,18 +444,18 @@ process lifetime. Definition and callback ownership follows the
 Python definitions can use these annotations:
 
 ```python
-bg.TS[int]
-bg.REF[bg.TS[int]]
-bg.TSS[int]
-bg.TSL[bg.TS[int], 4]
-bg.TSD[int, bg.TS[float]]
-bg.TSB[Quote]
+hg.TS[int]
+hg.REF[hg.TS[int]]
+hg.TSS[int]
+hg.TSL[hg.TS[int], 4]
+hg.TSD[int, hg.TS[float]]
+hg.TSB[Quote]
 ```
 
 A time-series annotation can add a root guarantee, for example
-`bg.TS[int, bg.final]` or `bg.TSD[int, bg.TS[float], bg.deduplicated]`.
-The available values are `bg.ordinary`, `bg.deduplicated`, `bg.final`, and
-`bg.const_`. An explicit input guarantee is a minimum: stronger sources also
+`hg.TS[int, hg.final]` or `hg.TSD[int, hg.TS[float], hg.deduplicated]`.
+The available values are `hg.ordinary`, `hg.deduplicated`, `hg.final`, and
+`hg.const_`. An explicit input guarantee is a minimum: stronger sources also
 match. An omitted input guarantee accepts and retains the source guarantee.
 Guarantees can also qualify concrete collection items and schema fields.
 The outer collection of a variadic `TSL[..., SIZE]` or `TSB[TS_SCHEMA]`
@@ -467,17 +467,17 @@ bundle fields and their TSB projection:
 ```python
 from typing import Optional
 
-@bg.schema
+@hg.schema
 class BaseQuote:
     bid: float
 
-@bg.schema
+@hg.schema
 class Quote(BaseQuote):
     ask: Optional[float]
 ```
 
-`bg.Bundle[Quote]` is a scalar type for schemas whose fields are all scalar.
-`bg.TSB[Quote]` is a time-series bundle type. A scalar field projects to a
+`hg.Bundle[Quote]` is a scalar type for schemas whose fields are all scalar.
+`hg.TSB[Quote]` is a time-series bundle type. A scalar field projects to a
 time series of that scalar type; an explicit time-series field passes through.
 The TSB projection does not preserve optional scalar presence. The scalar
 `Bundle` retains it, and the generated constructor defaults an omitted optional
@@ -486,10 +486,10 @@ field to `None`.
 Explicit time-series fields pass through to the TSB projection:
 
 ```python
-@bg.schema
+@hg.schema
 class MarketData:
     price: float
-    venue: bg.TS[str]
+    venue: hg.TS[str]
 ```
 
 Schemas support single inheritance. Each declaration has one identity shared by
@@ -497,7 +497,7 @@ its scalar and TSB projections. The qualified Python name is descriptive.
 Optional direct self-fields support recursive scalar bundles:
 
 ```python
-@bg.schema
+@hg.schema
 class Node:
     value: int
     child: Optional["Node"]
@@ -527,7 +527,7 @@ callback's declared order. A parameter name not present on the decorated
 function is an error.
 
 ```python
-@bg.node
+@hg.node
 def add(value: int, offset: int) -> int:
     return value + offset
 
@@ -542,26 +542,26 @@ must increase strictly. An empty generator is valid. The engine closes the
 generator when its node stops. Exceptions from stop callbacks are reported
 through Python's unraisable-exception hook after stop cleanup.
 
-Nodes can request `bg.EvaluationClock`, `bg.Scheduler`, or `bg.State[T]` as
+Nodes can request `hg.EvaluationClock`, `hg.Scheduler`, or `hg.State[T]` as
 parameters. Each injectable must have `= None` as its default and is omitted
 from the wiring signature. Place positional injectables after required
 positional parameters, or declare them keyword-only, because Python does not
 allow a required positional parameter after a defaulted one.
-An evaluation callback can also request `output: bg.Output = None`. This
+An evaluation callback can also request `output: hg.Output = None`. This
 provides the same read-only API as an input view, over the node's retained
 output before the callback's returned delta is applied. `modified` and
 `delta_value` keep their current-cycle meaning, so they are normally `False`
 and `None` during evaluation. Output views are valid only during their callback;
 the node publishes changes only by returning a delta. A lifecycle callback can
 request the same view by selecting the `output` parameter by name. `@generator`
-rejects `bg.Output` because its function parameters remain in the generator
+rejects `hg.Output` because its function parameters remain in the generator
 frame between callback invocations.
 `EvaluationClock.evaluation_time` exposes the evaluation time. `EvaluationClock.now`
 exposes the current time for the engine mode: evaluation time in simulation mode
 and wall-clock time in real-time mode. Both are Python `datetime` values.
 `Scheduler.schedule_at(time)` schedules that node at a later evaluation time.
 `Scheduler.schedule_wall_clock_at(time)` schedules it when the wall clock
-reaches the deadline. Both return a `bg.ScheduleHandle` and follow the
+reaches the deadline. Both return a `hg.ScheduleHandle` and follow the
 [timer semantics](evaluation.md#timed-scheduling).
 `Scheduler.cancel(handle)` cancels a pending handle for the same node.
 `Scheduler.timer_fired(handle)` reports whether that node's timer activated in
@@ -591,12 +591,12 @@ Omitting the return annotation declares a sink. The node runs at graph start
 only when all resolved inputs are scalar arguments.
 
 ```python
-@bg.node
+@hg.node
 def add(value: int, offset: int) -> int:
     return value + offset
 
-@bg.graph
-def example(value: bg.TS[int]) -> bg.TS[int]:
+@hg.graph
+def example(value: hg.TS[int]) -> hg.TS[int]:
     return add(value, 1)
 ```
 
@@ -621,7 +621,7 @@ the automatic optional validity from `Optional[T]`; an explicit `valid` tuple
 determines validity for every input.
 
 `dict[K, V]` declares a scalar dictionary. A plain `@node` callback receives a
-read-only `bg.Dict` mapping view for a dictionary parameter, whether graph code
+read-only `hg.Dict` mapping view for a dictionary parameter, whether graph code
 supplies a scalar or a `TS[dict[K, V]]`. The view expires when the callback returns.
 Length and key lookup do not convert unrelated entries; `[]` and `get()` each
 perform one dictionary lookup. Iterators advance a native cursor and convert
@@ -677,51 +677,51 @@ invalid. The delta is `None` on a later unchanged invalid cycle. This also
 applies when a nested TSS or TSD item becomes invalid.
 
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
-`datetime.datetime`, `datetime.timedelta`, and `bg.Symbol`. A `datetime`
+`datetime.datetime`, `datetime.timedelta`, and `hg.Symbol`. A `datetime`
 maps to `EvaluationTime` with microsecond precision using the timezone-naive
 local contract. Timezone-aware values, `date`, and `time` objects are rejected.
 Durations map to signed 64-bit microseconds; conversion rejects values outside
 that range.
 `list[T]` declares an engine scalar list. Conversion copies its items using
 the declared scalar type `T`; conversion back to Python produces a list.
-`bg.Symbol` is a `str` subclass. Non-null symbols compare and
-hash like their text; `bg.Symbol()` represents a null symbol and differs from
+`hg.Symbol` is a `str` subclass. Non-null symbols compare and
+hash like their text; `hg.Symbol()` represents a null symbol and differs from
 the empty string. `str(symbol)` returns ordinary Python text, so converting a
-null symbol produces `""`. `bg.Symbol` cannot be subclassed. Python `int` maps
+null symbol produces `""`. `hg.Symbol` cannot be subclassed. Python `int` maps
 to the engine's signed 64-bit integer type.
-Python `str` maps to `bg::string` and supports scalar arguments and `TS[str]`
+Python `str` maps to `hg::string` and supports scalar arguments and `TS[str]`
 inputs and outputs. Conversion uses strict UTF-8: lone surrogates raise
 `UnicodeEncodeError`, and invalid UTF-8 from C++ raises `UnicodeDecodeError`.
 C++ callers must provide valid UTF-8. For canonical strings whose storage has
 no other final-release hook, the extension retains the originating Python
-string object while the BG storage lives and removes the cache entry when that
-storage is released. `bg.Symbol` values infer the engine symbol type, while ordinary
-`str` values infer the engine string type. `bg.symbol` is an alias for the
-`bg.Symbol` constructor. A `Symbol` supplied to a `str`-typed input is
+string object while the HG storage lives and removes the cache entry when that
+storage is released. `hg.Symbol` values infer the engine symbol type, while ordinary
+`str` values infer the engine string type. `hg.symbol` is an alias for the
+`hg.Symbol` constructor. A `Symbol` supplied to a `str`-typed input is
 normalized to ordinary Python text; a plain `str` supplied to a `Symbol`-typed
 input is interned as a non-null symbol. The Python class reuses objects
 produced from the same interned engine symbol while retaining the class-level
 cache.
 
-`tuple[T, ...]` declares the homogeneous scalar list `bg::List<T>`.
+`tuple[T, ...]` declares the homogeneous scalar list `hg::List<T>`.
 `typing.Tuple[T, ...]` declares the same type. The item annotation can contain
 scalar type variables or nested scalar collections. Items require scalar types;
 optional items are unsupported. For example:
 
 ```python
-@bg.node
+@hg.node
 def total(values: tuple[int, ...]) -> int:
     return sum(values)
 ```
 
-Fixed tuple annotations declare `bg::Tuple` with one scalar type per position.
+Fixed tuple annotations declare `hg::Tuple` with one scalar type per position.
 Their item annotations can contain scalar type variables or nested scalar
 collections. Items require scalar types; optional items are unsupported. Fixed
 tuples support heterogeneous types, including the one-item form `tuple[T]` and
 the empty form `tuple[()]`. `typing.Tuple` supports the same forms. For example:
 
 ```python
-@bg.node
+@hg.node
 def describe(value: tuple[str, int]) -> str:
     return f"{value[0]}: {value[1]}"
 ```
@@ -757,36 +757,36 @@ that affects equality or hashing.
 
 ### Queue nodes
 
-`@bg.queue` declares a queue node whose decorated function runs at graph start.
+`@hg.queue` declares a queue node whose decorated function runs at graph start.
 Its return annotation declares the output time series type; its return value is
-ignored. The function declares exactly one `q: bg.Queue = None` parameter.
+ignored. The function declares exactly one `q: hg.Queue = None` parameter.
 Graph code supplies its scalar parameters. A queue node has no evaluation
 callback and runs in the outer graph. Register cleanup with `@name.stop`,
 selecting parameters by name as for other Python nodes.
 Queue callbacks can also request `State[T]` and `EvaluationClock`.
 
 ```python
-@bg.queue(mode=bg.QueueMode.batch)
-def values(count: int, q: bg.Queue = None) -> bg.TS[tuple[int, ...]]:
+@hg.queue(mode=hg.QueueMode.batch)
+def values(count: int, q: hg.Queue = None) -> hg.TS[tuple[int, ...]]:
     for value in range(count):
         q.write(value)
 
-@bg.graph
-def example() -> bg.TS[tuple[int, ...]]:
+@hg.graph
+def example() -> hg.TS[tuple[int, ...]]:
     return values(3)
 
-assert bg.run_graph(example) == [(0, 1, 2)]
+assert hg.run_graph(example) == [(0, 1, 2)]
 ```
 
-The default mode is `bg.QueueMode.standard`. `bg.QueueMode.elide` and
-`bg.QueueMode.batch` follow the [queue message rules](time-series-types.md#queue-messages).
+The default mode is `hg.QueueMode.standard`. `hg.QueueMode.elide` and
+`hg.QueueMode.batch` follow the [queue message rules](time-series-types.md#queue-messages).
 Queue outputs use ordinary time series. Batch outputs have `TS[tuple[T, ...]]`
 leaves, including leaves inside fixed `TSL`, `TSB`, and `TSD` collections.
 
 `Queue.write(delta)` returns whether it committed a message. It accepts the
 existing Python output delta forms. `None` requests no message and returns
 `False`. Batch mode accepts one `T` for each updated `TS[tuple[T, ...]]` leaf.
-Invalidation uses `bg.INVALID`; dictionary removal uses `bg.REMOVE`. An open
+Invalidation uses `hg.INVALID`; dictionary removal uses `hg.REMOVE`. An open
 writer propagates conversion and serialization errors without committing a
 partial message.
 
@@ -803,20 +803,20 @@ An extension can expose a process-lifetime operator without adding it to a
 central registry:
 
 ```cpp
-#include <bg/operators.hpp>
-#include <bg/python/operator.hpp>
+#include <hg/operators.hpp>
+#include <hg/python/operator.hpp>
 
-bg::python::export_operator(module, "getitem", bg::operators::getitem);
+hg::python::export_operator(module, "getitem", hg::operators::getitem);
 ```
 
 The wrapper observes overloads registered on that operator later. It uses the
 same resolution cache, requirements, resolvers, adaptations, and diagnostics
 as a C++ call.
 
-Expose a native schema on a Python class with `<bg/python/schema.hpp>`:
+Expose a native schema on a Python class with `<hg/python/schema.hpp>`:
 
 ```cpp
-bg::python::export_schema(python_class, time_series_schema, &scalar_schema);
+hg::python::export_schema(python_class, time_series_schema, &scalar_schema);
 ```
 
 Call this while holding the GIL with process-lifetime schema descriptors.
@@ -829,11 +829,11 @@ An exported class can be the base of a Python `@schema` subclass. With a scalar
 descriptor, export supplies a field constructor unless the class declares
 `__init__`. Conflicting schema registration raises an error.
 
-Use `<bg/python/service.hpp>` to bind a Python service declaration to an existing
+Use `<hg/python/service.hpp>` to bind a Python service declaration to an existing
 C++ service:
 
 ```cpp
-bg::python::export_service(python_declaration, native_service);
+hg::python::export_service(python_declaration, native_service);
 ```
 
 Export before wiring or registering implementations, while holding the GIL.
@@ -844,7 +844,7 @@ Repeating the same export is allowed; binding an exported
 declaration to a different service raises an error.
 
 Native extensions can access a Python catalogue's existing C++ catalogue with
-`bg::python::service_catalogue(wrapper)` from `<bg/python/service_catalogue.hpp>`.
+`hg::python::service_catalogue(wrapper)` from `<hg/python/service_catalogue.hpp>`.
 Hold the GIL when calling it. The returned reference remains valid while the
 Python wrapper lives.
 
@@ -860,13 +860,13 @@ handlers take precedence over handlers for the scalar type. Register handlers
 when the extension module initializes, before affected values are exposed to
 Python.
 
-Native node declarations use `bg::python::PythonObject` to constrain a scalar
+Native node declarations use `hg::python::PythonObject` to constrain a scalar
 variable to Python-object values. User-defined Python classes represented by
 Python-object scalars match the root `object` bound:
 
 ```cpp
-using PYOBJECT = bg::ScalarVariable<"PYOBJECT", bg::python::PythonObject>;
-bg::In<bg::TS<PYOBJECT>> input;
+using PYOBJECT = hg::ScalarVariable<"PYOBJECT", hg::python::PythonObject>;
+hg::In<hg::TS<PYOBJECT>> input;
 ```
 
 Python-to-scalar conversion during wiring receives a temporary allocator. A
@@ -882,11 +882,11 @@ constructed. They expire when graph construction returns.
 the engine's normal C++ implementations.
 
 ```python
-@bg.graph
-def branch(key: bg.TS[int], value: bg.TS[float]) -> bg.TS[float]:
+@hg.graph
+def branch(key: hg.TS[int], value: hg.TS[float]) -> hg.TS[float]:
     return scale(value)
 
-mapped = bg.map(branch, values, __key_arg__="key")
+mapped = hg.map(branch, values, __key_arg__="key")
 ```
 
 Map and mesh accept positional and named arguments. `pass_through(value)`
@@ -901,33 +901,33 @@ Switch cases use a dictionary. A tuple groups keys that use the same graph, and
 `DEFAULT` supplies the fallback graph:
 
 ```python
-selected = bg.switch_(key, {(1, 2): first, 3: second, bg.DEFAULT: fallback}, value)
+selected = hg.switch_(key, {(1, 2): first, 3: second, hg.DEFAULT: fallback}, value)
 ```
 
-`@bg.dispatch` declares an input/output contract for runtime type selection.
+`@hg.dispatch` declares an input/output contract for runtime type selection.
 Its function body is not called. Register decorated graph or node definitions
 with `overload`; the declared input type is the fallback when an implementation
 accepts it:
 
 ```python
-@bg.dispatch
-def choose(value: bg.TS[Base]) -> bg.TS[str]: ...
+@hg.dispatch
+def choose(value: hg.TS[Base]) -> hg.TS[str]: ...
 
 @choose.overload
-@bg.compute_node
-def base(value: bg.TS[Base]) -> bg.TS[str]:
+@hg.compute_node
+def base(value: hg.TS[Base]) -> hg.TS[str]:
     return "base"
 
 @choose.overload
-@bg.compute_node
-def derived(value: bg.TS[Derived]) -> bg.TS[str]:
+@hg.compute_node
+def derived(value: hg.TS[Derived]) -> hg.TS[str]:
     return "derived"
 
 result = choose(value)
 ```
 
 Construct an explicit implementation list with
-`choose = bg.dispatch(signature_function, [base, derived])`. Dispatch accepts
+`choose = hg.dispatch(signature_function, [base, derived])`. Dispatch accepts
 positional and named arguments and selects on covariance-capable time-series
 inputs. An unmatched runtime type raises `IndexError` if no fallback
 implementation applies. Other matching and output rules follow
@@ -938,15 +938,15 @@ Source and sink branch graphs are supported. A sink higher-order call returns
 
 ## Runtime boundary
 
-The `bg` engine does not depend on Python, nanobind, Python object ownership,
+The `hg` engine does not depend on Python, nanobind, Python object ownership,
 the Global Interpreter Lock (GIL), or Python exception types. The Python runner
 releases the GIL while native graph evaluation runs. Each Python node callback
 acquires it for argument conversion, callback execution, and output
 conversion.
 
-C++ nodes that call Python APIs use the Python wrapper: `bg::python::node<Definition>()`
-for aggregate declarations, `bg::python::node(callable)` for callable nodes, and
-`bg::python::node(definition)` for runtime-signature nodes. The wrapper acquires
+C++ nodes that call Python APIs use the Python wrapper: `hg::python::node<Definition>()`
+for aggregate declarations, `hg::python::node(callable)` for callable nodes, and
+`hg::python::node(definition)` for runtime-signature nodes. The wrapper acquires
 the GIL for evaluation, start, invalidation, stop, and finalization callbacks.
 Exceptions from evaluation, start, and invalidation propagate through graph
 execution. Since stop and finalization are `noexcept` engine callbacks,

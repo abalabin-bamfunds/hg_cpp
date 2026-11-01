@@ -1,11 +1,11 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/frame/tsc.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/frame/tsc.hpp>
 
-#include <bg/testing/time_series_tick_comparison.hpp>
-#include <bg/time_series/tick_operations.hpp>
-#include <bg/time_series/tick_serializer.hpp>
-#include <bg/time_series/details/scalar_literal.hpp>
+#include <hg/testing/time_series_tick_comparison.hpp>
+#include <hg/time_series/tick_operations.hpp>
+#include <hg/time_series/tick_serializer.hpp>
+#include <hg/time_series/details/scalar_literal.hpp>
 #include "literal_helpers.hpp"
 #include "tick_codec.hpp"
 
@@ -22,7 +22,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 namespace {
 
 using tick_codec::Cell;
@@ -211,7 +211,7 @@ void write_column_cell(ScalarBufferWriteContext &writer, const ColumnSeriesView<
                        allocator &memory) {
     const auto value = column.cell(id);
     const auto valid = static_cast<std::uint8_t>(value.has_value());
-    bg::details::write_bytes(writer, valid);
+    hg::details::write_bytes(writer, valid);
     if (!value)
         return;
 
@@ -220,7 +220,7 @@ void write_column_cell(ScalarBufferWriteContext &writer, const ColumnSeriesView<
         const auto &stored = storage.native->stored(*storage.physical_rows, id);
         writer.write(ScalarValue<string>{Scalar<string>::from(stored), memory});
     } else {
-        bg::details::write_bytes(writer, *value);
+        hg::details::write_bytes(writer, *value);
     }
 }
 
@@ -239,7 +239,7 @@ void write_live_key(ScalarBufferWriteContext &writer, const std::vector<FrameCol
         write_column_cell(writer, columns, index, id, memory);
 }
 
-void write_frame_tick(const bg::details::TimeSeriesInputData &input, ScalarBufferWriteContext &writer,
+void write_frame_tick(const hg::details::TimeSeriesInputData &input, ScalarBufferWriteContext &writer,
                       allocator &memory) {
     const auto &runtime = static_cast<const FrameSeriesRuntimeType &>(input.runtime_type());
     auto storage = runtime.input_storage(input.data());
@@ -247,8 +247,8 @@ void write_frame_tick(const bg::details::TimeSeriesInputData &input, ScalarBuffe
     storage.modified = input.modified();
     const auto &layout = native_frame_layout(*storage.schema);
 
-    bg::details::write_bytes(writer, storage.schema);
-    bg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.rows.identity));
+    hg::details::write_bytes(writer, storage.schema);
+    hg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.rows.identity));
     auto changed_columns = std::vector<std::size_t>{};
     if (storage.change_time == input.last_updated()) {
         storage.each_changed_column(std::addressof(changed_columns), [](void *context, std::size_t index) {
@@ -257,26 +257,26 @@ void write_frame_tick(const bg::details::TimeSeriesInputData &input, ScalarBuffe
     }
     if (changed_columns.size() > std::numeric_limits<std::uint32_t>::max())
         throw std::length_error{"frame tick has too many changed columns"};
-    bg::details::write_bytes(writer, static_cast<std::uint32_t>(changed_columns.size()));
+    hg::details::write_bytes(writer, static_cast<std::uint32_t>(changed_columns.size()));
     for (const auto index : changed_columns)
-        bg::details::write_bytes(writer, static_cast<std::uint32_t>(index));
+        hg::details::write_bytes(writer, static_cast<std::uint32_t>(index));
 
     if (storage.change_time != input.last_updated()) {
-        bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
+        hg::details::TickHeader{hg::details::TickOperation::end}.write(writer);
         return;
     }
     const auto columns = bind_frame_columns(storage);
 
     if (storage.removed != nullptr)
         for (const auto id : *storage.removed) {
-            bg::details::TickHeader{bg::details::TickOperation::remove}.write(writer);
-            bg::details::write_bytes(writer, id);
+            hg::details::TickHeader{hg::details::TickOperation::remove}.write(writer);
+            hg::details::write_bytes(writer, id);
         }
 
     if (storage.added != nullptr)
         for (const auto id : *storage.added) {
-            bg::details::TickHeader{bg::details::TickOperation::add}.write(writer);
-            bg::details::write_bytes(writer, id);
+            hg::details::TickHeader{hg::details::TickOperation::add}.write(writer);
+            hg::details::write_bytes(writer, id);
             write_live_key(writer, columns, layout, id, memory);
             for (auto index = std::size_t{}; index != layout.fields.size(); ++index) {
                 if (std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
@@ -289,8 +289,8 @@ void write_frame_tick(const bg::details::TimeSeriesInputData &input, ScalarBuffe
             if ((storage.added != nullptr && storage.added->contains(id)) ||
                 (storage.removed != nullptr && storage.removed->contains(id)))
                 continue;
-            bg::details::TickHeader{bg::details::TickOperation::tick}.write(writer);
-            bg::details::write_bytes(writer, id);
+            hg::details::TickHeader{hg::details::TickOperation::tick}.write(writer);
+            hg::details::write_bytes(writer, id);
             write_live_key(writer, columns, layout, id, memory);
 
             auto modified_count = std::uint32_t{};
@@ -299,46 +299,46 @@ void write_frame_tick(const bg::details::TimeSeriesInputData &input, ScalarBuffe
                 if (modified != nullptr && modified->contains(id))
                     ++modified_count;
             }
-            bg::details::write_bytes(writer, modified_count);
+            hg::details::write_bytes(writer, modified_count);
             for (const auto index : changed_columns) {
                 const auto *modified = storage.modified_at(index);
                 if (modified == nullptr || !modified->contains(id))
                     continue;
-                bg::details::write_bytes(writer, static_cast<std::uint32_t>(index));
+                hg::details::write_bytes(writer, static_cast<std::uint32_t>(index));
                 write_column_cell(writer, columns, index, id, memory);
             }
         }
     }
-    bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
+    hg::details::TickHeader{hg::details::TickOperation::end}.write(writer);
 }
 
 template <cell_type T>
 void write_column_tick(const In<TSC<T>> &input, ScalarBufferWriteContext &writer, allocator &memory) {
     const auto descriptor = input.extension_descriptor();
     const auto storage = ColumnSeriesView<T>{descriptor.storage};
-    bg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.row_domain()));
+    hg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.row_domain()));
     if (storage.change_time() != input.last_updated()) {
-        bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
+        hg::details::TickHeader{hg::details::TickOperation::end}.write(writer);
         return;
     }
 
     for (const auto id : storage.removed()) {
-        bg::details::TickHeader{bg::details::TickOperation::remove}.write(writer);
-        bg::details::write_bytes(writer, id);
+        hg::details::TickHeader{hg::details::TickOperation::remove}.write(writer);
+        hg::details::write_bytes(writer, id);
     }
     for (const auto id : storage.added()) {
-        bg::details::TickHeader{bg::details::TickOperation::add}.write(writer);
-        bg::details::write_bytes(writer, id);
+        hg::details::TickHeader{hg::details::TickOperation::add}.write(writer);
+        hg::details::write_bytes(writer, id);
         write_column_cell(writer, storage, id, memory);
     }
     for (const auto id : storage.modified()) {
         if (storage.added().contains(id))
             continue;
-        bg::details::TickHeader{bg::details::TickOperation::tick}.write(writer);
-        bg::details::write_bytes(writer, id);
+        hg::details::TickHeader{hg::details::TickOperation::tick}.write(writer);
+        hg::details::write_bytes(writer, id);
         write_column_cell(writer, storage, id, memory);
     }
-    bg::details::TickHeader{bg::details::TickOperation::end}.write(writer);
+    hg::details::TickHeader{hg::details::TickOperation::end}.write(writer);
 }
 
 void discard_frame_tick(util::buffer_reader &reader) {
@@ -347,22 +347,22 @@ void discard_frame_tick(util::buffer_reader &reader) {
     tick_codec::skip_changed_columns(reader);
     const auto &layout = native_frame_layout(schema);
     for (;;) {
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation == bg::details::TickOperation::end)
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation == hg::details::TickOperation::end)
             return;
 
         static_cast<void>(reader.read_raw<row_id_t>());
-        if (header.operation == bg::details::TickOperation::remove)
+        if (header.operation == hg::details::TickOperation::remove)
             continue;
         for (auto index : layout.key_fields)
             discard_cell(reader, *layout.fields[index].cell_type);
-        if (header.operation == bg::details::TickOperation::add) {
+        if (header.operation == hg::details::TickOperation::add) {
             for (auto index = std::size_t{}; index != schema.field_count(); ++index)
                 if (std::ranges::find(layout.key_fields, index) == layout.key_fields.end())
                     discard_cell(reader, *layout.fields[index].cell_type);
             continue;
         }
-        if (header.operation != bg::details::TickOperation::tick)
+        if (header.operation != hg::details::TickOperation::tick)
             throw std::invalid_argument{"invalid frame tick operation"};
 
         const auto field_count = reader.read_raw<std::uint32_t>();
@@ -374,7 +374,7 @@ void discard_frame_tick(util::buffer_reader &reader) {
 }
 
 std::vector<ExpectedFrameChange> read_expected_changes(const literal::TimeSeriesLiteral &expected,
-                                                       const bg::Schema &schema,
+                                                       const hg::Schema &schema,
                                                        const NativeFrameLayout &layout) {
     const auto entries = expected.visit(
         [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
@@ -418,13 +418,13 @@ std::vector<ExpectedFrameChange> read_expected_changes(const literal::TimeSeries
 
 bool matches_expected(const FrameChange &actual, const ExpectedFrameChange &expected,
                       const NativeFrameLayout &layout) {
-    const auto is_removal = actual.operation == bg::details::TickOperation::remove;
+    const auto is_removal = actual.operation == hg::details::TickOperation::remove;
     if (is_removal != expected.removal || !key_values_equal(actual.key, expected.key))
         return false;
     if (is_removal)
         return true;
 
-    const auto actual_addition = actual.operation == bg::details::TickOperation::add;
+    const auto actual_addition = actual.operation == hg::details::TickOperation::add;
     for (auto index = std::size_t{}; index != expected.cells.size(); ++index) {
         if (std::ranges::find(layout.key_fields, index) != layout.key_fields.end())
             continue;
@@ -461,7 +461,7 @@ Cell read_named_frame_cell(const literal::ScalarLiteral *value, const ScalarType
     });
 }
 
-void read_named_frame_expectations(const literal::TimeSeriesLiteral &expected, const bg::Schema &schema,
+void read_named_frame_expectations(const literal::TimeSeriesLiteral &expected, const hg::Schema &schema,
                                    const NativeFrameLayout &layout, RowHistoryMatcher &history,
                                    std::size_t tick) {
     const auto entries = expected.visit(
@@ -471,7 +471,7 @@ void read_named_frame_expectations(const literal::TimeSeriesLiteral &expected, c
         [](std::span<const literal::ScalarLiteral> values) { return values; }).value();
 
     for (const auto &entry : entries) {
-        const auto pair = bg::details::scalar_literal::pair(
+        const auto pair = hg::details::scalar_literal::pair(
             entry, "unkeyed TSF row changes must contain a name and row value");
         const auto name = std::string{read_literal_field_name(*pair.first)};
         const auto *sentinel = literal::Sentinel::from(*pair.second);
@@ -510,18 +510,18 @@ class FrameHistoryComparison final : public testing::TickLiteralComparisonState 
 
         read_named_frame_expectations(expected, schema, layout, history_, tick);
         for (;;) {
-            const auto header = bg::details::TickHeader::read(reader);
-            if (header.operation == bg::details::TickOperation::end)
+            const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation == hg::details::TickOperation::end)
                 break;
-            if (header.operation != bg::details::TickOperation::add &&
-                header.operation != bg::details::TickOperation::tick &&
-                header.operation != bg::details::TickOperation::remove)
+            if (header.operation != hg::details::TickOperation::add &&
+                header.operation != hg::details::TickOperation::tick &&
+                header.operation != hg::details::TickOperation::remove)
                 throw std::invalid_argument{"invalid unkeyed TSF tick operation"};
 
             auto change = read_change(reader, schema, layout, header);
-            if (header.operation == bg::details::TickOperation::add)
+            if (header.operation == hg::details::TickOperation::add)
                 history_.add_actual(change.id, std::move(change.cells), tick);
-            else if (header.operation == bg::details::TickOperation::tick)
+            else if (header.operation == hg::details::TickOperation::tick)
                 history_.modify_actual(change.id, std::move(change.cells), tick);
             else
                 history_.remove_actual(change.id, tick);
@@ -537,29 +537,29 @@ class FrameHistoryComparison final : public testing::TickLiteralComparisonState 
     bool finish() override { return history_.finish(); }
 
   private:
-    bool compare_keyed_frame_payload(util::buffer_reader &reader, const bg::Schema &schema,
+    bool compare_keyed_frame_payload(util::buffer_reader &reader, const hg::Schema &schema,
                                      const literal::TimeSeriesLiteral &expected) {
         const auto &layout = native_frame_layout(schema);
         auto expected_changes = read_expected_changes(expected, schema, layout);
         auto matched = std::vector<bool>(expected_changes.size());
 
         for (;;) {
-            const auto header = bg::details::TickHeader::read(reader);
-            if (header.operation == bg::details::TickOperation::end)
+            const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation == hg::details::TickOperation::end)
                 return std::ranges::all_of(matched, [](bool value) { return value; });
-            if (header.operation != bg::details::TickOperation::add &&
-                header.operation != bg::details::TickOperation::tick &&
-                header.operation != bg::details::TickOperation::remove)
+            if (header.operation != hg::details::TickOperation::add &&
+                header.operation != hg::details::TickOperation::tick &&
+                header.operation != hg::details::TickOperation::remove)
                 return false;
 
             auto actual = read_change(reader, schema, layout, header);
-            if (header.operation == bg::details::TickOperation::remove) {
+            if (header.operation == hg::details::TickOperation::remove) {
                 const auto found = keys_by_id_.find(actual.id);
                 if (found == keys_by_id_.end())
                     return false;
                 actual.key = std::move(found->second);
                 keys_by_id_.erase(found);
-            } else if (header.operation != bg::details::TickOperation::add) {
+            } else if (header.operation != hg::details::TickOperation::add) {
                 const auto found = keys_by_id_.find(actual.id);
                 if (found == keys_by_id_.end() || !key_values_equal(found->second, actual.key))
                     return false;
@@ -573,7 +573,7 @@ class FrameHistoryComparison final : public testing::TickLiteralComparisonState 
             }
             if (candidate == expected_changes.size())
                 return false;
-            if (header.operation == bg::details::TickOperation::add &&
+            if (header.operation == hg::details::TickOperation::add &&
                 !keys_by_id_.emplace(actual.id, std::move(actual.key)).second)
                 return false;
             matched[candidate] = true;
@@ -596,7 +596,7 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
             [](std::span<const literal::ScalarLiteral> values) { return values; }).value();
 
         for (const auto &entry : entries) {
-            const auto pair = bg::details::scalar_literal::pair(
+            const auto pair = hg::details::scalar_literal::pair(
                 entry, "TSC row changes must contain a name and cell value");
             const auto name = std::string{read_literal_field_name(*pair.first)};
             const auto *sentinel = literal::Sentinel::from(*pair.second);
@@ -615,15 +615,15 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
         }
 
         for (;;) {
-            const auto header = bg::details::TickHeader::read(reader);
-            if (header.operation == bg::details::TickOperation::end)
+            const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation == hg::details::TickOperation::end)
                 break;
             const auto id = reader.read_raw<row_id_t>();
-            if (header.operation == bg::details::TickOperation::add)
+            if (header.operation == hg::details::TickOperation::add)
                 history_.add_actual(id, {read_cell<T>(reader)}, tick);
-            else if (header.operation == bg::details::TickOperation::tick)
+            else if (header.operation == hg::details::TickOperation::tick)
                 history_.modify_actual(id, {read_cell<T>(reader)}, tick);
-            else if (header.operation == bg::details::TickOperation::remove)
+            else if (header.operation == hg::details::TickOperation::remove)
                 history_.remove_actual(id, tick);
             else
                 throw std::invalid_argument{"invalid TSC tick operation"};
@@ -642,14 +642,14 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
 template <cell_type T> void discard_column_tick(util::buffer_reader &reader) {
     static_cast<void>(reader.read_raw<std::uintptr_t>());
     for (;;) {
-        const auto header = bg::details::TickHeader::read(reader);
-        if (header.operation == bg::details::TickOperation::end)
+        const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation == hg::details::TickOperation::end)
             return;
         static_cast<void>(reader.read_raw<row_id_t>());
-        if (header.operation == bg::details::TickOperation::add ||
-            header.operation == bg::details::TickOperation::tick) {
+        if (header.operation == hg::details::TickOperation::add ||
+            header.operation == hg::details::TickOperation::tick) {
             discard_cell(reader, cpp_scalar_type<T>());
-        } else if (header.operation != bg::details::TickOperation::remove) {
+        } else if (header.operation != hg::details::TickOperation::remove) {
             throw std::invalid_argument{"invalid TSC tick operation"};
         }
     }
@@ -707,15 +707,15 @@ template <typename T> void register_column_series_tick_replay(const TimeSeriesRu
     static_cast<void>(TimeSeriesDispatch<TimeSeriesTickOperations>::instance().add(runtime, std::move(operations)));
 }
 
-template BG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_writer<double>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_writer<bool>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_writer<string>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_writer<symbol>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_replay<i64>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_replay<double>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_replay<bool>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_replay<string>(const TimeSeriesRuntimeType &runtime);
-template BG_FRAME_EXPORT void register_column_series_tick_replay<symbol>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_writer<i64>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_writer<double>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_writer<bool>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_writer<string>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_writer<symbol>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_replay<i64>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_replay<double>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_replay<bool>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_replay<string>(const TimeSeriesRuntimeType &runtime);
+template HG_FRAME_EXPORT void register_column_series_tick_replay<symbol>(const TimeSeriesRuntimeType &runtime);
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details

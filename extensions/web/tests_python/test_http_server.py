@@ -5,12 +5,12 @@ import sys
 import threading
 from datetime import timedelta
 
-import bg
-from bg_web import AuthDecision, HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
+import hg
+from hg_web import AuthDecision, HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
 
 
-def test_bg_web_imports_before_bg():
-    subprocess.run([sys.executable, "-c", "import bg_web; import bg"], check=True,
+def test_hg_web_imports_before_hg():
+    subprocess.run([sys.executable, "-c", "import hg_web; import hg"], check=True,
                    env=os.environ.copy(), timeout=5)
 
 
@@ -19,10 +19,10 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
     replies = []
     errors = []
     worker = None
-    stop = bg.StopSource()
+    stop = hg.StopSource()
 
-    @bg.compute_node
-    def echo_node(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
+    @hg.compute_node
+    def echo_node(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
         value = request.value
         assert value.method == "POST"
         if value.path == "/echo":
@@ -35,25 +35,25 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
         request_bodies.append(bytes(value.body))
         return HttpResponse(status=200, headers=[], body=value.body)
 
-    @bg.graph
-    def echo(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
+    @hg.graph
+    def echo(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
         return echo_node(request)
 
-    @bg.graph
-    def dictionary_echo(request: bg.TS[HttpServerRequest]) -> bg.TS[HttpResponse]:
+    @hg.graph
+    def dictionary_echo(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
         return echo_node(request)
 
-    @bg.graph
+    @hg.graph
     def dictionary_handler(
-        requests: bg.TSD[int, bg.TS[HttpServerRequest]],
-    ) -> bg.TSD[int, bg.TS[HttpResponse]]:
-        return bg.map(dictionary_echo, requests)
+        requests: hg.TSD[int, hg.TS[HttpServerRequest]],
+    ) -> hg.TSD[int, hg.TS[HttpResponse]]:
+        return hg.map(dictionary_echo, requests)
 
     echo_route = http_handler("/echo", echo)
     dictionary_route = http_handler("/dictionary", dictionary_handler)
 
-    @bg.compute_node
-    def start_client(port: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def start_client(port: hg.TS[int]) -> hg.TS[int]:
         nonlocal worker
         bound_port = int(port.value)
 
@@ -76,15 +76,15 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
         worker.start()
         return bound_port
 
-    @bg.graph
-    def application() -> bg.TS[int]:
+    @hg.graph
+    def application() -> hg.TS[int]:
         echo_route()
         dictionary_route()
         return start_client(http_server())
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     register_http_server(catalogue, host="127.0.0.1", port=0)
-    bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realtime,
+    hg.run_graph(application, catalogue=catalogue, engine=hg.EvaluationEngine.realtime,
                  run_time=timedelta(seconds=5), stop_token=stop.get_token())
     if worker is not None:
         worker.join(3)
@@ -96,54 +96,54 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
 
 
 def test_http_handler_authentication_routes_identity_and_rejection():
-    @bg.schema
+    @hg.schema
     class User:
         name: str
 
     decision_type = AuthDecision[User]
 
-    @bg.service
-    def authenticate(request: bg.TS[HttpServerRequest]) -> bg.TS[decision_type]:
+    @hg.service
+    def authenticate(request: hg.TS[HttpServerRequest]) -> hg.TS[decision_type]:
         raise RuntimeError("authentication is a service declaration")
 
-    @bg.compute_node
-    def decide(request: bg.TS[HttpServerRequest]) -> bg.TS[decision_type]:
+    @hg.compute_node
+    def decide(request: hg.TS[HttpServerRequest]) -> hg.TS[decision_type]:
         authorized = any(name.lower() == "authorization" and value == "allow" for name, value in request.value.headers)
         if authorized:
             return decision_type.accept(User("alice"))
         return decision_type.reject(HttpResponse(status=401, body=b"denied"))
 
-    @bg.graph
-    def policy_graph(request: bg.TS[HttpServerRequest]) -> bg.TS[decision_type]:
+    @hg.graph
+    def policy_graph(request: hg.TS[HttpServerRequest]) -> hg.TS[decision_type]:
         return decide(request)
 
-    @bg.graph
+    @hg.graph
     def policy_implementation(
-        request: bg.TSD[int, bg.TS[HttpServerRequest]],
-    ) -> bg.TSD[int, bg.TS[decision_type]]:
-        return bg.map(policy_graph, request)
+        request: hg.TSD[int, hg.TS[HttpServerRequest]],
+    ) -> hg.TSD[int, hg.TS[decision_type]]:
+        return hg.map(policy_graph, request)
 
     handler_calls = []
 
-    @bg.compute_node
-    def greet(request: bg.TS[HttpServerRequest], user: bg.TS[User]) -> bg.TS[HttpResponse]:
+    @hg.compute_node
+    def greet(request: hg.TS[HttpServerRequest], user: hg.TS[User]) -> hg.TS[HttpResponse]:
         handler_calls.append(user.value.name)
         return HttpResponse(status=200, body=user.value.name.encode())
 
-    @bg.graph
+    @hg.graph
     def authenticated_handler(
-        request: bg.TS[HttpServerRequest], user: bg.TS[User]
-    ) -> bg.TS[HttpResponse]:
+        request: hg.TS[HttpServerRequest], user: hg.TS[User]
+    ) -> hg.TS[HttpResponse]:
         return greet(request, user)
 
     route = http_handler("/auth", authenticated_handler, policy=authenticate)
     replies = []
     errors = []
     worker = None
-    stop = bg.StopSource()
+    stop = hg.StopSource()
 
-    @bg.compute_node
-    def start_client(port: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def start_client(port: hg.TS[int]) -> hg.TS[int]:
         nonlocal worker
         bound_port = int(port.value)
 
@@ -166,15 +166,15 @@ def test_http_handler_authentication_routes_identity_and_rejection():
         worker.start()
         return bound_port
 
-    @bg.graph
-    def application() -> bg.TS[int]:
+    @hg.graph
+    def application() -> hg.TS[int]:
         route()
         return start_client(http_server())
 
-    catalogue = bg.ServiceCatalogue()
+    catalogue = hg.ServiceCatalogue()
     catalogue.register_impl(authenticate, policy_implementation)
     register_http_server(catalogue, host="127.0.0.1", port=0)
-    bg.run_graph(application, catalogue=catalogue, engine=bg.EvaluationEngine.realtime,
+    hg.run_graph(application, catalogue=catalogue, engine=hg.EvaluationEngine.realtime,
                  run_time=timedelta(seconds=5), stop_token=stop.get_token())
     if worker is not None:
         worker.join(3)

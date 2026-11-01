@@ -1,10 +1,10 @@
-#include <bg/frame/column.hpp>
+#include <hg/frame/column.hpp>
 
-#include <bg/bg.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/util/scope_exit.hpp>
-#include <bg/type/type_registry.hpp>
+#include <hg/hg.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/type/type_registry.hpp>
 
 #include <algorithm>
 #include <array>
@@ -21,23 +21,23 @@ namespace {
 void require(bool condition, const char *message) { if (!condition) throw std::runtime_error{message}; }
 
 struct RowTraversalCounter {
-    const bg::frame::NativeRows *rows{};
+    const hg::frame::NativeRows *rows{};
     mutable std::size_t traversals{};
 
-    bg::frame::RowSet row_set() const noexcept {
+    hg::frame::RowSet row_set() const noexcept {
         return {this,
                 nullptr,
                 rows->identity(),
                 [](const void *context) noexcept {
                     return static_cast<const RowTraversalCounter *>(context)->rows->size();
                 },
-                [](const void *context, bg::frame::row_id_t id) noexcept {
+                [](const void *context, hg::frame::row_id_t id) noexcept {
                     return static_cast<const RowTraversalCounter *>(context)->rows->contains(id);
                 },
                 [](const void *context, std::size_t position) {
                     return static_cast<const RowTraversalCounter *>(context)->rows->id_at(position);
                 },
-                [](const void *context, void *target, bg::frame::RowSet::visit_function visit) {
+                [](const void *context, void *target, hg::frame::RowSet::visit_function visit) {
                     const auto &counter = *static_cast<const RowTraversalCounter *>(context);
                     ++counter.traversals;
                     for (auto slot : counter.rows->live_slots())
@@ -46,34 +46,34 @@ struct RowTraversalCounter {
     }
 };
 
-bg::frame::RowSet selected_row_set(const bg::frame::SelectedRows &selected) noexcept {
+hg::frame::RowSet selected_row_set(const hg::frame::SelectedRows &selected) noexcept {
     return {std::addressof(selected), nullptr, selected.source().identity,
             [](const void *context) noexcept {
-                return static_cast<const bg::frame::SelectedRows *>(context)->size();
+                return static_cast<const hg::frame::SelectedRows *>(context)->size();
             },
-            [](const void *context, bg::frame::row_id_t id) noexcept {
-                const auto &rows = *static_cast<const bg::frame::SelectedRows *>(context);
+            [](const void *context, hg::frame::row_id_t id) noexcept {
+                const auto &rows = *static_cast<const hg::frame::SelectedRows *>(context);
                 return rows.contains(id) && rows.source().has(id);
             },
             [](const void *context, std::size_t position) {
-                const auto &rows = *static_cast<const bg::frame::SelectedRows *>(context);
+                const auto &rows = *static_cast<const hg::frame::SelectedRows *>(context);
                 if (position >= rows.size())
                     throw std::out_of_range{"selected row position"};
                 auto remaining = position;
-                auto result = bg::frame::no_row;
-                rows.source().each([&](bg::frame::row_id_t id) {
-                    if (result != bg::frame::no_row || !rows.contains(id))
+                auto result = hg::frame::no_row;
+                rows.source().each([&](hg::frame::row_id_t id) {
+                    if (result != hg::frame::no_row || !rows.contains(id))
                         return;
                     if (remaining-- == 0)
                         result = id;
                 });
-                if (result == bg::frame::no_row)
+                if (result == hg::frame::no_row)
                     throw std::out_of_range{"selected row position"};
                 return result;
             },
-            [](const void *context, void *target, bg::frame::RowSet::visit_function visit) {
-                const auto &rows = *static_cast<const bg::frame::SelectedRows *>(context);
-                rows.source().each([&](bg::frame::row_id_t id) {
+            [](const void *context, void *target, hg::frame::RowSet::visit_function visit) {
+                const auto &rows = *static_cast<const hg::frame::SelectedRows *>(context);
+                rows.source().each([&](hg::frame::row_id_t id) {
                     if (rows.contains(id))
                         visit(target, id);
                 });
@@ -116,7 +116,7 @@ class FailingResource final : public std::pmr::memory_resource {
     bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override { return this == &other; }
 };
 
-class ExternalTextColumn final : public bg::frame::ColumnReadSource<bg::string> {
+class ExternalTextColumn final : public hg::frame::ColumnReadSource<hg::string> {
   public:
     std::array<std::string, 3> values{"alpha", "", "omega"};
     std::array<std::uint8_t, 3> valid{1, 1, 0};
@@ -130,9 +130,9 @@ class ExternalTextColumn final : public bg::frame::ColumnReadSource<bg::string> 
         return values[position];
     }
     void visit_batches(void *target, batch_visitor visit) const override {
-        const auto validity = bg::frame::ColumnBatch<bg::string>::Validity::from_callback(this, &is_valid);
-        const auto source = bg::frame::ColumnBatchSource<bg::string>{this, &read_value};
-        std::invoke(visit, target, bg::frame::ColumnBatch<bg::string>{0, size(), source, validity});
+        const auto validity = hg::frame::ColumnBatch<hg::string>::Validity::from_callback(this, &is_valid);
+        const auto source = hg::frame::ColumnBatchSource<hg::string>{this, &read_value};
+        std::invoke(visit, target, hg::frame::ColumnBatch<hg::string>{0, size(), source, validity});
     }
 
   private:
@@ -145,34 +145,34 @@ class ExternalTextColumn final : public bg::frame::ColumnReadSource<bg::string> 
 };
 
 void test_empty_and_immutable() {
-    using Column = bg::frame::Column<bg::i64>;
-    const auto &scalar_type = bg::cpp_scalar_type<Column>();
-    const auto &series_type = bg::frame::column_time_series_type<bg::i64>(bg::TimeSeriesGuarantee::ordinary);
-    require(bg::TypeRegistry::instance().contains(scalar_type) &&
-                bg::TypeRegistry::instance().contains(series_type),
+    using Column = hg::frame::Column<hg::i64>;
+    const auto &scalar_type = hg::cpp_scalar_type<Column>();
+    const auto &series_type = hg::frame::column_time_series_type<hg::i64>(hg::TimeSeriesGuarantee::ordinary);
+    require(hg::TypeRegistry::instance().contains(scalar_type) &&
+                hg::TypeRegistry::instance().contains(series_type),
             "column semantic types were not registered");
     auto empty = Column{};
     auto moved = std::move(empty);
     require(empty.view().size() == 0 && moved.view().size() == 0, "empty column view failed");
-    require(bg::frame::ColumnView<bg::i64>{}.size() == 0, "default view has rows");
-    auto column = Column{{bg::i64{1}, std::nullopt, bg::i64{3}}};
+    require(hg::frame::ColumnView<hg::i64>{}.size() == 0, "default view has rows");
+    auto column = Column{{hg::i64{1}, std::nullopt, hg::i64{3}}};
     const auto storage = column.storage();
-    const auto owned = bg::ScalarValue<Column>{bg::Scalar<Column>::from(storage)};
-    column = Column{{bg::i64{9}}};
+    const auto owned = hg::ScalarValue<Column>{hg::Scalar<Column>::from(storage)};
+    column = Column{{hg::i64{9}}};
     const auto view = owned.view().value();
     require(view.size() == 3 && view.cell(0) == 1 && !view.cell(1) && view.cell(2) == 3, "immutable snapshot failed");
 
     CountingResource destination_memory;
-    auto destination_allocator = bg::allocator{destination_memory};
-    const auto copied = bg::ScalarValue<Column>{owned.view(), destination_allocator};
-    const auto erased = bg::ScalarValue<>{owned.view(), destination_allocator};
+    auto destination_allocator = hg::allocator{destination_memory};
+    const auto copied = hg::ScalarValue<Column>{owned.view(), destination_allocator};
+    const auto erased = hg::ScalarValue<>{owned.view(), destination_allocator};
     require(copied.view()->cell(0) == 1 && copied.view()->cell(2) == 3, "typed snapshot copy lost values");
     const auto erased_view = erased.view();
-    require(bg::Scalar<Column>::from(erased_view)->cell(0) == 1, "erased snapshot copy lost values");
+    require(hg::Scalar<Column>::from(erased_view)->cell(0) == 1, "erased snapshot copy lost values");
 }
 
 void test_packed_boolean_column_values() {
-    using namespace bg::frame;
+    using namespace hg::frame;
 
     auto snapshot = Column<bool>{{true, std::nullopt, false, true, false, true, std::nullopt, false, true}};
     const auto snapshot_view = snapshot.view();
@@ -197,9 +197,9 @@ void test_packed_boolean_column_values() {
             "packed boolean subspan did not advance across a byte boundary");
 
     auto resource = std::pmr::monotonic_buffer_resource{};
-    const auto memory = bg::allocator{resource};
+    const auto memory = hg::allocator{resource};
     auto native = NativeColumn<bool>{};
-    const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+    const auto time = hg::MIN_DT + hg::EvaluationTime::duration{1};
     const auto first = native.add(true, time, memory);
     const auto null_row = native.add(std::nullopt, time, memory);
     const auto last = native.add(false, time, memory);
@@ -220,10 +220,10 @@ void test_packed_boolean_column_values() {
 }
 
 void test_double_column_snapshot() {
-    using Column = bg::frame::Column<double>;
+    using Column = hg::frame::Column<double>;
     auto column = Column{{1.25, std::nullopt, 3.5}};
     const auto storage = column.storage();
-    auto owned = bg::ScalarValue<Column>{bg::Scalar<Column>::from(storage)};
+    auto owned = hg::ScalarValue<Column>{hg::Scalar<Column>::from(storage)};
     column = Column{{9.75}};
     const auto view = owned.view().value();
     require(view.size() == 3 && view.cell(0) == 1.25 && !view.cell(1) && view.cell(2) == 3.5,
@@ -231,8 +231,8 @@ void test_double_column_snapshot() {
 }
 
 void test_source_backed_text_batches_and_snapshot() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto source = ExternalTextColumn{};
     const auto view = ColumnView<string>{source};
@@ -258,13 +258,13 @@ void test_source_backed_text_batches_and_snapshot() {
 }
 
 void test_ordinary_time_series_graph() {
-    using Column = bg::frame::Column<bg::i64>;
-    const auto copy = bg::node([](bg::In<bg::TS<Column>> input, bg::Out<bg::TS<Column>> output) {
+    using Column = hg::frame::Column<hg::i64>;
+    const auto copy = hg::node([](hg::In<hg::TS<Column>> input, hg::Out<hg::TS<Column>> output) {
         output.set_value(input.value_view());
     });
-    const auto graph = [&](bg::wp<bg::TS<Column>> input) { return copy(input); };
-    const auto source = std::vector{Column{{bg::i64{1}, std::nullopt}}, Column{{bg::i64{2}, bg::i64{3}}}};
-    const auto result = bg::run_graph(graph, source);
+    const auto graph = [&](hg::wp<hg::TS<Column>> input) { return copy(input); };
+    const auto source = std::vector{Column{{hg::i64{1}, std::nullopt}}, Column{{hg::i64{2}, hg::i64{3}}}};
+    const auto result = hg::run_graph(graph, source);
     require(result.size() == 2 && result[0] && result[1], "ordinary graph lost column values");
     require(result[0]->view().value().cell(0) == 1 && !result[0]->view().value().cell(1),
             "ordinary graph changed a column");
@@ -273,17 +273,17 @@ void test_ordinary_time_series_graph() {
 
 void test_native_rows_changes_and_batches() {
     auto resource = std::pmr::monotonic_buffer_resource{};
-    const auto memory = bg::allocator{resource};
-    auto native = bg::frame::NativeColumn<bg::i64>{};
-    auto release = bg::util::scope_exit{[&]() noexcept { native.release(memory); }};
-    const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
-    const auto first = native.add(bg::i64{1}, first_time, memory);
+    const auto memory = hg::allocator{resource};
+    auto native = hg::frame::NativeColumn<hg::i64>{};
+    auto release = hg::util::scope_exit{[&]() noexcept { native.release(memory); }};
+    const auto first_time = hg::MIN_DT + hg::EvaluationTime::duration{1};
+    const auto first = native.add(hg::i64{1}, first_time, memory);
     const auto second = native.add(std::nullopt, first_time, memory);
     require(native.id_at(0) == first && native.id_at(1) == second && !native.cell(second),
             "null differs from row missing");
     require(native.row_domain() != nullptr, "row domain identity missing");
-    native.set(first, bg::i64{1}, first_time, memory);
-    native.set(first, bg::i64{1}, first_time, memory);
+    native.set(first, hg::i64{1}, first_time, memory);
+    native.set(first, hg::i64{1}, first_time, memory);
     require(native.modified().empty(), "added row was marked modified");
     auto batches = std::size_t{};
     native.for_each_batch([&](const auto &batch) {
@@ -296,19 +296,19 @@ void test_native_rows_changes_and_batches() {
     require(native.erase(first, first_time, memory), "erase failed");
     require(native.added().count() == 1 && native.added().contains(second) && native.removed().empty(),
             "add erase did not cancel");
-    const auto same_time = native.add(bg::i64{2}, first_time, memory);
+    const auto same_time = native.add(hg::i64{2}, first_time, memory);
     require(same_time != first, "row ID reused within one evaluation time");
-    const auto next_time = first_time + bg::EvaluationTime::duration{1};
-    const auto later = native.add(bg::i64{3}, next_time, memory);
+    const auto next_time = first_time + hg::EvaluationTime::duration{1};
+    const auto later = native.add(hg::i64{3}, next_time, memory);
     require(later == first, "row ID not recycled on later mutation");
     require(!native.erase(999, next_time, memory), "missing row erased");
-    try { native.set(999, bg::i64{1}, next_time, memory); throw std::runtime_error{"missing row set succeeded"}; }
+    try { native.set(999, hg::i64{1}, next_time, memory); throw std::runtime_error{"missing row set succeeded"}; }
     catch (const std::out_of_range &) {}
 }
 
 void test_text_columns_follow_scalar_storage_traits() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     CountingResource memory_resource;
     const auto memory = allocator{memory_resource};
@@ -440,8 +440,8 @@ void test_text_columns_follow_scalar_storage_traits() {
 }
 
 void test_selected_batches_coalesce_without_copying() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     struct source_batch {
         std::uint64_t first_slot{};
@@ -574,40 +574,40 @@ void test_selected_batches_coalesce_without_copying() {
 }
 
 void test_native_scalar_snapshots_and_allocator() {
-    using Column = bg::frame::Column<bg::i64>;
+    using Column = hg::frame::Column<hg::i64>;
     CountingResource source_memory;
-    const auto source_allocator = bg::allocator{source_memory};
-    auto native = bg::frame::NativeColumn<bg::i64>{};
-    auto release = bg::util::scope_exit{[&]() noexcept { native.release(source_allocator); }};
-    const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
-    native.add(bg::i64{4}, time, source_allocator);
-    const auto scalar = bg::Scalar<Column>::from(native.scalar_storage());
+    const auto source_allocator = hg::allocator{source_memory};
+    auto native = hg::frame::NativeColumn<hg::i64>{};
+    auto release = hg::util::scope_exit{[&]() noexcept { native.release(source_allocator); }};
+    const auto time = hg::MIN_DT + hg::EvaluationTime::duration{1};
+    native.add(hg::i64{4}, time, source_allocator);
+    const auto scalar = hg::Scalar<Column>::from(native.scalar_storage());
     CountingResource snapshot_memory;
-    auto snapshot_allocator = bg::allocator{snapshot_memory};
-    auto typed = bg::ScalarValue<Column>{scalar, snapshot_allocator};
-    auto erased = bg::ScalarValue<>{scalar, snapshot_allocator};
-    native.set(native.id_at(0), bg::i64{8}, time, source_allocator);
+    auto snapshot_allocator = hg::allocator{snapshot_memory};
+    auto typed = hg::ScalarValue<Column>{scalar, snapshot_allocator};
+    auto erased = hg::ScalarValue<>{scalar, snapshot_allocator};
+    native.set(native.id_at(0), hg::i64{8}, time, source_allocator);
     require(typed.view()->cell(0) == 4, "typed native scalar did not snapshot");
     const auto erased_view = erased.view();
-    require(bg::Scalar<Column>::from(erased_view)->cell(0) == 4, "erased native scalar did not snapshot");
-    auto replacement = bg::ScalarValue<Column>{scalar, snapshot_allocator};
+    require(hg::Scalar<Column>::from(erased_view)->cell(0) == 4, "erased native scalar did not snapshot");
+    auto replacement = hg::ScalarValue<Column>{scalar, snapshot_allocator};
     typed = std::move(replacement);
     require(typed.view()->cell(0) == 8, "scalar replacement failed");
 }
 
 void test_native_explicit_allocator() {
     CountingResource operation_memory;
-    const auto operation_allocator = bg::allocator{operation_memory};
+    const auto operation_allocator = hg::allocator{operation_memory};
     {
-        auto native = bg::frame::NativeColumn<bg::i64>{};
-        auto release = bg::util::scope_exit{[&]() noexcept { native.release(operation_allocator); }};
+        auto native = hg::frame::NativeColumn<hg::i64>{};
+        auto release = hg::util::scope_exit{[&]() noexcept { native.release(operation_allocator); }};
         require(native.scalar_storage().native == nullptr, "empty native scalar was bound");
-        const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+        const auto time = hg::MIN_DT + hg::EvaluationTime::duration{1};
         const auto id = native.add(std::nullopt, time, operation_allocator);
         require(native.scalar_storage().native != nullptr && native.scalar_storage().rows != nullptr,
                 "successful add did not bind native scalar");
-        native.set(id, bg::i64{4}, time, operation_allocator);
-        native.clear(time + bg::EvaluationTime::duration{1}, operation_allocator);
+        native.set(id, hg::i64{4}, time, operation_allocator);
+        native.clear(time + hg::EvaluationTime::duration{1}, operation_allocator);
     }
     require(operation_memory.allocations == operation_memory.deallocations, "explicit mutations leaked storage");
 }
@@ -615,10 +615,10 @@ void test_native_explicit_allocator() {
 void test_null_only_blocks_and_cleanup() {
     CountingResource memory;
     {
-        const auto allocator = bg::allocator{memory};
-        auto native = bg::frame::NativeColumn<bg::i64>{};
-        auto release = bg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
-        const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
+        const auto allocator = hg::allocator{memory};
+        auto native = hg::frame::NativeColumn<hg::i64>{};
+        auto release = hg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
+        const auto time = hg::MIN_DT + hg::EvaluationTime::duration{1};
         native.add(std::nullopt, time, allocator);
         native.for_each_batch([&](const auto &batch) {
             require(batch.cells.values == nullptr && !batch.cells.is_valid(0), "null only block allocated a value");
@@ -628,21 +628,21 @@ void test_null_only_blocks_and_cleanup() {
 }
 
 void test_failed_mutations_leave_rows_unchanged() {
-    const auto first_time = bg::MIN_DT + bg::EvaluationTime::duration{1};
-    const auto second_time = first_time + bg::EvaluationTime::duration{1};
+    const auto first_time = hg::MIN_DT + hg::EvaluationTime::duration{1};
+    const auto second_time = first_time + hg::EvaluationTime::duration{1};
 
     for (auto failure = std::size_t{1};; ++failure) {
         FailingResource memory;
         auto succeeded = false;
         {
-            const auto allocator = bg::allocator{memory};
-            auto native = bg::frame::NativeColumn<bg::i64>{};
-            auto release = bg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
+            const auto allocator = hg::allocator{memory};
+            auto native = hg::frame::NativeColumn<hg::i64>{};
+            auto release = hg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
             for (auto value = 0; value != 70; ++value) native.add(std::nullopt, first_time, allocator);
             const auto id = native.id_at(64);
             memory.fail_at = memory.attempts + failure;
             try {
-                native.set(id, bg::i64{2}, second_time, allocator);
+                native.set(id, hg::i64{2}, second_time, allocator);
                 succeeded = true;
             } catch (const std::bad_alloc &) {
                 require(native.contains(id) && !native.cell(id), "failed null-to-value set changed a row");
@@ -658,17 +658,17 @@ void test_failed_mutations_leave_rows_unchanged() {
         FailingResource memory;
         auto succeeded = false;
         {
-            const auto allocator = bg::allocator{memory};
-            auto native = bg::frame::NativeColumn<bg::i64>{};
-            auto release = bg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
-            for (auto value = 0; value != 70; ++value) native.add(bg::i64{value}, first_time, allocator);
+            const auto allocator = hg::allocator{memory};
+            auto native = hg::frame::NativeColumn<hg::i64>{};
+            auto release = hg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
+            for (auto value = 0; value != 70; ++value) native.add(hg::i64{value}, first_time, allocator);
             const auto id = native.id_at(64);
             memory.fail_at = memory.attempts + failure;
             try {
                 native.erase(id, second_time, allocator);
                 succeeded = true;
             } catch (const std::bad_alloc &) {
-                require(native.contains(id) && native.cell(id) == bg::i64{64}, "failed erase changed a row");
+                require(native.contains(id) && native.cell(id) == hg::i64{64}, "failed erase changed a row");
                 require(native.added().empty() && native.modified().empty() && native.removed().empty(),
                         "failed erase changed deltas");
             }
@@ -682,17 +682,17 @@ void test_failed_mutations_leave_rows_unchanged() {
         FailingResource memory;
         auto succeeded = false;
         {
-            const auto allocator = bg::allocator{memory};
-            auto native = bg::frame::NativeColumn<bg::i64>{};
-            auto release = bg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
-            for (auto value = 0; value != 56; ++value) native.add(bg::i64{value}, first_time, allocator);
+            const auto allocator = hg::allocator{memory};
+            auto native = hg::frame::NativeColumn<hg::i64>{};
+            auto release = hg::util::scope_exit{[&]() noexcept { native.release(allocator); }};
+            for (auto value = 0; value != 56; ++value) native.add(hg::i64{value}, first_time, allocator);
             memory.fail_at = memory.attempts + failure;
             try {
-                native.add(bg::i64{56}, second_time, allocator);
+                native.add(hg::i64{56}, second_time, allocator);
                 succeeded = true;
             } catch (const std::bad_alloc &) {
                 ++failures;
-                require(native.size() == 56 && native.cell(native.id_at(55)) == bg::i64{55},
+                require(native.size() == 56 && native.cell(native.id_at(55)) == hg::i64{55},
                         "failed add changed live rows");
                 require(native.added().empty() && native.modified().empty() && native.removed().empty(),
                         "failed add changed deltas");
@@ -707,18 +707,18 @@ void test_failed_mutations_leave_rows_unchanged() {
 }
 
 void test_snapshot_lifetime_and_sparse_batches() {
-    using Column = bg::frame::Column<bg::i64>;
+    using Column = hg::frame::Column<hg::i64>;
     CountingResource destination_memory;
-    auto destination_allocator = bg::allocator{destination_memory};
-    auto typed = std::optional<bg::ScalarValue<Column>>{};
-    auto erased = std::optional<bg::ScalarValue<>>{};
+    auto destination_allocator = hg::allocator{destination_memory};
+    auto typed = std::optional<hg::ScalarValue<Column>>{};
+    auto erased = std::optional<hg::ScalarValue<>>{};
     {
         auto source_memory = std::pmr::monotonic_buffer_resource{};
-        const auto source_allocator = bg::allocator{source_memory};
-        auto native = bg::frame::NativeColumn<bg::i64>{};
-        auto release = bg::util::scope_exit{[&]() noexcept { native.release(source_allocator); }};
-        const auto time = bg::MIN_DT + bg::EvaluationTime::duration{1};
-        for (auto value = 0; value != 24; ++value) native.add(bg::i64{value}, time, source_allocator);
+        const auto source_allocator = hg::allocator{source_memory};
+        auto native = hg::frame::NativeColumn<hg::i64>{};
+        auto release = hg::util::scope_exit{[&]() noexcept { native.release(source_allocator); }};
+        const auto time = hg::MIN_DT + hg::EvaluationTime::duration{1};
+        for (auto value = 0; value != 24; ++value) native.add(hg::i64{value}, time, source_allocator);
         native.erase(native.id_at(3), time, source_allocator);
         native.erase(native.id_at(12), time, source_allocator);
         auto batches = std::size_t{};
@@ -727,22 +727,22 @@ void test_snapshot_lifetime_and_sparse_batches() {
             require(batch.ids.size() == batch.cells.size, "batch alignment failed");
         });
         require(batches > 1, "native batches did not cross bunch blocks");
-        const auto scalar = bg::Scalar<Column>::from(native.scalar_storage());
+        const auto scalar = hg::Scalar<Column>::from(native.scalar_storage());
         typed.emplace(scalar, destination_allocator);
         erased.emplace(scalar, destination_allocator);
     }
     require(typed->view()->size() == 22, "typed snapshot did not outlive native resource");
     for (auto position = std::size_t{}; position != 22; ++position) {
         const auto expected = position < 3 ? position : position < 12 ? position + 1 : position + 2;
-        require(typed->view()->cell(position) == static_cast<bg::i64>(expected), "typed snapshot lost a sparse row");
+        require(typed->view()->cell(position) == static_cast<hg::i64>(expected), "typed snapshot lost a sparse row");
     }
     const auto erased_view = erased->view();
-    require(bg::Scalar<Column>::from(erased_view)->size() == 22, "erased snapshot did not outlive native resource");
+    require(hg::Scalar<Column>::from(erased_view)->size() == 22, "erased snapshot did not outlive native resource");
 }
 
 void test_native_row_slots_map_external_ids_and_reuse_clean_cells() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -773,8 +773,8 @@ void test_native_row_slots_map_external_ids_and_reuse_clean_cells() {
 }
 
 void test_native_column_compaction_preserves_values_order_and_deltas() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -836,8 +836,8 @@ void test_native_column_compaction_preserves_values_order_and_deltas() {
 }
 
 void test_native_column_compaction_moves_overlapping_ranges() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto run = [](std::size_t deleted_position) {
         auto resource = std::pmr::monotonic_buffer_resource{};
@@ -871,8 +871,8 @@ void test_native_column_compaction_moves_overlapping_ranges() {
 }
 
 void test_packed_boolean_compaction_prepares_destination_bytes() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     constexpr auto row_count = std::size_t{51};
     auto failure_count = std::size_t{};
@@ -928,8 +928,8 @@ void test_packed_boolean_compaction_prepares_destination_bytes() {
 }
 
 void test_computed_tsc_compaction_moves_native_cells() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -962,8 +962,8 @@ void test_computed_tsc_compaction_moves_native_cells() {
 }
 
 void test_tsc_view_uses_logical_order_and_validates_added_local_rows() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1042,8 +1042,8 @@ void test_tsc_view_uses_logical_order_and_validates_added_local_rows() {
 }
 
 void test_tsc_view_rejects_native_rows_from_another_logical_domain() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1076,8 +1076,8 @@ void test_tsc_view_rejects_native_rows_from_another_logical_domain() {
 }
 
 void test_tsc_view_revalidates_coverage_when_mapping_changes() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1118,8 +1118,8 @@ void test_tsc_view_revalidates_coverage_when_mapping_changes() {
 }
 
 void test_tsc_membership_normalizes_row_domain_deltas() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1175,8 +1175,8 @@ void test_tsc_membership_normalizes_row_domain_deltas() {
 }
 
 void test_tsc_view_clears_modified_rows_removed_during_the_same_cycle() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1202,8 +1202,8 @@ void test_tsc_view_clears_modified_rows_removed_during_the_same_cycle() {
 }
 
 void test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1301,8 +1301,8 @@ void test_aligned_batches_borrow_shared_mapping_and_accept_requested_subsets() {
 }
 
 void test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1366,8 +1366,8 @@ void test_aligned_batches_stop_at_shared_id_and_cell_block_boundaries() {
 }
 
 void test_column_batch_subspan_advances_value_and_validity_offsets() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     const auto bitmap_values = std::array<double, 5>{1, 2, 3, 4, 5};
     const auto bitmap = std::array<std::uint8_t, 1>{0b00101010};
@@ -1397,11 +1397,11 @@ void test_column_batch_subspan_advances_value_and_validity_offsets() {
 }
 
 void test_index_validity_first_invalid_is_bounded_to_the_batch() {
-    using namespace bg::frame;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
-    auto valid_slots = bg::util::index<>{};
-    auto release = bg::util::scope_exit{[&]() noexcept { valid_slots.release(resource); }};
+    auto valid_slots = hg::util::index<>{};
+    auto release = hg::util::scope_exit{[&]() noexcept { valid_slots.release(resource); }};
     valid_slots.set(20, resource);
     valid_slots.set(21, resource);
     valid_slots.set(30, resource);
@@ -1418,8 +1418,8 @@ void test_index_validity_first_invalid_is_bounded_to_the_batch() {
 }
 
 void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1546,8 +1546,8 @@ void test_aligned_batches_gather_distinct_mappings_and_validate_before_callback(
 }
 
 void test_aligned_batches_gather_more_than_two_scratch_batches() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1616,8 +1616,8 @@ void test_aligned_batches_gather_more_than_two_scratch_batches() {
 }
 
 void test_aligned_batches_keep_null_only_blocks_unreadable() {
-    using namespace bg;
-    using namespace bg::frame;
+    using namespace hg;
+    using namespace hg::frame;
 
     auto resource = std::pmr::monotonic_buffer_resource{};
     const auto memory = allocator{resource};
@@ -1717,9 +1717,9 @@ int main() {
         test_aligned_batches_gather_distinct_mappings_and_validate_before_callback();
         test_aligned_batches_gather_more_than_two_scratch_batches();
         test_aligned_batches_keep_null_only_blocks_unreadable();
-        std::cout << "bg_frame_column_test passed\n";
+        std::cout << "hg_frame_column_test passed\n";
     } catch (const std::exception &error) {
-        std::cerr << "bg_frame_column_test: " << error.what() << '\n';
+        std::cerr << "hg_frame_column_test: " << error.what() << '\n';
         return 1;
     }
 }

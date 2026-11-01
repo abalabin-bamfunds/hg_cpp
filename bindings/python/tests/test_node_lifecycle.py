@@ -3,13 +3,13 @@ from datetime import datetime, timedelta
 
 import pytest
 
-import bg
+import hg
 
 
 def test_node_lifecycle_callbacks_select_definition_arguments_in_declared_order():
     calls = []
 
-    @bg.node
+    @hg.node
     def add(value: int, amount: int = 2) -> int:
         return value + amount
 
@@ -21,18 +21,18 @@ def test_node_lifecycle_callbacks_select_definition_arguments_in_declared_order(
     def stop(value: int, amount: int):
         calls.append(("stop", value, amount))
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return add(40, amount=2)
 
-    assert bg.run_graph(graph) == [42]
+    assert hg.run_graph(graph) == [42]
     assert calls == [("start", 2), ("stop", 40, 2)]
 
 
 def test_lifecycle_callbacks_work_for_a_sink_node():
     calls = []
 
-    @bg.node
+    @hg.node
     def sink(value: int, scale: int) -> None:
         calls.append(("evaluate", value * scale))
 
@@ -44,11 +44,11 @@ def test_lifecycle_callbacks_work_for_a_sink_node():
     def stop(value: int):
         calls.append(("stop", value))
 
-    @bg.graph
+    @hg.graph
     def graph() -> None:
         sink(6, 7)
 
-    bg.run_graph(graph)
+    hg.run_graph(graph)
     assert calls == [("start", 7), ("evaluate", 42), ("stop", 6)]
 
 
@@ -63,18 +63,18 @@ def test_node_start_return_is_ignored_before_later_evaluation(compute_node):
     starts = []
 
     if compute_node:
-        node_decorator = bg.compute_node
-        input_annotation = bg.TS[int]
-        output_annotation = bg.TS[int]
+        node_decorator = hg.compute_node
+        input_annotation = hg.TS[int]
+        output_annotation = hg.TS[int]
         extract_value = lambda value: value.value
     else:
-        node_decorator = bg.node
+        node_decorator = hg.node
         input_annotation = int
         output_annotation = int
         extract_value = lambda value: value
 
-    @bg.generator
-    def source(clock: bg.EvaluationClock = None) -> bg.TS[int]:
+    @hg.generator
+    def source(clock: hg.EvaluationClock = None) -> hg.TS[int]:
         yield clock.evaluation_time + timedelta(microseconds=1), 5
 
     @node_decorator
@@ -86,18 +86,18 @@ def test_node_start_return_is_ignored_before_later_evaluation(compute_node):
         starts.append("start")
         return -1
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return identity(source())
 
-    actual = bg.run_graph(graph)
+    actual = hg.run_graph(graph)
     assert starts == ["start"]
     assert actual == [None, 5]
 
 
 def test_lifecycle_callback_registration_rejects_duplicates():
-    @bg.compute_node
-    def value(input: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def value(input: hg.TS[int]) -> hg.TS[int]:
         return input.value
 
     @value.start
@@ -114,7 +114,7 @@ def test_lifecycle_callback_registration_rejects_duplicates():
 def test_invalid_lifecycle_callback_does_not_occupy_registration_slot():
     seen = []
 
-    @bg.node
+    @hg.node
     def value(amount: int) -> int:
         return amount
 
@@ -129,23 +129,23 @@ def test_invalid_lifecycle_callback_does_not_occupy_registration_slot():
         seen.append(amount)
         return amount + 1
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return value(3)
 
-    assert bg.run_graph(graph) == [3]
+    assert hg.run_graph(graph) == [3]
     assert seen == [3]
 
 
 def test_source_node_evaluates_at_start_and_can_schedule_itself():
     events = []
 
-    @bg.source_node
+    @hg.source_node
     def source(
-        state: bg.State[list] = None,
-        clock: bg.EvaluationClock = None,
-        scheduler: bg.Scheduler = None,
-    ) -> bg.TS[int]:
+        state: hg.State[list] = None,
+        clock: hg.EvaluationClock = None,
+        scheduler: hg.Scheduler = None,
+    ) -> hg.TS[int]:
         state.append(clock.evaluation_time)
         events.append(("evaluate", len(state)))
         if len(state) < 2:
@@ -157,15 +157,15 @@ def test_source_node_evaluates_at_start_and_can_schedule_itself():
         events.append(("start",))
         return object()
 
-    @bg.compute_node
-    def collect(value: bg.TS[int]) -> None:
+    @hg.compute_node
+    def collect(value: hg.TS[int]) -> None:
         events.append(("output", value.value))
 
-    @bg.graph
+    @hg.graph
     def graph() -> None:
         collect(source())
 
-    bg.run_graph(graph)
+    hg.run_graph(graph)
     assert events == [
         ("start",),
         ("evaluate", 1),
@@ -176,20 +176,20 @@ def test_source_node_evaluates_at_start_and_can_schedule_itself():
 
 
 def test_source_node_passes_keyword_only_inputs_to_its_evaluation_function():
-    @bg.source_node
-    def source(*, value: int) -> bg.TS[int]:
+    @hg.source_node
+    def source(*, value: int) -> hg.TS[int]:
         return value
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return source(value=7)
 
-    assert bg.run_graph(graph) == [7]
+    assert hg.run_graph(graph) == [7]
 
 
 def test_sources_reject_invalidation_callbacks_without_time_series_inputs():
-    @bg.source_node
-    def source() -> bg.TS[int]:
+    @hg.source_node
+    def source() -> hg.TS[int]:
         return 1
 
     with pytest.raises(TypeError, match="without time-series inputs"):
@@ -198,8 +198,8 @@ def test_sources_reject_invalidation_callbacks_without_time_series_inputs():
         def invalidation():
             pass
 
-    @bg.generator
-    def generated() -> bg.TS[int]:
+    @hg.generator
+    def generated() -> hg.TS[int]:
         yield timedelta(), 1
 
     with pytest.raises(TypeError, match="cannot register a separate start callback"):
@@ -218,8 +218,8 @@ def test_sources_reject_invalidation_callbacks_without_time_series_inputs():
 def test_generator_reads_evaluation_clock_after_each_resume():
     observed = []
 
-    @bg.generator
-    def source(clock: bg.EvaluationClock = None) -> bg.TS[int]:
+    @hg.generator
+    def source(clock: hg.EvaluationClock = None) -> hg.TS[int]:
         start = clock.evaluation_time
         yield start, 0
         observed.append(clock.evaluation_time)
@@ -227,11 +227,11 @@ def test_generator_reads_evaluation_clock_after_each_resume():
         observed.append(clock.evaluation_time)
         yield start + timedelta(microseconds=2), 2
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return source()
 
-    actual = bg.run_graph(graph)
+    actual = hg.run_graph(graph)
 
     assert actual == [0, 1, 2]
     assert len(observed) == 2
@@ -239,77 +239,77 @@ def test_generator_reads_evaluation_clock_after_each_resume():
 
 
 def test_empty_generator_is_a_valid_source():
-    @bg.generator
-    def source() -> bg.TS[int]:
+    @hg.generator
+    def source() -> hg.TS[int]:
         if False:
             yield datetime(2000, 1, 1), 1
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return source()
 
-    assert bg.run_graph(graph) == [None]
+    assert hg.run_graph(graph) == [None]
 
 
 def test_generator_requires_strictly_increasing_output_times():
-    @bg.generator
-    def source(clock: bg.EvaluationClock = None) -> bg.TS[int]:
+    @hg.generator
+    def source(clock: hg.EvaluationClock = None) -> hg.TS[int]:
         yield clock.evaluation_time, 1
         yield clock.evaluation_time, 2
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return source()
 
     with pytest.raises(ValueError, match="strictly increasing"):
-        bg.run_graph(graph)
+        hg.run_graph(graph)
 
 
 def test_generator_accepts_timedelta_relative_to_each_resume():
-    @bg.generator
-    def source() -> bg.TS[int]:
+    @hg.generator
+    def source() -> hg.TS[int]:
         yield timedelta(), 1
         yield timedelta(microseconds=1), 2
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return source()
 
-    assert bg.run_graph(graph) == [1, 2]
+    assert hg.run_graph(graph) == [1, 2]
 
 
 def test_generator_retains_scalar_dictionary_arguments_across_yields():
-    @bg.generator
-    def source(data: dict[str, int], clock: bg.EvaluationClock = None) -> bg.TS[int]:
+    @hg.generator
+    def source(data: dict[str, int], clock: hg.EvaluationClock = None) -> hg.TS[int]:
         start = clock.evaluation_time
         yield start + timedelta(microseconds=1), 1
         yield start + timedelta(microseconds=2), data["value"]
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return source({"value": 42})
 
-    assert bg.run_graph(graph) == [None, 1, 42]
+    assert hg.run_graph(graph) == [None, 1, 42]
 
 
 def test_identical_generator_calls_create_independent_sources():
     values = []
 
-    @bg.generator
-    def source() -> bg.TS[int]:
+    @hg.generator
+    def source() -> hg.TS[int]:
         value = len(values) + 1
         values.append(value)
         yield timedelta(), value
 
-    @bg.compute_node
-    def add(left: bg.TS[int], right: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def add(left: hg.TS[int], right: hg.TS[int]) -> hg.TS[int]:
         return left.value + right.value
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return add(source(), source())
 
-    assert bg.run_graph(graph) == [3]
+    assert hg.run_graph(graph) == [3]
     assert values == [1, 2]
 
 
@@ -317,8 +317,8 @@ def test_generator_cleanup_reports_stop_failure_after_closing_pending_generator(
     events = []
     retained_clocks = []
 
-    @bg.generator
-    def source(clock: bg.EvaluationClock = None, name: str = "source") -> bg.TS[int]:
+    @hg.generator
+    def source(clock: hg.EvaluationClock = None, name: str = "source") -> hg.TS[int]:
         try:
             yield clock.evaluation_time, 1
             events.append(("pending", name))
@@ -334,16 +334,16 @@ def test_generator_cleanup_reports_stop_failure_after_closing_pending_generator(
             events.append(("close", name, generator_time, stop_clock_error))
 
     @source.stop
-    def stop(name: str, clock: bg.EvaluationClock = None):
+    def stop(name: str, clock: hg.EvaluationClock = None):
         retained_clocks.append(clock)
         events.append(("stop", name, clock.evaluation_time))
         raise RuntimeError("stop failed")
 
-    @bg.compute_node
-    def fail(value: bg.TS[int]) -> None:
+    @hg.compute_node
+    def fail(value: hg.TS[int]) -> None:
         raise ValueError("evaluation failed")
 
-    @bg.graph
+    @hg.graph
     def graph() -> None:
         fail(source(name="test"))
 
@@ -351,7 +351,7 @@ def test_generator_cleanup_reports_stop_failure_after_closing_pending_generator(
     sys.unraisablehook = lambda failure: events.append(("unraisable", str(failure.exc_value)))
     try:
         with pytest.raises(ValueError, match="evaluation failed"):
-            bg.run_graph(graph)
+            hg.run_graph(graph)
     finally:
         sys.unraisablehook = previous_hook
 
@@ -370,28 +370,28 @@ def test_generator_cleanup_reports_stop_failure_after_closing_pending_generator(
 def test_invalidation_callback_receives_selected_input():
     seen = []
 
-    @bg.compute_node
-    def identity(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.compute_node
+    def identity(value: hg.TS[int]) -> hg.TS[int]:
         return value.value
 
     @identity.on_invalidation
-    def invalidated(value: bg.TS[int]) -> int:
+    def invalidated(value: hg.TS[int]) -> int:
         seen.append(value.valid)
         return 99
 
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
         return identity(value)
 
-    assert bg.run_graph(graph, [1, bg.INVALID]) == [1, 99]
+    assert hg.run_graph(graph, [1, hg.INVALID]) == [1, 99]
     assert seen == [False]
 
 
-@pytest.mark.parametrize("runner", [bg.run_graph, bg.run_graph])
+@pytest.mark.parametrize("runner", [hg.run_graph, hg.run_graph])
 def test_stop_callback_errors_are_reported_as_unraisable_after_stop(runner):
     calls = []
 
-    @bg.node
+    @hg.node
     def value() -> int:
         return 1
 
@@ -400,8 +400,8 @@ def test_stop_callback_errors_are_reported_as_unraisable_after_stop(runner):
         calls.append("stop")
         raise RuntimeError("stop failed")
 
-    @bg.graph
-    def graph() -> bg.TS[int]:
+    @hg.graph
+    def graph() -> hg.TS[int]:
         return value()
 
     previous_hook = sys.unraisablehook

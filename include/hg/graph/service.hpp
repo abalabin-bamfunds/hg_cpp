@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph/details/nested_binding_identity.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/details/nested_binding_identity.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -12,7 +12,7 @@
 #include <span>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 using service_client_id_t = std::int64_t;
 
@@ -153,4 +153,4 @@ class SubscriptionService : public ServiceDefinition {
                                            std::span<const WiringArgument> arguments) const final;
 };
 
-} // namespace bg
+} // namespace hg

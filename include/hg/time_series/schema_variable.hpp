@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/util/compile_time_string.hpp>
+#include <hg/util/compile_time_string.hpp>
 
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 class SchemaType;
 
@@ -59,4 +59,4 @@ concept schema_variable_template = schema_variable_declaration<Schema<schema_var
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

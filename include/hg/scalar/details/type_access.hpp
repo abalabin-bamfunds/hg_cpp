@@ -1,9 +1,9 @@
 #pragma once
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration> struct scalar_type_access {
     static decltype(auto) type();
 };
 
-} // namespace bg::details
+} // namespace hg::details

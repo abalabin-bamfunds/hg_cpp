@@ -1,23 +1,23 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/literal/scalar_literal.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/literal_operations.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/literal/scalar_literal.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/literal_operations.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
+#include <typeinfo>
 #include <ddv/serial_visitor.h>
 #include <ddv/visitable.h>
 
 #include <span>
 #include <stdexcept>
-#include <typeinfo>
 
-namespace bg {
+namespace hg {
 
 template <details::time_series_variable Variable> class Out<Variable> {
   public:
@@ -79,24 +79,24 @@ template <details::time_series_variable Variable> class Out<Variable> {
 
 static_assert(sizeof(Out<TS_T>) == sizeof(void *));
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Output>
 void apply_time_series_literal(const Output &output, const literal::TimeSeriesLiteral &literal);
 
-} // namespace bg::details
+} // namespace hg::details
 
-#include <bg/time_series/ref/ref_output.hpp>
-#include <bg/time_series/ts/ts_output.hpp>
-#include <bg/time_series/tsb/tsb_output.hpp>
-#include <bg/time_series/tsd/tsd_output.hpp>
-#include <bg/time_series/tsl/tsl_output.hpp>
-#include <bg/time_series/tss/tss_output.hpp>
-#include <bg/time_series/details/guarantee_variable_traits.hpp>
+#include <hg/time_series/ref/ref_output.hpp>
+#include <hg/time_series/ts/ts_output.hpp>
+#include <hg/time_series/tsb/tsb_output.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
+#include <hg/time_series/tsl/tsl_output.hpp>
+#include <hg/time_series/tss/tss_output.hpp>
+#include <hg/time_series/details/guarantee_variable_traits.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Output>
 concept direct_time_series_output = requires(TimeSeriesState &last_updated, typename Output::storage_type &value,
@@ -112,9 +112,9 @@ inline constexpr bool output_requires_runtime_type<Out<TimeSeries>> =
     !direct_time_series_output<Out<TimeSeries>> || contains_guarantee_variable_v<TimeSeries> ||
     time_series_scalar_supports_alternative_layouts<TimeSeries>;
 
-} // namespace bg::details
+} // namespace hg::details
 
-namespace bg {
+namespace hg {
 
 using TimeSeriesOutputTypes = ddv::mux<Out<TS<SCALAR>>, Out<TSL<TS_T, SIZE>>, Out<TSB<SCHEMA>>, Out<TSS<SCALAR>>,
                                        Out<TSD<SCALAR, TS_T>>, Out<REF<TS_T>>, Out<TS_T>>;
@@ -191,4 +191,4 @@ void apply_time_series_literal(const Output &output, const literal::TimeSeriesLi
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

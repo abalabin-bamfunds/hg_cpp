@@ -3,7 +3,7 @@
 #include <concepts>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> struct Opaque {
     static_assert(std::copy_constructible<T>);
@@ -18,4 +18,4 @@ template <typename T> struct is_opaque<Opaque<T>> : std::true_type {};
 
 template <typename T> inline constexpr bool is_opaque_v = is_opaque<std::remove_cvref_t<T>>::value;
 
-} // namespace bg
+} // namespace hg

@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/compiled_graph.hpp>
-#include <bg/graph/details/nested.hpp>
-#include <bg/graph/details/normalized_wiring_arguments.hpp>
-#include <bg/graph/details/variadic_wiring_record.hpp>
-#include <bg/graph/details/wiring_record_overlay.hpp>
-#include <bg/graph/graph_template.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/node/node_template.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/details/nested.hpp>
+#include <hg/graph/details/normalized_wiring_arguments.hpp>
+#include <hg/graph/details/variadic_wiring_record.hpp>
+#include <hg/graph/details/wiring_record_overlay.hpp>
+#include <hg/graph/graph_template.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
 #include <concepts>
 #include <memory>
@@ -17,7 +17,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::nested_details {
+namespace hg::nested_details {
 
 template <typename Graph, details::graph_code_argument Run>
     requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
@@ -186,9 +186,9 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
     return wp<REF<Target>>{*call.output};
 }
 
-} // namespace bg::nested_details
+} // namespace hg::nested_details
 
-namespace bg {
+namespace hg {
 
 template <typename Graph, details::graph_code_argument Run, details::graph_code_argument... Arguments>
     requires std::derived_from<Graph, WiringTemplate> && requires { typename Graph::result_type; }
@@ -221,4 +221,4 @@ template <typename Graph, typename... TypeParameters, details::graph_code_argume
     return nested_details::wire(graph.target(), &graph.type_map(), std::forward<Run>(run), arguments);
 }
 
-} // namespace bg
+} // namespace hg

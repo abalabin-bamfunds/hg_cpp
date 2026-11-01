@@ -15,8 +15,8 @@ series collection unless the type's operation explicitly copies a complete value
 | Update dictionary item | `{1: 18}` | `{{1, 18}}` |
 
 C++ examples import `using namespace literal;`. The `_n` named-argument suffix
-belongs to the separate namespace `bg::literals`; examples using it also import
-`using namespace bg::literals;`. For an explicitly constructed scalar message,
+belongs to the separate namespace `hg::literals`; examples using it also import
+`using namespace hg::literals;`. For an explicitly constructed scalar message,
 use `TimeSeriesLiteral(value)`. Braces select the collection initializer-list form.
 
 Omitted collection items remain unchanged. Empty collection deltas do not clear previous

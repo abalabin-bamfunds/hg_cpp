@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/graph/variadic_parameter.hpp>
-#include <bg/node/details/input_properties.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/graph/variadic_parameter.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
 
 #include <string_view>
 
-namespace bg {
+namespace hg {
 namespace details {
 
 template <typename Declaration, auto... Properties>
@@ -84,9 +84,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
             [](void *context, item_id_t id) { (*static_cast<std::remove_reference_t<Function> *>(context))(id); });
     }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
-    }
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
 
     static constexpr std::string_view name = ParsedProperties::name;
     static constexpr InputActivity activity = ParsedProperties::activity;
@@ -147,9 +145,7 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
-    }
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
 
     using time_series_type = TSB<Schema, TimeSeriesProperties...>;
 
@@ -164,4 +160,4 @@ class In<TSB<Schema, TimeSeriesProperties...>, Properties...>
     details::TimeSeriesInputData data_;
 };
 
-} // namespace bg
+} // namespace hg

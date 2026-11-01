@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/scalar/details/hash.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/declaration.hpp>
-#include <bg/util/hash_dictionary.hpp>
+#include <hg/scalar/details/hash.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/util/hash_dictionary.hpp>
 
 #include <cstddef>
 #include <iterator>
 #include <stdexcept>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename K, typename V> class MutableDict;
 
@@ -149,11 +149,11 @@ template <typename T> struct is_dict : std::false_type {};
 template <typename K, typename V> struct is_dict<Dict<K, V>> : std::true_type {};
 template <typename T> inline constexpr bool is_dict_v = is_dict<T>::value;
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename K, typename V>
 inline constexpr bool generic_scalar<Dict<K, V>> = generic_scalar<K> || generic_scalar<V>;
 
-} // namespace bg::details
+} // namespace hg::details

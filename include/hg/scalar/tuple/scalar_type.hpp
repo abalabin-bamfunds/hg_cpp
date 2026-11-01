@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/scalar/declaration.hpp>
-#include <bg/scalar/tuple/type.hpp>
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/scalar_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/scalar/tuple/type.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <array>
 #include <cstddef>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class TupleScalarType : public ScalarType {
   public:
@@ -83,13 +83,13 @@ template <typename... Items> struct scalar_declaration_traits<Tuple<Items...>> {
 
 template <typename... Items> struct declaration_variable_traits<Tuple<Items...>> {
     template <typename Visitor> static void for_each(Visitor &&visitor) {
-        (::bg::for_each_declaration_variable<Items>(visitor), ...);
+        (::hg::for_each_declaration_variable<Items>(visitor), ...);
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct scalar_handle_traits;
 
@@ -101,4 +101,4 @@ template <typename... Items> struct scalar_handle_traits<Tuple<Items...>> {
     static constexpr bool supports_hash = (scalar_handle_traits<Items>::supports_hash && ...);
 };
 
-} // namespace bg::details
+} // namespace hg::details

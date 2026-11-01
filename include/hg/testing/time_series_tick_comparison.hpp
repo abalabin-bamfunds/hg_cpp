@@ -1,25 +1,25 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/literal/time_series_literal.hpp>
-#include <bg/time_series/dispatch.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/export.hpp>
+#include <hg/literal/time_series_literal.hpp>
+#include <hg/time_series/dispatch.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <cstddef>
 #include <functional>
 #include <memory>
 
-namespace bg::testing {
+namespace hg::testing {
 
 // Owns comparison state for one nested time-series lifetime in one equals() call.
-struct BG_EXPORT TickLiteralComparisonState {
+struct HG_EXPORT TickLiteralComparisonState {
     virtual ~TickLiteralComparisonState() = default;
 
     // Compare one valid payload. tick_index is the output cycle index, including cycles without a tick.
     virtual bool compare(util::buffer_reader &reader, const TimeSeriesType &type,
                          const literal::TimeSeriesLiteral &expected, std::size_t tick_index) = 0;
 
-    // Report an invalid tick. BG has already checked that expected is INVALID.
+    // Report an invalid tick. HG has already checked that expected is INVALID.
     virtual void invalidate(std::size_t) {}
 
     // Check the accumulated comparison when this nested time-series lifetime ends.
@@ -39,11 +39,11 @@ struct TickLiteralComparison {
     CreateState create_state;
 };
 
-} // namespace bg::testing
+} // namespace hg::testing
 
-namespace bg {
+namespace hg {
 
-template <> BG_EXPORT TimeSeriesDispatch<testing::TickLiteralComparison> &
+template <> HG_EXPORT TimeSeriesDispatch<testing::TickLiteralComparison> &
 TimeSeriesDispatch<testing::TickLiteralComparison>::instance() noexcept;
 
-} // namespace bg
+} // namespace hg

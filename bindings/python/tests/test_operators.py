@@ -1,38 +1,38 @@
 import pytest
 
-import bg
+import hg
 
 
-extension = pytest.importorskip("bg._bg_test_extension")
+extension = pytest.importorskip("hg._hg_test_extension")
 
 
 def test_const_operator_accepts_positional_and_named_scalars():
-    @bg.graph
-    def positional() -> bg.TS[int]:
-        return bg.operators.const_(42)
+    @hg.graph
+    def positional() -> hg.TS[int]:
+        return hg.operators.const_(42)
 
-    @bg.graph
-    def named() -> bg.TS[int]:
-        return bg.operators.const_(value=43)
+    @hg.graph
+    def named() -> hg.TS[int]:
+        return hg.operators.const_(value=43)
 
-    assert bg.run_graph(positional) == [42]
-    assert bg.run_graph(named) == [43]
+    assert hg.run_graph(positional) == [42]
+    assert hg.run_graph(named) == [43]
 
 
 def test_scalar_inference_uses_python_type_order():
     class Count(int):
         pass
 
-    @bg.graph
-    def boolean() -> bg.TS[bool]:
-        return bg.operators.const_(True)
+    @hg.graph
+    def boolean() -> hg.TS[bool]:
+        return hg.operators.const_(True)
 
-    @bg.graph
-    def integer_subclass() -> bg.TS[int]:
-        return bg.operators.const_(Count(7))
+    @hg.graph
+    def integer_subclass() -> hg.TS[int]:
+        return hg.operators.const_(Count(7))
 
-    assert bg.run_graph(boolean) == [True]
-    assert bg.run_graph(integer_subclass) == [7]
+    assert hg.run_graph(boolean) == [True]
+    assert hg.run_graph(integer_subclass) == [7]
 
 
 def test_extension_can_register_a_python_scalar_type():
@@ -45,157 +45,157 @@ def test_extension_can_register_a_python_scalar_type():
 
     assert extension.register_double_type(Measure)
 
-    @bg.graph
-    def value() -> bg.TS[float]:
-        return bg.operators.const_(DerivedMeasure())
+    @hg.graph
+    def value() -> hg.TS[float]:
+        return hg.operators.const_(DerivedMeasure())
 
-    assert bg.run_graph(value) == [1.5]
+    assert hg.run_graph(value) == [1.5]
 
 
 def test_getitem_operator_and_wiring_point_syntax_select_list_items():
-    @bg.graph
-    def explicit() -> bg.TS[int]:
-        return bg.operators.getitem(collection=extension.make_list(), key=1)
+    @hg.graph
+    def explicit() -> hg.TS[int]:
+        return hg.operators.getitem(collection=extension.make_list(), key=1)
 
-    @bg.graph
-    def syntax() -> bg.TS[int]:
+    @hg.graph
+    def syntax() -> hg.TS[int]:
         return extension.make_list()[0]
 
-    assert bg.run_graph(explicit) == [20]
-    assert bg.run_graph(syntax) == [10]
+    assert hg.run_graph(explicit) == [20]
+    assert hg.run_graph(syntax) == [10]
 
 
 def test_operator_reports_normal_overload_diagnostics():
-    @bg.graph
-    def invalid() -> bg.TS[int]:
-        return bg.operators.getitem(bg.operators.const_(1), 0)
+    @hg.graph
+    def invalid() -> hg.TS[int]:
+        return hg.operators.getitem(hg.operators.const_(1), 0)
 
     with pytest.raises(ValueError, match="Cannot resolve operator getitem") as raised:
-        bg.run_graph(invalid)
+        hg.run_graph(invalid)
     assert any("callback invalid at invalid[0]" in note for note in raised.value.__notes__)
 
 
 def test_extension_can_export_existing_and_sink_operators():
-    @bg.graph
-    def constant() -> bg.TS[int]:
+    @hg.graph
+    def constant() -> hg.TS[int]:
         return extension.const_(44)
 
-    @bg.graph
+    @hg.graph
     def sink() -> None:
-        assert extension.discard(bg.operators.const_(1)) is None
+        assert extension.discard(hg.operators.const_(1)) is None
 
-    assert bg.run_graph(constant) == [44]
-    bg.run_graph(sink)
+    assert hg.run_graph(constant) == [44]
+    hg.run_graph(sink)
 
 
 def test_opt_requires_an_optional_python_node_receiver():
     received = []
 
-    @bg.node
+    @hg.node
     def observe(value: int | None) -> None:
         received.append(value)
 
-    @bg.graph
-    def graph(trigger: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
         value = extension.invalidate_on_zero(trigger)
-        observe(value=bg.opt(value))
+        observe(value=hg.opt(value))
         return value
 
-    assert bg.run_graph(graph, [1, 0, 2]) == [1, None, 2]
+    assert hg.run_graph(graph, [1, 0, 2]) == [1, None, 2]
     assert received == [1, None, 2]
 
 
 def test_opt_rejects_a_required_python_node_receiver_with_a_clear_diagnostic():
-    @bg.node
+    @hg.node
     def observe(value: int) -> None:
         pass
 
-    @bg.graph
-    def graph(value: bg.TS[int]) -> None:
-        observe(bg.opt(value))
+    @hg.graph
+    def graph(value: hg.TS[int]) -> None:
+        observe(hg.opt(value))
 
     with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.run_graph(graph, [1])
+        hg.run_graph(graph, [1])
 
 
 def test_opt_rejects_a_required_python_graph_receiver():
-    @bg.graph
-    def required(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def required(value: hg.TS[int]) -> hg.TS[int]:
         return value
 
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        return required(bg.opt(value))
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        return required(hg.opt(value))
 
     with pytest.raises(ValueError, match="an opt-qualified argument requires an optional input parameter"):
-        bg.run_graph(graph, [1])
+        hg.run_graph(graph, [1])
 
 
 def test_opt_is_preserved_through_python_operator_calls_and_cache_keys():
-    @bg.node
+    @hg.node
     def add(lhs: int, rhs: int) -> int:
         return lhs + rhs
 
-    @bg.graph
-    def required_then_optional(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def required_then_optional(value: hg.TS[int]) -> hg.TS[int]:
         required = extension.optional_choice(value=value)
-        optional = extension.optional_choice(value=bg.opt(value))
+        optional = extension.optional_choice(value=hg.opt(value))
         return add(required, optional)
 
-    @bg.graph
-    def optional_then_required(value: bg.TS[int]) -> bg.TS[int]:
-        optional = extension.optional_choice(value=bg.opt(value))
+    @hg.graph
+    def optional_then_required(value: hg.TS[int]) -> hg.TS[int]:
+        optional = extension.optional_choice(value=hg.opt(value))
         required = extension.optional_choice(value=value)
         return add(optional, required)
 
-    assert bg.run_graph(required_then_optional, [3]) == [36]
-    assert bg.run_graph(optional_then_required, [3]) == [36]
+    assert hg.run_graph(required_then_optional, [3]) == [36]
+    assert hg.run_graph(optional_then_required, [3]) == [36]
 
 
 def test_opt_rejects_values_without_time_series_identity():
     with pytest.raises(TypeError, match="time-series wiring point"):
-        bg.opt(1)
+        hg.opt(1)
     with pytest.raises(TypeError, match="time-series wiring point"):
-        bg.opt(None)
+        hg.opt(None)
 
 
 def test_opt_preserves_wiring_point_lifetime():
     optional_points = []
 
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        optional = bg.opt(value)
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        optional = hg.opt(value)
         optional_points.append(optional)
         assert value.type_name == optional.type_name
         assert value.has_output and optional.has_output
-        assert bg.opt(optional).type_name == value.type_name
+        assert hg.opt(optional).type_name == value.type_name
         return value
 
-    assert bg.run_graph(graph, [3]) == [3]
+    assert hg.run_graph(graph, [3]) == [3]
     with pytest.raises(RuntimeError, match="outside its graph construction"):
         _ = optional_points[0].has_output
     with pytest.raises(RuntimeError, match="outside its graph construction"):
-        bg.opt(optional_points[0])
+        hg.opt(optional_points[0])
 
-    @bg.graph
-    def use_expired(value: bg.TS[int]) -> bg.TS[int]:
+    @hg.graph
+    def use_expired(value: hg.TS[int]) -> hg.TS[int]:
         return extension.optional_choice(optional_points[0])
 
     with pytest.raises(RuntimeError, match="outside its graph construction"):
-        bg.run_graph(use_expired, [3])
+        hg.run_graph(use_expired, [3])
 
 
 def test_repeated_opt_qualifier_is_accepted_by_an_optional_operator_input():
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        return extension.optional_choice(value=bg.opt(bg.opt(value)))
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        return extension.optional_choice(value=hg.opt(hg.opt(value)))
 
-    assert bg.run_graph(graph, [0]) == [20]
+    assert hg.run_graph(graph, [0]) == [20]
 
 
 def test_opt_qualified_graph_output_keeps_normal_output_semantics():
-    @bg.graph
-    def graph(value: bg.TS[int]) -> bg.TS[int]:
-        return bg.opt(value)
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        return hg.opt(value)
 
-    assert bg.run_graph(graph, [1, 2]) == [1, 2]
+    assert hg.run_graph(graph, [1, 2]) == [1, 2]

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/export.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/export.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <fmt/format.h>
 
-namespace bg {
+namespace hg {
 
 // Formats a live input at `now`, including root-level SKIP filtering.
 struct TimeSeriesTickView {
@@ -46,17 +46,17 @@ struct SerializedTimeSeriesTickPayloadView {
     return {.type = type, .valid = valid, .reader = reader};
 }
 
-BG_EXPORT void format_live_tick(const TimeSeriesInputData &input, EvaluationTime now, fmt::format_context &context);
-BG_EXPORT void format_serialized_tick(const TimeSeriesType &type, const util::buffer_reader &reader,
+HG_EXPORT void format_live_tick(const TimeSeriesInputData &input, EvaluationTime now, fmt::format_context &context);
+HG_EXPORT void format_serialized_tick(const TimeSeriesType &type, const util::buffer_reader &reader,
                                       fmt::format_context &context);
-BG_EXPORT void format_serialized_tick_payload(const TimeSeriesType &type, bool valid,
+HG_EXPORT void format_serialized_tick_payload(const TimeSeriesType &type, bool valid,
                                               const util::buffer_reader &reader, fmt::format_context &context);
 
-} // namespace bg
+} // namespace hg
 
 namespace fmt {
 
-template <> struct formatter<bg::TimeSeriesTickView> {
+template <> struct formatter<hg::TimeSeriesTickView> {
     constexpr auto parse(format_parse_context &context) {
         const auto it = context.begin();
         if (it != context.end() && *it != '}') {
@@ -65,13 +65,13 @@ template <> struct formatter<bg::TimeSeriesTickView> {
         return it;
     }
 
-    auto format(const bg::TimeSeriesTickView &value, format_context &context) const {
-        bg::format_live_tick(value.input, value.now, context);
+    auto format(const hg::TimeSeriesTickView &value, format_context &context) const {
+        hg::format_live_tick(value.input, value.now, context);
         return context.out();
     }
 };
 
-template <> struct formatter<bg::SerializedTimeSeriesTickView> {
+template <> struct formatter<hg::SerializedTimeSeriesTickView> {
     constexpr auto parse(format_parse_context &context) {
         const auto it = context.begin();
         if (it != context.end() && *it != '}') {
@@ -80,13 +80,13 @@ template <> struct formatter<bg::SerializedTimeSeriesTickView> {
         return it;
     }
 
-    auto format(const bg::SerializedTimeSeriesTickView &value, format_context &context) const {
-        bg::format_serialized_tick(value.type, value.reader, context);
+    auto format(const hg::SerializedTimeSeriesTickView &value, format_context &context) const {
+        hg::format_serialized_tick(value.type, value.reader, context);
         return context.out();
     }
 };
 
-template <> struct formatter<bg::SerializedTimeSeriesTickPayloadView> {
+template <> struct formatter<hg::SerializedTimeSeriesTickPayloadView> {
     constexpr auto parse(format_parse_context &context) {
         const auto it = context.begin();
         if (it != context.end() && *it != '}') {
@@ -95,8 +95,8 @@ template <> struct formatter<bg::SerializedTimeSeriesTickPayloadView> {
         return it;
     }
 
-    auto format(const bg::SerializedTimeSeriesTickPayloadView &value, format_context &context) const {
-        bg::format_serialized_tick_payload(value.type, value.valid, value.reader, context);
+    auto format(const hg::SerializedTimeSeriesTickPayloadView &value, format_context &context) const {
+        hg::format_serialized_tick_payload(value.type, value.valid, value.reader, context);
         return context.out();
     }
 };

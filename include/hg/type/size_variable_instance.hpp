@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/time_series/size_variable.hpp>
-#include <bg/type/size_parameter.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/size_variable.hpp>
+#include <hg/type/size_parameter.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration>
     requires size_variable_declaration<Declaration>
@@ -31,4 +31,4 @@ template <auto Size> [[nodiscard]] SizeParameter size_parameter() {
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

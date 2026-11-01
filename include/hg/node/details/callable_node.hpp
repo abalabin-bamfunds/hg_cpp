@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/graph/requirement.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/node/details/callable_node_options.hpp>
-#include <bg/node/details/callable_signature.hpp>
-#include <bg/node/details/resolver.hpp>
-#include <bg/node/node_invocation.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/graph/requirement.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/node/details/callable_node_options.hpp>
+#include <hg/node/details/callable_signature.hpp>
+#include <hg/node/details/resolver.hpp>
+#include <hg/node/node_invocation.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <concepts>
 #include <algorithm>
@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Function>
 concept callable_node =
@@ -334,4 +334,4 @@ template <typename Function, typename... Options> class CallableNodeDefinition {
     Signature signature_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/util/named_argument.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/allocator.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/util/named_argument.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <concepts>
 #include <memory>
@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -81,4 +81,4 @@ std::vector<WiringParameter> aggregate_wiring_parameters(const Defaults &default
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

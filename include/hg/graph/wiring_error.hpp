@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/node/input_property_types.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/node/input_property_types.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstdint>
 #include <cstddef>
@@ -13,7 +13,7 @@
 #include <string>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class Signature;
 class Type;
@@ -120,4 +120,4 @@ class WiringError : public std::runtime_error {
     std::exception_ptr cause_;
 };
 
-} // namespace bg
+} // namespace hg

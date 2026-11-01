@@ -1,7 +1,7 @@
 # Queue and real-time baseline — 2026-10-21
 
 Native scalar queue measurements on AMD EPYC 7R13 (KVM), Linux x86-64,
-GCC 14.3.0, Release `-O3 -DNDEBUG`, shared libbg, no LTO. The VM exposes
+GCC 14.3.0, Release `-O3 -DNDEBUG`, shared libhg, no LTO. The VM exposes
 32 logical CPUs; its cgroup quota is 16 CPUs. Queue and wakeup processes use
 CPUs 0–3; scheduling uses CPU 0. Threads are not individually pinned.
 
@@ -114,11 +114,11 @@ workload are in [queue_realtime.md](../../queue_realtime.md).
 
 ```sh
 cmake --preset benchmark
-cmake --build --preset benchmark --target bg_queue_realtime_benchmark bg_runtime_scheduling_benchmark bg_evaluation_context_benchmark
-c++ -std=c++23 -O3 -DNDEBUG -pthread -Iinclude benchmarks/wakeup_latency_control.cpp -o build/benchmark/benchmarks/bg_wakeup_latency_control
-taskset -c 0-3 build/benchmark/benchmarks/bg_queue_realtime_benchmark
-taskset -c 0-3 build/benchmark/benchmarks/bg_wakeup_latency_control
-taskset -c 0 build/benchmark/benchmarks/bg_runtime_scheduling_benchmark
+cmake --build --preset benchmark --target hg_queue_realtime_benchmark hg_runtime_scheduling_benchmark hg_evaluation_context_benchmark
+c++ -std=c++23 -O3 -DNDEBUG -pthread -Iinclude benchmarks/wakeup_latency_control.cpp -o build/benchmark/benchmarks/hg_wakeup_latency_control
+taskset -c 0-3 build/benchmark/benchmarks/hg_queue_realtime_benchmark
+taskset -c 0-3 build/benchmark/benchmarks/hg_wakeup_latency_control
+taskset -c 0 build/benchmark/benchmarks/hg_runtime_scheduling_benchmark
 ```
 
 Repeat each measured invocation three times. `--quick` validates the new

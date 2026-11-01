@@ -82,7 +82,7 @@ An operator cache may retain argument structures in its existing bounded cache.
 It does not retain the argument payload. Destroying the operator releases its
 cached structures and overload constraints.
 
-## BG API changes
+## HG API changes
 
 | API | Change |
 | --- | --- |
@@ -150,7 +150,7 @@ captured-value cache separation, ordered multiple structures, release of
 argument and constraint values, and retained diagnostics. Structural rejection
 diagnostics retain their reason when expected and supplied types are identical.
 
-On 2026-10-06, the Python-enabled `bg-build` build with `-j12` succeeded.
+On 2026-10-06, the Python-enabled `hg-build` build with `-j12` succeeded.
 The full CTest suite passed **1,230 tests with zero failures**: **1,229 C++ tests**
 and a Python aggregate containing **118 passing Python tests**. Nodes resolve
 scalar-or-time-series alternatives to a selected concrete form. Unions between

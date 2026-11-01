@@ -1,7 +1,7 @@
 #pragma once
 
-#include <bg/graph/details/operator_resolution.hpp>
-#include <bg/graph/wiring_template.hpp>
+#include <hg/graph/details/operator_resolution.hpp>
+#include <hg/graph/wiring_template.hpp>
 
 #include <concepts>
 #include <memory>
@@ -9,7 +9,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class Operator : public WiringTemplate {
   public:
@@ -53,4 +53,4 @@ class Operator : public WiringTemplate {
     std::shared_ptr<const void> cache_identity_{std::make_shared<const char>()};
 };
 
-} // namespace bg
+} // namespace hg

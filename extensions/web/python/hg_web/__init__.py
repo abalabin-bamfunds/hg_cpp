@@ -1,12 +1,12 @@
-"""HTTP client and server primitives for bg graphs."""
+"""HTTP client and server primitives for hg graphs."""
 
 from datetime import timedelta
 import inspect
 from functools import update_wrapper
 
-import bg
+import hg
 
-from ._bg_web import (
+from ._hg_web import (
     _http_client_impl,
     _http_authenticate_requests,
     _http_handler_input_is_dictionary,
@@ -119,17 +119,17 @@ _register_schemas(
 from .auth import AuthDecision, _policy_graphs
 
 
-@bg.service
+@hg.service
 def _http_handler_service(
-    route: bg.TS[str, bg.final],
-    responses: bg.TSD[int, bg.TS[HttpResponse]],
-) -> bg.TSD[int, bg.TS[HttpServerRequest]]:
+    route: hg.TS[str, hg.final],
+    responses: hg.TSD[int, hg.TS[HttpResponse]],
+) -> hg.TSD[int, hg.TS[HttpServerRequest]]:
     """Request/reply boundary used by one HTTP handler client."""
     raise RuntimeError("the HTTP handler service is a declaration")
 
 
-@bg.reference_service
-def _http_server_port_service() -> bg.TS[int]:
+@hg.reference_service
+def _http_server_port_service() -> hg.TS[int]:
     """Return the port bound by the registered HTTP server implementation."""
     raise RuntimeError("the HTTP server port is a service declaration")
 
@@ -138,7 +138,7 @@ class HttpHandler:
     def __init__(self, path, graph, policy=None):
         if not isinstance(path, str) or not path.startswith("/") or any(c in path for c in "?#"):
             raise ValueError("HTTP handler paths must be absolute paths without query or fragment")
-        if not isinstance(graph, bg.GraphDefinition):
+        if not isinstance(graph, hg.GraphDefinition):
             raise TypeError("http_handler expects a decorated @graph definition")
 
         parameters = tuple(inspect.signature(graph.function).parameters.values())
@@ -161,19 +161,19 @@ class HttpHandler:
         bound = self.signature.bind(*args, **kwargs)
         bound.apply_defaults()
 
-        client_id = bg.service_client_id()
+        client_id = hg.service_client_id()
         requests = _http_handler_service.client_replies(client_id)
         identities = None
         rejections = None
         handler_requests = requests
         if self.policy_graphs is not None:
             request_graph, reply_graph = self.policy_graphs
-            client_ids = bg.map(request_graph, requests)
-            decisions = bg.map(reply_graph, client_ids)
+            client_ids = hg.map(request_graph, requests)
+            decisions = hg.map(reply_graph, client_ids)
             projected = _http_authenticate_requests(requests, decisions)
-            handler_requests = bg.operators.getattr(projected, bg.Symbol("requests"))
-            identities = bg.operators.getattr(projected, bg.Symbol("identities"))
-            rejections = bg.operators.getattr(projected, bg.Symbol("rejections"))
+            handler_requests = hg.operators.getattr(projected, hg.Symbol("requests"))
+            identities = hg.operators.getattr(projected, hg.Symbol("identities"))
+            rejections = hg.operators.getattr(projected, hg.Symbol("rejections"))
 
         if self.dictionary_input:
             if identities is None:
@@ -181,17 +181,17 @@ class HttpHandler:
             else:
                 result = self.graph(handler_requests, identities, *bound.args, **bound.kwargs)
         else:
-            mapped_positional = tuple(bg.pass_through(value) for value in bound.args)
-            mapped_named = {name: bg.pass_through(value) for name, value in bound.kwargs.items()}
+            mapped_positional = tuple(hg.pass_through(value) for value in bound.args)
+            mapped_named = {name: hg.pass_through(value) for name, value in bound.kwargs.items()}
             if identities is None:
-                result = bg.map(self.graph, handler_requests, *mapped_positional, **mapped_named)
+                result = hg.map(self.graph, handler_requests, *mapped_positional, **mapped_named)
             else:
-                result = bg.map(self.graph, handler_requests, identities, *mapped_positional, **mapped_named)
+                result = hg.map(self.graph, handler_requests, identities, *mapped_positional, **mapped_named)
 
         responses = _http_response_field(result)
         if rejections is not None:
             responses = _http_merge_responses(responses, rejections)
-        route = bg.operators.const_(self.path)
+        route = hg.operators.const_(self.path)
         _http_handler_service.client_requests(client_id, route, responses)
         return result
 
@@ -203,14 +203,14 @@ def http_handler(path, graph, policy=None):
 
 def register_http_server(catalogue, host="127.0.0.1", port=0):
     """Register an HTTP server implementation in a service catalogue."""
-    @bg.graph
+    @hg.graph
     def implementation():
         service_requests = _http_handler_service.implementation_requests()
-        routes = bg.operators.getattr(service_requests, bg.Symbol("route"))
-        responses = bg.operators.getattr(service_requests, bg.Symbol("responses"))
+        routes = hg.operators.getattr(service_requests, hg.Symbol("route"))
+        responses = hg.operators.getattr(service_requests, hg.Symbol("responses"))
         outputs = _http_server_impl(routes, responses, host, port)
-        _http_handler_service.implementation_replies(bg.operators.getattr(outputs, bg.Symbol("requests")))
-        _http_server_port_service.implementation_replies(bg.operators.getattr(outputs, bg.Symbol("port")))
+        _http_handler_service.implementation_replies(hg.operators.getattr(outputs, hg.Symbol("requests")))
+        _http_server_port_service.implementation_replies(hg.operators.getattr(outputs, hg.Symbol("port")))
 
     registration = catalogue.register_multiservice(implementation)
     registration.register_impl(_http_handler_service)
@@ -222,8 +222,8 @@ def http_server():
     return _http_server_port_service()
 
 
-@bg.service
-def http_client(request: bg.TS[HttpClientRequest]) -> bg.TS[HttpResponse]:
+@hg.service
+def http_client(request: hg.TS[HttpClientRequest]) -> hg.TS[HttpResponse]:
     """Send each request update over HTTP and return its response."""
     raise RuntimeError("http_client is a service declaration")
 
@@ -242,21 +242,21 @@ def http_client_impl(timeout=timedelta(seconds=30), max_response_body_size=8 * 1
     ):
         raise ValueError("max_response_body_size must be a non-negative integer")
 
-    @bg.graph
-    def implementation(request: bg.TSD[int, bg.TS[HttpClientRequest]]) -> bg.TSD[int, bg.TS[HttpResponse]]:
+    @hg.graph
+    def implementation(request: hg.TSD[int, hg.TS[HttpClientRequest]]) -> hg.TSD[int, hg.TS[HttpResponse]]:
         return _http_client_impl(request, timeout_ms, max_response_body_size)
 
     return implementation
 
 
-@bg.service
-def client_auth_registration(matcher: bg.TS[_ClientAuthMatcher], scope: str) -> bg.TSS[str]:
+@hg.service
+def client_auth_registration(matcher: hg.TS[_ClientAuthMatcher], scope: str) -> hg.TSS[str]:
     """Internal service that requests credentials for selected origins."""
     raise RuntimeError("client_auth_registration is a service declaration")
 
 
-@bg.service
-def client_credential_submission(credentials: bg.TSD[str, bg.TS[Auth]], scope: str) -> None:
+@hg.service
+def client_credential_submission(credentials: hg.TSD[str, hg.TS[Auth]], scope: str) -> None:
     """Internal outputless service that submits credentials for an auth registration."""
     raise RuntimeError("client_credential_submission is a service declaration")
 
@@ -278,7 +278,7 @@ def register_client_auth(scope, matcher, credential_graph, *args, **kwargs):
     """Register a graph that returns Auth for each origin selected by matcher."""
     if not isinstance(scope, str):
         raise TypeError("client auth scope must be a string")
-    if not isinstance(credential_graph, bg.GraphDefinition):
+    if not isinstance(credential_graph, hg.GraphDefinition):
         raise TypeError("register_client_auth expects a decorated @graph credential graph")
 
     if isinstance(matcher, ClientAuthRegex):
@@ -290,21 +290,21 @@ def register_client_auth(scope, matcher, credential_graph, *args, **kwargs):
     else:
         raise TypeError("client auth matcher must be an origin string or ClientAuthRegex")
 
-    registration_id = bg.service_client_id()
+    registration_id = hg.service_client_id()
     client_auth_registration.client_requests(
         registration_id,
-        bg.operators.const_(_ClientAuthMatcher(pattern=pattern, regex=is_regex)),
+        hg.operators.const_(_ClientAuthMatcher(pattern=pattern, regex=is_regex)),
         scope,
     )
     origins = client_auth_registration.client_replies(registration_id, scope)
-    named_arguments = {name: bg.pass_through(value) for name, value in kwargs.items()}
+    named_arguments = {name: hg.pass_through(value) for name, value in kwargs.items()}
     if "__key_arg__" in named_arguments:
         raise ValueError("__key_arg__ is reserved by register_client_auth")
     named_arguments["__key_arg__"] = 0
-    credentials = bg.map(
+    credentials = hg.map(
         credential_graph,
         origins,
-        *(bg.pass_through(value) for value in args),
+        *(hg.pass_through(value) for value in args),
         **named_arguments,
     )
     client_credential_submission.client_requests(registration_id, credentials, scope)
@@ -317,7 +317,7 @@ def register_client_transports(
     max_response_body_size=8 * 1024 * 1024,
 ):
     """Register HTTP and WebSocket client transports and scoped auth services."""
-    if not isinstance(catalogue, bg.ServiceCatalogue):
+    if not isinstance(catalogue, hg.ServiceCatalogue):
         raise TypeError("register_client_transports expects a ServiceCatalogue")
     if not isinstance(scope, str):
         raise TypeError("client auth scope must be a string")

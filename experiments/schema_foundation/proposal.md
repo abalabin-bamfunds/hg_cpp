@@ -56,7 +56,7 @@ existing schema-template wrapper in `schema/reflection.hpp`; no value object
 or fields are instantiated to construct the token. Programmatic anonymous
 schemas use `std::monostate`.
 
-BG allocates a unique `RuntimeSchemaId` for each runtime declaration. Python
+HG allocates a unique `RuntimeSchemaId` for each runtime declaration. Python
 schema construction uses this ID to preserve nominal identity without retaining
 a Python object. A declaration reuses its ID across projections. Separately
 declared runtime schemas remain distinct even when their names and fields match.
@@ -86,7 +86,7 @@ The common implementation provides:
   compatible narrower type, and preserves required presence.
 - `field_count`, `field`, `direct_fields`, `fields`, `find`, and declared
   ancestry lookup.
-- Resolution of field variables and base descriptors through a BG type map.
+- Resolution of field variables and base descriptors through a HG type map.
 - Named identity and anonymous structural identity. Resolved field types
   participate in the descriptor key, as they already do for TSB schemas.
 
@@ -195,9 +195,9 @@ descriptors expose immutable, complete fields after successful registration.
    its nominal types and shared runtime storage.
 4. Update schema diagnostics and authoritative documentation. Record the
    implemented durable decision in the same authorized commit.
-5. Run focused schema/type tests and the full BG gate, including Python and
+5. Run focused schema/type tests and the full HG gate, including Python and
    installed-package verification.
-6. Rebuild the existing frame extension against the resulting BG package
+6. Rebuild the existing frame extension against the resulting HG package
    before adapting its schema/storage implementation.
 
 Tests must cover named/anonymous canonical identity, lookup/order, inherited

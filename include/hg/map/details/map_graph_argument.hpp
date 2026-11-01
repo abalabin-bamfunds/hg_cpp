@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/details/graph_wiring_structure.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/map/details/map_call.hpp>
-#include <bg/map/details/map_graph_wiring.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/map/details/map_call.hpp>
+#include <hg/map/details/map_graph_wiring.hpp>
+#include <hg/type/signature.hpp>
 
 #include <optional>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class WiringTemplate;
 class TypeMap;
@@ -29,4 +29,4 @@ MapGraphArgumentWiring build_map_graph_argument_wiring(util::symbol name, const 
                                                        const TypeMap &type_map);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

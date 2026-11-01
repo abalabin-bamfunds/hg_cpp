@@ -1,19 +1,19 @@
 #pragma once
 
-#include <bg/node/details/input_properties.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/time_series/details/input_data.hpp>
-#include <bg/time_series/time_series_input.hpp>
-#include <bg/time_series/tss/tss_runtime_type.hpp>
-#include <bg/time_series/tss/tss_storage.hpp>
-#include <bg/time_series/tss/tss_type.hpp>
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/tss/tss_runtime_type.hpp>
+#include <hg/time_series/tss/tss_storage.hpp>
+#include <hg/time_series/tss/tss_type.hpp>
 
 #include <functional>
 #include <memory>
 #include <string_view>
 
-namespace bg {
+namespace hg {
 
 template <typename K, auto... TimeSeriesProperties, auto... Properties>
 class In<TSS<K, TimeSeriesProperties...>, Properties...>
@@ -172,9 +172,7 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     const void *data() const noexcept { return data_.data(); }
     const In *operator->() const noexcept { return this; }
 
-    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        return In<TS_T>{data_}.visit(std::forward<Functions>(functions)...);
-    }
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const;
 
     using time_series_type = TSS<K, TimeSeriesProperties...>;
     using item_type = K;
@@ -250,4 +248,4 @@ class In<TSS<K, TimeSeriesProperties...>, Properties...>
     details::TimeSeriesInputData data_;
 };
 
-} // namespace bg
+} // namespace hg

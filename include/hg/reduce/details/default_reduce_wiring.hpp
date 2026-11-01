@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/reduce/details/reduce_graph_argument.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/reduce/details/reduce_graph_argument.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstdint>
 #include <optional>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class WiringTemplate;
 
@@ -31,4 +31,4 @@ GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const 
                                          const TypeMap &type_map);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

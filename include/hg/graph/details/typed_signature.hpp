@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/scalar/canonical.hpp>
-#include <bg/scalar/cpp_runtime_type.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/type/details/scalar_type.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/scalar/canonical.hpp>
+#include <hg/scalar/cpp_runtime_type.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/type/details/scalar_type.hpp>
+#include <hg/type/signature.hpp>
 
 #include <array>
 #include <cstddef>
@@ -16,7 +16,7 @@
 #include <type_traits>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Declaration> const Type &signature_declaration_type() {
     using Value = std::remove_cv_t<Declaration>;
@@ -90,4 +90,4 @@ template <typename Result, typename... Arguments> struct typed_prototype<Result(
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

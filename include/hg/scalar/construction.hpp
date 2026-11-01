@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class ScalarRuntimeType;
 
@@ -26,4 +26,4 @@ struct ScalarFieldConstruction {
                       void *destination, allocator &memory);
 };
 
-} // namespace bg
+} // namespace hg

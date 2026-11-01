@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/scalar/bundle/runtime_type.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/scalar/bundle/runtime_type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <array>
 #include <optional>
@@ -13,7 +13,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 OwnedScalarData construct_composed_hierarchical_scalar_value(
     const ResolvedHierarchicalScalarType &type, std::span<const ScalarData *const> fields,
@@ -91,4 +91,4 @@ class HierarchicalScalarValueFactory {
 
 };
 
-} // namespace bg::details
+} // namespace hg::details

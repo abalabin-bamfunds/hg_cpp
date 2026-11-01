@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/node/details/aggregate_node.hpp>
-#include <bg/node/details/aggregate_node_template_base.hpp>
-#include <bg/graph/wiring_arguments.hpp>
+#include <hg/node/details/aggregate_node.hpp>
+#include <hg/node/details/aggregate_node_template_base.hpp>
+#include <hg/graph/wiring_arguments.hpp>
 
 #include <array>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Definition, std::size_t... Index>
 RequirementResult aggregate_node_requirement(const WiringArguments &arguments, std::index_sequence<Index...>) {
@@ -237,4 +237,4 @@ template <typename Definition> const AggregateNodeDescriptor &aggregate_node_des
     return descriptor;
 }
 
-} // namespace bg::details
+} // namespace hg::details

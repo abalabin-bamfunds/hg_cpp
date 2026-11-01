@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/scalar/details/cpp_runtime_type.hpp>
-#include <bg/scalar/list/runtime_type.hpp>
-#include <bg/scalar/list/storage_traits.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/cpp_runtime_type.hpp>
+#include <hg/scalar/list/runtime_type.hpp>
+#include <hg/scalar/list/storage_traits.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cstddef>
 #include <memory>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List<T>, ScalarListRuntimeType> {
@@ -151,4 +151,4 @@ class CppScalarRuntimeType<List<T>> final : public CppScalarRuntimeTypeBase<List
 
 };
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,18 +1,18 @@
-#include <bg/frame/expression.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/graph/wiring_error.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/time_series_value_type.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/type_registry.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/type_registry.hpp>
 
 #include <array>
 #include <memory>
@@ -21,7 +21,7 @@
 #include <string>
 #include <unordered_map>
 
-namespace bg {
+namespace hg {
 
 template <> ScalarDispatch<frame::ColumnBlockFunctionAdapter> &
 ScalarDispatch<frame::ColumnBlockFunctionAdapter>::instance() noexcept {
@@ -29,9 +29,9 @@ ScalarDispatch<frame::ColumnBlockFunctionAdapter>::instance() noexcept {
     return dispatch;
 }
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::frame::details {
+namespace hg::frame::details {
 
 struct ExpressionNode {
     enum class Form { column, parameter, literal, binding, operation };
@@ -86,7 +86,7 @@ std::vector<WiringArgument> mixed_expression_bindings(WiringPoint point,
     auto bindings = std::vector<WiringArgument>{};
     bindings.reserve(bundle_type.item_count() - 1);
     for (auto index = std::size_t{1}; index != bundle_type.item_count(); ++index)
-        bindings.push_back(bg::details::time_series_bundle_argument(point, index));
+        bindings.push_back(hg::details::time_series_bundle_argument(point, index));
     return bindings;
 }
 
@@ -155,7 +155,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
             argument.type().format_name(context.actual_type);
             throw WiringError{"a column expression binding must be a TSC"}.with_context(std::move(context));
         }
-        const auto source = bg::details::WiringRecord::point(*point.record()->source_identity());
+        const auto source = hg::details::WiringRecord::point(*point.record()->source_identity());
         const auto &source_type = static_cast<const TimeSeriesType &>(source.type()).dereferenced_type();
         if (dynamic_cast<const ColumnSeriesType *>(std::addressof(source_type)) == nullptr) {
             source.type().format_name(context.actual_type);
@@ -216,7 +216,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
                 const auto point = binding.time_series();
                 if (const auto *bundle_type = mixed_expression_bundle(point.type())) {
                     const auto nested_expression = read_mixed_expression(
-                        bg::details::time_series_bundle_argument(point, 0));
+                        hg::details::time_series_bundle_argument(point, 0));
                     const auto nested_bindings = mixed_expression_bindings(point, *bundle_type);
                     return self(self, *nested_expression.node_, nested_bindings);
                 }
@@ -264,7 +264,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
                         auto type_map = TypeMap{};
                         const auto &target = column_series_type(*node.conversion_target,
                                                                 TimeSeriesGuarantee::ordinary);
-                        type_map.set(bg::details::type_parameter<operators::CONVERT_RESULT>(), std::addressof(target));
+                        type_map.set(hg::details::type_parameter<operators::CONVERT_RESULT>(), std::addressof(target));
                         return invoke(operators::convert, std::addressof(type_map));
                     }
                     }
@@ -307,7 +307,7 @@ WiringPoint bind_expression(WiringPoint expression, std::span<const WiringArgume
     if (bundle_type == nullptr)
         throw WiringError{"bind_expression requires an expression or a mixed expression TSB"};
 
-    const auto scalar_expression = read_mixed_expression(bg::details::time_series_bundle_argument(expression, 0));
+    const auto scalar_expression = read_mixed_expression(hg::details::time_series_bundle_argument(expression, 0));
     const auto references = mixed_expression_bindings(expression, *bundle_type);
     auto &wiring = WiringContext::current().wiring();
     auto binding_set = ExpressionBindingSet{bindings};
@@ -316,9 +316,9 @@ WiringPoint bind_expression(WiringPoint expression, std::span<const WiringArgume
     return result;
 }
 
-} // namespace bg::frame::details
+} // namespace hg::frame::details
 
-namespace bg::frame {
+namespace hg::frame {
 
 Expression col(util::symbol name) {
     return Expression{std::make_shared<const details::ExpressionNode>(
@@ -396,7 +396,7 @@ WiringPoint details::make_mixed_expression(details::ExpressionOperation operatio
         const auto name = index == 0 ? util::symbol{"binding_0"} : util::symbol{"binding_1"};
         fields.emplace_back(name, std::move(bindings[index]));
     }
-    return bg::bundle(std::span<const WiringArgument>{fields});
+    return hg::bundle(std::span<const WiringArgument>{fields});
 }
 
 bool details::is_mixed_expression_bundle_type(const Type &type) {
@@ -468,53 +468,53 @@ Expression operator!(const Expression &value) {
     return details::expression_operation(details::ExpressionOperation::not_, operands);
 }
 
-} // namespace bg::frame
+} // namespace hg::frame
 
 namespace {
 
-class ExpressionScalarType final : public bg::ScalarType {
+class ExpressionScalarType final : public hg::ScalarType {
   public:
     bool is_resolved() const noexcept override { return true; }
-    const bg::Type &resolve(const bg::TypeMap &) const override { return *this; }
+    const hg::Type &resolve(const hg::TypeMap &) const override { return *this; }
     void format_name(std::string &result) const override { result += "Expression"; }
 };
 
 } // namespace
 
-const bg::ScalarType &bg::scalar_type_traits<bg::frame::Expression>::type() noexcept {
-    static const auto type = bg::util::static_storage<ExpressionScalarType>{};
-    [[maybe_unused]] static const auto &registration = bg::TypeRegistry::register_static(type.get());
+const hg::ScalarType &hg::scalar_type_traits<hg::frame::Expression>::type() noexcept {
+    static const auto type = hg::util::static_storage<ExpressionScalarType>{};
+    [[maybe_unused]] static const auto &registration = hg::TypeRegistry::register_static(type.get());
     return type.get();
 }
 
 namespace {
 
 struct ColumnBlockFunctionTypeKey {
-    const bg::ScalarType *result_type{};
-    std::vector<const bg::ScalarType *> operand_types;
+    const hg::ScalarType *result_type{};
+    std::vector<const hg::ScalarType *> operand_types;
 
     bool operator==(const ColumnBlockFunctionTypeKey &) const = default;
 };
 
 struct ColumnBlockFunctionTypeKeyHash {
     std::size_t operator()(const ColumnBlockFunctionTypeKey &key) const noexcept {
-        auto result = std::hash<const bg::ScalarType *>{}(key.result_type);
+        auto result = std::hash<const hg::ScalarType *>{}(key.result_type);
         for (const auto *operand_type : key.operand_types)
-            result = (result * 31U) ^ std::hash<const bg::ScalarType *>{}(operand_type);
+            result = (result * 31U) ^ std::hash<const hg::ScalarType *>{}(operand_type);
         return result;
     }
 };
 
 } // namespace
 
-const bg::frame::ColumnBlockFunctionType &bg::frame::column_block_function_type(
-    const bg::ScalarType &result_type, std::span<const bg::ScalarType *const> operand_types) {
+const hg::frame::ColumnBlockFunctionType &hg::frame::column_block_function_type(
+    const hg::ScalarType &result_type, std::span<const hg::ScalarType *const> operand_types) {
     auto key = ColumnBlockFunctionTypeKey{&result_type, {operand_types.begin(), operand_types.end()}};
-    return bg::TypeRegistry::instance().get_or_create<ColumnBlockFunctionType, ColumnBlockFunctionTypeKeyHash>(
+    return hg::TypeRegistry::instance().get_or_create<ColumnBlockFunctionType, ColumnBlockFunctionTypeKeyHash>(
         key, [&] { return std::make_unique<ColumnBlockFunctionType>(result_type, key.operand_types); });
 }
 
-void bg::frame::ColumnBlockFunctionType::format_name(std::string &result) const {
+void hg::frame::ColumnBlockFunctionType::format_name(std::string &result) const {
     result += "ColumnBlockFunction<";
     for (std::size_t index = 0; index != operand_types().size(); ++index) {
         if (index != 0)
@@ -526,28 +526,28 @@ void bg::frame::ColumnBlockFunctionType::format_name(std::string &result) const 
     result += '>';
 }
 
-const bg::Type &bg::frame::ColumnBlockFunctionType::resolve(const bg::TypeMap &type_map) const {
+const hg::Type &hg::frame::ColumnBlockFunctionType::resolve(const hg::TypeMap &type_map) const {
     const auto &resolved_result_type = result_type().resolve(type_map);
-    const auto *scalar_type = bg::type_cast<bg::ScalarType>(&resolved_result_type);
+    const auto *scalar_type = hg::type_cast<hg::ScalarType>(&resolved_result_type);
     if (scalar_type == nullptr)
-        throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map,
-                                      bg::util::symbol{"ColumnBlockFunction"},
+        throw hg::TypeResolutionError{hg::TypeResolutionErrorCode::invalid_type_map,
+                                      hg::util::symbol{"ColumnBlockFunction"},
                                       "column block function result did not resolve to a scalar type"};
-    auto resolved_operands = std::vector<const bg::ScalarType *>{};
+    auto resolved_operands = std::vector<const hg::ScalarType *>{};
     resolved_operands.reserve(operand_types().size());
     for (const auto *operand_type : operand_types()) {
         const auto &resolved_type = operand_type->resolve(type_map);
-        const auto *resolved_scalar_type = bg::type_cast<bg::ScalarType>(&resolved_type);
+        const auto *resolved_scalar_type = hg::type_cast<hg::ScalarType>(&resolved_type);
         if (resolved_scalar_type == nullptr)
-            throw bg::TypeResolutionError{bg::TypeResolutionErrorCode::invalid_type_map,
-                                          bg::util::symbol{"ColumnBlockFunction"},
+            throw hg::TypeResolutionError{hg::TypeResolutionErrorCode::invalid_type_map,
+                                          hg::util::symbol{"ColumnBlockFunction"},
                                           "column block function operand did not resolve to a scalar type"};
         resolved_operands.push_back(resolved_scalar_type);
     }
     return column_block_function_type(*scalar_type, resolved_operands);
 }
 
-bool bg::frame::ColumnBlockFunctionType::do_match(const bg::Type &supplied, bg::TypeMap &type_map) const {
+bool hg::frame::ColumnBlockFunctionType::do_match(const hg::Type &supplied, hg::TypeMap &type_map) const {
     const auto *function = dynamic_cast<const ColumnBlockFunctionType *>(std::addressof(supplied));
     if (function == nullptr || !function->is_resolved() || operand_types().size() != function->operand_types().size())
         return false;

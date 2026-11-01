@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -11,7 +11,7 @@
 #include <new>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 // Provides stable temporary storage for nested node invocations. Frames release their allocations together.
 class EvaluationScratch {
@@ -119,4 +119,4 @@ class EvaluationScratch {
     std::size_t used_{};
 };
 
-} // namespace bg::details
+} // namespace hg::details

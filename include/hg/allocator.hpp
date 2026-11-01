@@ -1,6 +1,6 @@
 #pragma once
 
-#include <bg/util/scope_exit.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -9,7 +9,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 // Allocates objects through a non-owning polymorphic memory resource.
 class allocator {
@@ -57,4 +57,4 @@ class allocator {
 static_assert(sizeof(allocator) == sizeof(void *));
 static_assert(std::is_trivially_copyable_v<allocator>);
 
-} // namespace bg
+} // namespace hg

@@ -215,8 +215,8 @@ projections collect metadata from the declaration. For example:
 
 ```cpp
 static auto metadata() {
-    return bg::make_schema_metadata({bg::schema_metadata_entry(
-        "extension.version", bg::ScalarValue<bg::i64>{1})});
+    return hg::make_schema_metadata({hg::schema_metadata_entry(
+        "extension.version", hg::ScalarValue<hg::i64>{1})});
 }
 ```
 
@@ -527,12 +527,12 @@ construct can declare the order of its positional type parameters. Named type
 mappings do not require that declaration:
 
 ```cpp
-using RESULT = bg::TimeSeriesVariable<"RESULT">;
+using RESULT = hg::TimeSeriesVariable<"RESULT">;
 
-auto source = bg::node<RESULT>([](bg::Out<RESULT>) {});
+auto source = hg::node<RESULT>([](hg::Out<RESULT>) {});
 
-source[bg::type<bg::TS<bg::i64>>]();
-source[bg::type<RESULT> = bg::type<bg::TS<bg::i64>>]();
+source[hg::type<hg::TS<hg::i64>>]();
+source[hg::type<RESULT> = hg::type<hg::TS<hg::i64>>]();
 ```
 
 Positional arguments follow only the declared order. Wiring rejects an

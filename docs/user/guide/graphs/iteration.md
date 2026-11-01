@@ -16,8 +16,8 @@ Each iteration can add calculations to the graph.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import const_
+from hg import graph, run_graph
+from hg.operators import const_
 
 @graph
 def total() -> int:
@@ -44,13 +44,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto total() {
@@ -79,7 +79,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -106,7 +106,7 @@ that instance.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, map, run_graph
+from hg import REMOVE, TS, TSD, graph, map, run_graph
 
 @graph
 def calibrate(reading: int) -> int:
@@ -134,16 +134,16 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/map.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/map.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto calibrate(wp<TS<i64>> reading) { return (reading + 2).as<TS<i64>>(); }
@@ -170,7 +170,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -203,7 +203,7 @@ mapped by key.
 :sync: python
 
 ```python
-from bg import TS, TSD, graph, map, pass_through, run_graph
+from hg import TS, TSD, graph, map, pass_through, run_graph
 
 @graph
 def calibrate(reading: int, offset: int) -> int:
@@ -231,13 +231,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto calibrate(wp<TS<i64>> reading, wp<TS<i64>> offset) {
@@ -266,7 +266,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

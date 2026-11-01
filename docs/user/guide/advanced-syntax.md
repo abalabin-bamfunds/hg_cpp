@@ -18,7 +18,7 @@ reference targets. Ordinary integer connections use this form:
 :sync: python
 
 ```python
-from bg import TS, graph, run_graph
+from hg import TS, graph, run_graph
 
 @graph
 def corrected(reading: TS[int]) -> TS[int]:
@@ -42,13 +42,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto corrected(wp<TS<i64>> reading) {
@@ -73,7 +73,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -99,7 +99,7 @@ A time series dictionary updates individual items. Omitted keys retain their val
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, run_graph
+from hg import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def sensor_one(readings: TSD[int, TS[int]]) -> int:
@@ -123,14 +123,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
@@ -155,7 +155,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -181,7 +181,7 @@ uses time series annotations for views; C++ uses `In<TS<T>>`.
 :sync: python
 
 ```python
-from bg import TS, compute_node, graph, run_graph
+from hg import TS, compute_node, graph, run_graph
 
 @compute_node
 def reading_changed(reading: TS[int], offset: TS[int]) -> TS[bool]:
@@ -209,13 +209,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto reading_changed = node([](In<TS<i64>> reading, In<TS<i64>> offset) {
@@ -244,7 +244,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -271,7 +271,7 @@ separately for each independent instance.
 :sync: python
 
 ```python
-from bg import State, graph, node, run_graph
+from hg import State, graph, node, run_graph
 
 class Readings:
     def __init__(self):
@@ -304,15 +304,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 #include <algorithm>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 struct Readings {
@@ -356,7 +356,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -382,7 +382,7 @@ an ordinary value input follows.
 :sync: python
 
 ```python
-from bg import REMOVE, TS, TSD, graph, run_graph
+from hg import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def selected(readings: TSD[int, TS[int]], sensor: int) -> int:
@@ -406,14 +406,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto selected(wp<TSD<i64, TS<i64>>> readings, wp<TS<i64>> sensor) {
@@ -439,7 +439,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

@@ -1,17 +1,17 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/runtime_type.hpp>
-#include <bg/time_series/item_id.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/type/time_series_type.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/runtime_type.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/type/time_series_type.hpp>
 
 #include <cstddef>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class ScalarRuntimeType;
 class OutputState;
@@ -23,7 +23,7 @@ class ReferenceRepresentationFactory;
 class ReferenceSample;
 struct ItemReference;
 // A factory returns a sample with one owned reference. The sample borrows its source storage, which remains valid
-// through the receiving cycle. BG releases retained samples at next-cycle cleanup or when the graph stops.
+// through the receiving cycle. HG releases retained samples at next-cycle cleanup or when the graph stops.
 using ReferenceSampleFactory = ReferenceSample *(*)(const TimeSeriesType &, ResolvedTimeSeries, ResolvedTimeSeries,
                                                      EvaluationTime, allocator &);
 } // namespace details
@@ -180,4 +180,4 @@ void register_time_series_runtime_type(const TimeSeriesRuntimeType &runtime_type
 template <typename TimeSeries, TimeSeriesTypeRole Role = TimeSeriesTypeRole::declaration>
 const TimeSeriesRuntimeType &cpp_time_series_runtime_type();
 
-} // namespace bg
+} // namespace hg

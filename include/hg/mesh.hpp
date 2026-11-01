@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/export.hpp>
-#include <bg/graph/graph_type.hpp>
-#include <bg/mesh/details/mesh_invoke.hpp>
-#include <bg/operator.hpp>
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
+#include <hg/export.hpp>
+#include <hg/graph/graph_type.hpp>
+#include <hg/mesh/details/mesh_invoke.hpp>
+#include <hg/operator.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -19,9 +19,9 @@ using MESH_NAMED = BundleSchemaVariableDeclaration<"MESH_NAMED", Field>;
 
 } // namespace details
 
-extern BG_EXPORT operator_<
+extern HG_EXPORT operator_<
     auto(GRAPH_T, TSB<details::MESH_POSITIONAL>, TSB<details::MESH_NAMED>) -> TS_T,
     details::mesh_operator_implementation>
     mesh;
 
-} // namespace bg
+} // namespace hg

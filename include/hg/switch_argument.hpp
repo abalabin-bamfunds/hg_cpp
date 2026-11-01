@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
 
 #include <span>
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class WiringTemplate;
 
@@ -29,4 +29,4 @@ struct SwitchCaseArgument {
     const WiringTemplate *function{};
 };
 
-} // namespace bg
+} // namespace hg

@@ -6,11 +6,11 @@ Status: implemented and reviewed, including the
 ## Purpose
 
 Give column operators one expression contract and one materialisation path.
-BG selects overloads and resolves operand and result types. The frame extension
+HG selects overloads and resolves operand and result types. The frame extension
 compiles the selected operations into calls over aligned column batches.
 
 `Expression` describes scalar operations, named columns and parameters, and
-owned scalar values. It can be constructed without a wiring context. BG
+owned scalar values. It can be constructed without a wiring context. HG
 operator overloads combine it with time series in ordinary bundles. Binding
 resolves the scalar operations to the column expression contract below.
 These declarations are extension-facing APIs for implementing operators and
@@ -40,7 +40,7 @@ The implementation supports unary and binary callbacks. Add, subtract,
 multiply, and divide use matching `i64` or `double` operands. Division returns
 `double`. All six comparisons use matching `i64` or `double` operands and
 produce nullable Boolean columns. Explicit conversion supports `i64` to
-`double` and `double` to `i64`. Operand types must match the selected BG
+`double` and `double` to `i64`. Operand types must match the selected HG
 overload; arithmetic does not implicitly promote mixed types.
 
 `ColumnOperandBatch<T>` remains a typed column batch or scalar broadcast.
@@ -57,15 +57,15 @@ Conversion to `i64` truncates finite values toward zero, throws
 `std::domain_error` for NaN, and throws `std::overflow_error` outside the `i64`
 range. The callback owns null handling so operations such as null tests can
 define different behaviour. No universal input-validity mask is imposed by the
-evaluator. Invalid BG time series inputs follow BG's normal node validity rules.
+evaluator. Invalid HG time series inputs follow HG's normal node validity rules.
 Callbacks must check `is_valid(position)` before reading a column operand with
 `value(position)`. Scalar broadcasts are always valid.
 
 ## Semantic and runtime types
 
-`ColumnBlockFunctionType` remains a registered BG `ScalarType`. Extend its
+`ColumnBlockFunctionType` remains a registered HG `ScalarType`. Extend its
 identity from the result type to the ordered operand cell types and result
-cell type. These are references to BG's canonical `ScalarType` objects.
+cell type. These are references to HG's canonical `ScalarType` objects.
 
 The extension's scalar runtime adapter provides the compiler with an erased
 block entry point. Each instruction retains the callback in an immutable
@@ -83,7 +83,7 @@ once per block.
 
 ## Expression bundle contract
 
-Keep immediate operands in an ordinary BG TSB. Unary and binary forms are:
+Keep immediate operands in an ordinary HG TSB. Unary and binary forms are:
 
 ```text
 UnaryColumnExpression<ARG, RESULT> {
@@ -121,19 +121,19 @@ concrete form for each deferred column point.
 ## Compilation and execution
 
 The shared expression builder attaches the expression form and the concrete
-materialisation recipe. It declares its dependencies using BG's existing
+materialisation recipe. It declares its dependencies using HG's existing
 materialisation API and creates `compute` with `operators::const_` so the
 compiler can read each operation's typed callback during wiring.
 
 Compilation runs inside the selected concrete materialisation recipe after
-BG records concrete demands. The compiler processes the root and upstream
+HG records concrete demands. The compiler processes the root and upstream
 operations through the same contract. It stops at concrete materialisation
 demands, deduplicates concrete column and parameter inputs, and emits
 instructions in dependency order. Shared expression children reuse their
 instruction result.
 
 Instructions identify their operands, result buffer, retained callback, and
-block entry point. Compilation binds batch adapters for the resolved BG cell
+block entry point. Compilation binds batch adapters for the resolved HG cell
 types and uses those adapters' buffer sizes and alignments. `CompiledExpression`
 retains no wiring points. Evaluation supplies current column batches and
 parameter values.
@@ -142,10 +142,10 @@ The expression computation node owns input preparation, changed-row selection,
 and output publication. Existing shared-selection and delta-continuity rules
 continue to apply. Parameter updates recompute current rows; column updates
 recompute affected rows. Each column expression has at least one concrete
-column input, which supplies its row domain. BG owns scheduling and input validity.
+column input, which supplies its row domain. HG owns scheduling and input validity.
 
-Heterogeneous columns and captured time series can be declared in ordinary BG
-TSBs with wiring-defined schemas. Their fields remain explicit BG dependencies.
+Heterogeneous columns and captured time series can be declared in ordinary HG
+TSBs with wiring-defined schemas. Their fields remain explicit HG dependencies.
 Parameter collection uses a separate node and publishes a scalar
 `Bundle<SCHEMA>` that preserves each parameter's scalar type.
 The collector requires `all_valid` on its immediate captured time series and
@@ -155,7 +155,7 @@ The accepted node signature and compiled input bindings are defined in the
 
 ## Operator registration
 
-Each operator supplies its callback and BG operator registration. The
+Each operator supplies its callback and HG operator registration. The
 `ask - bid < tolerance` expression, where `tolerance` is `TS<double>`, uses the
 same compiler and computation path as arithmetic.
 

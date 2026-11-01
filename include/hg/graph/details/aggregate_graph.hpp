@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/graph/details/graph_signature.hpp>
-#include <bg/graph/wiring_parameter.hpp>
-#include <bg/node/details/aggregate_resolver.hpp>
-#include <bg/util/reflection.hpp>
+#include <hg/graph/details/graph_signature.hpp>
+#include <hg/graph/wiring_parameter.hpp>
+#include <hg/node/details/aggregate_resolver.hpp>
+#include <hg/util/reflection.hpp>
 
 #include <concepts>
 #include <string_view>
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 inline constexpr bool supported_graph_field =
@@ -101,4 +101,4 @@ template <typename Definition> [[nodiscard]] Signature aggregate_graph_signature
     return result;
 }
 
-} // namespace bg::details
+} // namespace hg::details

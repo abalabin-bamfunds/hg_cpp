@@ -16,7 +16,7 @@ last update time can be older than the current evaluation time.
 :sync: python
 
 ```python
-from bg import EvaluationClock, graph, node, run_graph
+from hg import EvaluationClock, graph, node, run_graph
 
 @node
 def microsecond(reading: int, clock: EvaluationClock = None) -> int:
@@ -44,15 +44,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/graph.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/graph.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/evaluation_context.hpp>
+#include <hg/evaluation_context.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 struct Microsecond {
@@ -88,7 +88,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -116,7 +116,7 @@ source makes simulation termination explicit.
 
 ```python
 from datetime import timedelta
-from bg import TS, generator, graph, run_graph
+from hg import TS, generator, graph, run_graph
 
 @generator
 def readings() -> TS[int]:
@@ -145,14 +145,14 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/evaluation_context.hpp>
+#include <hg/evaluation_context.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 struct Readings {
@@ -192,7 +192,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -219,7 +219,7 @@ and stop behavior must be respected when the owning graph ends.
 :sync: python
 
 ```python
-from bg import Queue, TS, graph, queue, run_graph
+from hg import Queue, TS, graph, queue, run_graph
 
 @queue
 def readings(q: Queue = None) -> TS[int]:
@@ -247,15 +247,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/queue_node.hpp>
+#include <hg/queue_node.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::operators;
 using namespace literal;
 
 const auto readings = queue<TS<i64>>(start = [](Queue q) {
@@ -282,7 +282,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

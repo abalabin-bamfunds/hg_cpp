@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/export.hpp>
-#include <bg/scalar/dispatch.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/allocator.hpp>
+#include <hg/export.hpp>
+#include <hg/scalar/dispatch.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <functional>
 #include <cstddef>
@@ -14,7 +14,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class ScalarBufferWriteContext {
   public:
@@ -193,7 +193,7 @@ struct ScalarBufferOperations {
     Discard discard_;
 };
 
-template <> BG_EXPORT ScalarDispatch<ScalarBufferOperations> &
+template <> HG_EXPORT ScalarDispatch<ScalarBufferOperations> &
 ScalarDispatch<ScalarBufferOperations>::instance() noexcept;
 
-} // namespace bg
+} // namespace hg

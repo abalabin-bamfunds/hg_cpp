@@ -1,7 +1,7 @@
 # Compaction benchmark
 
-Build `bg_frame_compaction_benchmark` with both `BG_FRAME_BUILD_ARROW` and
-`BG_FRAME_BUILD_BENCHMARKS` enabled. It writes CSV to standard output; capture
+Build `hg_frame_compaction_benchmark` with both `HG_FRAME_BUILD_ARROW` and
+`HG_FRAME_BUILD_BENCHMARKS` enabled. It writes CSV to standard output; capture
 that output when retaining a run.
 
 The native-frame benchmark uses 32,768 initial rows with either one or eight

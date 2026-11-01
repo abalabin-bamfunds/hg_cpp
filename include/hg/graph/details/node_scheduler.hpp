@@ -2,7 +2,7 @@
 
 #include <cstddef>
 
-namespace bg {
+namespace hg {
 
 class EvaluationContext;
 class RuntimeGraph;
@@ -29,4 +29,4 @@ class NodeScheduler {
 static_assert(sizeof(NodeScheduler) == 2 * sizeof(void *));
 
 } // namespace details
-} // namespace bg
+} // namespace hg

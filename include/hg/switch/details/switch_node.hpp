@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/nested_graph.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/type/signature.hpp>
+#include <hg/graph/nested_graph.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/type/signature.hpp>
 
 #include <cstddef>
 #include <memory>
 #include <optional>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class NodeTemplate;
@@ -43,4 +43,4 @@ struct SwitchNodeWiring {
 std::unique_ptr<NodeTemplate> make_switch_node(SwitchNodeWiring wiring, const ResolvedSignature &outer_signature);
 
 } // namespace details
-} // namespace bg
+} // namespace hg

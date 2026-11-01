@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/scalar/details/handle_traits.hpp>
-#include <bg/scalar/details/collection_storage.hpp>
-#include <bg/scalar/dict/type.hpp>
-#include <bg/scalar/runtime_type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/handle_traits.hpp>
+#include <hg/scalar/details/collection_storage.hpp>
+#include <hg/scalar/dict/type.hpp>
+#include <hg/scalar/runtime_type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <memory>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     using KeyTraits = scalar_storage_traits<K>;
@@ -97,9 +97,9 @@ template <typename K, typename V> struct scalar_storage_traits<Dict<K, V>> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename K, typename V> struct scalar_handle_traits<Dict<K, V>> {
     static constexpr bool supports_equality =
@@ -108,4 +108,4 @@ template <typename K, typename V> struct scalar_handle_traits<Dict<K, V>> {
         scalar_handle_traits<K>::supports_hash && scalar_handle_traits<V>::supports_hash;
 };
 
-} // namespace bg::details
+} // namespace hg::details

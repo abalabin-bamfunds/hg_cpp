@@ -1,7 +1,7 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/column.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/schema/reflection.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/column.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/schema/reflection.hpp>
 
 #include <array>
 #include <cstddef>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace frame = bg::frame;
+namespace frame = hg::frame;
 
 struct Wide32 {
     alignas(32) std::byte bytes[32];
@@ -42,13 +42,13 @@ template <template <typename, auto...> typename Field> struct LayoutBase {
 };
 
 template <template <typename, auto...> typename Field>
-struct LayoutMiddle : bg::schema_extends<LayoutBase, Field> {
+struct LayoutMiddle : hg::schema_extends<LayoutBase, Field> {
     Field<Wide32> middle_wide;
     Field<double> middle_double;
 };
 
 template <template <typename, auto...> typename Field>
-struct LayoutLeaf : bg::schema_extends<LayoutMiddle, Field> {
+struct LayoutLeaf : hg::schema_extends<LayoutMiddle, Field> {
     Field<char> leaf_character;
     Field<std::int64_t> leaf_integer;
 };
@@ -59,7 +59,7 @@ template <template <typename, auto...> typename Field> struct ShadowBase {
 };
 
 template <template <typename, auto...> typename Field>
-struct ShadowDerived : bg::schema_extends<ShadowBase, Field> {
+struct ShadowDerived : hg::schema_extends<ShadowBase, Field> {
     Field<double> duplicate;
 };
 
@@ -69,12 +69,12 @@ template <template <typename, auto...> typename Field> struct TailBase {
 };
 
 template <template <typename, auto...> typename Field>
-struct TailDerived : bg::schema_extends<TailBase, Field> {
+struct TailDerived : hg::schema_extends<TailBase, Field> {
     Field<char> derived_character;
 };
 
 template <template <typename, auto...> typename Field>
-struct alignas(32) TailAlignedDerived : bg::schema_extends<TailBase, Field> {
+struct alignas(32) TailAlignedDerived : hg::schema_extends<TailBase, Field> {
     Field<char> derived_character;
 };
 
@@ -99,7 +99,7 @@ template <template <template <typename, auto...> typename> typename Schema,
 struct LayoutReflector {
     template <typename T, auto... Properties> struct F;
     using ProbeSchema = Schema<F>;
-    using Reflection = bg::details::hierarchical_scalar_schema_reflection<Schema>;
+    using Reflection = hg::details::hierarchical_scalar_schema_reflection<Schema>;
 
     static consteval std::size_t physical_field_count() {
         auto count = Reflection::direct_field_count;
@@ -170,7 +170,7 @@ struct LayoutReflector {
 
     template <template <template <typename, auto...> typename> typename Current>
     static void append_expected(std::vector<ExpectedField> &fields) {
-        using CurrentReflection = bg::details::hierarchical_scalar_schema_reflection<Current>;
+        using CurrentReflection = hg::details::hierarchical_scalar_schema_reflection<Current>;
         if constexpr (CurrentReflection::has_base) {
             using Base = typename CurrentReflection::base_schema;
             append_expected<Base::template apply>(fields);
@@ -198,17 +198,17 @@ template <template <typename, auto...> typename Field> LayoutBase<Field> make_la
 }
 
 template <template <typename, auto...> typename Field> LayoutMiddle<Field> make_layout_middle() {
-    using Base = bg::schema_extends<LayoutBase, Field>;
+    using Base = hg::schema_extends<LayoutBase, Field>;
     return {Base{make_layout_base<Field>()}, make_field<Field, Wide32>(), make_field<Field, double>()};
 }
 
 template <template <typename, auto...> typename Field> LayoutLeaf<Field> make_layout_leaf() {
-    using Base = bg::schema_extends<LayoutMiddle, Field>;
+    using Base = hg::schema_extends<LayoutMiddle, Field>;
     return {Base{make_layout_middle<Field>()}, make_field<Field, char>(), make_field<Field, std::int64_t>()};
 }
 
 template <template <typename, auto...> typename Field> ShadowDerived<Field> make_shadow_derived() {
-    using Base = bg::schema_extends<ShadowBase, Field>;
+    using Base = hg::schema_extends<ShadowBase, Field>;
     auto base = ShadowBase<Field>{make_field<Field, std::int64_t>(), make_field<Field, char>()};
     return {Base{std::move(base)}, make_field<Field, double>()};
 }
@@ -227,9 +227,9 @@ std::vector<std::size_t> logical_offsets(const typename Reflector::Result &resul
         const auto &field = result.fields[position];
         const auto &declaration = expected[position];
         if (*field.type != *declaration.type || field.size == 0 || field.alignment == 0)
-            throw std::runtime_error{"probe constructor order does not match BG schema_reflection traversal"};
+            throw std::runtime_error{"probe constructor order does not match HG schema_reflection traversal"};
         if (declaration.logical_index >= logical.size())
-            throw std::runtime_error{"BG schema_reflection returned an invalid logical field index"};
+            throw std::runtime_error{"HG schema_reflection returned an invalid logical field index"};
 
         // A direct derived declaration replaces the inherited logical field.
         // Constructor traversal sees the base first, so the later address wins.
@@ -329,7 +329,7 @@ void check_plain_tail_padding() {
     using Reflector = LayoutReflector<TailDerived, PlainField>;
     using ProbeBase = TailBase<Reflector::template F>;
     const auto &result = Reflector::result();
-    using Base = bg::schema_extends<TailBase, PlainField>;
+    using Base = hg::schema_extends<TailBase, PlainField>;
     auto base = TailBase<PlainField>{std::int64_t{7}, 'b'};
     auto sample = TailDerived<PlainField>{Base{base}, 'd'};
 
@@ -361,7 +361,7 @@ void check_plain_tail_padding() {
 void check_aligned_tail_padding() {
     using Reflector = LayoutReflector<TailAlignedDerived, PlainField>;
     const auto &result = Reflector::result();
-    using Base = bg::schema_extends<TailBase, PlainField>;
+    using Base = hg::schema_extends<TailBase, PlainField>;
     auto base = TailBase<PlainField>{std::int64_t{7}, 'b'};
     auto sample = TailAlignedDerived<PlainField>{Base{base}, 'd'};
 

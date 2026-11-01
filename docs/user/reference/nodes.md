@@ -1,6 +1,6 @@
 # Node declarations
 
-A node performs one calculation or side effect when BG evaluates it. A required input
+A node performs one calculation or side effect when HG evaluates it. A required input
 needs a current value. An active input schedules evaluation when it changes. Inputs are
 active and required unless declared otherwise.
 

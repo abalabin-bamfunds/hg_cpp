@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/type/details/time_series_type_traits.hpp>
-#include <bg/type/time_series_dict_type.hpp>
-#include <bg/type/time_series_set_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename Key, typename Item, auto... Properties>
 struct time_series_type_traits<TSD<Key, Item, Properties...>> {
@@ -52,4 +52,4 @@ struct declaration_variable_traits<TSD<Key, Item, Properties...>> {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

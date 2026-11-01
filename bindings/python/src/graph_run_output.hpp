@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/graph_run_result.hpp>
+#include <hg/graph_run_result.hpp>
 
 #include <nanobind/nanobind.h>
 
-namespace bg::python::details {
+namespace hg::python::details {
 
 class GraphRunOutputs {
   public:
@@ -19,4 +19,4 @@ class GraphRunOutputs {
     const GraphRunResult<> &results_;
 };
 
-} // namespace bg::python::details
+} // namespace hg::python::details

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/optionality.hpp>
-#include <bg/util/named_argument.hpp>
+#include <hg/optionality.hpp>
+#include <hg/util/named_argument.hpp>
 
 #include <cstdint>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 enum class InputActivity : std::uint8_t { active, passive };
 
@@ -75,10 +75,10 @@ template <> class input_activity_control<true> {
 template <bool Enabled> using InputActivityControl = input_activity_control<Enabled>;
 
 namespace details {
-template <bool Enabled> using input_activity_control = ::bg::input_activity_control<Enabled>;
+template <bool Enabled> using input_activity_control = ::hg::input_activity_control<Enabled>;
 }
 
 struct ContextParameter {};
 inline constexpr ContextParameter context{};
 
-} // namespace bg
+} // namespace hg

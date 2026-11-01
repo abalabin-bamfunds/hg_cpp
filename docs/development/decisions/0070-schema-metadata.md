@@ -11,4 +11,4 @@ Metadata remains local to the schema declaration in the canonical key. Generic
 and runtime schema descriptors use the same representation.
 
 This lets extensions attach metadata to shared schemas without adding their
-semantics to BG core.
+semantics to HG core.

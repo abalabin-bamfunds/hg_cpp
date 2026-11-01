@@ -1,18 +1,18 @@
 #pragma once
 
-#include <bg/graph/compiled_node.hpp>
-#include <bg/graph/runtime_graph_input.hpp>
-#include <bg/evaluation_context.hpp>
-#include <bg/time_series/ref/ref_input_storage.hpp>
-#include <bg/time_series/ref/ref_input_sample.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_state.hpp>
-#include <bg/time_series/time_series_input.hpp>
+#include <hg/graph/compiled_node.hpp>
+#include <hg/graph/runtime_graph_input.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/time_series/ref/ref_input_storage.hpp>
+#include <hg/time_series/ref/ref_input_sample.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_state.hpp>
+#include <hg/time_series/time_series_input.hpp>
 
 #include <cstddef>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 // Binds one compiled node to its state in a runtime graph.
 class Node {
@@ -352,4 +352,4 @@ class Node {
 static_assert(sizeof(Node) == 2 * sizeof(void *));
 static_assert(std::is_trivially_copyable_v<Node>);
 
-} // namespace bg
+} // namespace hg

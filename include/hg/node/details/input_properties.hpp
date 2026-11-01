@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/graph/variadic_parameter.hpp>
-#include <bg/node/input_property_types.hpp>
+#include <hg/graph/variadic_parameter.hpp>
+#include <hg/node/input_property_types.hpp>
 
 #include <concepts>
 #include <cstddef>
 #include <string_view>
 #include <type_traits>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct is_compile_time_name : std::false_type {};
 
@@ -165,7 +165,7 @@ template <auto... Properties> struct wiring_point_properties {
     }();
     static constexpr bool context = (false || ... || is_context<decltype(Properties)>);
     static constexpr bool valid_items = (false || ... || is_valid_items<decltype(Properties)>);
-    static constexpr auto variadic_mode = bg::details::variadic_mode<Properties...>();
+    static constexpr auto variadic_mode = hg::details::variadic_mode<Properties...>();
     static constexpr InputValidity validity = [] {
         auto result = InputValidity{required};
         (([&] {
@@ -178,4 +178,4 @@ template <auto... Properties> struct wiring_point_properties {
     }();
 };
 
-} // namespace bg::details
+} // namespace hg::details

@@ -5,7 +5,7 @@
 #include <optional>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 
@@ -33,4 +33,4 @@ struct MapGraphWiring {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

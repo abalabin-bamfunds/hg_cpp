@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/mutable_collection.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/mutable_collection.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <concepts>
 #include <cstddef>
@@ -18,7 +18,7 @@
 #include <typeinfo>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 class GlobalState {
     struct SymbolHash {
@@ -206,4 +206,4 @@ class GlobalState {
     details::ScalarAllocationPool *scalar_allocation_pool_;
 };
 
-} // namespace bg
+} // namespace hg

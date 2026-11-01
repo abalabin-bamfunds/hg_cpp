@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/type/size.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/type_resolution_error.hpp>
-#include <bg/type/variable.hpp>
+#include <hg/type/size.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_resolution_error.hpp>
+#include <hg/type/variable.hpp>
 
-namespace bg {
+namespace hg {
 
 class SizeVariable final : public Variable {
   public:
@@ -41,4 +41,4 @@ class SizeVariable final : public Variable {
     }
 };
 
-} // namespace bg
+} // namespace hg

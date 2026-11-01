@@ -6,12 +6,12 @@
 value of `key`. The key is a value time series and is not passed to a case graph.
 
 ```cpp
-auto result = bg::switch_(
+auto result = hg::switch_(
     key,
-    bg::cases{
-        bg::case_(1, first_graph),
-        bg::case_(std::tuple{2, 3}, second_graph),
-        bg::case_(bg::DEFAULT, fallback_graph),
+    hg::cases{
+        hg::case_(1, first_graph),
+        hg::case_(std::tuple{2, 3}, second_graph),
+        hg::case_(hg::DEFAULT, fallback_graph),
     },
     input);
 ```

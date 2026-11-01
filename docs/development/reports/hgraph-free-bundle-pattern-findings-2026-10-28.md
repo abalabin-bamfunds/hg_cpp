@@ -1,16 +1,16 @@
 # Free TSB and TSL patterns in hgraph tests
 
 This report compares free bundle and fixed-list patterns in hgraph 0.5.42 and
-0.8.37 with BG's graph-level tests. The review covers field/item references,
+0.8.37 with HG's graph-level tests. The review covers field/item references,
 updates, validity, switch branches, and nested graph boundaries. It records
 coverage and unresolved differences; it does not propose implementation fixes.
 
-The [latest BG recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
+The [latest HG recheck](hgraph-pattern-recheck-2026-10-30.md) supersedes the
 failure statuses below. The mixed and rebuilt-free bundle switch cases,
 structural activation capture, and rebuilt-list item identity now pass. Nested
 free bundle/list REF pass-through now passes after the nested output correction.
 
-The initial BG baseline is `11ba59a4`; final validation uses `8058a013`. See
+The initial HG baseline is `11ba59a4`; final validation uses `8058a013`. See
 the [review summary](hgraph-pattern-review-2026-10-28.md) for build details. The 0.5
 source is hgraph `v_0.5.42`, commit
 [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be).
@@ -22,15 +22,15 @@ not source syntax or internal implementation.
 
 ## Findings
 
-| Source test | BG test or assessment | Classification |
+| Source test | HG test or assessment | Classification |
 | --- | --- | --- |
 | 0.5 `hgraph_unit_tests/_wiring/test_switch.py::test_switch_bundle` | `a switch routes a free bundle between its fields and a constant bundle`; `a switch accepts native and free bundle branches` | Reproduced, but both cases fail; see [verified failures](#verified-failures). |
-| 0.5 `hgraph_unit_tests/_wiring/test_tsl_wiring.py::test_fixed_tsl_non_peered_input`, `test_fixed_tsl_non_peered_input_generator`, `test_fixed_tsl_peered`, `test_peered_to_peered_tsl` | `a node can select an item from a free fixed time series list`; `a free fixed time series list coalesces source changes`; `a span-backed free TSL retains its items through materialisation and evaluation` | Covered for direct list construction, item projection, and source update coalescing. Generator-expression construction has no separate BG syntax and is not a runtime behavior gap. |
+| 0.5 `hgraph_unit_tests/_wiring/test_tsl_wiring.py::test_fixed_tsl_non_peered_input`, `test_fixed_tsl_non_peered_input_generator`, `test_fixed_tsl_peered`, `test_peered_to_peered_tsl` | `a node can select an item from a free fixed time series list`; `a free fixed time series list coalesces source changes`; `a span-backed free TSL retains its items through materialisation and evaluation` | Covered for direct list construction, item projection, and source update coalescing. Generator-expression construction has no separate HG syntax and is not a runtime behavior gap. |
 | 0.5 `hgraph_unit_tests/_wiring/test_tsl_wiring.py::test_tsl_ref_flipping` | `a free fixed list can be observed through a reference`; `reselecting a rebuilt free list keeps unchanged item references` | Partial. Reference observation passes; rebuilt-list reselection emits extra item ticks, confirmed on `8f0eaab6`. This exact source case selects among two lists and an empty reference using `combine[TSL]` and a dynamic index. That combination is not covered here. |
 | 0.8 `tests/cpp/test_switch.cpp::switch_: a direct structural branch samples held bundle values on activation`; `switch_: a direct structural branch samples held list values on activation` | `a switch routes a free bundle between its fields and a constant bundle`; `a switch routes a free fixed list between its items and a constant list` | Reproduced, but both cases fail their expected structural tick results; see [verified failures](#verified-failures). |
 | 0.8 `tests/cpp/test_switch.cpp::switch_: a pass-through branch publishes its input's own reference`; `switch_: a structural pass-through branch publishes the fields' own references` | `if_then_else preserves free bundle references across pass-through switch reselection`; `if_then_else preserves free fixed list references across pass-through switch reselection` | Added. The consumer reads one selected field/item and checks that toggling between the switch result and the original free structure produces no output while the selected source is unchanged. |
 | 0.8 `tests/cpp/test_nested_wiring.cpp::nested wiring: a plain outer source adapts to a child REF input`; `nested wiring: a child REF output retargets an outer plain consumer`; `nested wiring: a REF pass-through samples and follows the plain parent source` | `a nested graph passes a free bundle reference to a value consumer`; `a nested graph passes a free fixed list reference to a value consumer` | Reproduced, but both cases fail during wiring; see [verified failures](#verified-failures). The failure does not establish that the pattern is invalid. |
-| 0.8 `tests/cpp/test_nested_wiring.cpp::nested wiring: a structural initializer boundary binds leaf-wise into the child` | `a nested graph observes independent updates to free bundle fields`; `a nested graph observes independent updates to a free fixed list` | Partial. BG passes a typed free TSB/TSL through a nested graph and checks independent leaf updates. The hgraph test constructs the child's fixed TSL input from an initializer list of separate sources; the BG test supplies an explicit `tsl(...)` structure. |
+| 0.8 `tests/cpp/test_nested_wiring.cpp::nested wiring: a structural initializer boundary binds leaf-wise into the child` | `a nested graph observes independent updates to free bundle fields`; `a nested graph observes independent updates to a free fixed list` | Partial. HG passes a typed free TSB/TSL through a nested graph and checks independent leaf updates. The hgraph test constructs the child's fixed TSL input from an initializer list of separate sources; the HG test supplies an explicit `tsl(...)` structure. |
 
 The new graph tests are in
 [`time_series_bundle_test.cpp`](../../../tests/evaluation/time_series/time_series_bundle_test.cpp)
@@ -44,11 +44,11 @@ direct cases.
 
 ## Verified failures
 
-All seven reproductions below were rebuilt and rerun against BG `8058a013`.
+All seven reproductions below were rebuilt and rerun against HG `8058a013`.
 They use hidden Catch2 tags `[.][repro]` and retain their original expected
 results. Collection results in this table are captured tick deltas, not snapshots.
 
-| BG test | Observed failure | Classification |
+| HG test | Observed failure | Classification |
 | --- | --- | --- |
 | `a switch routes a free bundle between its fields and a constant bundle` | Captured deltas are `{count:1,value:2}`, `{}`, `{count:1,value:2}`, `{}`. The expected free-branch deltas contain held fields. | Collection observation gap: a scalar consumer reads the expected held values, but captured structural deltas omit them on activation. The graph sampling and capture paths need separate investigation. |
 | `a switch accepts native and free bundle branches` | Wiring reports `switch case output types are incompatible`. | Mixed native/free TSB switch branch compatibility is unresolved. |
@@ -119,7 +119,7 @@ REF cases request this pass-through, not a reference targeting a reference.
 Run the free-structure reproductions from the review lane:
 
 ```sh
-build/verification/bg_tests '[repro][series:tsb],[repro][series:fixed-tsl]'
+build/verification/hg_tests '[repro][series:tsb],[repro][series:fixed-tsl]'
 ```
 
 This command intentionally reports seven failed cases. The eleven new ordinary
@@ -135,12 +135,12 @@ nested REF cases that failed in the original verification pass in the latest
 integrated recheck. These tests do not establish behavior for all possible
 nesting depths, reference chains, or branch lifecycle combinations.
 
-The nested partial-validity and independent item-update cases are BG coverage
+The nested partial-validity and independent item-update cases are HG coverage
 additions. The reviewed 0.8 nested-wiring test file does not contain a direct
 partial-validity equivalent.
 
 The 0.5 `test_tsl_ref_flipping` pattern remains unverified as a combined case.
-BG has `combine` and collection selection operators, and separate list
+HG has `combine` and collection selection operators, and separate list
 reference tests, but this pass did not wire their exact sequence of two
 reference-bearing lists and an empty reference. No behavior change is proposed
 from that omission.

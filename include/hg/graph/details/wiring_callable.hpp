@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_arguments.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/signature.hpp>
-#include <bg/type/time_series_value_type.hpp>
-#include <bg/type/time_series_variable.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/static_storage.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_arguments.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/signature.hpp>
+#include <hg/type/time_series_value_type.hpp>
+#include <hg/type/time_series_variable.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/static_storage.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <concepts>
 #include <functional>
@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct callable;
 
@@ -253,4 +253,4 @@ template <typename Value> util::symbol wiring_label(Value &&value) {
 
 struct default_wiring_label {};
 
-} // namespace bg::details
+} // namespace hg::details

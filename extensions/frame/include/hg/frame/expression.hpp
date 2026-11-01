@@ -1,21 +1,21 @@
 #pragma once
 
-#include <bg/frame/column.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/details/graph_signature.hpp>
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/graph/type_mapping.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/scalar/dispatch.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/frame/column.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/details/graph_signature.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/graph/type_mapping.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/scalar/dispatch.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <array>
 #include <cstdint>
@@ -31,7 +31,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame {
+namespace hg::frame {
 
 // Extension-facing writable batch passed to column block functions. Callbacks set one validity bit per output row and
 // write values only for valid cells. Bits after the final row are ignored.
@@ -176,14 +176,14 @@ struct ColumnBlockFunctionAdapter {
     bool packed_result{};
 };
 
-} // namespace bg::frame
+} // namespace hg::frame
 
-namespace bg {
+namespace hg {
 template <> ScalarDispatch<frame::ColumnBlockFunctionAdapter> &
 ScalarDispatch<frame::ColumnBlockFunctionAdapter>::instance() noexcept;
-} // namespace bg
+} // namespace hg
 
-namespace bg::frame {
+namespace hg::frame {
 
 class ColumnBlockFunctionType;
 const ColumnBlockFunctionType &column_block_function_type(const ScalarType &result_type,
@@ -247,7 +247,7 @@ template <cell_type RESULT, cell_type... ARGS> void register_column_block_functi
         ColumnBlockFunctionAdapter{&Factory::call, sizeof(RESULT), alignof(RESULT), packed_column_value<RESULT>}));
 }
 
-// Compiles an expression bundle selected by BG and returns the expression node's concrete output.
+// Compiles an expression bundle selected by HG and returns the expression node's concrete output.
 WiringPoint materialize_column_expression(WiringPoint result);
 
 namespace details {
@@ -301,7 +301,7 @@ template <typename LHS, typename RHS, cell_type RESULT> struct BinaryColumnExpre
 namespace details {
 
 template <cell_type ARG> WiringPoint column_expression_operand_point(WiringPoint point) {
-    point = bg::details::WiringRecord::point(*point.record()->source_identity());
+    point = hg::details::WiringRecord::point(*point.record()->source_identity());
     if (TS<ARG>::type().accepts(point.type()))
         return static_cast<WiringPoint>(wp<TS<ARG>>{point});
     if (TSC<ARG>::type().accepts(point.type()))
@@ -321,12 +321,12 @@ WiringPoint column_expression_bundle_point(WiringPoint compute, std::array<Wirin
         ++index;
     }(), ...);
     fields.emplace_back(util::symbol{"compute"}, compute);
-    return bg::bundle(std::span<const WiringArgument>{fields});
+    return hg::bundle(std::span<const WiringArgument>{fields});
 }
 
 } // namespace details
 
-// Creates one deferred column expression from a typed callback and its BG operand points.
+// Creates one deferred column expression from a typed callback and its HG operand points.
 template <cell_type RESULT, cell_type... ARGS, typename... OPERANDS>
 wp<TSC<RESULT>> make_column_expression(ColumnBlockFunction<RESULT, ARGS...> callback,
                                        wp<OPERANDS>... operands) {
@@ -346,9 +346,9 @@ wp<TSC<RESULT>> make_column_expression(ColumnBlockFunction<RESULT, ARGS...> call
     const auto expression_target = expression_builder(operands...);
     using ExpressionBuilder = decltype(expression_builder);
     auto expression_signature =
-        bg::details::make_graph_input_signature<ExpressionBuilder>(util::symbol{"materialisation"});
+        hg::details::make_graph_input_signature<ExpressionBuilder>(util::symbol{"materialisation"});
     auto erased_expression_builder = [expression_builder](std::span<const WiringArgument> arguments) {
-        return bg::details::invoke_graph_function(expression_builder, arguments);
+        return hg::details::invoke_graph_function(expression_builder, arguments);
     };
     static_cast<WiringPoint>(result).add_materialisation_option(
         static_cast<const TimeSeriesType &>(expression_target.type()), 0.0, std::move(expression_signature),
@@ -382,7 +382,7 @@ WiringPoint bind_expression_tree(const Expression &expression, std::span<const W
 } // namespace details
 
 // An immutable scalar expression. It owns scalar literals and names column and parameter inputs. Binding resolves
-// those names in a graph and invokes the corresponding BG operators.
+// those names in a graph and invokes the corresponding HG operators.
 class Expression {
   private:
     explicit Expression(std::shared_ptr<const details::ExpressionNode> node) noexcept : node_{std::move(node)} {}
@@ -405,7 +405,7 @@ class Expression {
 namespace details {
 template <typename T>
 concept expression_scalar_argument =
-    (bg::details::supported_scalar_argument<T> || bg::details::supported_scalar_value_argument<T>) &&
+    (hg::details::supported_scalar_argument<T> || hg::details::supported_scalar_value_argument<T>) &&
     (!std::same_as<std::remove_cvref_t<T>, Expression>);
 } // namespace details
 
@@ -418,7 +418,7 @@ Expression param(std::string_view name);
 template <typename Argument>
     requires details::expression_scalar_argument<Argument>
 Expression capture(Argument &&argument) {
-    if constexpr (bg::details::supported_scalar_value_argument<Argument>) {
+    if constexpr (hg::details::supported_scalar_value_argument<Argument>) {
         return details::expression_literal(ScalarValue<>{argument});
     } else {
         return details::expression_literal(ScalarValue<>{std::forward<Argument>(argument)});
@@ -585,16 +585,16 @@ Expression operator||(Argument &&lhs, const Expression &rhs) {
 
 // Bind explicit column names and parameters. Every supplied name must be used by the expression.
 template <typename... Arguments>
-    requires(bg::details::graph_code_argument<Arguments> && ...)
+    requires(hg::details::graph_code_argument<Arguments> && ...)
 wp<> bind_expression(const Expression &expression, Arguments &&...arguments) {
-    auto bindings = bg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    auto bindings = hg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     return wp<>{details::bind_expression(expression, bindings, {})};
 }
 
 template <typename... Arguments>
-    requires(bg::details::graph_code_argument<Arguments> && ...)
+    requires(hg::details::graph_code_argument<Arguments> && ...)
 wp<> bind_expression(wp<> expression, Arguments &&...arguments) {
-    auto bindings = bg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    auto bindings = hg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     return wp<>{details::bind_expression(static_cast<WiringPoint>(expression), bindings, {})};
 }
 
@@ -605,9 +605,9 @@ template <cell_type TARGET> Expression convert(const Expression &value) {
                                         std::addressof(cpp_scalar_type<TARGET>()));
 }
 
-} // namespace bg::frame
+} // namespace hg::frame
 
-namespace bg {
+namespace hg {
 
 template <> struct scalar_type_traits<frame::Expression> {
     static const ScalarType &type() noexcept;
@@ -636,4 +636,4 @@ struct scalar_declaration_traits<frame::ColumnBlockFunction<RESULT, ARGS...>> {
     static constexpr bool supports_time_series = true;
 };
 
-} // namespace bg
+} // namespace hg

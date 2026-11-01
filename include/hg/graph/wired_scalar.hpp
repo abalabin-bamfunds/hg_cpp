@@ -1,8 +1,8 @@
 #pragma once
 
-#include <bg/scalar/runtime_type.hpp>
+#include <hg/scalar/runtime_type.hpp>
 
-namespace bg {
+namespace hg {
 
 class GraphWiring;
 class NodeTemplate;
@@ -28,4 +28,4 @@ class WiredScalar {
 
 static_assert(sizeof(WiredScalar) == 2 * sizeof(void *));
 
-} // namespace bg
+} // namespace hg

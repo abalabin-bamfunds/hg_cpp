@@ -2,7 +2,7 @@
 
 #include <concepts>
 
-namespace bg::details {
+namespace hg::details {
 
 // Maps a mutable scalar type to the view of its stored value.
 template <typename T> struct scalar_mutable_traits;
@@ -20,4 +20,4 @@ auto mutable_scalar_view(typename scalar_mutable_traits<T>::storage_type &storag
     return typename scalar_mutable_traits<T>::view_type{storage};
 }
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,16 +1,16 @@
-#include <bg/frame/frame.hpp>
-#include <bg/frame/expression.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/graph.hpp>
-#include <bg/graph/details/wiring_record.hpp>
-#include <bg/graph/runtime_graph.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/bundle/value.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsb/details/wiring.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/frame/frame.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph.hpp>
+#include <hg/graph/details/wiring_record.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <array>
@@ -25,10 +25,10 @@
 #include <utility>
 #include <vector>
 
-namespace bg::frame {
+namespace hg::frame {
 namespace {
 
-using namespace bg::literals;
+using namespace hg::literals;
 
 inline constexpr auto expression_batch_rows = std::size_t{128};
 
@@ -461,7 +461,7 @@ template <cell_type RESULT> class ExpressionCompiler {
     explicit ExpressionCompiler(GraphWiring &wiring) : wiring_{&wiring} {}
 
     Operand compile(WiringPoint point) {
-        point = bg::details::WiringRecord::point(*point.record()->source_identity());
+        point = hg::details::WiringRecord::point(*point.record()->source_identity());
         if (dynamic_cast<const TimeSeriesValueType *>(std::addressof(point.type().dereferenced_type())) != nullptr)
             return add_parameter(point);
 
@@ -555,13 +555,13 @@ template <cell_type RESULT> class ExpressionCompiler {
         auto operands = std::array<Operand, 2>{};
         auto operand_types = std::array<const ScalarType *, 2>{};
         for (auto index = std::size_t{}; index != operand_count; ++index) {
-            const auto operand_point = bg::details::time_series_bundle_field(bundle_point, index);
+            const auto operand_point = hg::details::time_series_bundle_field(bundle_point, index);
             operand_types[index] = expression_cell_type(operand_point.type());
             if (operand_types[index] == nullptr)
                 throw WiringError{"column expression operands must be columns or scalar time series"};
             operands[index] = compile(operand_point);
         }
-        const auto compute = bg::details::time_series_bundle_field(bundle_point, operand_count);
+        const auto compute = hg::details::time_series_bundle_field(bundle_point, operand_count);
         const auto callback = extract_function(compute);
         const auto *function_type = dynamic_cast<const ColumnBlockFunctionType *>(std::addressof(callback.type()));
         if (function_type == nullptr || std::addressof(function_type->result_type()) != std::addressof(result_type) ||
@@ -636,10 +636,10 @@ template <cell_type RESULT> class ExpressionCompiler {
     std::vector<WiringPoint> parameters_;
     std::vector<ColumnBinding> column_bindings_;
     std::vector<ParameterBinding> parameter_bindings_;
-    std::unordered_map<const bg::details::WiringRecord *, std::size_t> leaf_indices_;
-    std::unordered_map<const bg::details::WiringRecord *, std::size_t> parameter_indices_;
-    std::unordered_map<const bg::details::WiringRecord *, Operand> expressions_;
-    std::unordered_set<const bg::details::WiringRecord *> active_;
+    std::unordered_map<const hg::details::WiringRecord *, std::size_t> leaf_indices_;
+    std::unordered_map<const hg::details::WiringRecord *, std::size_t> parameter_indices_;
+    std::unordered_map<const hg::details::WiringRecord *, Operand> expressions_;
+    std::unordered_set<const hg::details::WiringRecord *> active_;
 };
 
 const auto parameter_update_node = node<ParameterUpdateNode>();
@@ -736,18 +736,18 @@ ExpressionNodeInputs prepare_expression_node_inputs(GraphWiring &graph_wiring,
     };
 
     const auto column_fields = named_fields(leaf_points, "c");
-    const auto free_columns = static_cast<WiringPoint>(bg::bundle(std::span<const WiringArgument>{column_fields}));
+    const auto free_columns = static_cast<WiringPoint>(hg::bundle(std::span<const WiringArgument>{column_fields}));
     auto column_bundle = graph_wiring.materialize(free_columns, bundle_type(column_fields));
     auto parameter_values = [&] {
         if (parameter_points.empty()) {
             auto parameter_memory = allocator{};
-            return operators::const_(bg::details::make_hierarchical_bundle<EmptyParameterSchema>(
+            return operators::const_(hg::details::make_hierarchical_bundle<EmptyParameterSchema>(
                                          std::addressof(parameter_memory)))
                 .as<TS<Bundle<PARAMETERS>>>();
         }
         const auto parameter_fields = named_fields(parameter_points, "p");
         const auto free_parameters =
-            static_cast<WiringPoint>(bg::bundle(std::span<const WiringArgument>{parameter_fields}));
+            static_cast<WiringPoint>(hg::bundle(std::span<const WiringArgument>{parameter_fields}));
         auto parameter_bundle = graph_wiring.materialize(free_parameters, bundle_type(parameter_fields));
         const auto parameter_inputs = wp<TSB<PARAMETER_INPUTS>>{parameter_bundle};
         return parameter_update_node(parameter_inputs);
@@ -798,17 +798,17 @@ const auto registered_filter = operators::filter_.overload(graph<schema_type<FIL
        wp<TSF<FILTER_SCHEMA>, "value"_n> value) -> wp<TSF<FILTER_SCHEMA>> {
         auto &wiring = WiringContext::current().wiring();
         const auto &output_type = value.type().with_guarantee(TimeSeriesGuarantee::ordinary);
-        const auto arguments = bg::details::make_wiring_arguments(condition, value);
+        const auto arguments = hg::details::make_wiring_arguments(condition, value);
         auto output = wiring.create_wp(output_type, arguments);
 
         const auto builder = [](wp<FILTER_CONDITION, "condition"_n> condition,
                                 wp<TSF<FILTER_SCHEMA>, "value"_n> value) {
             return materialize_column_filter(static_cast<WiringPoint>(condition), wp<TSF<FILTER_SCHEMA>>{value});
         };
-        auto input_signature = bg::details::make_graph_input_signature<decltype(builder)>(
+        auto input_signature = hg::details::make_graph_input_signature<decltype(builder)>(
             util::symbol{"materialisation"});
         auto erased_builder = [builder](std::span<const WiringArgument> builder_arguments) -> WiringPoint {
-            return bg::details::invoke_graph_function(builder, builder_arguments);
+            return hg::details::invoke_graph_function(builder, builder_arguments);
         };
         output.add_materialisation_option(output_type, 0.0, std::move(input_signature),
                                           WiringMaterialisationBuilder{std::move(erased_builder)});
@@ -817,7 +817,7 @@ const auto registered_filter = operators::filter_.overload(graph<schema_type<FIL
 
 } // namespace
 
-bool bg::frame::details::is_column_expression_bundle_type(const Type &type) {
+bool hg::frame::details::is_column_expression_bundle_type(const Type &type) {
     const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(std::addressof(type));
     if (bundle == nullptr || bundle->item_count() < 2 || bundle->item_count() > 3)
         return false;
@@ -840,4 +840,4 @@ WiringPoint materialize_column_expression(WiringPoint result) {
     throw WiringError{"column expression result has an unsupported cell type"};
 }
 
-} // namespace bg::frame
+} // namespace hg::frame

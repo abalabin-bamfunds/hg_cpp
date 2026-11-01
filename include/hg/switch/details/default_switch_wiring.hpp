@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/switch/details/switch_node.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/switch/details/switch_node.hpp>
 
 #include <memory>
 #include <optional>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 struct PreparedSwitchCase {
     std::vector<WiringArgument> keys;
@@ -27,4 +27,4 @@ struct DefaultSwitchWiring {
     std::optional<WiringPoint> wire() const;
 };
 
-} // namespace bg::details
+} // namespace hg::details

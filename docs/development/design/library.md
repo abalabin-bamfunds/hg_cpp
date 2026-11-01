@@ -2,15 +2,15 @@
 
 ## Public surface
 
-C++ graph code includes `<bg/library.hpp>` and links `bg::library`. Python
-graph code uses `bg.operators`. Both surfaces expose native library operators
+C++ graph code includes `<hg/library.hpp>` and links `hg::library`. Python
+graph code uses `hg.operators`. Both surfaces expose native library operators
 and the engine's `const_`, `default_`, `getitem`, `getattr`, `map`, `mesh`, and
 `switch_` operators. All use normal overload resolution.
 
 ```cpp
-#include <bg/library.hpp>
+#include <hg/library.hpp>
 
-using namespace bg;
+using namespace hg;
 
 const auto calculate = graph([](wp<TS<double>> x, wp<TS<double>> y) {
     return (x + 2.0) * y;
@@ -18,10 +18,10 @@ const auto calculate = graph([](wp<TS<double>> x, wp<TS<double>> y) {
 ```
 
 ```python
-import bg
+import hg
 
-@bg.graph
-def calculate(x: bg.TS[float], y: bg.TS[float]) -> bg.TS[float]:
+@hg.graph
+def calculate(x: hg.TS[float], y: hg.TS[float]) -> hg.TS[float]:
     return (x + 2.0) * y
 ```
 
@@ -135,7 +135,7 @@ The collection overloads support these conversions:
 | Named TSB with scalar-valued fields | `TS<Bundle<SCHEMA>>` |
 
 Python uses `tuple[T, ...]` for scalar List annotations. Scalar Set annotations
-are not yet exposed; `bg.TSS[T]` is available. See the
+are not yet exposed; `hg.TSS[T]` is available. See the
 [Python type mappings](python.md).
 
 Set items and dictionary keys must support hashing. List-to-TSL conversion
@@ -197,7 +197,7 @@ their normal membership and item changes.
 | `TSD<K, TS<V>>` | Added or modified valid entries |
 
 Dictionary events use the public `operators::key_value` schema, exposed as
-`bg.KeyValue` in Python. Its `key` and `value` field types resolve from the
+`hg.KeyValue` in Python. Its `key` and `value` field types resolve from the
 source dictionary. A downstream node can name the schema directly:
 
 ```cpp
@@ -208,8 +208,8 @@ const auto read_value = node(
 ```
 
 ```python
-@bg.compute_node
-def read_value(entry: bg.TSB[bg.KeyValue]) -> bg.TS[int]:
+@hg.compute_node
+def read_value(entry: hg.TSB[hg.KeyValue]) -> hg.TS[int]:
     return entry.value.value
 ```
 
@@ -292,7 +292,7 @@ repeated identical condition values do not publish additional ticks. Selection
 applies to the whole collection. Both inputs must have a
 [common time series type](type-system.md#time-series-guarantees).
 
-These operators are available under `bg::operators` in C++ and `bg.operators`
+These operators are available under `hg::operators` in C++ and `hg.operators`
 in Python.
 
 ## Merge
@@ -454,7 +454,7 @@ complete current valid value; input changes alone do not publish. Invalid input
 preserves the previous output, following `sample` above. Collection mutation
 rules still apply, so an unchanged collection need not publish another root tick.
 
-Durations are scalar arguments: use `bg::timedelta_t` in C++ and
+Durations are scalar arguments: use `hg::timedelta_t` in C++ and
 `datetime.timedelta` in Python. Timed work uses evaluation time and stops with
 the owning graph, including inner graphs. Scheduling outside the supported
 [evaluation-time range](evaluation.md#evaluation-time) fails.
@@ -494,8 +494,8 @@ auto restarted_total = operators::sums(value, "reset"_n = reset);
 ```
 
 ```python
-total = bg.operators.sums(value)
-restarted_total = bg.operators.sums(value, reset=reset)
+total = hg.operators.sums(value)
+restarted_total = hg.operators.sums(value, reset=reset)
 ```
 
 ## Collection reductions
@@ -515,8 +515,8 @@ auto available_total = operators::sum_(opt(values));
 ```
 
 ```python
-complete_total = bg.operators.sum_(values)
-available_total = bg.operators.sum_(bg.opt(values))
+complete_total = hg.operators.sum_(values)
+available_total = hg.operators.sum_(hg.opt(values))
 ```
 
 With no contributing items, sum publishes zero and the other reductions
@@ -555,8 +555,8 @@ auto available = operators::any_(opt(values));
 ```
 
 ```python
-complete = bg.operators.all_(values)
-available = bg.operators.any_(bg.opt(values))
+complete = hg.operators.all_(values)
+available = hg.operators.any_(hg.opt(values))
 ```
 
 Use `valid_items(values)` to exclude invalid TSD items while still requiring
@@ -636,7 +636,7 @@ TSD `getitem` accepts a TSS of keys. It returns a dictionary of references for
 the selected keys. A selected key absent from the source dictionary remains in
 the result with an invalid reference. This composes with `keys_where_true`:
 C++ uses `values[operators::keys_where_true(mask)]`; Python uses
-`values[bg.operators.keys_where_true(mask)]`.
+`values[hg.operators.keys_where_true(mask)]`.
 
 ## Text operations
 
@@ -663,7 +663,7 @@ operations on symbols return strings rather than interned symbols.
 These operations accept scalar or time-series arguments, require valid time
 series inputs, and propagate the weakest observed input guarantee. Invalidating
 a required input invalidates the result. Ordinary inputs can publish equal
-results on separate ticks. Unicode operations use ICU, linked by `bg::library`.
+results on separate ticks. Unicode operations use ICU, linked by `hg::library`.
 
 `str_(value)` returns Python-style text for built-in scalar values and nested
 scalar collections. It rejects unsupported scalar extension types.
@@ -689,7 +689,7 @@ A string-series pattern requires at least one formatting argument.
 tick formatting rules as `print_`. The scalar string option `__level__` selects
 severity and defaults to `"info"`. Logging nodes are not deduplicated.
 
-Logging uses the process-level BG logger named `bg`. The node checks its
+Logging uses the process-level HG logger named `hg`. The node checks its
 enabled level before capturing data. Enabled messages own their pattern,
 argument names, scalar values, and serialized ticks. The logging thread builds
 the format arguments and calls the existing scalar and
@@ -701,8 +701,8 @@ uses the same formatting rules as `print_`.
 Extension type descriptors and registered callbacks must remain available until
 queued messages have been released.
 
-`<bg/logging.hpp>` exposes BG levels, configuration, `bg::log` formatting
-functions, and `BG_LOG_*` statement macros. The macros check the level before
+`<hg/logging.hpp>` exposes HG levels, configuration, `hg::log` formatting
+functions, and `HG_LOG_*` statement macros. The macros check the level before
 evaluating arguments and call the corresponding formatting function.
 See the [public logging API](../../user/reference/library-text.md)
 for configuration fields and defaults. `initialize` rejects late or repeated
@@ -711,10 +711,10 @@ messages. Initialization paths are serialized and logging uses a cached backend.
 
 Quill is a private implementation dependency of the core shared library.
 Graph logging and node logging submit owning, move-only formatting callbacks
-through the same BG boundary. The backend invokes each callback after dequeueing
+through the same HG boundary. The backend invokes each callback after dequeueing
 its message. Node logging captures argument values, including owning copies of
 string views and C strings. The enabled-level check precedes these captures.
-The backend adapter translates BG pattern fields into its private formatter
+The backend adapter translates HG pattern fields into its private formatter
 syntax. Public headers and installed target interfaces do not expose Quill.
 
 ### Regular expressions
@@ -733,8 +733,8 @@ If all groups are absent, the TSL is invalid under the normal
 succeeds. Capture output guarantees limit const to final.
 
 ```python
-found = bg.operators.matches(r"(\w+)-(\d+)", text)
-captures = bg.operators.match_(r"(\w+)-(\d+)", text)
+found = hg.operators.matches(r"(\w+)-(\d+)", text)
+captures = hg.operators.match_(r"(\w+)-(\d+)", text)
 word, number = captures[0], captures[1]
 ```
 
@@ -809,8 +809,8 @@ auto empty = operators::is_empty(available);
 
 ```python
 shared = lhs & rhs
-available = bg.opt(lhs) | bg.opt(rhs)
-empty = bg.operators.is_empty(available)
+available = hg.opt(lhs) | hg.opt(rhs)
+empty = hg.operators.is_empty(available)
 ```
 
 TSS set results publish only actual membership changes, including a first
@@ -864,8 +864,8 @@ operators. Python uses the named Boolean operators because its `and`, `or`,
 and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
 ```python
-bounded = bg.operators.and_(x > 0, x < 10)
-negated = bg.operators.not_(bounded)
+bounded = hg.operators.and_(x > 0, x < 10)
+negated = hg.operators.not_(bounded)
 ```
 
 Boolean graph operations do not short-circuit. C++ evaluates both operand

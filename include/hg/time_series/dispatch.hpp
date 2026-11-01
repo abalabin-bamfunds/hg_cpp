@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/time_series/time_series_runtime_type.hpp>
-#include <bg/type/time_series_type.hpp>
-#include <bg/util/hash_dictionary.hpp>
+#include <hg/allocator.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_type.hpp>
+#include <hg/util/hash_dictionary.hpp>
 
 #include <concepts>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 // Stores one operation record for each exact semantic or runtime time series type.
 // find(runtime_type) prefers its exact runtime record, then falls back to the semantic record.
@@ -67,4 +67,4 @@ template <typename Operations> class TimeSeriesDispatch {
     util::hash_dictionary<const TimeSeriesType *, Operations> type_operations_;
 };
 
-} // namespace bg
+} // namespace hg

@@ -1,14 +1,14 @@
 #pragma once
 
-#include <bg/scalar/details/cpp_runtime_type.hpp>
-#include <bg/scalar/set/runtime_type.hpp>
-#include <bg/scalar/set/storage_traits.hpp>
-#include <bg/util/byte_copy.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/scalar/details/cpp_runtime_type.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
+#include <hg/scalar/set/storage_traits.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <cassert>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T>
 class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T>, ScalarSetRuntimeType> {
@@ -173,4 +173,4 @@ class CppScalarRuntimeType<Set<T>> final : public CppScalarRuntimeTypeBase<Set<T
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

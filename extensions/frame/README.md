@@ -1,14 +1,14 @@
-# BG frame extension
+# HG frame extension
 
-`bg_frame` is a separate BG extension. It adds nullable Boolean, numeric, string,
-and symbol columns, frames with BG schemas, and native incremental column storage through
-BG's public type, node, and runtime extension points.
+`hg_frame` is a separate HG extension. It adds nullable Boolean, numeric, string,
+and symbol columns, frames with HG schemas, and native incremental column storage through
+HG's public type, node, and runtime extension points.
 
-- `bg::frame::Column<bg::i64>` is an immutable owning scalar.
+- `hg::frame::Column<hg::i64>` is an immutable owning scalar.
 - `Frame<Schema>` is an immutable owning scalar with named columns.
 - `ColumnView<T>` and `FrameView<Schema>` are borrowed scalar read views,
   selected by `scalar_storage_traits`.
-- `bg::frame::TSC<T>` and `TSF<Schema>` are incremental time series. They share
+- `hg::frame::TSC<T>` and `TSF<Schema>` are incremental time series. They share
   row identity and report current-cycle row changes. `TSF` exposes fixed-schema
   columns as child `TSC` values.
 
@@ -28,12 +28,12 @@ Algorithms retain previous contributions in node state; see
 [removal lifetime](compaction_proposal.md#removal-lifetime).
 
 `frame::view` is an output option owned by this extension. Use it with
-`Out<TSC<T>, frame::view>` and `Out<TSF<Schema>, frame::view>`. BG does not
+`Out<TSC<T>, frame::view>` and `Out<TSF<Schema>, frame::view>`. HG does not
 interpret the option, and built-in time series outputs do not support it.
 
-Guarantee variables use BG's type matching and resolution. Unsupported
+Guarantee variables use HG's type matching and resolution. Unsupported
 resolved guarantees are rejected explicitly. Provider initialization registers
-the default runtime with BG.
+the default runtime with HG.
 
 ## Values and rows
 
@@ -51,7 +51,7 @@ that preserves row order, identity, values, and deltas. Automatic compaction is
 deferred pending representative pipeline measurements. Capacity trimming is
 not implemented.
 
-Schemas can declare an ordered key with `bg::frame::key_metadata<...>()`.
+Schemas can declare an ordered key with `hg::frame::key_metadata<...>()`.
 Key columns must have `i64`, `string`, or `symbol` cells. Floating-point key columns are rejected.
 Native TSF storage rejects duplicate live keys and changes to key columns. Key
 values may be null, including in composite keys. A removed row's key remains
@@ -68,7 +68,7 @@ Raw values at null positions must not be read.
 Every column allows null cells. `SchemaField::optional` describes an absent
 column; frame schemas require all columns and reject that flag.
 
-String and symbol storage uses BG's scalar storage traits. A string cell stores
+String and symbol storage uses HG's scalar storage traits. A string cell stores
 one 64-bit shared handle and reads as `std::string_view`; a symbol cell stores
 and reads an interned `symbol`. Native batches contain stored handles, and
 `value_at()` returns the scalar read value. Null validity is separate from an
@@ -111,15 +111,15 @@ snapshot.
 
 ## Scalar literals and equality
 
-Include `<bg/frame/literal.hpp>` with the Column or Frame header. A Column
+Include `<hg/frame/literal.hpp>` with the Column or Frame header. A Column
 literal is a sequence of nullable cells. A Frame literal supplies every column
 by name; column lengths must match. Names can appear in any order. Cell types
 must match the schema. `frame::NULL_VALUE` is the extension's exported null
 sentinel.
 
 ```cpp
-using namespace bg;
-using namespace bg::frame;
+using namespace hg;
+using namespace hg::frame;
 
 template <template <typename, auto...> typename Field> struct Quotes {
     Field<double> bid;
@@ -260,12 +260,12 @@ unkeyed input literals continue to append rows.
 
 ## Queued literals
 
-Include `<bg/queue.hpp>`. Native TSC and TSF outputs accept the existing
+Include `<hg/queue.hpp>`. Native TSC and TSF outputs accept the existing
 [row literal syntax](#tsf-row-updates) through `Queue::write()`.
 
 ```cpp
-const auto updates = bg::queue<TSF<KeyedQuotes>>(
-    bg::start = [](Queue queue) {
+const auto updates = hg::queue<TSF<KeyedQuotes>>(
+    hg::start = [](Queue queue) {
         queue.write(literal::TimeSeriesLiteral{{{"id", i64{1}}, {"price", 10.0}}});
         queue.write(literal::TimeSeriesLiteral{{{"id", i64{2}}, {"price", 20.0}}});
         queue.write(literal::TimeSeriesLiteral{{{"id", i64{1}}, {"price", 11.0}}});
@@ -290,8 +290,8 @@ An effective invalidation and a later revalidation use separate cycles in
 standard mode. Empty literals validate invalid empty outputs.
 
 Wiring-time schemas pass
-`frame_series_type(schema, TimeSeriesGuarantee::ordinary)` as `bg::output_type`
-to `bg::queue()`. Queue registrations retain the fixed schema; messages do not repeat it.
+`frame_series_type(schema, TimeSeriesGuarantee::ordinary)` as `hg::output_type`
+to `hg::queue()`. Queue registrations retain the fixed schema; messages do not repeat it.
 Built-in TSB, fixed TSL, and TSD can contain queued frame and column values.
 Borrowed and computed output runtimes and batch mode do not accept these
 queued literals. Encoded cell values own their data independently of producer
@@ -299,11 +299,11 @@ literal storage.
 
 ## TSC input/output surface
 
-Include `<bg/frame/tsc.hpp>` for the typed views.
+Include `<hg/frame/tsc.hpp>` for the typed views.
 
 | View | Operations |
 | --- | --- |
-| `In<TSC<i64>>` | BG validity/update queries, `size`, `contains`, `cell`, `row_domain` |
+| `In<TSC<i64>>` | HG validity/update queries, `size`, `contains`, `cell`, `row_domain` |
 | Current value | Zero-copy `value_view()`, `for_each_row`, `for_each_batch` |
 | Delta | `for_each_changed` combines additions and modifications; `for_each_removed` supplies IDs |
 | `Out<TSC<i64>>` | `add`, `set`, `erase`, `clear`, `invalidate`, `apply`, `copy`, `copy_tick` |
@@ -349,7 +349,7 @@ described below.
 
 ## Copying time series
 
-Native TSC and TSF outputs provide BG's `copy(input)` and `copy_tick(input)`
+Native TSC and TSF outputs provide HG's `copy(input)` and `copy_tick(input)`
 operations. Both read native, borrowed, and computed inputs through their input
 interfaces. The destination owns independent cells.
 Row traversal follows the destination's physical storage order.
@@ -375,7 +375,7 @@ copied field types must match exactly.
 Copy operations require a native destination. Borrowed and computed outputs use
 their binding operations.
 
-Native outputs also support retained-tick replay through BG's tick operations.
+Native outputs also support retained-tick replay through HG's tick operations.
 Replay and live `copy_tick()` share the destination's row mapping, allowing a
 buffering node to switch between them. Retained ticks own their cell values.
 
@@ -401,30 +401,30 @@ the cycle. A valid zero-column frame retains its rows.
 
 ## Formatting
 
-Include `<bg/scalar/format.hpp>` to format `Scalar<Column<T>>` and
+Include `<hg/scalar/format.hpp>` to format `Scalar<Column<T>>` and
 `Scalar<Frame<Schema>>` with fmt. Columns show nullable cells in traversal order;
 frames show the row count and named columns. Native and Arrow-backed scalars
 use the same formatting operation.
 
-Include `<bg/time_series/tick_format.hpp>` to format a current TSC or TSF tick:
+Include `<hg/time_series/tick_format.hpp>` to format a current TSC or TSF tick:
 
 ```cpp
-auto text = fmt::format("{}", bg::tick(input, context->evaluation_time()));
+auto text = fmt::format("{}", hg::tick(input, context->evaluation_time()));
 ```
 
 Ticks show internal row IDs, removals, and added or modified cells. Scalar
 formatting supplies cell quoting and escaping. Formatting a retained tick uses
-`bg::tick(type, reader)` and leaves the reader and its encoded values unchanged.
+`hg::tick(type, reader)` and leaves the reader and its encoded values unchanged.
 
 ## Frame and column queries
 
-`bg::operators::len_(value)` returns `TS<i64>` with the number of visible live
-rows in a TSF or TSC. Null cells count as rows. `bg::operators::is_empty(value)`
+`hg::operators::len_(value)` returns `TS<i64>` with the number of visible live
+rows in a TSF or TSC. Null cells count as rows. `hg::operators::is_empty(value)`
 returns `TS<bool>` indicating whether there are no visible live rows.
 
 ```cpp
-auto row_count = bg::operators::len_(quotes);
-auto no_prices = bg::operators::is_empty(quotes["price"]);
+auto row_count = hg::operators::len_(quotes);
+auto no_prices = hg::operators::is_empty(quotes["price"]);
 ```
 
 The queries use the same input interfaces for native, borrowed, filtered, and
@@ -435,17 +435,17 @@ cell update can publish the same count or Boolean result again.
 The existing `valid`, `all_valid`, and `count` operators also accept TSF and TSC.
 Null cells do not invalidate a column. For TSF, `all_valid` checks the root and
 its immediate column time series. `count` counts root ticks rather than rows.
-These operators follow BG's [validity](../../docs/development/design/library.md#validity-and-tick-selection)
+These operators follow HG's [validity](../../docs/development/design/library.md#validity-and-tick-selection)
 and [tick-count](../../docs/development/design/library.md#counting-and-one-event-lag) contracts.
 
 ## Column reductions
 
-`bg::operators::sum_(column)` accepts `TSC<i64>` or `TSC<double>` and returns
-`TS<i64>` or `TS<double>`. Link `bg::frame` and include
-`<bg/library/operators.hpp>`.
+`hg::operators::sum_(column)` accepts `TSC<i64>` or `TSC<double>` and returns
+`TS<i64>` or `TS<double>`. Link `hg::frame` and include
+`<hg/library/operators.hpp>`.
 
 ```cpp
-const auto total_size = bg::operators::sum_(bg::frame::select_column<"size">(quotes));
+const auto total_size = hg::operators::sum_(hg::frame::select_column<"size">(quotes));
 ```
 
 The sum ignores null cells and returns zero for a valid empty or all-null
@@ -465,8 +465,8 @@ cache from current batches.
 
 ## Column arithmetic
 
-Include `<bg/library/operators.hpp>` and link `bg::frame`. The extension
-registers column implementations on BG's existing arithmetic and conversion
+Include `<hg/library/operators.hpp>` and link `hg::frame`. The extension
+registers column implementations on HG's existing arithmetic and conversion
 operators. Matching `i64` or `double` operands support add, subtract, multiply,
 and divide. Division returns `double`. Column conversions between `i64` and
 `double` are explicit; arithmetic does not promote mixed operands. An operand can
@@ -475,24 +475,24 @@ across the rows.
 
 ```cpp
 // q is a wp<TSF<Quotes>> with double bid and ask columns.
-const auto bid = bg::frame::select_column<"bid">(q);
-const auto ask = bg::frame::select_column<"ask">(q);
+const auto bid = hg::frame::select_column<"bid">(q);
+const auto ask = hg::frame::select_column<"ask">(q);
 const auto midpoint = (bid + ask) / 2.0;
-const auto consume = bg::node([](bg::In<bg::frame::TSC<double>>) {});
+const auto consume = hg::node([](hg::In<hg::frame::TSC<double>>) {});
 consume(midpoint);
 ```
 
-Use `bg::frame::convert<double>(bg::frame::col("size"))` to describe conversion
-inside a scalar expression. For a column wiring point, use BG's conversion
+Use `hg::frame::convert<double>(hg::frame::col("size"))` to describe conversion
+inside a scalar expression. For a column wiring point, use HG's conversion
 operator:
 
 ```cpp
-auto converted = bg::operators::convert[bg::type<bg::frame::TSC<double>>](column);
+auto converted = hg::operators::convert[hg::type<hg::frame::TSC<double>>](column);
 ```
 
 Each column operator call returns a deferred `TSC<T>` wiring point. It offers an
-expression TSB at cost zero and a computed TSC at cost one. BG materialisation records
-concrete demands before compiling the expression. The example uses one BG
+expression TSB at cost zero and a computed TSC at cost one. HG materialisation records
+concrete demands before compiling the expression. The example uses one HG
 compute node and evaluates the shared `midpoint` once per changed row. A
 separate concrete consumer makes downstream expressions read that materialised
 column. Independently constructed equal expressions are not merged.
@@ -536,16 +536,16 @@ Boolean expressions support `&&`, `||`, and `!` for bound columns and unbound
 `Expression` values. Binary expressions use nullable three-valued logic: a
 known false operand determines `&&`, a known true operand determines `||`, and
 otherwise any null operand produces null. Negating null produces null. An
-invalid captured `TS<bool>` invalidates the output through BG's normal dependency
+invalid captured `TS<bool>` invalidates the output through HG's normal dependency
 rules, even when the other operand determines the Boolean value. Boolean
 operators do not short-circuit graph dependencies.
 
 `frame::filter(frame, predicate)` accepts a `TSC<bool>` predicate. A scalar
-`TS<bool>` retains BG's tick-selection meaning. False and null predicate
+`TS<bool>` retains HG's tick-selection meaning. False and null predicate
 results exclude a row.
 
 ```cpp
-auto selected = frame::filter(q, col("size") > bg::i64{10});
+auto selected = frame::filter(q, col("size") > hg::i64{10});
 auto changing_threshold = frame::filter(q, col("ask") - col("bid") < tolerance);
 
 auto named_predicate = col("size") > param("minimum");
@@ -553,23 +553,23 @@ auto named_filter = frame::filter(q, named_predicate, "minimum"_n = minimum);
 ```
 
 Scalar constants are owned by the expression. `TS<T>` operands remain ordinary
-BG dependencies.
+HG dependencies.
 
 ### Expression construction and binding
 
-Include `<bg/frame/expression.hpp>` to construct scalar expressions before
+Include `<hg/frame/expression.hpp>` to construct scalar expressions before
 their input columns or graph are known. `col(name)` identifies a column by
 name. `param(name)` identifies a named argument. Scalar operators construct
 immutable expression nodes and own scalar constants. A conversion node records
 its target scalar type, such as `double`.
 
-Combining an expression with a wiring point calls a registered BG operator
+Combining an expression with a wiring point calls a registered HG operator
 overload. It returns an ordinary TSB containing a constant expression and its
 time series bindings. The scalar expression contains no wiring points.
 
 ```cpp
-using namespace bg::frame;
-using namespace bg::literals;
+using namespace hg::frame;
+using namespace hg::literals;
 
 const auto expression = col("bid") + col("ask");
 const auto sum = bind_expression(q, expression);
@@ -589,20 +589,20 @@ const auto named_shift = bind_expression(
 const auto fixed_shift = bind_expression(q, col("bid") + 0.5);
 ```
 
-`bind_expression` returns the deferred wiring point produced by BG's operators.
+`bind_expression` returns the deferred wiring point produced by HG's operators.
 It resolves types independently for each binding. Explicit named bindings take
 precedence over frame column lookup. A `col` binding must be a TSC. Missing,
 duplicate, and unused names fail during binding. Frame lookup uses the actual
 schema, including a schema supplied during wiring.
 
 Scalar expression construction requires no wiring context. Binding resolves
-column and parameter references and emits ordinary BG operator calls. These
+column and parameter references and emits ordinary HG operator calls. These
 calls select typed block functions and their deferred column expressions.
 Shared expression children are emitted once per binding. The resulting graph
 uses the column materialisation and block evaluation described above.
 
 Scalar values are copied when the expression is constructed. Time series
-bindings remain declared BG inputs. A separate parameter-update node snapshots
+bindings remain declared HG inputs. A separate parameter-update node snapshots
 each distinct captured time series into a scalar `Bundle<PARAMETERS>`. Its
 schema preserves each parameter's scalar type. The block node reads the
 snapshot once per invocation and prepares native broadcast values for all
@@ -611,13 +611,13 @@ rows. A column update recomputes added and modified rows. An invalid parameter
 invalidates the result; revalidation rebuilds it. Expressions with only column
 operands do not create a parameter-update node.
 
-Expression compilation groups column and parameter inputs in BG free TSBs. These collections
+Expression compilation groups column and parameter inputs in HG free TSBs. These collections
 reject direct `GraphWiring::borrowed_input` bindings. Ordinary node outputs and
 graph arguments supplied by those outputs use the supported path.
 
 ### Implementing column operators
 
-These APIs are extension-facing. Graph authors use BG operators and `Expression`.
+These APIs are extension-facing. Graph authors use HG operators and `Expression`.
 
 `ColumnBlockFunction<RESULT, ARGS...>` declares a unary or binary block callback.
 Each operand selects a supported cell type. Results support `bool`, `i64`,
@@ -634,8 +634,8 @@ borrowed for that call.
 Register each callback signature with
 `register_column_block_function<RESULT, ARGS...>()` before concurrent wiring.
 Different operations with the same signature share the registered adapter.
-The callback remains an ordinary BG scalar whose semantic type records its
-result and ordered operand types. Compilation caches its adapter through BG's
+The callback remains an ordinary HG scalar whose semantic type records its
+result and ordered operand types. Compilation caches its adapter through HG's
 `ScalarDispatch`; evaluation uses the cached adapter.
 
 A selected operator graph calls the shared factory:
@@ -666,11 +666,11 @@ requires an explicit operator.
 
 ## TSF input/output surface
 
-Include `<bg/frame/frame.hpp>` for concrete and runtime-schema frames.
+Include `<hg/frame/frame.hpp>` for concrete and runtime-schema frames.
 
 | View | Operations |
 | --- | --- |
-| `In<TSF<Schema>>` | BG validity/update queries, `size`, `contains`, `cell<Index>`, `row_domain` |
+| `In<TSF<Schema>>` | HG validity/update queries, `size`, `contains`, `cell<Index>`, `row_domain` |
 | Current value | Zero-copy `value_view()`, `for_each_row` |
 | Delta | `for_each_changed`, `for_each_removed`, `for_each_modified<Index>` |
 | `Out<TSF<Schema>>` | `schema`, `add`, `set`, `erase`, `clear`, `invalidate`, `copy`, `copy_tick` |
@@ -885,49 +885,49 @@ template <template <typename, auto...> typename Field> struct BidOnly {
 };
 
 struct BidProjection {
-    bg::In<bg::frame::TSF<Quotes>> source;
-    bg::Out<bg::frame::TSF<BidOnly>, bg::frame::view> output;
+    hg::In<hg::frame::TSF<Quotes>> source;
+    hg::Out<hg::frame::TSF<BidOnly>, hg::frame::view> output;
 
-    void evaluate() const { output.bind_projection(source, bg::frame::columns<"bid">()); }
+    void evaluate() const { output.bind_projection(source, hg::frame::columns<"bid">()); }
 };
 ```
 
 `In<TSC<T>>::extension_descriptor()` and `In<TSF<Schema>>::extension_descriptor()`
 are extension implementation APIs. Their descriptor types are in
-`bg::frame::details`; node code uses typed `In` and `Out` operations.
+`hg::frame::details`; node code uses typed `In` and `Out` operations.
 
 ```cpp
 template <template <typename, auto...> typename Field> struct Quotes {
-    Field<bg::i64> size;
+    Field<hg::i64> size;
     Field<double> bid;
     Field<double> ask;
 };
 
 struct QuoteWriterState {
-    bg::frame::row_id_t row{bg::frame::no_row};
+    hg::frame::row_id_t row{hg::frame::no_row};
 };
 
 struct QuoteWriter {
-    bg::In<bg::TS<bg::i64>> command;
-    bg::State<QuoteWriterState> state;
-    bg::Out<bg::frame::TSF<Quotes>> output;
+    hg::In<hg::TS<hg::i64>> command;
+    hg::State<QuoteWriterState> state;
+    hg::Out<hg::frame::TSF<Quotes>> output;
 
     void evaluate() const {
         if (*command == 1) {
-            state->row = output.add(bg::frame::Row<Quotes>{
-                .size = bg::frame::Cell<bg::i64>{100}, .bid = bg::frame::Cell<double>{101.25},
+            state->row = output.add(hg::frame::Row<Quotes>{
+                .size = hg::frame::Cell<hg::i64>{100}, .bid = hg::frame::Cell<double>{101.25},
                 .ask = std::nullopt});
         } else if (*command == 2) {
-            output.set(state->row, bg::frame::RowPatch<Quotes>{.bid = 101.5});
+            output.set(state->row, hg::frame::RowPatch<Quotes>{.bid = 101.5});
         } else if (*command == 3) {
-            output.set(state->row, bg::frame::RowPatch<Quotes>{});
+            output.set(state->row, hg::frame::RowPatch<Quotes>{});
         }
     }
 };
 
-const auto write = bg::node<QuoteWriter>();
+const auto write = hg::node<QuoteWriter>();
 const auto quote_stream = write(command);
-consume_bid(bg::frame::select_column<"bid">(quote_stream));
+consume_bid(hg::frame::select_column<"bid">(quote_stream));
 ```
 
 Column names come from the aggregate members of `Schema<Column>`. The numeric
@@ -945,7 +945,7 @@ views.
 ## Runtime schema values and generic input/output APIs
 
 `make_frame_value(schema, row_count, columns)` returns
-`ScalarValue<Frame<SCHEMA>>`. The schema uses BG's registered `bg::Schema`
+`ScalarValue<Frame<SCHEMA>>`. The schema uses HG's registered `hg::Schema`
 descriptor. Columns are supplied in schema order as borrowed `ColumnView<>`
 arguments. The factory copies their cells into an independent owning snapshot
 and validates column count, lengths, and cell types. A zero-column frame retains
@@ -953,14 +953,14 @@ the explicit row count. An overload accepts a caller-owned allocator.
 
 ```cpp
 const auto fields = std::array{
-    bg::SchemaField{bg::util::symbol{"size"}, &bg::cpp_scalar_type<bg::i64>()},
-    bg::SchemaField{bg::util::symbol{"bid"}, &bg::cpp_scalar_type<double>()}};
-const auto &schema = bg::anonymous_schema(fields);
-const auto sizes = bg::frame::Column<bg::i64>{{10, 20}};
-const auto bids = bg::frame::Column<double>{{12.5, std::nullopt}};
+    hg::SchemaField{hg::util::symbol{"size"}, &hg::cpp_scalar_type<hg::i64>()},
+    hg::SchemaField{hg::util::symbol{"bid"}, &hg::cpp_scalar_type<double>()}};
+const auto &schema = hg::anonymous_schema(fields);
+const auto sizes = hg::frame::Column<hg::i64>{{10, 20}};
+const auto bids = hg::frame::Column<double>{{12.5, std::nullopt}};
 const auto columns = std::array{
-    bg::frame::ColumnView<>{sizes.view()}, bg::frame::ColumnView<>{bids.view()}};
-const auto value = bg::frame::make_frame_value(schema, 2, columns);
+    hg::frame::ColumnView<>{sizes.view()}, hg::frame::ColumnView<>{bids.view()}};
+const auto value = hg::frame::make_frame_value(schema, 2, columns);
 const auto bid = value.view().value().column("bid").view<double>();
 ```
 
@@ -987,9 +987,9 @@ for the graph lifetime.
 accept borrowed scalar arguments:
 
 ```cpp
-output.add(std::span<const std::optional<bg::Scalar<>>>{row});
-output.set(id, std::span<const std::pair<bg::util::symbol,
-                                      std::optional<bg::Scalar<>>>>{patch});
+output.add(std::span<const std::optional<hg::Scalar<>>>{row});
+output.set(id, std::span<const std::pair<hg::util::symbol,
+                                      std::optional<hg::Scalar<>>>>{patch});
 ```
 
 Complete scalar rows follow output schema order; empty optionals mean null.
@@ -1004,19 +1004,19 @@ A field declared with `SCALAR` or another `ScalarVariable` accepts a borrowed
 nullable values. The source schema's variable constraints and repeated-variable
 bindings must match the resolved output fields, including omitted patch fields.
 Each present handle must have the target cell type. Mutation constructs stored
-cells through BG's scalar storage traits.
+cells through HG's scalar storage traits.
 
 ```cpp
 template <template <typename, auto...> typename Field> struct GenericQuote {
-    Field<bg::i64> size;
-    Field<bg::SCALAR> bid;
+    Field<hg::i64> size;
+    Field<hg::SCALAR> bid;
 };
 
 const auto price = 12.5;
-const auto price_view = bg::Scalar<double>::from(price);
-const auto id = output.add(bg::frame::Row<GenericQuote>{
-    .size = bg::frame::Cell<bg::i64>{10}, .bid = bg::Scalar<>::from(price_view)});
-output.set(id, bg::frame::RowPatch<GenericQuote>{.bid = std::nullopt});
+const auto price_view = hg::Scalar<double>::from(price);
+const auto id = output.add(hg::frame::Row<GenericQuote>{
+    .size = hg::frame::Cell<hg::i64>{10}, .bid = hg::Scalar<>::from(price_view)});
+output.set(id, hg::frame::RowPatch<GenericQuote>{.bid = std::nullopt});
 ```
 
 Borrowed argument values must remain valid until the mutation call returns.
@@ -1024,7 +1024,7 @@ Borrowed argument values must remain valid until the mutation call returns.
 
 ## Arrow values
 
-Include `<bg/frame/arrow.hpp>` and link `bg::frame_arrow`.
+Include `<hg/frame/arrow.hpp>` and link `hg::frame_arrow`.
 
 | Operation | Result and ownership |
 | --- | --- |
@@ -1035,7 +1035,7 @@ Include `<bg/frame/arrow.hpp>` and link `bg::frame_arrow`.
 | `from_arrow<T>(chunked_array)` | Owning erased `ScalarValue<>` with semantic type `Column<T>`. |
 | `from_arrow<Schema>(table)` | Owning erased `ScalarValue<>` with semantic type `Frame<Schema>`. |
 | `from_arrow(table)` | Owning erased `ScalarValue<>` with an inferred anonymous Frame schema. |
-| `from_arrow(table, schema)` | Owning erased `ScalarValue<>` with the supplied resolved BG Frame schema. |
+| `from_arrow(table, schema)` | Owning erased `ScalarValue<>` with the supplied resolved HG Frame schema. |
 
 These functions return `arrow::Result`. Exports preserve current positional
 order and nulls. They contain scalar values; internal row IDs and time-series
@@ -1047,7 +1047,7 @@ and packed validity bitmaps. An all-null numeric or Boolean span without
 allocated cells needs a synthetic value buffer. Borrowing never switches to
 gathering because of fragmentation.
 
-| BG cell type | Borrowed Arrow representation | Copied Arrow representation |
+| HG cell type | Borrowed Arrow representation | Copied Arrow representation |
 | --- | --- | --- |
 | `bool`, `i64`, `double` | `bool`, `int64`, `float64` | Same type, owned buffers |
 | `string` | `string_view` | `large_string` |
@@ -1060,7 +1060,7 @@ larger value returns `CapacityError`; copied strings use 64-bit offsets.
 
 Symbol dictionaries keep these values distinct:
 
-| BG value | Arrow representation |
+| HG value | Arrow representation |
 | --- | --- |
 | Null cell | Null dictionary index |
 | Valid default `symbol{}` | Valid index pointing to a null dictionary entry |
@@ -1081,23 +1081,23 @@ categories. Inferred Frame schemas map string arrays to `string` and text
 dictionaries to `symbol`.
 Explicit Frame schemas must match the table's names, order, and types.
 Inferred schemas preserve field order and reject duplicate names. Arrow field
-nullability describes cells; every BG schema column is present. Concrete-schema
+nullability describes cells; every HG schema column is present. Concrete-schema
 imports use the same runtime storage as programmatic schemas. Frame exports
 preserve the actual schema, including Derived fields observed through Base.
 Generic `ColumnView<>` values support both export operations.
 Each imported scalar retains its Arrow owners; the caller must supply buffers
 whose lifetime those owners manage. Importing a borrowed export does not
-extend the BG source lifetime. Use `copy_to_arrow` to retain that data.
+extend the HG source lifetime. Use `copy_to_arrow` to retain that data.
 
 Arrow-backed scalar reads use the same `ColumnView` and `FrameView` interfaces
 as native storage. An erased owning scalar copy preserves the Arrow runtime.
-A typed owning scalar copy follows BG's canonical storage traits and copies
+A typed owning scalar copy follows HG's canonical storage traits and copies
 the cells into native snapshot storage. Import does not create a mutable TSF
 or assign internal row IDs.
 
 ## Initialization
 
-The native representation follows BG's position-independent initial storage
+The native representation follows HG's position-independent initial storage
 contract. Its empty header contains bunches, indexes, counters, and an unbound
 scalar descriptor. Mutations and cleanup receive the output allocator.
 The scalar descriptor binds to the actual runtime column before a valid
@@ -1109,11 +1109,11 @@ initial output image.
 
 Extension implementations must pass the same allocator to native mutations
 and `release()`. The time-series runtime performs that cleanup; native headers
-have trivial destruction for BG initialization.
+have trivial destruction for HG initialization.
 
 ## Provider integration
 
-`bg_frame_provider_integration_test` defines a compact external time-series
+`hg_frame_provider_integration_test` defines a compact external time-series
 provider. It owns its declaration, semantic descriptor, runtime descriptor,
 and typed `In` and `Out` views. The test registers its default runtime,
 resolves that runtime through the installed package, verifies the exact
@@ -1140,38 +1140,38 @@ Provider descriptors describe runtime storage and binding. Extension code uses
 `TimeSeriesState`, `TimeSeriesOutputBinding`, and `ScalarData` for that work.
 Inputs expose `valid()`, `became_valid()`, `became_invalid()`, `modified()`,
 and `last_updated()` from the bound state. Node definitions use typed `In` and
-`Out` views and `bg::node`; they do not access output state or runtime storage
+`Out` views and `hg::node`; they do not access output state or runtime storage
 directly.
 
-## Build against an installed BG package
+## Build against an installed HG package
 
-Configure the extension with a BG installation prefix. The package config also
-finds its `ddvisitor` dependency. Set `BG_INSTALL_PREFIX` to the directory
-containing the installed `lib64/cmake/bg/bgConfig.cmake`.
-BG and the extension must use matching Debug or Release build configurations.
+Configure the extension with a HG installation prefix. The package config also
+finds its `ddvisitor` dependency. Set `HG_INSTALL_PREFIX` to the directory
+containing the installed `lib64/cmake/hg/hgConfig.cmake`.
+HG and the extension must use matching Debug or Release build configurations.
 Tests require Catch2 3.
 The current lane uses Arrow 24.0.0.
 [HANDOFF.md](HANDOFF.md) lists the exact package prefix, verified checkpoints,
 and remaining foundation work.
 
 ```sh
-BG_INSTALL_PREFIX=/path/to/bg-release-install
+HG_INSTALL_PREFIX=/path/to/hg-release-install
 cmake -S extensions/frame -B extensions/frame/build-installed \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$BG_INSTALL_PREFIX" \
+  -DCMAKE_PREFIX_PATH="$HG_INSTALL_PREFIX" \
   -DBUILD_TESTING=ON
 cmake --build extensions/frame/build-installed -j12
 ctest --test-dir extensions/frame/build-installed --output-on-failure
 ```
 
-Enable Arrow support with `-DBG_FRAME_BUILD_ARROW=ON` and add the Arrow
+Enable Arrow support with `-DHG_FRAME_BUILD_ARROW=ON` and add the Arrow
 installation prefix to `CMAKE_PREFIX_PATH`:
 
 ```sh
 cmake -S extensions/frame -B extensions/frame/build-arrow \
   -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_PREFIX_PATH="$BG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
-  -DBG_FRAME_BUILD_ARROW=ON -DBUILD_TESTING=ON
+  -DCMAKE_PREFIX_PATH="$HG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
+  -DHG_FRAME_BUILD_ARROW=ON -DBUILD_TESTING=ON
 cmake --build extensions/frame/build-arrow -j12
 ctest --test-dir extensions/frame/build-arrow --output-on-failure
 ```
@@ -1182,11 +1182,11 @@ disabled by default; native frame builds do not require Arrow.
 The sanitizer build used for lifetime checks is:
 
 ```sh
-BG_DEBUG_INSTALL_PREFIX=/path/to/bg-debug-install
+HG_DEBUG_INSTALL_PREFIX=/path/to/hg-debug-install
 cmake -S extensions/frame -B extensions/frame/build-sanitizers \
   -DCMAKE_BUILD_TYPE=Debug \
-  -DCMAKE_PREFIX_PATH="$BG_DEBUG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
-  -DBG_FRAME_BUILD_ARROW=ON -DBUILD_TESTING=ON \
+  -DCMAKE_PREFIX_PATH="$HG_DEBUG_INSTALL_PREFIX;$ARROW_INSTALL_PREFIX" \
+  -DHG_FRAME_BUILD_ARROW=ON -DBUILD_TESTING=ON \
   -DCMAKE_CXX_FLAGS='-fsanitize=address,undefined -fno-omit-frame-pointer' \
   -DCMAKE_SHARED_LINKER_FLAGS='-fsanitize=address,undefined' \
   -DCMAKE_EXE_LINKER_FLAGS='-fsanitize=address,undefined'
@@ -1197,7 +1197,7 @@ ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 \
 
 [HANDOFF.md](HANDOFF.md#verification) records the verified configurations and
 results. These sanitizer flags instrument the frame extension and test targets;
-the linked BG package uses the matching Debug configuration and is not
+the linked HG package uses the matching Debug configuration and is not
 instrumented by this build. Run LeakSanitizer outside the sandbox because it
 cannot operate under sandbox ptrace restrictions. Allocation-failure tests
 also verify allocator cleanup.
@@ -1213,5 +1213,5 @@ limits.
 
 The older [Arrow report](benchmarks/arrow_benchmark_results.md) and
 [CSV](benchmarks/arrow_benchmark_results.csv) remain preserved. They used a
-Release extension with a Debug BG library and are historical results; do not
+Release extension with a Debug HG library and are historical results; do not
 compare their timings directly with the matching Release measurements.

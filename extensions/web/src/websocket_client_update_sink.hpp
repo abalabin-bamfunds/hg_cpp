@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node.hpp>
-#include <bg/scalar/opaque.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/web/websocket_client.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node.hpp>
+#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/web/websocket_client.hpp>
 
 #include "runtime_logging.hpp"
 #include "websocket_client_runtime.hpp"
@@ -15,7 +15,7 @@
 #include <optional>
 #include <utility>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
 struct WebSocketClientUpdateSink {
     In<TS<service_client_id_t, TimeSeriesGuarantee::const_>, passive> client_id;
@@ -158,4 +158,4 @@ struct WebSocketClientUpdateSink {
 
 inline const auto websocket_client_update_sink = node<WebSocketClientUpdateSink>();
 
-} // namespace bg::web::details
+} // namespace hg::web::details

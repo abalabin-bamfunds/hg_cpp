@@ -1,10 +1,10 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/value_access.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/util/scope_exit.hpp>
+#include <hg/allocator.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/value_access.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <algorithm>
 #include <cstddef>
@@ -18,7 +18,7 @@
 #include <type_traits>
 #include <utility>
 
-namespace bg::details {
+namespace hg::details {
 
 struct ScalarValueAllocator {
     allocator memory;
@@ -311,4 +311,4 @@ template <typename T>
     }
 }
 
-} // namespace bg::details
+} // namespace hg::details

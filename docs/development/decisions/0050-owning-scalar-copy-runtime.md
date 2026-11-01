@@ -7,7 +7,7 @@ Status: accepted
 `ScalarRuntimeType::runtime_type_for_copy(const ScalarData&) const` selects the destination
 representation for an erased owning copy. The default preserves the source
 runtime. The storage-trait operation uses the same name and takes priority for
-typed copies. BG selects the destination once, then constructs the owning value
+typed copies. HG selects the destination once, then constructs the owning value
 using that runtime.
 
 See the [scalar provider contract](../design/scalar-api.md#scalar-providers).

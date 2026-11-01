@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/node/output_declaration_traits.hpp>
-#include <bg/time_series/output_binding.hpp>
+#include <hg/node/output_declaration_traits.hpp>
+#include <hg/time_series/output_binding.hpp>
 
 #include <concepts>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -24,4 +24,4 @@ template <typename Output, typename... Arguments> Output output_factory::make(Ar
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

@@ -1,13 +1,13 @@
 #pragma once
 
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/struct/runtime_type.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/struct/runtime_type.hpp>
 
 #include <cstddef>
 #include <string_view>
 #include <utility>
 
-namespace bg {
+namespace hg {
 
 template <> class Scalar<STRUCT> {
   public:
@@ -64,4 +64,4 @@ template <> class Scalar<STRUCT> {
     details::ScalarData value_;
 };
 
-} // namespace bg
+} // namespace hg

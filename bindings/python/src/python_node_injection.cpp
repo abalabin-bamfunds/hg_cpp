@@ -1,4 +1,4 @@
-#include <bg/python/python_node_injection.hpp>
+#include <hg/python/python_node_injection.hpp>
 
 #include <nanobind/stl/chrono.h>
 
@@ -7,7 +7,7 @@
 namespace nb = nanobind;
 using namespace nanobind::literals;
 
-namespace bg::python {
+namespace hg::python {
 
 EvaluationContext &NodeCallbackAccess::get() const {
     if (generator_clock != nullptr) {
@@ -51,4 +51,4 @@ void bind_node_injectables(nb::module_ &module) {
         .def("timer_fired", &PythonScheduler::timer_fired, "handle"_a);
 }
 
-} // namespace bg::python
+} // namespace hg::python

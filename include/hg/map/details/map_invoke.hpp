@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/graph.hpp>
-#include <bg/map/details/default_map_wiring.hpp>
-#include <bg/map/details/map_call.hpp>
-#include <bg/operator.hpp>
+#include <hg/graph.hpp>
+#include <hg/map/details/default_map_wiring.hpp>
+#include <hg/map/details/map_call.hpp>
+#include <hg/operator.hpp>
 
 #include <functional>
 #include <iterator>
@@ -15,7 +15,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> struct is_pass_through_argument : std::false_type {};
 
@@ -415,4 +415,4 @@ struct map_operator_implementation {
     }
 };
 
-} // namespace bg::details
+} // namespace hg::details

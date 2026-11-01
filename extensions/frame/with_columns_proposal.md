@@ -6,9 +6,9 @@ The current implementation accepts concrete `TSC<T>` inputs, column expressions,
 scalar constants, and scalar time series. Shared-materialisation profiling
 remains future work.
 
-Combined BG and Arrow-on frame Release verification passes all nine frame CTest
+Combined HG and Arrow-on frame Release verification passes all nine frame CTest
 executables. The test that resolves the inferred schema inside an enclosing
-graph template also passes after BG fixed named-argument and helper forwarding
+graph template also passes after HG fixed named-argument and helper forwarding
 lifetimes. See [HANDOFF](HANDOFF.md) for the exact verification and audit
 findings.
 
@@ -16,7 +16,7 @@ findings.
 
 `with_columns` adds or replaces columns while preserving the source frame's
 row IDs, row domain, visible row sequence, and key. It borrows column storage
-from its inputs. Expression computation uses the existing BG nodes and
+from its inputs. Expression computation uses the existing HG nodes and
 [block-operation implementation](block_operation_proposal.md).
 
 ## Graph API
@@ -31,7 +31,7 @@ auto priced = frame::with_columns(
 
 The returned wiring point carries a resolved anonymous output schema.
 Runtime assignment names use a span of named `WiringArgument` values, following
-BG's existing dynamic argument API.
+HG's existing dynamic argument API.
 
 An optional concrete output schema validates the calculated result:
 
@@ -44,7 +44,7 @@ auto priced = frame::with_columns<EnrichedQuotes>(
 Both forms use the same schema calculation and runtime node. Explicit target
 validation runs before wiring the assembly node with the target schema.
 
-The frame extension declares `bg::operators::with_columns` and registers its
+The frame extension declares `hg::operators::with_columns` and registers its
 graph implementation. The C++ functions prepare named arguments as an ordered
 free TSB and supply an explicit output type when requested. The selected graph
 reads the original scalar and time series arguments, binds expressions, and
@@ -98,14 +98,14 @@ source frame and assignment TSB. The ordinary view output declaration selects
 its runtime layout after this resolution. One node definition handles all
 schemas; user schema declarations do not instantiate separate node definitions.
 
-BG materialises each assigned result as a `TSC<T>`. The existing expression
+HG materialises each assigned result as a `TSC<T>`. The existing expression
 compiler fuses upstream operations until a concrete materialisation is
 required. A result already required elsewhere is shared with the assembly node.
 Two assignments using the same wiring point share that result.
 
 Distinct assigned results use separate expression nodes. This preserves their
 independent dependencies and incremental evaluation. Shared operations inside
-distinct expressions follow the existing BG materialisation rules.
+distinct expressions follow the existing HG materialisation rules.
 
 Scalar assignments use an ordinary node with a `TSF` source, a `TS<T>` value,
 and an `Out<TSC<T>, frame::computed<>>` output. Constants use `operators::const_`.
@@ -140,14 +140,14 @@ to borrowed source fields; assigned column changes propagate only to their
 assigned fields. Binding changes and unavailable deltas follow the current
 frame-view reconciliation rules.
 
-The output borrows owners retained by ordinary BG input connections. Invocation
-descriptors remain invocation-local. BG owns signature resolution and
+The output borrows owners retained by ordinary HG input connections. Invocation
+descriptors remain invocation-local. HG owns signature resolution and
 materialisation; the frame extension owns schema calculation and column binding.
 
 ## Implementation and verification
 
 Implemented stages generalise borrowed-column binding and add wiring-time schema
-calculation with inferred output and dynamic assignment names. BG resolves the
+calculation with inferred output and dynamic assignment names. HG resolves the
 graph output schema from the selected graph result after the graph body runs
 once. Combined Release verification passes all nine frame CTest executables.
 

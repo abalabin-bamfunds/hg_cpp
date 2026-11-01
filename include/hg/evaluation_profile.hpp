@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/allocator.hpp>
-#include <bg/evaluation_time.hpp>
-#include <bg/graph/graph_instance_id.hpp>
-#include <bg/scalar/scalar.hpp>
-#include <bg/scalar/value.hpp>
-#include <bg/util/buffer.hpp>
+#include <hg/allocator.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/graph/graph_instance_id.hpp>
+#include <hg/scalar/scalar.hpp>
+#include <hg/scalar/value.hpp>
+#include <hg/util/buffer.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -13,7 +13,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 class RuntimeGraph;
 class RuntimeGraphEvaluator;
@@ -133,4 +133,4 @@ class EvaluationProfile {
     bool recording_taken_{};
 };
 
-} // namespace bg
+} // namespace hg

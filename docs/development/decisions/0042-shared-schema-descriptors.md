@@ -11,7 +11,7 @@ defines its own compatibility and runtime storage.
 
 A descriptor key includes its name, declaration identity, base descriptor, and
 ordered direct fields. C++ projections use the identity of the schema-template
-wrapper. Runtime declarations use BG-allocated identities. Field types
+wrapper. Runtime declarations use HG-allocated identities. Field types
 distinguish the scalar and time series projections of one declaration.
 
 Schema descriptors created during recursive scalar registration join the

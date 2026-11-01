@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/graph/details/wiring_callable.hpp>
-#include <bg/graph/graph_argument.hpp>
-#include <bg/graph/wiring_template.hpp>
-#include <bg/scalar/type.hpp>
-#include <bg/type/details/declaration_variables.hpp>
-#include <bg/type/details/scalar_type.hpp>
-#include <bg/type/details/time_series_type.hpp>
-#include <bg/type/guarantee_variable.hpp>
-#include <bg/type/type_variable.hpp>
-#include <bg/type/variable_registry.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/graph/details/wiring_callable.hpp>
+#include <hg/graph/graph_argument.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/details/scalar_type.hpp>
+#include <hg/type/details/time_series_type.hpp>
+#include <hg/type/guarantee_variable.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/variable_registry.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <array>
 #include <concepts>
@@ -23,7 +23,7 @@
 #include <utility>
 #include <vector>
 
-namespace bg {
+namespace hg {
 
 namespace details {
 
@@ -265,4 +265,4 @@ struct declaration_variable_traits<GRAPH<Prototype, Pattern>> {
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

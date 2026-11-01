@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/scalar/details/hash.hpp>
-#include <bg/scalar/storage_traits.hpp>
-#include <bg/scalar/declaration.hpp>
-#include <bg/util/hash_set.hpp>
+#include <hg/scalar/details/hash.hpp>
+#include <hg/scalar/storage_traits.hpp>
+#include <hg/scalar/declaration.hpp>
+#include <hg/util/hash_set.hpp>
 
 #include <cstddef>
 #include <iterator>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 
 template <typename T> class MutableSet;
 
@@ -109,10 +109,10 @@ template <typename T> struct is_set : std::false_type {};
 template <typename T> struct is_set<Set<T>> : std::true_type {};
 template <typename T> inline constexpr bool is_set_v = is_set<T>::value;
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::details {
+namespace hg::details {
 
 template <typename T> inline constexpr bool generic_scalar<Set<T>> = generic_scalar<T>;
 
-} // namespace bg::details
+} // namespace hg::details

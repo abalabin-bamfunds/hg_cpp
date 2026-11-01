@@ -1,6 +1,6 @@
 # hgraph pattern recheck, 2026-10-30
 
-This report preserves the focused recheck on BG baseline `2de7d53f` and records
+This report preserves the focused recheck on HG baseline `2de7d53f` and records
 the later integrated verification after the nested-reference and switch-output
 corrections. The original counts and failures remain pinned to `2de7d53f`.
 
@@ -22,9 +22,9 @@ composition or provide validity observations.
 
 ## Upstream pattern mapping
 
-| Upstream pattern | BG case | Result on `2de7d53f` |
+| Upstream pattern | HG case | Result on `2de7d53f` |
 | --- | --- | --- |
-| 0.5 `test_tsl_ref_flipping` | `a reference can select among free fixed lists and become invalid` | Pass; BG asserts explicit invalidation where upstream uses `None`. |
+| 0.5 `test_tsl_ref_flipping` | `a reference can select among free fixed lists and become invalid` | Pass; HG asserts explicit invalidation where upstream uses `None`. |
 | 0.5 `test_reduce_map` | `reduce maps and combines nested dictionaries` | Pass. |
 | 0.8 `test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | `reduce maps a projected bundle of nested dictionaries` | Pass. |
 | 0.8 `test_map_preserves_typed_keyed_bundle_reference_and_materialization` | `map preserves keyed bundle references and materializes a distinct schema` | Pass. |
@@ -32,7 +32,7 @@ composition or provide validity observations.
 | 0.5 `test_mesh_2` | `mesh branches reduce nested dictionaries before using their dependencies` | Pass. |
 | 0.5 `test_mesh_removal` | `mapped meshes reduce independently and rebuild after a parent returns` | Pass. |
 | 0.5 `test_reduce_from_switch`: empty dictionary then updates | `reduce combines mapped bundles containing switch outputs from an empty dictionary` | Hidden repro; expected whole-sequence comparison fails. |
-| BG additional corner: invalid TSD item then updates | `reduce combines mapped bundles containing switch outputs when an item is invalid` | Hidden repro; expected whole-sequence comparison fails. |
+| HG additional corner: invalid TSD item then updates | `reduce combines mapped bundles containing switch outputs when an item is invalid` | Hidden repro; expected whole-sequence comparison fails. |
 | 0.5 `test_reduce_from_switch`: populated initial dictionary | `reduce combines populated mapped bundles containing switch outputs` | Pass. |
 | 0.5 `test_mesh` and `test_mesh_2` switch-containing variants | `switch-selected mesh branches feed a reduction`; `a reduction observes mesh dependencies after switch outputs change` | Both pass after the test graph callbacks gained concrete `.as<TS<i64>>()` return annotations. These two existing repros are promoted to ordinary tests. |
 
@@ -78,7 +78,7 @@ All four cases from the historical findings now pass as ordinary tests. The
 nested free bundle and fixed-list REF outputs pass through the nested graph to
 their value consumers. The two mapped switch/reduce cases expect `SKIP` at the
 initial empty or invalid-item state, followed by the same values as before:
-`2, 5, 6, 7, 4`. BG does not publish a value tick at those initial states. The
+`2, 5, 6, 7, 4`. HG does not publish a value tick at those initial states. The
 tests assert five emitted events and preserve their original graph inputs and
 inherited bundle schema; the redundant copies in `nested_graph_test.cpp` were
 removed.
@@ -102,7 +102,7 @@ lane-local Release libraries from `build/current-release`.
 Build and run commands from the lane root:
 
 ```sh
-cmake --build build/current-release --target bg bg_library -j 4
+cmake --build build/current-release --target hg hg_library -j 4
 cmake --build build/integration/cmake --target hgraph-pattern-engine-tests -j 4
 cmake --build build/integration/library-cmake --target hgraph-pattern-library-tests -j 2
 build/integration/hgraph-pattern-engine-tests --reporter compact
@@ -114,7 +114,7 @@ directory. Runtime and executable hashes from this verification are:
 
 | File | SHA-256 |
 | --- | --- |
-| `build/current-release/libbg.so` | `30443b271d4f61e6b87837ed9decad5cdd1d8829271adb45c09ddb296a03e2b9` |
-| `build/current-release/libbg_library.so` | `1c588c02436e31bcdb7ecea38ac0faa736c9cd208bfcaab2756b83edee49d3e8` |
+| `build/current-release/libhg.so` | `30443b271d4f61e6b87837ed9decad5cdd1d8829271adb45c09ddb296a03e2b9` |
+| `build/current-release/libhg_library.so` | `1c588c02436e31bcdb7ecea38ac0faa736c9cd208bfcaab2756b83edee49d3e8` |
 | `build/integration/hgraph-pattern-engine-tests` | `99ae294c830ce43b05c6b1452f4dd94c338ce33ac87dbcc5591d5b13beb5ffec` |
 | `build/integration/hgraph-pattern-library-tests` | `714b7bc268eb90b973357c095b46d37b90081cfdb26376cd47daee5705caec9c` |

@@ -17,7 +17,7 @@ explicit arguments for the equivalent calculation.
 :sync: python
 
 ```python
-from bg import graph, run_graph
+from hg import graph, run_graph
 
 @graph
 def calibrated(reading: int, offset: int) -> int:
@@ -45,15 +45,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/graph.hpp>
+#include <hg/graph.hpp>
 
-using namespace bg;
-using namespace bg::literals;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::literals;
+using namespace hg::operators;
 using namespace literal;
 
 const auto calibrated = node([](i64 reading, In<TS<i64>, "offset"_n, context> offset) {
@@ -82,7 +82,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -109,8 +109,8 @@ graphs. Python applications can retain application-owned storage in sink callbac
 :sync: python
 
 ```python
-from bg import graph, node, run_graph
-from bg.operators import const_
+from hg import graph, node, run_graph
+from hg.operators import const_
 
 results = {}
 
@@ -141,15 +141,15 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/global_state.hpp>
-#include <bg/evaluation_context.hpp>
+#include <hg/global_state.hpp>
+#include <hg/evaluation_context.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 struct Retain {
@@ -189,7 +189,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -216,8 +216,8 @@ the implementation selected for the run.
 :sync: python
 
 ```python
-from bg import TS, ServiceCatalogue, graph, reference_service, run_graph
-from bg.operators import const_
+from hg import TS, ServiceCatalogue, graph, reference_service, run_graph
+from hg.operators import const_
 
 @reference_service
 def offset() -> TS[int]:
@@ -252,16 +252,16 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
-#include <bg/graph.hpp>
-#include <bg/service.hpp>
-#include <bg/service_catalogue.hpp>
+#include <hg/graph.hpp>
+#include <hg/service.hpp>
+#include <hg/service_catalogue.hpp>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 const auto offset = reference_service<auto()->TS<i64>>{"offset"};
@@ -292,7 +292,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

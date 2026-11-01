@@ -1,15 +1,15 @@
 #pragma once
 
-#include <bg/graph/details/variadic_wiring_operations.hpp>
-#include <bg/graph/wiring_argument.hpp>
-#include <bg/graph/wiring_point.hpp>
-#include <bg/time_series/tsb/tsb_type.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <cstddef>
 #include <span>
 
-namespace bg {
+namespace hg {
 
 class TimeSeriesBundleType;
 
@@ -33,4 +33,4 @@ struct variadic_wiring_operations_traits<TSB<Schema, Properties...>> {
 };
 
 } // namespace details
-} // namespace bg
+} // namespace hg

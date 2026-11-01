@@ -1,15 +1,15 @@
 # Frame extension: implementation status and remaining work
 
 The 2026-10-05 [wiring materialisation proposal](wiring_materialisation_proposal.md)
-updates the expression-wiring mechanism discussed below. It proposes BG changes;
+updates the expression-wiring mechanism discussed below. It proposes HG changes;
 those APIs are not implemented.
 
 Status: consolidated on 2026-10-03. The
 [working note](frame_design_note.md) records the current design direction;
 the [entity strawman](frame_entity_strawman.md) gives proposed backing entities
-and APIs. BG utility, scalar, and provider changes were integrated through
+and APIs. HG utility, scalar, and provider changes were integrated through
 `b5a241f6`. The uncommitted extension is in `.lanes/frame-views/extensions/frame`.
-It was built and tested against that committed BG revision. Main has since
+It was built and tested against that committed HG revision. Main has since
 advanced; the extension has not been rebased or integrated. Names and
 signatures remain provisional. The extension
 [README](../../../frame-views/extensions/frame/README.md) documents current APIs.
@@ -18,9 +18,9 @@ signatures remain provisional. The extension
 
 | Area | Delivered |
 | --- | --- |
-| BG utilities | Live-run enumeration and typed/runtime sparse-bunch block access, integrated in `ffb1e3fc`. |
-| BG scalar extension APIs | Trait-selected read values and supported alternative-runtime descriptors, integrated through `3bf46d07` and `b5a241f6`. |
-| BG time-series extension APIs | Provider-owned types/runtimes, registration, typed and erased bindings, and default/view output specifications, integrated in `b5a241f6`. |
+| HG utilities | Live-run enumeration and typed/runtime sparse-bunch block access, integrated in `ffb1e3fc`. |
+| HG scalar extension APIs | Trait-selected read values and supported alternative-runtime descriptors, integrated through `3bf46d07` and `b5a241f6`. |
+| HG time-series extension APIs | Provider-owned types/runtimes, registration, typed and erased bindings, and default/view output specifications, integrated in `b5a241f6`. |
 | Scalar values | Nullable `i64`/`double` columns, fixed-schema frames, borrowed read views, and stable owning snapshots. |
 | Incremental series | Native `TSC`/`TSF` row insertion, patching, removal, clear/invalidation, row changes, and per-column changes. |
 | Row storage | Recycled 32-bit IDs independent of user keys, removal-cycle ID retirement, physical slot reuse, and adjacent-batch coalescing. |
@@ -30,20 +30,20 @@ signatures remain provisional. The extension
 
 ## Verification and performance evidence
 
-- The integrated BG provider changes passed 1,133 tests at `b5a241f6`.
+- The integrated HG provider changes passed 1,133 tests at `b5a241f6`.
 - The extension passes five test executables with Arrow enabled, four with
   Arrow disabled, and five under AddressSanitizer/UndefinedBehaviorSanitizer.
   Leak detection is disabled because of the environment's ptrace restriction.
 - Tests cover row/column changes, view sharing, invalidation/revalidation,
   allocation-failure cleanup, snapshots, Arrow slices/nulls/chunks, and owning
-  lifetime. A BG node consumes an Arrow-backed frame scalar.
+  lifetime. A HG node consumes an Arrow-backed frame scalar.
 - All benchmark sums matched deterministic expected values. The
   [report](../../../frame-views/extensions/frame/benchmarks/arrow_benchmark_results.md)
   and [CSV](../../../frame-views/extensions/frame/benchmarks/arrow_benchmark_results.csv)
   distinguish source mutation, whole-graph evaluation, consumer work, and a
   prebuilt dense Arrow kernel. Export timing includes allocation and destruction.
 
-The benchmark extension uses Release; its installed BG library is Debug.
+The benchmark extension uses Release; its installed HG library is Debug.
 Both native and Arrow sums scan the current selected values. Fragmented Arrow
 export plus sum is expensive; native view consumption was faster than dense
 gather plus sum in the measured cases. The benchmark does not isolate chunk
@@ -57,7 +57,7 @@ deferred for now.
    row domain, arithmetic kernels, Boolean columns/comparison results, and
    `with_columns` composition. Start with `(q.bid + q.ask) / 2`, including
    nulls, additions, removals, and column-specific changes.
-2. **Expressions and changing scalar inputs.** Use BG's existing
+2. **Expressions and changing scalar inputs.** Use HG's existing
    materialisation mechanism for expression wiring and reuse concrete TSC
    results. Add the separate expression-construction node for scalar time
    series inputs, then support `filter(q, q.size > min_size)` with
@@ -79,7 +79,7 @@ retain their implementation requirements and verification criteria.
   between borrowing and gathering. Existing batches can be counted without
   constructing Arrow objects; that still requires traversal. Fragmentation
   statistics and automatic export selection have not been implemented.
-- **Further measurements:** Release BG, separate fragmented Arrow export and
+- **Further measurements:** Release HG, separate fragmented Arrow export and
   kernel costs, and previous-cell/expression workloads when implemented.
 - **Cell types and schema:** strings, symbols, additional scalar layouts, and
   pivot columns represented as dictionaries of whole columns. Their detailed
@@ -93,9 +93,9 @@ retain their implementation requirements and verification criteria.
   verification, and eventual extension integration. Frame work remains
   uncommitted in its lane.
 
-The frame implementation must be a separate module consuming BG's extension
-points. The utility additions below are agreed BG changes. Any other missing
-BG extension facility requires a concrete report and discussion before changing
+The frame implementation must be a separate module consuming HG's extension
+points. The utility additions below are agreed HG changes. Any other missing
+HG extension facility requires a concrete report and discussion before changing
 core or introducing a workaround.
 
 ## Design summary
@@ -166,16 +166,16 @@ Row-ID mappings, compaction across columns, and previous-cell subscriptions
 belong to frame storage. Existing construction/destruction APIs suffice for
 relocation. The utility proposal remains authoritative for the detailed API.
 
-## 1. One numeric column in BG
+## 1. One numeric column in HG
 
 Status: complete for `i64` and `double` with the ordinary guarantee.
 
 The separate module implements immutable `Column<i64>` values, native sparse
 column storage, borrowed batches, and typed `TSC<i64>` input/output access.
-Scalar, provider, and native TSC graph tests pass against the installed BG
+Scalar, provider, and native TSC graph tests pass against the installed HG
 package. The native output follows the existing initialization contract
 described below.
-Guarantee variables use BG matching and resolution; unsupported resolved
+Guarantee variables use HG matching and resolution; unsupported resolved
 guarantees are rejected.
 
 Start with `Column<int64>` and `TSC<int64>`, supported by native row storage.
@@ -192,7 +192,7 @@ Deliver:
 - `TSC` input/output access, native runtime, source publication, and a
   zero-copy `value_view()`.
 - Borrowed batch reads using live runs, physical blocks, and cell validity.
-- Type matching, runtime selection, and wiring through ordinary BG nodes.
+- Type matching, runtime selection, and wiring through ordinary HG nodes.
 
 Use integer cells first, then Boolean and floating-point cells before the
 expression slice. Generic structural types and alternate runtimes must remain
@@ -200,7 +200,7 @@ possible; a numeric first implementation does not fix every column to one
 C++ storage layout.
 
 Verify values, nulls, additions, repeated writes, removals, valid empty values,
-and initialization/rebuild under BG's existing lifecycle. Verify that source
+and initialization/rebuild under HG's existing lifecycle. Verify that source
 and borrowed view share cells and that owning scalar publication remains
 stable. Use value tests for storage and `test_graph` for node behaviour.
 
@@ -230,7 +230,7 @@ independent of optional user-defined key or index columns.
 
 ### Output initialization
 
-Native columns follow BG's position-independent initial storage contract.
+Native columns follow HG's position-independent initial storage contract.
 Their empty headers contain bunches, indexes, counters, and unbound scalar
 descriptors. Mutations and cleanup receive the graph allocator. ID mappings
 use existing bunch storage; initial headers capture neither an allocator nor
@@ -243,7 +243,7 @@ initial output image.
 
 Verify allocation-free empty initialization, independent runtime instances,
 correct graph-allocator cleanup, typed and erased snapshot ownership, and the
-real TSC graph. This representation uses the existing BG initialization
+real TSC graph. This representation uses the existing HG initialization
 contract and requires no core initialization change.
 
 The graph tests verify valid-empty publication, row changes, invalidation with
@@ -339,7 +339,7 @@ all-null unallocated blocks through the adapter.
 Keep Arrow dependencies in an optional adapter target. Native and Arrow
 representations use the same typed cell and batch reads. The extension's read
 source interface supports other representations; its batch validity view
-supports BG indexes and bitmaps with a bit offset. These are extension
+supports HG indexes and bitmaps with a bit offset. These are extension
 implementation APIs.
 
 Borrowed export shares compatible value spans for the current node invocation
@@ -349,7 +349,7 @@ values into one fresh dense chunk per column and initializes bytes at null
 positions. It remains valid after source mutation or destruction, including
 when copied from an Arrow-backed input. Imported
 Arrow scalar runtimes retain their arrays or tables. Typed owning scalar
-copies follow BG's canonical storage traits; erased owning copies preserve
+copies follow HG's canonical storage traits; erased owning copies preserve
 the source runtime.
 
 The first measurements compare native batch consumption, borrowed Arrow
@@ -364,9 +364,9 @@ these measurements to demanded-column fractions, capture versus consumer
 caches, and expression-construction nodes. Preserve the selected division of
 responsibilities when optimizing those implementations.
 
-## BG integration and library boundary
+## HG integration and library boundary
 
-The extension lane uses committed BG `b5a241f6`. Preserve the original probe
+The extension lane uses committed HG `b5a241f6`. Preserve the original probe
 and these uncommitted design files separately from implementation checkouts.
 
 The relevant existing seams are:
@@ -382,18 +382,18 @@ The relevant existing seams are:
 - Existing allocator, scratch, bunch, and index utilities.
 
 Exercise type visitors and runtime resolution from the separate module and
-report any missing provider or dispatch contract with a minimal reproducer. Discuss proposed BG changes
+report any missing provider or dispatch contract with a minimal reproducer. Discuss proposed HG changes
 before implementing them. New frame types must use genuine extension support;
 representing them as unrelated builtin types or relying on undocumented
 internal specialisations does not satisfy the module boundary.
 
 Main includes the supported provider contract, default runtime registration,
 erased visitor fallback, and default/view output specifications. The integration
-passed all 1,133 BG tests. The extension consumes an installation of committed
+passed all 1,133 HG tests. The extension consumes an installation of committed
 main. Its
-`bg_frame_provider_integration_test` covers external declarations and views,
+`hg_frame_provider_integration_test` covers external declarations and views,
 runtime registration, erased visitation, and a real producer/consumer graph
-without internal BG APIs. The column and provider tests pass against the
+without internal HG APIs. The column and provider tests pass against the
 updated installed package. The native TSC graph test now runs through the
 same package and existing output initialization path. The provider tests cover
 `TimeSeriesState` transitions, callable and aggregate
@@ -402,19 +402,19 @@ The provider fixture uses copied alternative storage. Frame view tests verify
 shared cells, selected membership, and independent column notifications. The
 column scalar tests verify shared buffers and owning lifetime.
 
-The authorized BG scope is public declaration and variable-enumeration
+The authorized HG scope is public declaration and variable-enumeration
 customizations, public runtime customization and registration, supported
 input/output bindings, selected-runtime preservation in node binding, erased
 time-series visitation, and public generic scalar declaration metadata.
 The implementation must exercise the contract with an external provider,
 generic node signatures, and an external series contained in a built-in
-collection. BG core remains independent of frame declarations and storage.
+collection. HG core remains independent of frame declarations and storage.
 
 `ScalarData` and `ScalarDataMode` descriptors are authorized as APIs for
 extension authors implementing alternative scalar runtimes. Node code uses
 scalar and time series views. The descriptors' layout and behavior stay
 unchanged; provider-facing `ScalarRuntimeType` signatures use the supported
-names from `<bg/scalar/data.hpp>` in the provider lane.
+names from `<hg/scalar/data.hpp>` in the provider lane.
 Output specifications are authorized: `Out<TSF<SCHEMA>>` selects the default
 writable representation, and `Out<TSF<SCHEMA>, view>` selects a view
 representation. The same rule applies to `TSC`. The specification belongs to
@@ -426,7 +426,7 @@ must preserve the complete output declaration. A default mutable frame output
 must select writable storage even when its input is a view.
 
 The module location is `extensions/frame` in the `frame-views`
-lane, with an independent `bg_frame` target. Frame storage, kernels, expression
+lane, with an independent `hg_frame` target. Frame storage, kernels, expression
 construction, and nodes belong there. Arrow-specific dependencies belong in
 its adapter. Utility changes are integrated in main; the original probe and
 design files remain in `frame-arrow-probe`.

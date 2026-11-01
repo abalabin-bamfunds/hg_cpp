@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/allocator.hpp>
+#include <hg/allocator.hpp>
 
 #include <atomic>
 #include <cstddef>
 #include <memory_resource>
 
-namespace bg::details {
+namespace hg::details {
 
 // Owns the thread-safe pool shared by scalar values with nested dynamic storage.
 class ScalarAllocationPool {
@@ -30,4 +30,4 @@ class ScalarAllocationPool {
     std::pmr::synchronized_pool_resource memory_;
 };
 
-} // namespace bg::details
+} // namespace hg::details

@@ -1,12 +1,12 @@
 #pragma once
 
-#include <bg/schema/reflection.hpp>
-#include <bg/time_series/details/time_series_properties.hpp>
-#include <bg/time_series/details/type_access.hpp>
-#include <bg/time_series/schema_variable.hpp>
-#include <bg/time_series/tsb/schema_field.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/time_series/details/time_series_properties.hpp>
+#include <hg/time_series/details/type_access.hpp>
+#include <hg/time_series/schema_variable.hpp>
+#include <hg/time_series/tsb/schema_field.hpp>
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct TSB : details::time_series_type_access<TSB<Schema, Properties...>> {
@@ -21,7 +21,7 @@ struct TSB : details::time_series_type_access<TSB<Schema, Properties...>> {
     static constexpr auto guarantee = ParsedProperties::guarantee;
 };
 
-} // namespace bg
+} // namespace hg
 
-#include <bg/time_series/tsb/details/tsb_traits.hpp>
-#include <bg/type/details/time_series_bundle_type_traits.hpp>
+#include <hg/time_series/tsb/details/tsb_traits.hpp>
+#include <hg/type/details/time_series_bundle_type_traits.hpp>

@@ -1,8 +1,8 @@
 # Arithmetic, comparison, and conversion
 
 Use numeric and Boolean operators to construct calculations over fixed scalars or
-changing values. C++ includes `<bg/library.hpp>` and imports `bg::operators`; Python
-imports names from `bg.operators`. The fragments below use existing connections `x`,
+changing values. C++ includes `<hg/library.hpp>` and imports `hg::operators`; Python
+imports names from `hg.operators`. The fragments below use existing connections `x`,
 `y`, and `integer_value`.
 
 ## Arithmetic
@@ -72,8 +72,8 @@ Extract the low three bits of each integer:
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import bit_and
+from hg import graph, run_graph
+from hg.operators import bit_and
 
 @graph
 def low_bits(value: int) -> int:
@@ -97,12 +97,12 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto low_bits(wp<TS<i64>> value) {
@@ -126,7 +126,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
@@ -147,8 +147,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :sync: python
 
 ```python
-from bg import TS
-from bg.operators import convert
+from hg import TS
+from hg.operators import convert
 
 convert[TS[float]](integer_value)
 ```
@@ -193,8 +193,8 @@ behavior for both operands.
 :sync: python
 
 ```python
-from bg import opt
-from bg.operators import default_
+from hg import opt
+from hg.operators import default_
 
 total = opt(x) + opt(y)
 product = opt(x) * opt(y)
@@ -240,7 +240,7 @@ their corresponding operators. Python uses the named Boolean operators because i
 `and`, `or`, and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
 ```python
-from bg.operators import and_, not_
+from hg.operators import and_, not_
 
 bounded = and_(x > 0, x < 10)
 negated = not_(bounded)
@@ -270,8 +270,8 @@ propagates the weakest observed input guarantee.
 :sync: python
 
 ```python
-from bg import graph, run_graph
-from bg.operators import clip
+from hg import graph, run_graph
+from hg.operators import clip
 
 @graph
 def limited(value: int) -> int:
@@ -295,13 +295,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/library.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/library.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 
-using namespace bg;
-using namespace bg::operators;
+using namespace hg;
+using namespace hg::operators;
 using namespace literal;
 
 auto limited(wp<TS<i64>> value) {
@@ -326,7 +326,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 

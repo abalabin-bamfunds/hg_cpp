@@ -1,7 +1,7 @@
 """Collect, verify, and package the runnable examples published in the docs.
 
 This module uses only the Python standard library so Sphinx can create example
-downloads without importing BG or invoking a compiler.
+downloads without importing HG or invoking a compiler.
 """
 
 from dataclasses import dataclass
@@ -32,7 +32,7 @@ class Example:
     cpp: str
     cpp_output: str
     cpp_ellipsis: bool
-    cpp_libraries: tuple[str, ...] = ("bg::library",)
+    cpp_libraries: tuple[str, ...] = ("hg::library",)
     cmake_source: str = ""
 
 
@@ -107,7 +107,7 @@ def split_cpp_outputs(stdout: str, start: int, count: int) -> list[str]:
     outputs = []
     remaining = stdout
     for index in range(start, start + count):
-        marker = f"BG_DOC_EXAMPLE_{index}"
+        marker = f"HG_DOC_EXAMPLE_{index}"
         if marker not in remaining:
             raise ValueError(f"output marker {marker} is missing")
         output, remaining = remaining.split(marker, maxsplit=1)
@@ -142,7 +142,7 @@ def _source_metadata(source: str) -> str:
     source_value = matches[0].strip()
     source_path = PurePosixPath(source_value)
     if not source_value or "\\" in source_value or source_path.is_absolute() or ".." in source_path.parts:
-        raise ValueError("example-source must be a nonempty path inside BG_SOURCE_DIR")
+        raise ValueError("example-source must be a nonempty path inside HG_SOURCE_DIR")
     return source_path.as_posix()
 
 
@@ -194,7 +194,7 @@ def collect_examples(root: Path) -> list[Example]:
                 f"found {len(paired['python'])} and {len(paired['cpp'])}"
             )
 
-        libraries = _metadata(source, "example-libraries") or ("bg::library",)
+        libraries = _metadata(source, "example-libraries") or ("hg::library",)
         cmake_source = _source_metadata(source)
         page = relative_page
         title = _title(source, path.stem.replace("-", " ").title())
@@ -239,15 +239,15 @@ def write_downloads(examples: list[Example], docs: Path) -> None:
         cmake = [
             "cmake_minimum_required(VERSION 3.31)",
             f"project({example.slug.replace('-', '_')} LANGUAGES CXX)",
-            "find_package(bg CONFIG REQUIRED)",
+            "find_package(hg CONFIG REQUIRED)",
         ]
         if example.cmake_source:
             cmake.extend((
                 'set(BUILD_TESTING OFF CACHE BOOL "" FORCE)',
-                'if(NOT DEFINED BG_SOURCE_DIR)',
-                '    message(FATAL_ERROR "Set BG_SOURCE_DIR to the BG source tree")',
+                'if(NOT DEFINED HG_SOURCE_DIR)',
+                '    message(FATAL_ERROR "Set HG_SOURCE_DIR to the HG source tree")',
                 'endif()',
-                f'add_subdirectory("${{BG_SOURCE_DIR}}/{example.cmake_source}" bg_extension)',
+                f'add_subdirectory("${{HG_SOURCE_DIR}}/{example.cmake_source}" hg_extension)',
             ))
         cmake.extend((
             "add_executable(example main.cpp)",
@@ -264,11 +264,11 @@ def write_downloads(examples: list[Example], docs: Path) -> None:
                     "",
                     "## Build and run",
                     "",
-                    "This project requires an installed BG CMake package and CMake 3.31 or newer.",
+                    "This project requires an installed HG CMake package and CMake 3.31 or newer.",
                     "",
                     "```sh",
-                    "cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install"
-                    + (" -DBG_SOURCE_DIR=/path/to/bg/source" if example.cmake_source else ""),
+                    "cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install"
+                    + (" -DHG_SOURCE_DIR=/path/to/hg/source" if example.cmake_source else ""),
                     "cmake --build build --config Release",
                     "```",
                     "",

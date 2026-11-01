@@ -7,14 +7,14 @@ reference sampling, and native queue literals are implemented.
 
 Provide ordinary graph-code operations for selecting, renaming, and dropping
 frame columns, including schemas defined during wiring. Integrate TSF and TSC
-with BG's existing operators through their provider interfaces.
+with HG's existing operators through their provider interfaces.
 
 The [frame API](README.md) defines current storage, row identity, lifetime,
 expression, and mutation contracts. This proposal retains those contracts.
 
 ## Projection API
 
-Use Polars' names and call forms, adapted to BG graph code:
+Use Polars' names and call forms, adapted to HG graph code:
 
 ```cpp
 auto prices = frame::select(q, "bid", "ask");
@@ -26,7 +26,7 @@ auto displayed = frame::select(
 auto enriched = frame::with_columns(
     q, "mid"_n = (frame::col("bid") + frame::col("ask")) / 2.0);
 
-auto bid = q["bid"]; // Existing BG getitem operator, supplied by bg-frame.
+auto bid = q["bid"]; // Existing HG getitem operator, supplied by hg-frame.
 ```
 
 `select` returns only the requested columns and named expressions.
@@ -47,7 +47,7 @@ evaluation. `q["bid"]` returns a TSC; `select(q, "bid")` returns a TSF.
 Positional strings in `select` identify columns. Named assignments retain
 `with_columns` semantics: a scalar string is a value; `col(name)` explicitly
 references a column. Polars also interprets named strings as column names;
-this difference preserves BG's existing scalar assignment contract.
+this difference preserves HG's existing scalar assignment contract.
 
 Start with column names, named expressions, and runtime name collections.
 Expression aliases and inferred expression names, selectors, callable renames,
@@ -89,7 +89,7 @@ schemas.
 
 Computed selections reuse `with_columns` expression binding, broadcasts,
 and column assembly, emitting only requested fields. Selected source columns
-are borrowed; computed columns materialise through existing BG operators.
+are borrowed; computed columns materialise through existing HG operators.
 
 `project<TargetSchema, Names...>` wraps the same projection implementation,
 preserving its explicit target-field mapping.
@@ -102,10 +102,10 @@ output order and metadata, following the
 ## Standard operator ownership
 
 The frame extension declares `select`, `rename`, and `with_columns` in
-`bg::operators` and registers their graph implementations. It registers a
-column-removal overload on the existing `bg::operators::drop`. These declarations
+`hg::operators` and registers their graph implementations. It registers a
+column-removal overload on the existing `hg::operators::drop`. These declarations
 and implementations belong to the extension; they require no frame-specific
-code in BG core.
+code in HG core.
 
 The `frame::select`, `frame::rename`, `frame::drop`, and `frame::with_columns`
 functions prepare C++ call syntax and invoke the operators. Preparation converts
@@ -114,7 +114,7 @@ The selected graph implementation owns schema calculation, expression binding,
 key inference, and construction of projection or assembly nodes. Operator
 dispatch provides normal overload selection and wiring diagnostics.
 
-BG owns the other existing operator declarations. The frame extension registers
+HG owns the other existing operator declarations. The frame extension registers
 its overloads and implements its provider operations.
 
 | Existing operator | Proposed TSF/TSC support |
@@ -126,7 +126,7 @@ its overloads and implements its provider operations.
 | `valid`, `all_valid`, `count` | Use generic implementations. Null cells do not invalidate a column. `count` counts root ticks. |
 | `sample`, Boolean `filter_`, `take`, `drop`, `step`, `throttle`, `resample` | Supply provider `copy` and `copy_tick`; reuse standard nodes where their contracts permit. |
 | `if_then_else` and reference routing through nested graphs | Verify target switching, current values, row changes, and child notifications. Resolve the reference-sampling gap before claiming support. |
-| `delay` | Add retained-tick replay using BG's existing tick-operation registration. |
+| `delay` | Add retained-tick replay using HG's existing tick-operation registration. |
 | `dedup` | Separate design step: frame types currently accept only ordinary guarantees. |
 | `merge`, `collect`, `emit` | Separate operation-specific designs; no row or column combination semantics are implied by this proposal. |
 
@@ -134,7 +134,7 @@ Standard `filter_(TS<bool>, q)` selects ticks and preserves its last published
 value while closed. Existing frame `filter_(TSC<bool>, q)` selects rows.
 Standard `take`, `drop`, and `step` count ticks. `frame::drop(q, names...)`
 removes columns. The namespace and argument types distinguish the two `drop`
-operations. These meanings follow BG's
+operations. These meanings follow HG's
 [standard library contracts](../../docs/development/design/library.md).
 
 ## Copying and retained ticks
@@ -194,7 +194,7 @@ switches between the two operations. The identity is an opaque token for
 graph-local retention; readers do not dereference it. Replayed invalidation
 clears the mapping before a later source lifetime can reuse an address.
 
-## BG extension points to review
+## HG extension points to review
 
 The scalar and time series integration audit covers these operation sets:
 
@@ -204,16 +204,16 @@ The scalar and time series integration audit covers these operation sets:
 | Scalar construction, assignment, ownership, equality | Implemented. Owning copies of mutable storage take snapshots; immutable snapshots can share owners. |
 | Scalar hashing | Explicitly unsupported. |
 | Scalar literals | Implemented for native and Arrow layouts. |
-| Scalar buffer storage | BG's generic owning `ScalarValue` encoding applies; a specialized encoding is optional. |
+| Scalar buffer storage | HG's generic owning `ScalarValue` encoding applies; a specialized encoding is optional. |
 | Scalar formatting | Implemented through `ScalarFormatOperations` for both scalar families and native/Arrow layouts. |
 | Time series declarations, runtime selection, output options | Implemented for native, view, and computed layouts. |
 | Publication, invalidation, validity, child access and notifications | Implemented and covered by copy, sampling, replay, and queue composition tests. |
-| Typed input/output visitation | Implemented by forwarding to BG's erased views. |
+| Typed input/output visitation | Implemented by forwarding to HG's erased views. |
 | Time series copying | Implemented for matching schemas and inherited-prefix copying into Base destinations. |
 | Time series literals and captured expectation comparison | Implemented for both families. |
 | Retained ticks | Write, discard, and native replay are implemented. Public feedback and gate tests verify retention and replay/live transitions. |
 | Live and retained tick formatting | Implemented through `TimeSeriesTickFormatOperations`. |
-| Reference sampling | Implemented through BG's runtime sample factory for TSC and TSF, including inherited schemas and cycle-start row removals. |
+| Reference sampling | Implemented through HG's runtime sample factory for TSC and TSF, including inherited schemas and cycle-start row removals. |
 | Queue literal serialization | Native TSC and TSF register `TimeSeriesQueueOperations`. Borrowed/computed runtimes and batch queues are unsupported. |
 
 Frame runtimes supply `TimeSeriesRuntimeType::reference_sample_factory()`.
@@ -225,9 +225,9 @@ the entry points for copying and delay. Additional core facilities require a
 concrete missing operation.
 
 `TimeSeriesTickOperations::typed_replay<Out<TS_T>>` passes its existing erased
-output directly to the callback. BG commit `ce14d7c0`, merged into main as
+output directly to the callback. HG commit `ce14d7c0`, merged into main as
 `3cc9691b`, provides this behavior. Provider replay tests
-and the full frame suite pass against the matching BG build.
+and the full frame suite pass against the matching HG build.
 
 ## Implementation order
 
@@ -242,13 +242,13 @@ and the full frame suite pass against the matching BG build.
    existing operation registries; public feedback and buffering verification.
 5. Implemented: provider reference sampling, reference selection, and nested
    graph verification.
-6. Implemented: native queue literals through BG's provider queue operations;
+6. Implemented: native queue literals through HG's provider queue operations;
    keyed admission, append accumulation, and built-in collection nesting.
 7. Review deduplicated guarantees separately, then extend the reduction and
    operator library according to application needs.
 
 Each implementation stage includes review before the next stage starts.
-Any BG change remains separate from frame implementation work.
+Any HG change remains separate from frame implementation work.
 
 ## Verification
 
@@ -265,5 +265,5 @@ invalidation. Verify capture names identify the intended destination lifetimes.
 Replay tests retain each event, mutate its source, and replay additions,
 modifications, removals, invalidation, and ID reuse into a separate output.
 
-Keep standard operator semantics in BG's library documentation. Document only
+Keep standard operator semantics in HG's library documentation. Document only
 frame-specific meanings and supported operations in the extension README.

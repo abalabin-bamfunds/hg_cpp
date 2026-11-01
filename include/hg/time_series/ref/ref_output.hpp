@@ -1,16 +1,16 @@
 #pragma once
 
-#include <bg/evaluation_context.hpp>
-#include <bg/node/details/output_factory.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/details/output_state.hpp>
-#include <bg/time_series/ref/ref_storage.hpp>
-#include <bg/time_series/time_series_output.hpp>
-#include <bg/time_series/time_series_type.hpp>
+#include <hg/evaluation_context.hpp>
+#include <hg/node/details/output_factory.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/details/output_state.hpp>
+#include <hg/time_series/ref/ref_storage.hpp>
+#include <hg/time_series/time_series_output.hpp>
+#include <hg/time_series/time_series_type.hpp>
 
-namespace bg {
+namespace hg {
 
 template <typename Target, auto... Properties> class Out<REF<Target, Properties...>> {
   public:
@@ -77,4 +77,4 @@ template <typename Target, auto... Properties> class Out<REF<Target, Properties.
     TimeSeriesOutputBinding state_;
 };
 
-} // namespace bg
+} // namespace hg

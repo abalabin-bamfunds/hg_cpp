@@ -1,11 +1,11 @@
 #pragma once
 
-#include <bg/graph/service.hpp>
+#include <hg/graph/service.hpp>
 
 #include <optional>
 #include <span>
 
-namespace bg::details {
+namespace hg::details {
 
 class MultiservicePorts {
   public:
@@ -19,4 +19,4 @@ class MultiservicePorts {
                          std::optional<util::symbol> lifted_scalar) = 0;
 };
 
-} // namespace bg::details
+} // namespace hg::details

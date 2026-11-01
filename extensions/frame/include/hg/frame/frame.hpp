@@ -1,39 +1,39 @@
 #pragma once
 
-#include <bg/frame/export.hpp>
-#include <bg/frame/expression.hpp>
-#include <bg/frame/literal.hpp>
-#include <bg/frame/tsc.hpp>
-#include <bg/graph/graph_wiring.hpp>
-#include <bg/graph/wiring_context.hpp>
-#include <bg/library/operators.hpp>
-#include <bg/node.hpp>
-#include <bg/node/input_fwd.hpp>
-#include <bg/node/input_properties.hpp>
-#include <bg/time_series/cpp_runtime_type.hpp>
-#include <bg/time_series/input_data.hpp>
-#include <bg/time_series/output_binding.hpp>
-#include <bg/time_series/output_state.hpp>
-#include <bg/time_series/time_series_type.hpp>
-#include <bg/time_series/tsb/tsb_input.hpp>
-#include <bg/type/time_series_bundle_type.hpp>
-#include <bg/type/declaration_variables.hpp>
-#include <bg/type/schema.hpp>
-#include <bg/type/fixed_item_time_series_type.hpp>
-#include <bg/type/type_registry.hpp>
-#include <bg/type/type_map.hpp>
-#include <bg/type/schema_metadata_values.hpp>
-#include <bg/node/output_declaration_traits.hpp>
-#include <bg/schema/reflection.hpp>
-#include <bg/scalar/bundle/scalar_type.hpp>
-#include <bg/scalar/details/allocation_context.hpp>
-#include <bg/scalar/details/allocation_pool.hpp>
-#include <bg/util/compile_time_string.hpp>
-#include <bg/util/contiguous_bunch.hpp>
-#include <bg/util/buffer.hpp>
-#include <bg/util/hash_dictionary.hpp>
-#include <bg/util/reflection.hpp>
-#include <bg/util/static_storage.hpp>
+#include <hg/frame/export.hpp>
+#include <hg/frame/expression.hpp>
+#include <hg/frame/literal.hpp>
+#include <hg/frame/tsc.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/library/operators.hpp>
+#include <hg/node.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/cpp_runtime_type.hpp>
+#include <hg/time_series/input_data.hpp>
+#include <hg/time_series/output_binding.hpp>
+#include <hg/time_series/output_state.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/type/time_series_bundle_type.hpp>
+#include <hg/type/declaration_variables.hpp>
+#include <hg/type/schema.hpp>
+#include <hg/type/fixed_item_time_series_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/type/type_map.hpp>
+#include <hg/type/schema_metadata_values.hpp>
+#include <hg/node/output_declaration_traits.hpp>
+#include <hg/schema/reflection.hpp>
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/details/allocation_context.hpp>
+#include <hg/scalar/details/allocation_pool.hpp>
+#include <hg/util/compile_time_string.hpp>
+#include <hg/util/contiguous_bunch.hpp>
+#include <hg/util/buffer.hpp>
+#include <hg/util/hash_dictionary.hpp>
+#include <hg/util/reflection.hpp>
+#include <hg/util/static_storage.hpp>
 
 #include <algorithm>
 #include <array>
@@ -58,7 +58,7 @@
 #include <variant>
 #include <vector>
 
-namespace bg::frame {
+namespace hg::frame {
 
 // Erased key cells are used only by extension storage operations and retained removal deltas.
 using KeyValue = std::variant<std::monostate, i64, symbol, ScalarValue<string>>;
@@ -99,20 +99,20 @@ inline bool key_values_equal(std::span<const KeyValue> left, std::span<const Key
     return true;
 }
 
-template <util::compile_time_string... Names> bg::SchemaMetadata key_metadata() {
+template <util::compile_time_string... Names> hg::SchemaMetadata key_metadata() {
     static_assert(sizeof...(Names) != 0, "a frame key must name at least one column");
     auto names = std::array<std::string_view, sizeof...(Names)>{Names.view()...};
-    auto value = bg::ScalarValue<bg::List<bg::string>>{names};
-    return bg::make_schema_metadata({bg::schema_metadata_entry("bg.frame.key", value)});
+    auto value = hg::ScalarValue<hg::List<hg::string>>{names};
+    return hg::make_schema_metadata({hg::schema_metadata_entry("hg.frame.key", value)});
 }
 
 template <typename T> class Cell {
   public:
-    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>,
+    using value_type = std::conditional_t<hg::details::scalar_variable<T>, Scalar<>,
                                           std::conditional_t<cell_type<T>, cell_value_t<T>, T>>;
 
     Cell() = delete;
-    Cell(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    Cell(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     Cell(value_type value) : value_{std::move(value)} {}
     Cell(std::optional<value_type> value) : value_{std::move(value)} {}
     Cell(std::nullopt_t) noexcept {}
@@ -124,11 +124,11 @@ template <typename T> class Cell {
 
 template <typename T> class PatchCell {
   public:
-    using value_type = std::conditional_t<bg::details::scalar_variable<T>, Scalar<>,
+    using value_type = std::conditional_t<hg::details::scalar_variable<T>, Scalar<>,
                                           std::conditional_t<cell_type<T>, cell_value_t<T>, T>>;
 
     PatchCell() noexcept = default;
-    PatchCell(bg::details::FieldProbe &probe) noexcept { probe.record(this); }
+    PatchCell(hg::details::FieldProbe &probe) noexcept { probe.record(this); }
     PatchCell(value_type value) : value_{std::move(value)}, changed_{true} {}
     PatchCell(std::optional<value_type> value) : value_{std::move(value)}, changed_{true} {}
     PatchCell(std::nullopt_t) noexcept : changed_{true} {}
@@ -153,20 +153,20 @@ struct TSF : TimeSeriesDeclaration<TSF<Schema, Properties...>, Properties...> {}
 template <template <typename, auto...> typename Field>
 using RESULT = SchemaVariableDeclaration<"RESULT">;
 
-} // namespace bg::frame
+} // namespace hg::frame
 
-namespace bg::operators {
+namespace hg::operators {
 
 template <template <typename, auto...> typename Field>
 using FIELDS = BundleSchemaVariableDeclaration<"FIELDS", Field>;
 
-extern BG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> with_columns;
-extern BG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> select;
-extern BG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> rename;
+extern HG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> with_columns;
+extern HG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> select;
+extern HG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> rename;
 
-} // namespace bg::operators
+} // namespace hg::operators
 
-namespace bg::frame {
+namespace hg::frame {
 
 template <util::compile_time_string... Names> struct ColumnNames {};
 template <util::compile_time_string... Names> constexpr auto columns() noexcept { return ColumnNames<Names...>{}; }
@@ -214,10 +214,10 @@ const FrameSeriesType &frame_series_type(const SchemaType &schema, GuaranteePara
 
 template <template <template <typename, auto...> typename> typename Schema>
 const SchemaType &frame_schema_type() {
-    if constexpr (bg::details::schema_variable_template<Schema>) {
-        return bg::details::schema_variable_instance<Schema>();
+    if constexpr (hg::details::schema_variable_template<Schema>) {
+        return hg::details::schema_variable_instance<Schema>();
     } else {
-        return bg::details::cpp_hierarchical_scalar_schema<Schema>();
+        return hg::details::cpp_hierarchical_scalar_schema<Schema>();
     }
 }
 
@@ -338,7 +338,7 @@ struct NativeFrameCellPatch {
 };
 
 struct NativeFrameLayout {
-    const bg::Schema *schema{};
+    const hg::Schema *schema{};
     std::size_t size{};
     std::size_t alignment{};
     std::vector<NativeFrameFieldLayout> fields;
@@ -374,7 +374,7 @@ const NativeFrameLayout &native_frame_layout() {
 template <template <template <typename, auto...> typename> typename Schema> struct FrameStorage {
     static constexpr bool supports_byte_copy_initialization = true;
     static constexpr auto field_count =
-        bg::details::hierarchical_scalar_schema_reflection<Schema>::field_count;
+        hg::details::hierarchical_scalar_schema_reflection<Schema>::field_count;
     Schema<ColumnStorage> columns;
     RowSet rows{};
     const void *cycle_start_domain{};
@@ -409,7 +409,7 @@ struct FrameReadStorage {
     using changed_column_visitor = void (*)(void *, std::size_t);
     using column_binding_function = FrameColumnReadBinding (*)(const void *, std::size_t);
 
-    const bg::Schema *schema{};
+    const hg::Schema *schema{};
     RowSet rows{};
     const void *cycle_start_domain{};
     bool valid{};
@@ -517,7 +517,7 @@ const ScalarRuntimeType &frame_snapshot_runtime_type(const FrameType &type);
 class FrameSeriesRuntimeType : public TimeSeriesRuntimeType {
   public:
     virtual FrameReadStorage input_storage(const void *value) const noexcept = 0;
-    bg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
+    hg::details::ReferenceSampleFactory reference_sample_factory() const noexcept override;
     const ScalarRuntimeType &scalar_runtime_type() const {
         if (const auto *runtime = scalar_runtime_.load(std::memory_order_acquire))
             return *runtime;
@@ -547,9 +547,9 @@ class FrameSeriesRuntimeType : public TimeSeriesRuntimeType {
 namespace details {
 
 template <template <template <typename, auto...> typename> typename Schema>
-using frame_schema_reflection = bg::details::hierarchical_scalar_schema_reflection<Schema>;
+using frame_schema_reflection = hg::details::hierarchical_scalar_schema_reflection<Schema>;
 
-template <typename T, bool Generic = bg::details::scalar_variable<T>> struct FrameViewColumnType {
+template <typename T, bool Generic = hg::details::scalar_variable<T>> struct FrameViewColumnType {
     using type = ColumnView<T>;
 };
 template <typename T> struct FrameViewColumnType<T, true> {
@@ -559,7 +559,7 @@ template <typename T, auto... Parameters>
 using FrameViewColumn = typename FrameViewColumnType<T>::type;
 
 template <template <template <typename, auto...> typename> typename Schema,
-          bool RuntimeSchema = bg::details::schema_variable_template<Schema>>
+          bool RuntimeSchema = hg::details::schema_variable_template<Schema>>
 struct FrameViewColumnsType {
     using type = Schema<FrameViewColumn>;
 };
@@ -573,25 +573,25 @@ using frame_schema_cell_t = typename frame_schema_reflection<Schema>::template f
 
 template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
 consteval bool frame_schema_fields_generic(std::index_sequence<Index...>) {
-    return (false || ... || bg::details::scalar_variable<frame_schema_cell_t<Index, Schema>>);
+    return (false || ... || hg::details::scalar_variable<frame_schema_cell_t<Index, Schema>>);
 }
 
 template <template <template <typename, auto...> typename> typename Schema, std::size_t... Index>
 consteval bool frame_schema_fields_supported(std::index_sequence<Index...>) {
     return (true && ... && (cell_type<frame_schema_cell_t<Index, Schema>> ||
-                            bg::details::scalar_variable<frame_schema_cell_t<Index, Schema>>));
+                            hg::details::scalar_variable<frame_schema_cell_t<Index, Schema>>));
 }
 
 template <template <template <typename, auto...> typename> typename Schema, typename Visitor, std::size_t... Index>
 void for_each_frame_schema_field_variable(Visitor &&visitor, std::index_sequence<Index...>) {
-    (bg::for_each_declaration_variable<frame_schema_cell_t<Index, Schema>>(visitor), ...);
+    (hg::for_each_declaration_variable<frame_schema_cell_t<Index, Schema>>(visitor), ...);
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct frame_schema_declaration_traits {
     using Reflection = frame_schema_reflection<Schema>;
 
-    static constexpr auto is_schema_variable = bg::details::schema_variable_template<Schema>;
+    static constexpr auto is_schema_variable = hg::details::schema_variable_template<Schema>;
     static constexpr auto has_generic_fields = [] {
         if constexpr (is_schema_variable)
             return false;
@@ -607,8 +607,8 @@ struct frame_schema_declaration_traits {
 
     template <typename Visitor> static void for_each(Visitor &&visitor) {
         if constexpr (is_schema_variable) {
-            using Declaration = bg::schema_type<Schema>;
-            visitor.template operator()<Declaration>(bg::details::schema_variable_instance<Schema>());
+            using Declaration = hg::schema_type<Schema>;
+            visitor.template operator()<Declaration>(hg::details::schema_variable_instance<Schema>());
         } else {
             for_each_frame_schema_field_variable<Schema>(visitor,
                                                          std::make_index_sequence<Reflection::field_count>{});
@@ -636,7 +636,7 @@ consteval auto frame_column_name(ColumnNames<Names...>) {
 
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema>
 const util::symbol &frame_declared_field_symbol() {
-    static const auto &schema = static_cast<const bg::Schema &>(frame_schema_type<Schema>());
+    static const auto &schema = static_cast<const hg::Schema &>(frame_schema_type<Schema>());
     static const auto name = schema.field(Index).name;
     return name;
 }
@@ -816,9 +816,9 @@ auto frame_columns_view(const Storage &storage, std::index_sequence<Index...>) {
 template <template <template <typename, auto...> typename> typename Schema>
 FrameReadStorage frame_read_storage(const FrameStorage<Schema> &storage, const void *owner,
     const RuntimeType *runtime, bool scalar_value = false) {
-    static_assert(!bg::details::schema_variable_template<Schema>);
+    static_assert(!hg::details::schema_variable_template<Schema>);
     auto result = FrameReadStorage{};
-    result.schema = std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>());
+    result.schema = std::addressof(hg::details::cpp_hierarchical_scalar_schema<Schema>());
     result.rows = storage.rows;
     result.cycle_start_domain = storage.cycle_start_domain == nullptr ? storage.rows.identity
                                                                        : storage.cycle_start_domain;
@@ -867,7 +867,7 @@ template <template <template <typename, auto...> typename> typename Schema>
 auto FrameReadStorage::field_ordinals() const {
     constexpr auto count = details::frame_schema_reflection<Schema>::field_count;
     auto result = std::array<std::size_t, count>{};
-    if (schema == std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>())) {
+    if (schema == std::addressof(hg::details::cpp_hierarchical_scalar_schema<Schema>())) {
         for (auto index = std::size_t{}; index != count; ++index)
             result[index] = index;
         return result;
@@ -935,7 +935,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
     std::size_t size() const noexcept { return size_; }
     const columns_type &columns() const noexcept { return columns_; }
     const ScalarData &source_data() const noexcept { return source_; }
-    const bg::Schema &schema() const;
+    const hg::Schema &schema() const;
     ColumnView<> column(std::size_t index) const;
     ColumnView<> column(util::symbol name) const;
     ColumnView<> column(std::string_view name) const { return column(util::symbol{name}); }
@@ -951,7 +951,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
     using columns_type = Schema<Column>;
 
     Frame() {
-        if constexpr (!bg::details::schema_variable_template<Schema>)
+        if constexpr (!hg::details::schema_variable_template<Schema>)
             static_cast<void>(frame_type(schema()));
     }
     explicit Frame(columns_type columns) : columns_{std::move(columns)}, size_{column_size(columns_)} {
@@ -990,7 +990,7 @@ template <template <template <typename, auto...> typename> typename Schema> clas
     std::size_t size() const noexcept { return size_; }
     const columns_type &columns() const noexcept { return columns_; }
     const FrameStorage<Schema> &scalar_storage() const noexcept { return storage_; }
-    const bg::Schema &schema() const { return bg::details::cpp_hierarchical_scalar_schema<Schema>(); }
+    const hg::Schema &schema() const { return hg::details::cpp_hierarchical_scalar_schema<Schema>(); }
     ColumnView<> column(std::size_t index) const;
     ColumnView<> column(util::symbol name) const;
     ColumnView<> column(std::string_view name) const { return column(util::symbol{name}); }
@@ -1046,7 +1046,7 @@ void bind_frame_view_column(const void *payload, void *destination) {
     using Cell = frame_schema_cell_t<Index, Schema>;
     const auto columns = frame_schema_reflection<Schema>::fields(
         *static_cast<const Schema<FrameViewColumn> *>(payload));
-    if constexpr (bg::details::scalar_variable<Cell>) {
+    if constexpr (hg::details::scalar_variable<Cell>) {
         *static_cast<ColumnView<Cell> *>(destination) = std::get<Index>(columns).template view<Cell>();
     } else {
         *static_cast<ColumnView<Cell> *>(destination) = std::get<Index>(columns);
@@ -1064,7 +1064,7 @@ FrameColumnReadBinding frame_view_column_binding(const void *context, std::size_
     static constexpr std::array<binding_function, sizeof...(Index)> bindings{
         +[](const void *payload) -> FrameColumnReadBinding {
             using Cell = frame_schema_cell_t<Index, Schema>;
-            if constexpr (bg::details::scalar_variable<Cell>) {
+            if constexpr (hg::details::scalar_variable<Cell>) {
                 const auto columns = frame_schema_reflection<Schema>::fields(
                     *static_cast<const Schema<FrameViewColumn> *>(payload));
                 const auto &column = std::get<Index>(columns);
@@ -1097,7 +1097,7 @@ template <template <template <typename, auto...> typename> typename Schema>
 FrameReadStorage frame_read_storage(const FrameView<Schema> &view, const RuntimeType *runtime) {
     constexpr auto count = frame_schema_reflection<Schema>::field_count;
     auto result = FrameReadStorage{};
-    result.schema = std::addressof(bg::details::cpp_hierarchical_scalar_schema<Schema>());
+    result.schema = std::addressof(hg::details::cpp_hierarchical_scalar_schema<Schema>());
     result.valid = true;
     result.size = view.size();
     result.columns_context = std::addressof(view.columns());
@@ -1113,19 +1113,19 @@ FrameReadStorage frame_read_storage(const FrameView<Schema> &view, const Runtime
 
 template <template <template <typename, auto...> typename> typename Schema>
 void Frame<Schema>::validate_key_uniqueness() const {
-    if constexpr (!bg::details::schema_variable_template<Schema>) {
+    if constexpr (!hg::details::schema_variable_template<Schema>) {
         auto view = FrameView<Schema>{*this};
         details::validate_frame_key_uniqueness(details::frame_read_storage(view, nullptr));
     }
 }
 
 template <template <template <typename, auto...> typename> typename Schema>
-const bg::Schema &FrameView<Schema>::schema() const {
+const hg::Schema &FrameView<Schema>::schema() const {
     if (source_.empty()) {
-        if constexpr (bg::details::schema_variable_template<Schema>)
+        if constexpr (hg::details::schema_variable_template<Schema>)
             throw std::logic_error{"runtime-schema frame view has no retained schema"};
         else
-            return bg::details::cpp_hierarchical_scalar_schema<Schema>();
+            return hg::details::cpp_hierarchical_scalar_schema<Schema>();
     }
     const auto &runtime = static_cast<const FrameScalarRuntimeType &>(source_.runtime_type());
     const auto storage = runtime.read_storage(source_);
@@ -1168,7 +1168,7 @@ namespace details {
 template <template <template <typename, auto...> typename> typename Schema>
 FrameView<Schema> frame_view(const FrameReadStorage &storage, const ScalarData &source) {
     auto columns = typename FrameView<Schema>::columns_type{};
-    if constexpr (!bg::details::schema_variable_template<Schema>) {
+    if constexpr (!hg::details::schema_variable_template<Schema>) {
         constexpr auto count = frame_schema_reflection<Schema>::field_count;
         const auto ordinals = storage.template field_ordinals<Schema>();
         auto destination = frame_schema_reflection<Schema>::fields(columns);
@@ -1176,7 +1176,7 @@ FrameView<Schema> frame_view(const FrameReadStorage &storage, const ScalarData &
             (([&] {
                  using Cell = frame_schema_cell_t<Index, Schema>;
                  const auto binding = storage.column(ordinals[Index]);
-                 if constexpr (bg::details::scalar_variable<Cell>) {
+                 if constexpr (hg::details::scalar_variable<Cell>) {
                      if (storage.schema == nullptr || binding.cell_type == nullptr ||
                          binding.cell_type != storage.schema->field(ordinals[Index]).type)
                          throw std::invalid_argument{"frame column type does not match the requested schema"};
@@ -1223,7 +1223,7 @@ class FrameViewScalarRuntimeType final : public FrameScalarRuntimeType {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const FrameViewScalarRuntimeType<Schema> &frame_view_scalar_runtime_type() {
-    static bg::util::static_storage<FrameViewScalarRuntimeType<Schema>> runtime;
+    static hg::util::static_storage<FrameViewScalarRuntimeType<Schema>> runtime;
     return runtime.get();
 }
 
@@ -1263,7 +1263,7 @@ class NativeFrameStorage {
         return !valid_ || copy_source_domain_ != input.rows.identity;
     }
 
-    BG_FRAME_EXPORT bool copy_from(const FrameReadStorage &input, EvaluationTime time, allocator memory,
+    HG_FRAME_EXPORT bool copy_from(const FrameReadStorage &input, EvaluationTime time, allocator memory,
                                    bool full_copy);
     void replay_copy_tick(util::buffer_reader &reader, EvaluationTime time, allocator memory);
 
@@ -1707,7 +1707,7 @@ struct FrameSnapshotOwner {
     const ScalarRuntimeType *runtime{};
     const NativeFrameLayout *layout{};
     NativeFrameStorage *frame{};
-    bg::details::ScalarAllocationPool *allocation_pool{};
+    hg::details::ScalarAllocationPool *allocation_pool{};
     allocator memory{};
     std::size_t size{};
 
@@ -1804,8 +1804,8 @@ inline FrameSnapshotOwner *FrameSnapshotOwner::create(const NativeFrameLayout &l
                                                       const FrameReadStorage &source, allocator memory) {
     if (source.schema != layout.schema)
         throw std::invalid_argument{"frame snapshot schema does not match its runtime type"};
-    auto *allocation_pool = static_cast<bg::details::ScalarAllocationPool *>(nullptr);
-    if (const auto *context = bg::details::current_scalar_allocation_owner()) {
+    auto *allocation_pool = static_cast<hg::details::ScalarAllocationPool *>(nullptr);
+    if (const auto *context = hg::details::current_scalar_allocation_owner()) {
         auto pool_memory = context->scalar_allocation_pool->memory();
         if (&memory.memory_resource() == &context->memory.memory_resource() ||
             &memory.memory_resource() == &pool_memory.memory_resource()) {
@@ -1956,11 +1956,11 @@ inline FrameColumnReadBinding runtime_frame_column_binding(const ColumnView<> &c
 
 } // namespace details
 
-inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const bg::Schema &schema,
+inline ScalarValue<Frame<hg::SCHEMA>> make_frame_value(allocator &memory, const hg::Schema &schema,
                                                        std::size_t row_count,
                                                        std::span<const ColumnView<>> columns);
 
-inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(const bg::Schema &schema, std::size_t row_count,
+inline ScalarValue<Frame<hg::SCHEMA>> make_frame_value(const hg::Schema &schema, std::size_t row_count,
                                                        std::span<const ColumnView<>> columns);
 
 template <template <template <typename, auto...> typename> typename Schema>
@@ -2217,7 +2217,7 @@ struct RuntimeFrameViewFieldLayout {
 };
 
 struct RuntimeFrameViewLayout {
-    const bg::Schema *schema{};
+    const hg::Schema *schema{};
     std::span<const std::size_t> key_fields;
     std::size_t size{};
     std::size_t alignment{};
@@ -2281,7 +2281,7 @@ class RuntimeFrameViewOutputStorage {
     bool filtering{};
     bool valid{};
     const details::NativeFrameLayout *source_layout{};
-    const bg::Schema *assigned_source_schema{};
+    const hg::Schema *assigned_source_schema{};
     const TimeSeriesBundleType *assigned_bundle_schema{};
 
     void record_removed_row(row_id_t id, const void *domain, allocator memory) {
@@ -3076,7 +3076,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source, util::symbol name) {
     if (frame_type == nullptr)
         throw std::invalid_argument{"frame column selection requires a frame time series"};
 
-    const auto *schema = dynamic_cast<const bg::Schema *>(std::addressof(frame_type->schema_type()));
+    const auto *schema = dynamic_cast<const hg::Schema *>(std::addressof(frame_type->schema_type()));
     if (schema == nullptr)
         throw std::invalid_argument{"frame column selection requires a resolved frame schema"};
     const auto *field = schema->find(name);
@@ -3095,7 +3095,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
     const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type()));
     if (frame_type == nullptr)
         throw std::invalid_argument{"frame column selection requires a frame time series"};
-    const auto *schema = dynamic_cast<const bg::Schema *>(std::addressof(frame_type->schema_type()));
+    const auto *schema = dynamic_cast<const hg::Schema *>(std::addressof(frame_type->schema_type()));
     if (schema == nullptr)
         throw std::invalid_argument{"frame column selection requires a resolved frame schema"};
     if (index >= schema->field_count())
@@ -3105,10 +3105,10 @@ auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
           typename... Arguments>
-    requires(bg::details::graph_code_argument<Arguments> && ...)
+    requires(hg::details::graph_code_argument<Arguments> && ...)
 wp<> bind_expression(wp<TSF<Schema, Properties...>> source, const Expression &expression,
                      Arguments &&...arguments) {
-    auto bindings = bg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
+    auto bindings = hg::details::make_wiring_arguments(std::forward<Arguments>(arguments)...);
     const auto column_resolver = [source](util::symbol name) {
         return WiringArgument{select_column<SCALAR>(source, name)};
     };
@@ -3117,9 +3117,9 @@ wp<> bind_expression(wp<TSF<Schema, Properties...>> source, const Expression &ex
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
           typename... Bindings>
-    requires(bg::details::graph_code_argument<Bindings> && ...)
+    requires(hg::details::graph_code_argument<Bindings> && ...)
 wp<> bind_expression(wp<TSF<Schema, Properties...>> source, wp<> expression, Bindings &&...bindings) {
-    auto arguments = bg::details::make_wiring_arguments(std::forward<Bindings>(bindings)...);
+    auto arguments = hg::details::make_wiring_arguments(std::forward<Bindings>(bindings)...);
     const auto column_resolver = [source](util::symbol name) {
         return WiringArgument{select_column<SCALAR>(source, name)};
     };
@@ -3128,7 +3128,7 @@ wp<> bind_expression(wp<TSF<Schema, Properties...>> source, wp<> expression, Bin
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
           typename... Bindings>
-    requires(bg::details::graph_code_argument<Bindings> && ...)
+    requires(hg::details::graph_code_argument<Bindings> && ...)
 auto filter(wp<TSF<Schema, Properties...>> source, const Expression &predicate, Bindings &&...bindings) {
     return operators::filter_(bind_expression(source, predicate, std::forward<Bindings>(bindings)...), source)
         .template as<TSF<Schema>>();
@@ -3136,11 +3136,11 @@ auto filter(wp<TSF<Schema, Properties...>> source, const Expression &predicate, 
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
           typename Predicate, typename... Bindings>
-    requires bg::details::graph_code_argument<Predicate> &&
-             (bg::details::graph_code_argument<Bindings> && ...) &&
+    requires hg::details::graph_code_argument<Predicate> &&
+             (hg::details::graph_code_argument<Bindings> && ...) &&
              (!std::same_as<std::remove_cvref_t<Predicate>, Expression>)
 auto filter(wp<TSF<Schema, Properties...>> source, Predicate &&predicate, Bindings &&...bindings) {
-    if constexpr (bg::details::wiring_point_argument<Predicate>) {
+    if constexpr (hg::details::wiring_point_argument<Predicate>) {
         const auto point = static_cast<WiringPoint>(predicate);
         if (details::is_mixed_expression_bundle_type(point.type())) {
             return operators::filter_(
@@ -3170,7 +3170,7 @@ wp<TSF<TargetSchema>> with_columns(wp<TSF<SourceSchema, Properties...>> source,
 
 template <typename... Assignments, template <template <typename, auto...> typename> typename Schema,
           auto... Properties>
-    requires(bg::details::is_named_bundle_wiring_field<Assignments> && ...)
+    requires(hg::details::is_named_bundle_wiring_field<Assignments> && ...)
 wp<TSF<RESULT>> with_columns(wp<TSF<Schema, Properties...>> source, Assignments &&...assignments) {
     auto fields = std::array<WiringArgument, sizeof...(Assignments)>{
         WiringArgument{std::forward<Assignments>(assignments)}...};
@@ -3180,7 +3180,7 @@ wp<TSF<RESULT>> with_columns(wp<TSF<Schema, Properties...>> source, Assignments 
 template <template <template <typename, auto...> typename> typename TargetSchema,
           template <template <typename, auto...> typename> typename SourceSchema, auto... Properties,
           typename... Assignments>
-    requires(bg::details::is_named_bundle_wiring_field<Assignments> && ...)
+    requires(hg::details::is_named_bundle_wiring_field<Assignments> && ...)
 wp<TSF<TargetSchema>> with_columns(wp<TSF<SourceSchema, Properties...>> source, Assignments &&...assignments) {
     auto fields = std::array<WiringArgument, sizeof...(Assignments)>{
         WiringArgument{std::forward<Assignments>(assignments)}...};
@@ -3229,7 +3229,7 @@ template <template <template <typename, auto...> typename> typename Schema, auto
           typename... Arguments>
     requires(sizeof...(Arguments) != 0 &&
              ((details::frame_column_name_argument<Arguments> ||
-               bg::details::is_named_bundle_wiring_field<std::remove_cvref_t<Arguments>>) && ...))
+               hg::details::is_named_bundle_wiring_field<std::remove_cvref_t<Arguments>>) && ...))
 auto select(wp<TSF<Schema, Properties...>> source, Arguments &&...arguments) {
     auto selections = std::vector<WiringArgument>{};
     selections.reserve(sizeof...(Arguments));
@@ -3329,7 +3329,7 @@ auto drop(wp<TSF<Schema, Properties...>> source, Range &&names) {
 
 template <std::size_t Index, template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select_column(wp<TSF<Schema, Properties...>> source) {
-    if constexpr (bg::details::schema_variable_template<Schema>) {
+    if constexpr (hg::details::schema_variable_template<Schema>) {
         return select_column<SCALAR>(source, Index);
     } else {
         static_assert(Index < details::frame_schema_reflection<Schema>::field_count,
@@ -3342,7 +3342,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source) {
 template <util::compile_time_string Name,
           template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select_column(wp<TSF<Schema, Properties...>> source) {
-    if constexpr (bg::details::schema_variable_template<Schema>) {
+    if constexpr (hg::details::schema_variable_template<Schema>) {
         return select_column<SCALAR>(source, util::symbol{Name.view()});
     } else {
         constexpr auto index = details::frame_column_index<Name, Schema>();
@@ -3354,7 +3354,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source) {
 
 namespace details {
 
-class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeType {
+class NativeFrameSeriesRuntimeType final : public hg::frame::FrameSeriesRuntimeType {
   public:
     using ItemLayout = TimeSeriesRuntimeType::ItemLayout;
     using ConstItem = TimeSeriesRuntimeType::ConstItem;
@@ -3363,7 +3363,7 @@ class NativeFrameSeriesRuntimeType final : public bg::frame::FrameSeriesRuntimeT
     using ModifiedItemFunction = TimeSeriesRuntimeType::ModifiedItemFunction;
 
     explicit NativeFrameSeriesRuntimeType(const TimeSeriesType &type)
-        : bg::frame::FrameSeriesRuntimeType{
+        : hg::frame::FrameSeriesRuntimeType{
               type,
               native_frame_layout(static_cast<const FrameSeriesType &>(type).schema_type()).size,
               native_frame_layout(static_cast<const FrameSeriesType &>(type).schema_type()).alignment, true, true,
@@ -3779,7 +3779,7 @@ class FrameSnapshotRuntimeType final : public FrameScalarRuntimeType {
     }
     void do_assign_from_input(void *destination, const ScalarData &source) const override {
         copy_frame_snapshot_value(*static_cast<FrameSnapshotStorage *>(destination), source,
-                                  bg::details::current_scalar_allocator());
+                                  hg::details::current_scalar_allocator());
     }
 
     ScalarData borrow_shared(const void *value) const noexcept override {
@@ -3849,7 +3849,7 @@ struct FrameViewRuntimeCache {
 };
 
 inline FrameViewRuntimeCache &frame_view_runtime_cache() {
-    static bg::util::static_storage<FrameViewRuntimeCache> cache;
+    static hg::util::static_storage<FrameViewRuntimeCache> cache;
     return cache.get();
 }
 
@@ -3884,7 +3884,7 @@ inline const TimeSeriesRuntimeType &frame_computed_time_series_runtime_type(
     if (series == nullptr || !series->is_resolved() ||
         series->guarantee().value() != TimeSeriesGuarantee::ordinary)
         throw std::invalid_argument{"computed TSF runtime requires a resolved ordinary type"};
-    const auto &schema = static_cast<const bg::Schema &>(series->schema_type());
+    const auto &schema = static_cast<const hg::Schema &>(series->schema_type());
     auto indices = std::vector<std::size_t>{};
     indices.reserve(names.size());
     for (const auto name : names) {
@@ -3927,9 +3927,9 @@ template <util::compile_time_string... Names> struct ComputedFrameRuntime<comput
 
 } // namespace details
 
-} // namespace bg::frame
+} // namespace hg::frame
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Schema, auto... SeriesProperties,
           auto... Properties>
@@ -3951,7 +3951,7 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
     const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const { return valid() ? extension_descriptor().size : 0; }
     bool contains(frame::row_id_t id) const { return valid() && extension_descriptor().rows.has(id); }
-    const bg::Schema &schema() const {
+    const hg::Schema &schema() const {
         const auto input = extension_descriptor();
         if (input.schema == nullptr)
             throw std::logic_error{"frame input has no schema"};
@@ -4061,13 +4061,13 @@ class Out<frame::TSF<Schema, Properties...>> {
         frame::details::apply_series_literal(literal, binding_.get());
     }
 
-    const bg::Schema &schema() const {
-        return static_cast<const bg::Schema &>(
+    const hg::Schema &schema() const {
+        return static_cast<const hg::Schema &>(
             static_cast<const frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
     }
 
     frame::row_id_t add(const frame::Row<Schema> &row) const
-        requires(!bg::details::schema_variable_template<Schema> &&
+        requires(!hg::details::schema_variable_template<Schema> &&
                  frame::details::frame_schema_declaration_traits<Schema>::fields_supported)
     {
         const auto id = [&] {
@@ -4097,7 +4097,7 @@ class Out<frame::TSF<Schema, Properties...>> {
     }
 
     template <template <template <typename, auto...> typename> typename SourceSchema>
-        requires(!bg::details::schema_variable_template<SourceSchema> &&
+        requires(!hg::details::schema_variable_template<SourceSchema> &&
                  frame::details::frame_schema_declaration_traits<SourceSchema>::fields_supported)
     frame::row_id_t add(const frame::Row<SourceSchema> &row) const {
         const auto id = add_typed_row<SourceSchema>(row);
@@ -4106,7 +4106,7 @@ class Out<frame::TSF<Schema, Properties...>> {
     }
 
     template <template <template <typename, auto...> typename> typename SourceSchema>
-        requires(!bg::details::schema_variable_template<SourceSchema> &&
+        requires(!hg::details::schema_variable_template<SourceSchema> &&
                  frame::details::frame_schema_declaration_traits<SourceSchema>::fields_supported)
     frame::row_id_t add(const frame::RowPatch<SourceSchema> &row) const {
         const auto id = [&] {
@@ -4125,7 +4125,7 @@ class Out<frame::TSF<Schema, Properties...>> {
     }
 
     void set(frame::row_id_t id, const frame::RowPatch<Schema> &patch) const
-        requires(!bg::details::schema_variable_template<Schema> &&
+        requires(!hg::details::schema_variable_template<Schema> &&
                  frame::details::frame_schema_declaration_traits<Schema>::fields_supported)
     {
         const auto changed = [&] {
@@ -4155,7 +4155,7 @@ class Out<frame::TSF<Schema, Properties...>> {
     }
 
     template <template <template <typename, auto...> typename> typename SourceSchema>
-        requires(!bg::details::schema_variable_template<SourceSchema> &&
+        requires(!hg::details::schema_variable_template<SourceSchema> &&
                  frame::details::frame_schema_declaration_traits<SourceSchema>::fields_supported)
     void set(frame::row_id_t id, const frame::RowPatch<SourceSchema> &patch) const {
         if (set_typed_patch<SourceSchema>(id, patch))
@@ -4215,7 +4215,7 @@ class Out<frame::TSF<Schema, Properties...>> {
     template <template <template <typename, auto...> typename> typename SourceSchema>
     auto typed_schema_mapping() const {
         constexpr auto field_count = frame::details::frame_schema_reflection<SourceSchema>::field_count;
-        const auto &source_schema = static_cast<const bg::Schema &>(frame::frame_schema_type<SourceSchema>());
+        const auto &source_schema = static_cast<const hg::Schema &>(frame::frame_schema_type<SourceSchema>());
         const auto &target_schema = schema();
         if (source_schema.field_count() != field_count || source_schema.field_count() != target_schema.field_count())
             throw std::invalid_argument{"typed frame row schema does not match the output schema"};
@@ -4244,7 +4244,7 @@ class Out<frame::TSF<Schema, Properties...>> {
                                  std::array<CellValue, FieldCount> &cell_values) const {
         using SourceCell = frame::details::frame_schema_cell_t<Index, SourceSchema>;
         const auto &source = std::get<Index>(fields).value();
-        if constexpr (bg::details::scalar_variable<SourceCell>) {
+        if constexpr (hg::details::scalar_variable<SourceCell>) {
             const auto target = target_indices[Index];
             return decode_cell(source, *schema().field(target).type, cell_values[Index]);
         } else {
@@ -4339,7 +4339,7 @@ class Out<frame::TSF<Schema, Properties...>> {
                                                   std::addressof(std::get<Index>(fields).value())}...};
     }
 
-    static std::size_t schema_field_index(const bg::Schema &fields, util::symbol name) {
+    static std::size_t schema_field_index(const hg::Schema &fields, util::symbol name) {
         for (auto index = std::size_t{}; index != fields.field_count(); ++index)
             if (fields.field(index).name == name)
                 return index;
@@ -4361,9 +4361,9 @@ class FrameViewOutputImplementation {
   public:
     explicit FrameViewOutputImplementation(TimeSeriesOutputBinding binding) noexcept : binding_{std::move(binding)} {}
 
-    const bg::Schema &schema() const {
-        return static_cast<const bg::Schema &>(
-            static_cast<const ::bg::frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
+    const hg::Schema &schema() const {
+        return static_cast<const hg::Schema &>(
+            static_cast<const ::hg::frame::FrameSeriesType &>(binding_->runtime_type().type()).schema_type());
     }
 
     void invalidate() const { binding_->invalidate(); }
@@ -4372,14 +4372,14 @@ class FrameViewOutputImplementation {
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return binding_->runtime_type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
-        auto output = bg::details::output_factory::make<Out<TS_T>>(binding_.get());
+        auto output = hg::details::output_factory::make<Out<TS_T>>(binding_.get());
         return output.visit(std::forward<Functions>(functions)...);
     }
 
   protected:
     template <template <template <typename, auto...> typename> typename SourceSchema,
               auto... SeriesProperties, auto... InputProperties>
-    bool bind_source(const In<::bg::frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source) const {
+    bool bind_source(const In<::hg::frame::TSF<SourceSchema, SeriesProperties...>, InputProperties...> &source) const {
         const auto input = source.extension_descriptor();
         auto &output = runtime_storage();
         if (input.schema == nullptr)
@@ -4401,9 +4401,9 @@ class FrameViewOutputImplementation {
         return changed;
     }
 
-    template <::bg::frame::cell_type Cell>
-    void set_computed_cell(std::size_t index, ::bg::frame::row_id_t id,
-                           std::optional<::bg::frame::cell_value_t<Cell>> value) const {
+    template <::hg::frame::cell_type Cell>
+    void set_computed_cell(std::size_t index, ::hg::frame::row_id_t id,
+                           std::optional<::hg::frame::cell_value_t<Cell>> value) const {
         auto &output = runtime_storage();
         if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
@@ -4417,7 +4417,7 @@ class FrameViewOutputImplementation {
         }
     }
 
-    void set_computed_null(std::size_t index, ::bg::frame::row_id_t id) const {
+    void set_computed_null(std::size_t index, ::hg::frame::row_id_t id) const {
         auto &output = runtime_storage();
         if (index >= output.layout->fields.size() || !output.is_computed(index))
             throw std::invalid_argument{"frame output field is not declared computed"};
@@ -4443,9 +4443,9 @@ class FrameViewOutputImplementation {
         }
     }
 
-    template <::bg::frame::cell_type Cell>
-    void set_computed_batch(std::size_t index, std::span<const ::bg::frame::row_id_t> ids,
-                            const ::bg::frame::ColumnBatch<Cell> &batch) const {
+    template <::hg::frame::cell_type Cell>
+    void set_computed_batch(std::size_t index, std::span<const ::hg::frame::row_id_t> ids,
+                            const ::hg::frame::ColumnBatch<Cell> &batch) const {
         if (batch.size != ids.size())
             throw std::invalid_argument{"computed frame batch length does not match its row IDs"};
         auto &output = runtime_storage();
@@ -4468,7 +4468,7 @@ class FrameViewOutputImplementation {
         output.begin_cycle(time);
         auto changed = false;
         for (std::size_t position = 0; position != ids.size(); ++position) {
-            auto value = std::optional<::bg::frame::cell_value_t<Cell>>{};
+            auto value = std::optional<::hg::frame::cell_value_t<Cell>>{};
             if (batch.is_valid(position))
                 value = batch.value_at(position);
             changed = output.write_computed(index, ids[position], std::addressof(value),
@@ -4482,8 +4482,8 @@ class FrameViewOutputImplementation {
         }
     }
 
-    ::bg::frame::RuntimeFrameViewOutputStorage &runtime_storage() const noexcept {
-        return *static_cast<::bg::frame::RuntimeFrameViewOutputStorage *>(binding_->mutable_data());
+    ::hg::frame::RuntimeFrameViewOutputStorage &runtime_storage() const noexcept {
+        return *static_cast<::hg::frame::RuntimeFrameViewOutputStorage *>(binding_->mutable_data());
     }
 
     TimeSeriesOutputBinding binding_;
@@ -4828,9 +4828,9 @@ struct output_declaration_traits<Out<frame::TSF<Schema, Properties...>, Option>>
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::frame {
+namespace hg::frame {
 
 template <template <template <typename, auto...> typename> typename TargetSchema,
           util::compile_time_string... Names,
@@ -4852,9 +4852,9 @@ auto project(wp<TSF<SourceSchema, Properties...>> source) {
     return wp<TSF<TargetSchema>>{operators::select[type<TSF<TargetSchema>>](source, packed)};
 }
 
-} // namespace bg::frame
+} // namespace hg::frame
 
-namespace bg {
+namespace hg {
 
 template <template <template <typename, auto...> typename> typename Schema>
 struct scalar_type_traits<frame::Frame<Schema>> {
@@ -4949,11 +4949,11 @@ struct scalar_storage_traits<frame::Frame<Schema>> {
     }
 };
 
-} // namespace bg
+} // namespace hg
 
-namespace bg::frame {
+namespace hg::frame {
 
-inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const bg::Schema &schema,
+inline ScalarValue<Frame<hg::SCHEMA>> make_frame_value(allocator &memory, const hg::Schema &schema,
                                                        std::size_t row_count,
                                                        std::span<const ColumnView<>> columns) {
     if (!schema.is_resolved())
@@ -4991,14 +4991,14 @@ inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(allocator &memory, const 
             owner->release();
     }};
     const auto &runtime = frame_snapshot_runtime_type(frame_type(schema));
-    const auto borrowed = Scalar<Frame<bg::SCHEMA>>::from(runtime, std::addressof(staged));
-    return ScalarValue<Frame<bg::SCHEMA>>{borrowed, memory};
+    const auto borrowed = Scalar<Frame<hg::SCHEMA>>::from(runtime, std::addressof(staged));
+    return ScalarValue<Frame<hg::SCHEMA>>{borrowed, memory};
 }
 
-inline ScalarValue<Frame<bg::SCHEMA>> make_frame_value(const bg::Schema &schema, std::size_t row_count,
+inline ScalarValue<Frame<hg::SCHEMA>> make_frame_value(const hg::Schema &schema, std::size_t row_count,
                                                        std::span<const ColumnView<>> columns) {
-    auto memory = bg::details::current_scalar_allocator();
+    auto memory = hg::details::current_scalar_allocator();
     return make_frame_value(memory, schema, row_count, columns);
 }
 
-} // namespace bg::frame
+} // namespace hg::frame

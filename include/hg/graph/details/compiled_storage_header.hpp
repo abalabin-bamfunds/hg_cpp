@@ -5,12 +5,12 @@
 #include <span>
 #include <type_traits>
 
-namespace bg {
+namespace hg {
 class TimeSeriesRuntimeType;
 class TimeSeriesType;
 }
 
-namespace bg::details {
+namespace hg::details {
 
 struct ConstantMetadata {
     std::uint32_t start_time_offset;
@@ -134,4 +134,4 @@ struct CompiledStorageHeader {
 static_assert(sizeof(CompiledStorageHeader) == 44);
 static_assert(std::is_trivially_copyable_v<CompiledStorageHeader>);
 
-} // namespace bg::details
+} // namespace hg::details

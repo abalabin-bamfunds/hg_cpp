@@ -1,9 +1,9 @@
 #pragma once
 
-#include <bg/evaluation_time.hpp>
-#include <bg/scalar/bytes.hpp>
-#include <bg/scalar/string.hpp>
-#include <bg/util/symbol.hpp>
+#include <hg/evaluation_time.hpp>
+#include <hg/scalar/bytes.hpp>
+#include <hg/scalar/string.hpp>
+#include <hg/util/symbol.hpp>
 
 #include <tp/tpack.h>
 
@@ -11,7 +11,7 @@
 #include <cstddef>
 #include <cstdint>
 
-namespace bg {
+namespace hg {
 
 using byte = std::byte;
 using i64 = std::int64_t;
@@ -28,4 +28,4 @@ using BuiltinScalarTypes = decltype(builtin_scalar_declarations);
 
 } // namespace details
 
-} // namespace bg
+} // namespace hg

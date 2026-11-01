@@ -1,7 +1,7 @@
 # Library alphabetical index
 
-Library operators are available in `bg.operators` in Python and `bg::operators` in C++.
-Graph composition helpers use `bg` in both languages. The linked entries specify
+Library operators are available in `hg.operators` in Python and `hg::operators` in C++.
+Graph composition helpers use `hg` in both languages. The linked entries specify
 imports and headers.
 
 | Name | Contract |

@@ -1,4 +1,4 @@
-#include <bg/web/client_auth.hpp>
+#include <hg/web/client_auth.hpp>
 
 #include <boost/url.hpp>
 
@@ -9,7 +9,7 @@
 #include <string>
 #include <string_view>
 
-namespace bg::web::details {
+namespace hg::web::details {
 
 const service<auto(TS<Bundle<ClientAuthMatcher>>, string) -> TSS<string>> client_auth_registration_service{
     "client_auth_registration", {"matcher", "scope"}};
@@ -86,4 +86,4 @@ void validate_client_auth_regex(std::string_view pattern) {
     }
 }
 
-} // namespace bg::web::details
+} // namespace hg::web::details
