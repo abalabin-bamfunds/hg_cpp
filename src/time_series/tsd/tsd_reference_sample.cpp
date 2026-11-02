@@ -189,6 +189,8 @@ void SampledDictionary::populate_changes() const {
     key_set_sample = SampledSet::create(
         static_cast<const TimeSeriesSetType &>(runtime_type->key_set_runtime_type().type()), key_set(Target::previous),
         key_set(Target::current), sampled_last_updated.time(), sample_memory);
+    const auto previous_changed_this_cycle =
+        previous_source.valid() && previous_source.last_updated.time() == sampled_last_updated.time();
 
     if (current_source.valid()) {
         struct CurrentCallback {
@@ -201,17 +203,16 @@ void SampledDictionary::populate_changes() const {
             const auto &sample = *callback.sample;
             const auto key = callback.current_type->key_data(sample.current_source.storage, id);
             const auto current_item = callback.current_type->item(sample.current_source.storage, id);
-            const auto previous_id = sample.previous_source.valid()
-                                         ? callback.previous_type->find_item(sample.previous_source.storage, key)
-                                         : util::occupancy_index::npos;
+            const auto previous_id = sample.previous_item_id(key);
             if (previous_id == util::occupancy_index::npos) {
                 sample.added.set(id, sample.memory);
                 sample.append_child(id, util::occupancy_index::npos, nullptr, &current_item);
                 return;
             }
 
-            if (previous_id != id) {
-                sample.item_id_remappings.push_back({previous_id, id});
+            const auto previous_id_value = previous_id & ~previous_item_flag;
+            if (previous_id_value != id) {
+                sample.item_id_remappings.push_back({previous_id_value, id});
             }
 
             const auto previous_item = callback.previous_type->item(sample.previous_source.storage, previous_id);
@@ -234,19 +235,31 @@ void SampledDictionary::populate_changes() const {
             const SampledDictionary *sample;
             const TimeSeriesDictionaryRuntimeType *current_type;
             const TimeSeriesDictionaryRuntimeType *previous_type;
-        } callback{this, current_type, previous_type};
-        previous_type->for_each_item_id(previous_source.storage, &callback, [](void *value, item_id_t id) {
+            bool previous_changed_this_cycle;
+        } callback{this, current_type, previous_type, previous_changed_this_cycle};
+        const auto record_removal = [](void *value, item_id_t id) {
             auto &callback = *static_cast<PreviousCallback *>(value);
             const auto &sample = *callback.sample;
             const auto key = callback.previous_type->key_data(sample.previous_source.storage, id);
+            if (callback.previous_changed_this_cycle &&
+                callback.previous_type->item_in_range(sample.previous_source.last_updated,
+                                                      sample.previous_source.storage,
+                                                      TimeSeriesDictionaryRuntimeType::ItemRange::added, id)) {
+                return;
+            }
             if (sample.current_source.valid() && callback.current_type->find_item(sample.current_source.storage, key) !=
                                               util::occupancy_index::npos) {
                 return;
             }
-            sample.removed.set(id, sample.memory);
+            sample.removed.set(id & ~previous_item_flag, sample.memory);
             const auto previous_item = callback.previous_type->item(sample.previous_source.storage, id);
             sample.append_child(util::occupancy_index::npos, id, &previous_item, nullptr);
-        });
+        };
+        previous_type->for_each_item_id(previous_source.storage, &callback, record_removal);
+        if (previous_changed_this_cycle) {
+            previous_type->for_each_removed(previous_source.last_updated, previous_source.storage, &callback,
+                                             record_removal);
+        }
     }
 
     std::ranges::sort(children, {}, &Child::id);
@@ -291,6 +304,25 @@ void SampledDictionary::release() noexcept {
     if (--reference_count == 0) {
         memory.delete_object(this);
     }
+}
+
+item_id_t SampledDictionary::previous_item_id(const ScalarData &key) const {
+    if (!previous_source.valid()) {
+        return util::occupancy_index::npos;
+    }
+
+    const auto *type = dictionary_runtime_type(previous_source);
+    const auto changed_this_cycle = previous_source.last_updated.time() == sampled_last_updated.time();
+    const auto id = type->find_item(previous_source.storage, key);
+    if (id != util::occupancy_index::npos) {
+        if (changed_this_cycle && type->item_in_range(previous_source.last_updated, previous_source.storage,
+                                                       TimeSeriesDictionaryRuntimeType::ItemRange::added, id)) {
+            return util::occupancy_index::npos;
+        }
+        return id;
+    }
+    return changed_this_cycle ? type->find_removed(previous_source.last_updated, previous_source.storage, key)
+                              : util::occupancy_index::npos;
 }
 
 item_id_t SampledDictionaryRuntimeType::find_item(const void *value, const ScalarData &key) const {
@@ -499,7 +531,7 @@ bool SampledDictionaryRuntimeType::item_was_valid(const TimeSeriesState &, const
             return false;
         }
         const auto key = current_type->key_data(sample.current_source.storage, id);
-        previous_id = previous_type->find_item(sample.previous_source.storage, key);
+        previous_id = sample.previous_item_id(key);
         if (previous_id == util::occupancy_index::npos) {
             return false;
         }

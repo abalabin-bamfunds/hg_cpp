@@ -637,7 +637,7 @@ TEST_CASE("key-only map observes removal and re-addition through a retained mapp
 }
 
 TEST_CASE("getitem validity follows a removed and re-added key after a source switch",
-          "[.][repro][feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
+          "[feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
           "[shape:doubly-nested][transition:update][transition:removal][transition:addition]") {
     const auto tested = [](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
                            wp<TSD<i64, TS<i64>>> second, wp<TSS<i64>> keys) {
@@ -661,7 +661,7 @@ TEST_CASE("getitem validity follows a removed and re-added key after a source sw
 }
 
 TEST_CASE("getitem follows a changing key set across switched dictionary sources",
-          "[.][repro][feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
+          "[feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
           "[transition:update][transition:addition][transition:removal]") {
     const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
@@ -690,7 +690,7 @@ TEST_CASE("getitem follows a changing key set across switched dictionary sources
 }
 
 TEST_CASE("getitem follows a changing key set through an identity map of switched sources",
-          "[.][repro][feature:getitem][feature:map][feature:switch][series:tsd][series:tss]"
+          "[feature:getitem][feature:map][feature:switch][series:tsd][series:tss]"
           "[series:reference][transition:update][transition:addition][transition:removal]") {
     const auto identity = graph("name"_n = "identity_dictionary_item",
                                 [](wp<TS<i64>> value) { return value; });
@@ -719,6 +719,47 @@ TEST_CASE("getitem follows a changing key set through an identity map of switche
     CHECK(actual.equals({literal::SKIP, {{1, 3}}, {{1, 40}, {2, 20}},
                          {{1, literal::INVALID}, {2, literal::REMOVE}}, literal::SKIP,
                          {{1, 7}}, {{1, 70}}, {{1, 80}}}));
+}
+
+TEST_CASE("getitem reconciles same-cycle source changes when switching dictionaries",
+          "[feature:getitem][feature:switch][series:tsd][series:tss][series:reference]"
+          "[feature:sampling][input-guarantee:valid-items]"
+          "[transition:update][transition:addition][transition:removal]") {
+    const auto select_source = [](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
+                                  wp<TSD<i64, TS<i64>>> second) {
+        return operators::if_then_else(select_first, first, second);
+    };
+
+    const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto tested = [&](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> first,
+                            wp<TSD<i64, TS<i64>>> second, wp<TSS<i64>> keys) {
+        return materialize(operators::getitem(select_source(select_first, first, second), keys));
+    };
+
+    const auto selector = ticks({true, false, true, literal::SKIP});
+    const auto first = ticks({{{1, 10}}, {{2, 20}}, {{1, 11}}, {{2, 21}}});
+    const auto second = ticks({{{1, 100}, {2, 200}}, {{1, 101}, {2, 201}},
+                               {{1, 102}, {2, literal::REMOVE}}, literal::SKIP});
+    const auto keys = ticks({{1}, {1, 2}, literal::SKIP, literal::SKIP});
+
+    CHECK(bg::run_graph(tested, selector, first, second, keys)
+              .equals({{{1, 10}}, {{1, 101}, {2, 201}}, {{1, 11}, {2, 20}}, {{2, 21}}}));
+
+    const auto count_added = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
+        auto count = i64{};
+        input.for_each_added([&](const auto &) { ++count; });
+        return count;
+    });
+
+    const auto added_count = [&](wp<TS<bool>> select_first, wp<TSD<i64, TS<i64>>> left,
+                                 wp<TSD<i64, TS<i64>>> right) {
+        return count_added(select_source(select_first, left, right));
+    };
+
+    CHECK(bg::run_graph(added_count, selector, first, second).equals<i64>({1, 1, 0, 0}));
 }
 
 TEST_CASE("keys_ projects an ordinary dictionary without adding a runtime node",

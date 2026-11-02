@@ -38,6 +38,7 @@ struct SampledDictionary final : ReferenceSample {
     void release() noexcept override;
     TimeSeriesRuntimeType::ConstItem input() const noexcept override;
     ResolvedTimeSeries previous() const noexcept override { return previous_source; }
+    item_id_t previous_item_id(const ScalarData &key) const;
     void populate_changes() const;
 
     const TimeSeriesDictionaryRuntimeType *runtime_type;
