@@ -634,7 +634,7 @@ TEST_CASE("reduce consumes dictionary references returned by a map",
         return reduce(add_graph, map(identity, values), "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, 1}, {2, 2}},
          {{1, 3}, {2, literal::REMOVE}},
