@@ -252,6 +252,7 @@ add_executable(
     library/debounce_test.cpp
     library/overload_registration_test.cpp
     library/merge_test.cpp
+    library/reference_consumer_test.cpp
     library/running_test.cpp
     library/stateful_test.cpp
     library/stream_test.cpp
