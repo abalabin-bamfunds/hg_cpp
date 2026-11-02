@@ -1,24 +1,24 @@
-#include <bg/graph.hpp>
-#include <bg/library.hpp>
-#include <bg/mesh.hpp>
-#include <bg/map.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
-#include <bg/switch.hpp>
-#include <bg/time_series/tsd/tsd_type.hpp>
-#include <bg/time_series/tsb/tsb.hpp>
-#include <bg/time_series/tsl/tsl.hpp>
+#include <hg/graph.hpp>
+#include <hg/library.hpp>
+#include <hg/mesh.hpp>
+#include <hg/map.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/switch.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
-using namespace bg;
-using namespace bg::literals;
+using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("a selected dictionary item feeds its target value",
           "[feature:reference][series:tsd][series:value][binding:reference-to-value]") {
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) { return values[i64{1}]; };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}}, {{1, 20}}}).equals<i64>({10, 20}));
+    CHECK(hg::run_graph(tested, {{{1, 10}}, {{1, 20}}}).equals<i64>({10, 20}));
 }
 
 template <template <typename, auto...> typename Field> struct reference_bundle {
@@ -30,7 +30,7 @@ TEST_CASE("valid follows a selected dictionary item through invalidation and rev
           "[feature:reference][feature:validity][series:tsd][transition:invalidation][transition:revalidation]") {
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) { return operators::valid(values[i64{1}]); };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}}, {{1, literal::INVALID}}, {{1, 20}}})
+    CHECK(hg::run_graph(tested, {{{1, 10}}, {{1, literal::INVALID}}, {{1, 20}}})
               .equals<bool>({true, false, true}));
 }
 
@@ -45,7 +45,7 @@ TEST_CASE("modified observes only selected dictionary item updates",
         return observe(trigger, values[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 20}}, {{2, 21}}, {{1, 11}}, {{1, 12}}},
                         {0, 1, 2, 3})
               .equals<bool>({true, false, true, true}));
@@ -56,7 +56,7 @@ TEST_CASE("lag follows a selected dictionary item and ignores sibling updates",
           "[transition:update]") {
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) { return operators::lag(values[i64{1}]); };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 100}}, {{2, 101}}, {{1, 11}}, {{1, 12}}})
               .equals<i64>({std::nullopt, std::nullopt, 10, 11}));
 }
@@ -68,7 +68,7 @@ TEST_CASE("take counts selected dictionary item ticks",
         return operators::take(values[i64{1}], 2);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 100}}, {{2, 101}}, {{1, 11}}, {{1, 12}}})
               .equals<i64>({10, std::nullopt, 11, std::nullopt}));
 }
@@ -80,7 +80,7 @@ TEST_CASE("drop skips the first selected dictionary item tick",
         return operators::drop(values[i64{1}], 1);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}}, {{1, 11}}, {{2, 100}}, {{1, 12}}})
               .equals<i64>({std::nullopt, 11, std::nullopt, 12}));
 }
@@ -90,7 +90,7 @@ TEST_CASE("dedup sees selected dictionary item values",
           "[binding:reference-to-value][transition:update]") {
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) { return operators::dedup(values[i64{1}]); };
 
-    CHECK(bg::run_graph(tested, {{{1, 1}}, {{1, 1}}, {{1, 2}}, {{1, 2}}})
+    CHECK(hg::run_graph(tested, {{{1, 1}}, {{1, 1}}, {{1, 2}}, {{1, 2}}})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
 }
 
@@ -101,7 +101,7 @@ TEST_CASE("an identity map element reference feeds lag",
         return operators::lag(map([](wp<TS<i64>> value) { return value; }, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}, {2, 100}}, {{2, 101}}, {{1, 11}}, {{1, 12}}})
+    CHECK(hg::run_graph(tested, {{{1, 10}, {2, 100}}, {{2, 101}}, {{1, 11}}, {{1, 12}}})
               .equals<i64>({std::nullopt, std::nullopt, 10, 11}));
 }
 
@@ -112,7 +112,7 @@ TEST_CASE("take counts identity map element reference ticks",
         return operators::take(map([](wp<TS<i64>> value) { return value; }, values)[i64{1}], 2);
     };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}}, {{2, 100}}, {{1, 11}}, {{1, 12}}})
+    CHECK(hg::run_graph(tested, {{{1, 10}}, {{2, 100}}, {{1, 11}}, {{1, 12}}})
               .equals<i64>({10, std::nullopt, 11, std::nullopt}));
 }
 
@@ -123,7 +123,7 @@ TEST_CASE("drop skips the first identity map element reference tick",
         return operators::drop(map([](wp<TS<i64>> value) { return value; }, values)[i64{1}], 1);
     };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}}, {{1, 11}}, {{2, 100}}, {{1, 12}}})
+    CHECK(hg::run_graph(tested, {{{1, 10}}, {{1, 11}}, {{2, 100}}, {{1, 12}}})
               .equals<i64>({std::nullopt, 11, std::nullopt, 12}));
 }
 
@@ -134,7 +134,7 @@ TEST_CASE("dedup sees identity map element reference values",
         return operators::dedup(map([](wp<TS<i64>> value) { return value; }, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested, {{{1, 1}}, {{1, 1}}, {{1, 2}}, {{1, 2}}})
+    CHECK(hg::run_graph(tested, {{{1, 1}}, {{1, 1}}, {{1, 2}}, {{1, 2}}})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
 }
 
@@ -145,7 +145,7 @@ TEST_CASE("valid follows an identity map element reference",
         return operators::valid(map([](wp<TS<i64>> value) { return value; }, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}}, {{1, literal::INVALID}}, {{1, 20}}})
+    CHECK(hg::run_graph(tested, {{{1, 10}}, {{1, literal::INVALID}}, {{1, 20}}})
               .equals<bool>({true, false, true}));
 }
 
@@ -160,7 +160,7 @@ TEST_CASE("modified observes identity map element updates without sibling change
         return observe(trigger, map([](wp<TS<i64>> value) { return value; }, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested, {{{1, 10}, {2, 20}}, {{2, 21}}, {{1, 11}}}, {0, 1, 2})
+    CHECK(hg::run_graph(tested, {{{1, 10}, {2, 20}}, {{2, 21}}, {{1, 11}}}, {0, 1, 2})
               .equals<bool>({true, false, true}));
 }
 
@@ -172,7 +172,7 @@ TEST_CASE("a conditional reference switch samples a distinct equal-valued target
         return operators::count(selected);
     };
 
-    CHECK(bg::run_graph(tested, {true, false, true}, {1, literal::SKIP, literal::SKIP},
+    CHECK(hg::run_graph(tested, {true, false, true}, {1, literal::SKIP, literal::SKIP},
                         {1, literal::SKIP, literal::SKIP})
               .equals<i64>({1, 2, 3}));
 }
@@ -190,7 +190,7 @@ TEST_CASE("count ignores same-target switch turnover and resumes on target updat
         return operators::count(selected);
     };
 
-    CHECK(bg::run_graph(tested, {0, 1, 0, 1}, {10, literal::SKIP, literal::SKIP, 11})
+    CHECK(hg::run_graph(tested, {0, 1, 0, 1}, {10, literal::SKIP, literal::SKIP, 11})
               .equals<i64>({1, std::nullopt, std::nullopt, 2}));
 }
 
@@ -207,7 +207,7 @@ TEST_CASE("lag ignores same-target switch turnover and keeps its prior event",
         return operators::lag(selected);
     };
 
-    CHECK(bg::run_graph(tested, {0, 1, 0, 1}, {10, literal::SKIP, literal::SKIP, 11})
+    CHECK(hg::run_graph(tested, {0, 1, 0, 1}, {10, literal::SKIP, literal::SKIP, 11})
               .equals<i64>({std::nullopt, std::nullopt, std::nullopt, 10}));
 }
 
@@ -218,7 +218,7 @@ TEST_CASE("keys_ follows a nested dictionary selected from a dictionary referenc
         return operators::keys_(values[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {}}},
                          {{1, {{10, 1}}}},
                          {{2, {{20, 2}}}},
@@ -235,7 +235,7 @@ TEST_CASE("len_ follows a nested dictionary selected from a dictionary reference
         return operators::len_(values[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {}}},
                          {{1, {{10, 1}}}},
                          {{2, {{20, 2}}}},
@@ -252,7 +252,7 @@ TEST_CASE("is_empty follows a nested dictionary selected from a dictionary refer
         return operators::is_empty(values[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {}}},
                          {{1, {{10, 1}}}},
                          {{2, {{20, 2}}}},
@@ -269,7 +269,7 @@ TEST_CASE("an identity map element reference feeds nested dictionary queries",
         return operators::keys_(map([](wp<TSD<i64, TS<i64>>> value) { return value; }, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {}}},
                          {{1, {{10, 1}}}},
                          {{2, {{20, 2}}}},
@@ -287,7 +287,7 @@ TEST_CASE("len_ follows a nested dictionary selected from a map element referenc
         return operators::len_(nested);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {}}},
                          {{1, {{10, 1}}}},
                          {{2, {{20, 2}}}},
@@ -305,7 +305,7 @@ TEST_CASE("is_empty follows a nested dictionary selected from a map element refe
         return operators::is_empty(nested);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {}}},
                          {{1, {{10, 1}}}},
                          {{2, {{20, 2}}}},
@@ -323,7 +323,7 @@ TEST_CASE("an inner value reference follows updates through a map of dictionarie
         return nested[i64{10}];
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {{10, 10}}}},
                          {{1, {{10, 11}}}},
                          {{2, {{20, 20}}}},
@@ -343,7 +343,7 @@ TEST_CASE("a map can return a free list of its input items",
         return sum(lists[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {{0, 1}, {1, 10}}}, {2, {{0, 2}, {1, 20}}}},
                          {{1, {{0, 2}}}},
                          {{2, {{0, 3}}}},
@@ -358,7 +358,7 @@ TEST_CASE("count keeps a selected map reference across key removal and recreatio
         return operators::count(map([](wp<TS<i64>> value) { return value; }, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 20}},
                          {{2, 21}},
                          {{1, literal::REMOVE}, {2, 22}},
@@ -376,7 +376,7 @@ TEST_CASE("count resets after selected mesh key removal and restarts on recreati
         return operators::count(mapped[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 20}},
                          {{2, 21}},
                          {{1, literal::REMOVE}, {2, 22}},
@@ -400,7 +400,7 @@ TEST_CASE("a free bundle reference keeps its selected field across switch resele
         return operators::count(operators::getattr(selected, util::symbol{"left"}));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {true, false, true, false},
                         {5, literal::SKIP, literal::SKIP, 6},
                         {10, literal::SKIP, literal::SKIP, literal::SKIP})
@@ -419,7 +419,7 @@ TEST_CASE("all_valid follows partial item validity through a switched free list"
             switch_(branch, cases{case_(true, pass_through), case_(false, pass_through)}, values));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {true, false, true, false, true},
                         {1, literal::SKIP, literal::SKIP, 2, literal::SKIP},
                         {literal::INVALID, literal::SKIP, 3, literal::SKIP, literal::INVALID})
@@ -443,7 +443,7 @@ TEST_CASE("switch branches build free lists from their current reference targets
         return copy(switch_(branch, cases{case_(true, forward), case_(false, reverse)}, first, second));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {true, false, false, true, false},
                         {1, 2, literal::INVALID, 3, 4},
                         {10, 20, 21, 22, 23})
@@ -475,7 +475,7 @@ TEST_CASE("switch branches build free bundles from their current reference targe
         return copy(switch_(branch, cases{case_(true, forward), case_(false, reverse)}, left, right));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {true, false, false, true, false},
                         {1, 2, literal::INVALID, 3, 4},
                         {10, 20, 21, 22, 23})
@@ -501,7 +501,7 @@ TEST_CASE("a map can return a free bundle of its input fields",
         return copy(map(make_free_bundle, values)[i64{1}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {{"left", 1}, {"right", 10}}}, {2, {{"left", 2}, {"right", 20}}}},
                          {{1, {{"left", 2}}}},
                          {{2, {{"left", 3}, {"right", 30}}}},
@@ -532,7 +532,7 @@ TEST_CASE("map switch resets one key count on removal and preserves the other",
                                        operators::count(selected[i64{2}]));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {true, true, true, true, false, true},
                         {{{1, 10}, {2, 100}}, {{1, 11}}, {{2, literal::REMOVE}}, {{2, 101}}, literal::SKIP,
                          literal::SKIP},
@@ -564,7 +564,7 @@ TEST_CASE("map switch keeps per-key lag state independent through removal and re
                                        operators::lag(selected[i64{2}]));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {true, true, true, true, false, true},
         {{{1, 10}, {2, 100}}, {{1, 11}}, {{2, literal::REMOVE}}, {{2, 101}}, literal::SKIP, literal::SKIP},
@@ -586,7 +586,7 @@ TEST_CASE("valid follows an inner item reference through a map lifecycle",
         return operators::valid(nested[i64{10}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {{10, 10}}}},
                          {{2, {{20, 20}}}},
                          {{1, {{10, literal::REMOVE}}}},
@@ -606,7 +606,7 @@ TEST_CASE("modified observes nested map item updates and ignores sibling updates
         return observe(trigger, nested[i64{10}]);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, {{10, 10}}}},
                          {{2, {{20, 20}}}},
                          {{1, {{10, 11}}}},
