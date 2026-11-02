@@ -294,6 +294,11 @@ TEST_CASE("a generic bundle declaration captures and resolves its schema variabl
 
 TEST_CASE("a generic bundle declaration captures a named schema variable",
           "[feature:type-system][scalar:hierarchical][schema:named][declaration:generic]") {
+    STATIC_CHECK_FALSE(scalar_storage_traits<Bundle<ENTITY>>::supports_equality);
+    STATIC_CHECK_FALSE(scalar_storage_traits<Bundle<ENTITY>>::supports_hash);
+    STATIC_CHECK(scalar_storage_traits<Bundle<Equity>>::supports_equality);
+    STATIC_CHECK(scalar_storage_traits<Bundle<Equity>>::supports_hash);
+
     const auto &generic = cpp_scalar_type<Bundle<ENTITY>>();
     const auto &concrete = cpp_scalar_type<Bundle<Equity>>();
     const auto &schema_variable = details::schema_variable_instance<ENTITY>();
