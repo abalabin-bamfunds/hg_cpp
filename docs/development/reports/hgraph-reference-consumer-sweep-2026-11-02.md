@@ -4,7 +4,8 @@ This batch checks metadata and stateful consumers of references, free fixed
 collections across nested graph boundaries, and references retained across
 branch removal and recreation. It extends the
 [preceding sweep](hgraph-reference-consumer-sweep-2026-10-30.md).
-The BG baseline is `84d756fe`. This batch changes tests and documentation only.
+The initial baseline was `84d756fe`. The batch is now rebased onto HG
+`362c103dd`. It changes tests and documentation only.
 
 ## Sources and interpretation
 
@@ -24,7 +25,7 @@ commit. Other local changes in that checkout are outside this review.
 | 0.5 `hgraph_unit_tests/_wiring/test_reference_observer_lifetime.py::test_cascaded_switch_in_map_ticking_into_take`; 0.8 ported counterpart | Compose nested reference-producing graphs with stateful downstream consumers. |
 
 The upstream product sweep supplies candidate compositions. Expected results
-follow BG's contracts. A dereferencing binding retains the new reference handle
+follow HG's contracts. A dereferencing binding retains the new reference handle
 but samples only when the resolved target changes. Equal values in distinct
 target storage still permit a sample. Explicit REF inputs receive ordinary
 reference ticks. See the
@@ -66,9 +67,11 @@ field updates and ignores changes in an unrelated branch.
 
 ## Verification
 
-The focused binaries use GCC Release flags (`-O3 -DNDEBUG`) and the native
-libraries built from the matching BG baseline. Both the implementation agent
-and the main agent ran the complete focused binaries after the final changes.
+The focused binaries use GCC Release flags (`-O3 -DNDEBUG`) and matching native
+libraries. After rebasing onto `362c103dd`, the test includes and namespace were
+updated for the `hg` rename. The native libraries and both focused binaries were
+rebuilt. Both the implementation agent and the main agent ran the complete
+focused binaries and confirmed the same counts:
 
 | Runner | Test cases | Assertions | Result |
 | --- | ---: | ---: | --- |
@@ -80,7 +83,14 @@ The library runner includes `stream_test.cpp`, `collection_test.cpp`,
 `merge_test.cpp`, `tsd_transform_test.cpp`, `tick_selection_test.cpp`, and the
 new `reference_consumer_test.cpp`. The engine runner retains the preceding
 sweep's map, mesh, reduce, switch, nested-graph, context, collection,
-reference, valid-item, and mesh-wiring cases. The full BG test suite was not run.
+reference, valid-item, and mesh-wiring cases. The full HG test suite was not run.
+
+Run the refreshed binaries from the review lane:
+
+```sh
+build/integration/hgraph-pattern-hg-library-tests
+build/integration/hgraph-pattern-hg-engine-tests
+```
 
 Library coverage tags validate with no errors, including all new cases.
 Engine tag validation reports the same five baseline diagnostics: one missing
