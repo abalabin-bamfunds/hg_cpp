@@ -115,6 +115,7 @@ TEST_CASE("mapped feedback accumulators keep state per key",
     const auto add = node([](i64 delta, In<TS<i64>, optional, passive> previous) {
         return delta + (previous.valid() ? *previous : 0);
     });
+
     const auto accumulate = graph("name"_n = "accumulate_each_item", [&](wp<TS<i64>> delta) {
         auto loop = feedback<TS<i64>>();
         loop = add(delta, loop);
@@ -125,6 +126,7 @@ TEST_CASE("mapped feedback accumulators keep state per key",
     const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> deltas) { return materialize(map(accumulate, deltas)); };
 
     CHECK(run_graph(tested, {{{1, 2}, {2, 10}}, {{1, 3}}, {{2, 1}}})

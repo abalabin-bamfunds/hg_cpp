@@ -77,44 +77,6 @@ TEST_CASE("feedback service wrapper resolves a declared implementation output",
               .equals<i64>({std::nullopt, 2}));
 }
 
-TEST_CASE("feedback service wrapper infers a mapped implementation output",
-          "[.][repro][feature:feedback][feature:service][series:tsd][series:value]") {
-    const auto adjust = service<auto(TS<i64>)->TS<i64>>{"inferred_adjust", {"value"}};
-    const auto add_one = node([](i64 value) { return value + 1; });
-
-    const auto implementation = graph("name"_n = "inferred_adjust_impl",
-                                      [&](wp<TSD<service_client_id_t, TS<i64>>, "value"_n> requests) {
-                                          return map(add_one, requests);
-                                      });
-    auto catalogue = ServiceCatalogue{};
-    catalogue.register_impl(adjust, feedback_service_implementation(adjust, implementation));
-
-    const auto tested = [&](wp<TS<i64>> value) { return adjust(value); };
-
-    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}, {1})
-              .equals<i64>({std::nullopt, 2}));
-}
-
-TEST_CASE("nested graphs infer an operator output type",
-          "[.][repro][feature:graph-compilation][feature:nested-graph][series:value][scalar:i64]") {
-    const auto inferred = graph("name"_n = "inferred_increment", [](wp<TS<i64>> value) {
-        return operators::add(value, i64{1});
-    });
-    const auto declared = graph("name"_n = "declared_increment",
-                                [](wp<TS<i64>> value) -> wp<TS<i64>> {
-                                    return operators::add(value, i64{1}).as<TS<i64>>();
-                                });
-    const auto inferred_call = [&](wp<TS<i64>> value) {
-        return nested(inferred, operators::const_(true), value);
-    };
-    const auto declared_call = [&](wp<TS<i64>> value) {
-        return nested(declared, operators::const_(true), value);
-    };
-
-    CHECK(run_graph(declared_call, {1, 2}).equals<i64>({2, 3}));
-    CHECK(run_graph(inferred_call, {1, 2}).equals<i64>({2, 3}));
-}
-
 TEST_CASE("request reply calls inside a mapped switch handle late keys",
           "[feature:service][feature:map][feature:switch][feature:nested-graph]"
           "[series:tsd][series:value][shape:nested][transition:addition]") {
@@ -175,6 +137,7 @@ TEST_CASE("a mapped switch removes an invalid request reply before it arrives",
                        cases{case_(true, service_branch), case_(false, [&](auto input) { return local(input); })},
                        value);
     });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
@@ -210,12 +173,9 @@ TEST_CASE("a subscription implementation can depend on a reference service",
     catalogue.register_impl(offset, offset_impl);
 
     const auto key = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(7); });
-    const auto tested = [&](wp<TS<bool>> trigger) {
-        (void)trigger;
-        return lookup(key());
-    };
+    const auto tested = [&] { return lookup(key()); };
 
-    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}, {true}).equals<i64>({17}));
+    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}).equals<i64>({17}));
 }
 
 namespace {
@@ -234,6 +194,7 @@ TEST_CASE("subscription clients can read a delayed free-bundle field",
     const auto delayed_value = graph("name"_n = "delayed_lookup_value", [](wp<TS<i64>> key) {
         return bundle<TSB<DelayedLookupValue>>("value"_n = operators::delay(key, timedelta_t{2}));
     });
+
     const auto implementation = graph("name"_n = "delayed_lookup_impl", [&](wp<TSS<i64>> keys)
                                           -> wp<TSD<i64, TSB<DelayedLookupValue>>> {
         return map(delayed_value, "__keys__"_n = keys, "__key_arg__"_n = 0).as<TSD<i64, TSB<DelayedLookupValue>>>();
@@ -242,12 +203,9 @@ TEST_CASE("subscription clients can read a delayed free-bundle field",
     catalogue.register_impl(lookup, implementation);
 
     const auto key = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(7); });
-    const auto tested = [&](wp<TS<bool>> trigger) {
-        (void)trigger;
-        return lookup(key()).as<TSB<DelayedLookupValue>>()->value;
-    };
+    const auto tested = [&] { return lookup(key()).as<TSB<DelayedLookupValue>>()->value; };
 
-    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}, {true})
+    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue})
               .equals<i64>({std::nullopt, std::nullopt, 7}));
 }
 
@@ -268,9 +226,11 @@ TEST_CASE("subscription requests stay active while another map branch uses the s
     const auto key = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(7); });
 
     const auto client = graph("name"_n = "shared_lookup_client", [&](wp<TS<i64>>) { return lookup(key()); });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) { return copy(map(client, values)); };
 
     const auto actual = run_graph(tested, GraphRunOptions{.services = &catalogue},
@@ -284,4 +244,45 @@ TEST_CASE("subscription requests stay active while another map branch uses the s
                          literal::SKIP,
                          {{1, literal::INVALID}},
                          {{1, 70}}}));
+}
+
+TEST_CASE("feedback service wrapper infers a mapped implementation output",
+          "[.][repro][feature:feedback][feature:service][series:tsd][series:value]") {
+    const auto adjust = service<auto(TS<i64>)->TS<i64>>{"inferred_adjust", {"value"}};
+    const auto add_one = node([](i64 value) { return value + 1; });
+
+    const auto implementation = graph("name"_n = "inferred_adjust_impl",
+                                      [&](wp<TSD<service_client_id_t, TS<i64>>, "value"_n> requests) {
+                                          return map(add_one, requests);
+                                      });
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(adjust, feedback_service_implementation(adjust, implementation));
+
+    const auto tested = [&](wp<TS<i64>> value) { return adjust(value); };
+
+    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}, {1})
+              .equals<i64>({std::nullopt, 2}));
+}
+
+TEST_CASE("nested graphs infer an operator output type",
+          "[.][repro][feature:graph-compilation][feature:nested-graph][series:value][scalar:i64]") {
+    const auto inferred = graph("name"_n = "inferred_increment", [](wp<TS<i64>> value) {
+        return operators::add(value, i64{1});
+    });
+
+    const auto declared = graph("name"_n = "declared_increment",
+                                [](wp<TS<i64>> value) -> wp<TS<i64>> {
+                                    return operators::add(value, i64{1}).as<TS<i64>>();
+                                });
+
+    const auto inferred_call = [&](wp<TS<i64>> value) {
+        return nested(inferred, operators::const_(true), value);
+    };
+
+    const auto declared_call = [&](wp<TS<i64>> value) {
+        return nested(declared, operators::const_(true), value);
+    };
+
+    CHECK(run_graph(declared_call, {1, 2}).equals<i64>({2, 3}));
+    CHECK(run_graph(inferred_call, {1, 2}).equals<i64>({2, 3}));
 }
