@@ -1,0 +1,87 @@
+#pragma once
+
+#include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/type.hpp>
+#include <hg/scalar/struct/scalar_type.hpp>
+#include <hg/scalar/tuple/scalar_type.hpp>
+#include <hg/type/details/declaration_variables.hpp>
+#include <hg/type/scalar_type.hpp>
+#include <hg/type/type_variable.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/symbol.hpp>
+#include <hg/util/static_storage.hpp>
+
+namespace hg::details {
+
+template <typename Declaration> struct ScalarVariableInstance;
+
+template <util::compile_time_string Name, typename... Constraints>
+struct ScalarVariableInstance<ScalarVariable<Name, Constraints...>> {
+    static const TypeVariableType<ScalarType> &get() {
+        static const auto variable = util::static_storage<TypeVariableType<ScalarType>>{
+            std::in_place,
+            [] {
+                auto alternatives = std::vector<const ScalarType *>{};
+                auto property_constraints = std::vector<TypeVariableType<ScalarType>::Constraint>{};
+
+                (
+                    [&] {
+                        if constexpr (std::same_as<Constraints, EqualityComparable>) {
+                            property_constraints.push_back(&supports_scalar_equality);
+                        } else if constexpr (std::same_as<Constraints, Hashable>) {
+                            property_constraints.push_back(&supports_scalar_hash);
+                        } else if constexpr (std::same_as<Constraints, hierarchical_scalar_constraint>) {
+                            property_constraints.push_back(&is_hierarchical_scalar);
+                        } else if constexpr (std::same_as<Constraints, struct_scalar_constraint>) {
+                            property_constraints.push_back(&is_struct_scalar);
+                        } else if constexpr (std::same_as<Constraints, tuple_scalar_constraint>) {
+                            property_constraints.push_back(&is_tuple_scalar);
+                        } else {
+                            alternatives.push_back(&cpp_scalar_type<Constraints>());
+                        }
+                    }(),
+                    ...);
+
+                return TypeVariableType<ScalarType>{util::symbol{Name.view()}, std::move(alternatives),
+                                                     std::move(property_constraints)};
+            }};
+        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
+
+        return variable.get();
+    }
+};
+
+template <scalar_variable Declaration> const TypeVariableType<ScalarType> &scalar_variable_instance() {
+    return ScalarVariableInstance<Declaration>::get();
+}
+
+template <typename Declaration> decltype(auto) scalar_type_access<Declaration>::type() {
+    static_assert(scalar_variable<Declaration>, "unsupported scalar declaration");
+    return scalar_variable_instance<Declaration>();
+}
+
+template <util::compile_time_string Name, typename... Constraints>
+struct declaration_variable_traits<ScalarVariable<Name, Constraints...>> {
+    using Declaration = ScalarVariable<Name, Constraints...>;
+
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        std::forward<Visitor>(visitor).template operator()<Declaration>(scalar_variable_instance<Declaration>());
+    }
+};
+
+} // namespace hg::details
+
+namespace hg {
+
+template <details::scalar_variable Declaration> struct scalar_type_traits<Declaration> {
+    static const ScalarType &type() { return details::scalar_variable_instance<Declaration>(); }
+};
+
+template <details::scalar_variable Declaration> struct scalar_declaration_traits<Declaration> {
+    static constexpr bool generic = true;
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = true;
+};
+
+} // namespace hg

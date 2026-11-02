@@ -1,0 +1,101 @@
+#pragma once
+
+#include <hg/scalar/details/handle_traits.hpp>
+#include <hg/scalar/details/collection_storage.hpp>
+#include <hg/scalar/set/type.hpp>
+#include <hg/util/scope_exit.hpp>
+
+#include <memory>
+
+namespace hg {
+
+template <typename T> struct scalar_storage_traits<Set<T>> {
+    using ItemTraits = scalar_storage_traits<T>;
+    using stored_type = details::scalar_set_storage<T>;
+    using value_type = Set<T>;
+
+    static constexpr bool supports_equality = details::scalar_handle_traits<T>::supports_equality;
+    static constexpr bool supports_hash = details::scalar_handle_traits<T>::supports_hash;
+    static constexpr bool supports_alternative_layouts = true;
+    static constexpr bool uses_variable_memory = true;
+    static constexpr bool requires_finalization = ItemTraits::requires_finalization;
+    static constexpr bool assign_uses_memory_resource = true;
+
+    static value_type read(const stored_type &value) noexcept { return value_type{value}; }
+
+    static std::size_t hash(value_type value) {
+        auto result = std::size_t{};
+        for (const auto item : value) {
+            result ^= ItemTraits::hash(item);
+        }
+
+        return result;
+    }
+
+    static bool equals(value_type left, value_type right) { return left == right; }
+
+    static void construct(stored_type *destination, value_type value, allocator &memory) {
+        copy_construct(destination, value.storage(), memory);
+    }
+
+    template <std::ranges::input_range Range>
+        requires(details::scalar_view_source_for<std::ranges::range_reference_t<const Range>, T> ||
+                 (!details::scalar_data_source<std::ranges::range_reference_t<const Range>> &&
+                  requires(typename ItemTraits::stored_type *destination,
+                           std::ranges::range_reference_t<const Range> item,
+                           allocator &memory) { ItemTraits::construct(destination, item, memory); }))
+    static void construct(stored_type *destination, const Range &value, allocator &memory) {
+        std::construct_at(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        for (const auto &item : value) {
+            if constexpr (details::scalar_view_source_for<decltype(item), T>) {
+                const auto &source = details::scalar_data(item);
+                const auto &runtime_type = cpp_scalar_runtime_type<T>();
+                (void)destination->items.insert_with(
+                    source.hash(),
+                    [&](const auto &stored) { return runtime_type.equals(std::addressof(stored), source); },
+                    memory.memory_resource(),
+                    [&](auto *stored) { source.copy_construct(stored, runtime_type, memory); },
+                    [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+            } else {
+                (void)destination->items.insert_with(
+                    item, memory.memory_resource(), [&](auto *stored) { ItemTraits::construct(stored, item, memory); },
+                    [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+            }
+        }
+        rollback.release();
+    }
+
+    static void copy_construct(stored_type *destination, const stored_type &source, allocator &memory) {
+        std::construct_at(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { destroy(destination, memory); }};
+        const auto &item_runtime_type = cpp_scalar_runtime_type<T>();
+        for (const auto &item : source.items) {
+            (void)destination->items.insert_with(
+                ItemTraits::read(item), memory.memory_resource(),
+                [&](auto *stored) { item_runtime_type.copy_construct(stored, std::addressof(item), memory); },
+                [&](auto *stored) noexcept { ItemTraits::destroy(stored, memory); });
+        }
+        rollback.release();
+    }
+
+    static void assign(stored_type &destination, value_type value, allocator &memory) {
+        details::replace_collection_storage<Set<T>>(destination, value, memory);
+    }
+
+    static void destroy(stored_type *value, allocator &memory) noexcept {
+        value->items.release_with(memory.memory_resource(), [&](auto *item) noexcept { ItemTraits::destroy(item, memory); });
+        std::destroy_at(value);
+    }
+};
+
+} // namespace hg
+
+namespace hg::details {
+
+template <typename T> struct scalar_handle_traits<Set<T>> {
+    static constexpr bool supports_equality = scalar_handle_traits<T>::supports_equality;
+    static constexpr bool supports_hash = scalar_handle_traits<T>::supports_hash;
+};
+
+} // namespace hg::details

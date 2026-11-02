@@ -1,0 +1,247 @@
+#pragma once
+
+#include <hg/scalar/details/cpp_runtime_type.hpp>
+#include <hg/scalar/dict/runtime_type.hpp>
+#include <hg/scalar/dict/storage_traits.hpp>
+#include <hg/util/byte_copy.hpp>
+#include <hg/util/scope_exit.hpp>
+
+#include <stdexcept>
+
+namespace hg::details {
+
+template <typename K, typename V>
+class CppScalarRuntimeType<Dict<K, V>> final : public CppScalarRuntimeTypeBase<Dict<K, V>, ScalarDictRuntimeType> {
+    using Base = CppScalarRuntimeTypeBase<Dict<K, V>, ScalarDictRuntimeType>;
+
+    static_assert(util::byte_copy_initializable<details::scalar_dict_storage<K, V>>);
+
+  public:
+    CppScalarRuntimeType()
+        : Base{cpp_scalar_type<Dict<K, V>>()} {}
+
+    void initialize_runtime_type() {
+        this->initialize_runtime_types(cpp_scalar_runtime_type<K>(), cpp_scalar_runtime_type<V>());
+    }
+
+    void construct_initial_value(void *destination) const noexcept override {
+        std::construct_at(static_cast<details::scalar_dict_storage<K, V> *>(destination));
+    }
+
+    void do_construct_from_input(void *destination, const details::ScalarData &value,
+                                 allocator &memory) const override {
+        construct_initial_value(destination);
+        auto rollback = util::scope_exit{[&]() noexcept { clear(destination, memory); }};
+        auto copy = DictCopy{this, destination, &memory};
+        const auto &source_type = static_cast<const ScalarDictRuntimeType &>(value.runtime_type());
+        source_type.for_each(value.data(), &copy, copy_entry);
+        rollback.release();
+    }
+
+    void do_assign_from_input(void *destination, const details::ScalarData &value) const override {
+        auto memory = current_scalar_allocator();
+        auto replacement = details::scalar_dict_storage<K, V>{};
+        auto release_replacement = util::scope_exit{[&]() noexcept { clear(&replacement, memory); }};
+        auto copy = DictCopy{this, &replacement, &memory};
+        const auto &source_type = static_cast<const ScalarDictRuntimeType &>(value.runtime_type());
+        source_type.for_each(value.data(), &copy, copy_entry);
+
+        static_cast<details::scalar_dict_storage<K, V> *>(destination)->items.swap(replacement.items);
+    }
+
+    bool assign_with(void *destination, ScalarConstruction construction, bool suppress_equal) const override {
+        auto memory = current_scalar_allocator();
+        alignas(details::scalar_dict_storage<K, V>)
+            std::byte replacement_bytes[sizeof(details::scalar_dict_storage<K, V>)];
+        construction.construct(construction.context, *this, replacement_bytes, memory);
+        auto *replacement = std::launder(
+            reinterpret_cast<details::scalar_dict_storage<K, V> *>(replacement_bytes));
+        auto release_replacement = util::scope_exit{[&]() noexcept { this->destroy(replacement, memory); }};
+        const auto source = this->borrow(replacement);
+
+        if (suppress_equal && this->ScalarRuntimeType::equals(destination, source)) {
+            return false;
+        }
+
+        static_cast<details::scalar_dict_storage<K, V> *>(destination)->items.swap(replacement->items);
+        return true;
+    }
+
+    bool try_assign_from_owned(void *destination, void *source, allocator &source_memory,
+                               allocator &destination_memory) const noexcept override {
+        if (!source_memory.memory_resource().is_equal(destination_memory.memory_resource())) {
+            return false;
+        }
+
+        auto &target_items = static_cast<details::scalar_dict_storage<K, V> *>(destination)->items;
+        auto &source_items = static_cast<details::scalar_dict_storage<K, V> *>(source)->items;
+        target_items.swap(source_items);
+        return true;
+    }
+
+    bool equals_same_type(const void *storage, const details::ScalarData &other) const override {
+        const auto &source_type = static_cast<const ScalarDictRuntimeType &>(other.runtime_type());
+        if (item_count(storage) != source_type.item_count(other.data())) {
+            return false;
+        }
+
+        auto comparison = DictComparison{this, storage, true};
+        source_type.for_each(other.data(), &comparison, compare_entry);
+        return comparison.equal;
+    }
+
+    std::size_t item_count(const void *storage) const noexcept override {
+        return static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items.size();
+    }
+
+    bool contains(const void *storage, const details::ScalarData &key) const override {
+        return find(storage, key).has_value();
+    }
+
+    std::optional<ScalarDictRuntimeType::ConstItem> find(const void *storage,
+                                                         const details::ScalarData &key) const override {
+        const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
+        const auto *value = items.find_with(key.hash(), [&](const auto &stored) {
+            return this->key_runtime_type().equals(std::addressof(stored), key);
+        });
+        if (value == nullptr) {
+            return std::nullopt;
+        }
+
+        return ScalarDictRuntimeType::ConstItem{this->mapped_runtime_type(), value};
+    }
+
+    ScalarDictRuntimeType::ConstItem at(const void *storage, const details::ScalarData &key) const override {
+        const auto value = find(storage, key);
+        if (!value) {
+            throw std::out_of_range{"dictionary key was not found"};
+        }
+        return *value;
+    }
+
+    ScalarDictRuntimeType::Item at(void *storage, const details::ScalarData &key) const override {
+        auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
+        auto *value = items.find_with(key.hash(), [&](const auto &stored) {
+            return this->key_runtime_type().equals(std::addressof(stored), key);
+        });
+        if (value == nullptr) {
+            throw std::out_of_range{"dictionary key was not found"};
+        }
+        return {this->mapped_runtime_type(), value};
+    }
+
+    void for_each(const void *storage, void *context, ScalarDictRuntimeType::EntryFunction function) const override {
+        for (const auto [key, value] : static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items) {
+            function(context, {{this->key_runtime_type(), std::addressof(key)},
+                               {this->mapped_runtime_type(), std::addressof(value)}});
+        }
+    }
+
+    std::unique_ptr<ScalarDictRuntimeType::Cursor> make_cursor(const void *storage) const override {
+        const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(storage)->items;
+        return std::make_unique<DictionaryCursor>(items);
+    }
+
+    void insert_or_assign(void *storage, const details::ScalarData &key, const details::ScalarData &value,
+                          allocator &memory) const override {
+        auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
+        auto [stored, inserted] = items.try_emplace_with(
+            key.hash(),
+            [&](const auto &stored) { return this->key_runtime_type().equals(std::addressof(stored), key); },
+            memory.memory_resource(),
+            [&](auto *destination) { key.copy_construct(destination, this->key_runtime_type(), memory); },
+            [&](auto *destination) noexcept { scalar_storage_traits<K>::destroy(destination, memory); },
+            [&](auto *destination) { value.copy_construct(destination, this->mapped_runtime_type(), memory); });
+        if (!inserted) {
+            value.assign(stored, this->mapped_runtime_type());
+        }
+    }
+
+    [[nodiscard]] bool try_emplace_with(void *storage, allocator &memory, ScalarConstruction key,
+                                        ScalarConstruction mapped) const override {
+        auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
+        const auto [stored, inserted] = items.try_emplace_constructed_with(
+            memory.memory_resource(),
+            [&](const auto &candidate) { return this->key_runtime_type().hash(std::addressof(candidate)); },
+            [&](const auto &stored_key, const auto &candidate) {
+                return this->key_runtime_type().equals(
+                    std::addressof(stored_key), details::ScalarData{this->key_runtime_type(), std::addressof(candidate)});
+            },
+            [&](auto *destination) { key.construct(key.context, this->key_runtime_type(), destination, memory); },
+            [&](auto *destination) noexcept { scalar_storage_traits<K>::destroy(destination, memory); },
+            [&](auto *destination) {
+                mapped.construct(mapped.context, this->mapped_runtime_type(), destination, memory);
+            });
+        (void)stored;
+        return inserted;
+    }
+
+    [[nodiscard]] bool erase(void *storage, const details::ScalarData &key,
+                             allocator &memory) const override {
+        auto &items = static_cast<details::scalar_dict_storage<K, V> *>(storage)->items;
+        return items.erase_with(
+            key.hash(),
+            [&](const auto &stored) { return this->key_runtime_type().equals(std::addressof(stored), key); },
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<K>::destroy(item, memory); },
+            [&](auto *item) noexcept { scalar_storage_traits<V>::destroy(item, memory); });
+    }
+
+    void clear(void *storage, allocator &memory) const noexcept override {
+        static_cast<details::scalar_dict_storage<K, V> *>(storage)->items.release_with(
+            memory.memory_resource(), [&](auto *item) noexcept { scalar_storage_traits<K>::destroy(item, memory); },
+            [&](auto *item) noexcept { scalar_storage_traits<V>::destroy(item, memory); });
+    }
+
+  private:
+    class DictionaryCursor final : public ScalarDictRuntimeType::Cursor {
+        using Items = typename details::scalar_dict_storage<K, V>::Items;
+
+      public:
+        explicit DictionaryCursor(const Items &items) : position_{items.begin()}, end_{items.end()} {}
+
+        std::size_t next_batch(std::span<ScalarDictRuntimeType::BatchEntry> buffer) override {
+            auto count = std::size_t{};
+            while (count < buffer.size() && position_ != end_) {
+                const auto entry = *position_++;
+                buffer[count++] = {std::addressof(entry.key), std::addressof(entry.value)};
+            }
+
+            return count;
+        }
+
+      private:
+        typename Items::const_iterator position_;
+        typename Items::const_iterator end_;
+    };
+
+    struct DictCopy {
+        const CppScalarRuntimeType *runtime_type;
+        void *storage;
+        allocator *memory;
+    };
+
+    struct DictComparison {
+        const CppScalarRuntimeType *runtime_type;
+        const void *storage;
+        bool equal;
+    };
+
+    static void copy_entry(void *context, ScalarDictRuntimeType::Entry entry) {
+        auto &copy = *static_cast<DictCopy *>(context);
+        copy.runtime_type->insert_or_assign(copy.storage, {entry.key.runtime_type, entry.key.data},
+                                            {entry.value.runtime_type, entry.value.data}, *copy.memory);
+    }
+
+    static void compare_entry(void *context, ScalarDictRuntimeType::Entry entry) {
+        auto &comparison = *static_cast<DictComparison *>(context);
+        const auto key = details::ScalarData{entry.key.runtime_type, entry.key.data};
+        const auto mapped = details::ScalarData{entry.value.runtime_type, entry.value.data};
+        const auto &items = static_cast<const details::scalar_dict_storage<K, V> *>(comparison.storage)->items;
+        const auto *stored = items.find_with(key.hash(), [&](const auto &candidate) {
+            return comparison.runtime_type->key_runtime_type().equals(std::addressof(candidate), key);
+        });
+        comparison.equal &= stored != nullptr && comparison.runtime_type->mapped_runtime_type().equals(stored, mapped);
+    }
+};
+
+} // namespace hg::details

@@ -1,0 +1,32 @@
+#pragma once
+
+#include <hg/graph/details/graph_wiring_structure.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/map/details/map_call.hpp>
+#include <hg/map/details/map_graph_wiring.hpp>
+#include <hg/type/signature.hpp>
+
+#include <optional>
+#include <vector>
+
+namespace hg {
+
+class WiringTemplate;
+class TypeMap;
+
+namespace details {
+
+struct MapGraphArgumentWiring {
+    GraphWiringStructure structure;
+    MapGraphWiring graph;
+    ResolvedSignature outer_signature;
+    std::vector<WiringArgument> outer_arguments;
+    std::optional<std::size_t> dictionary_key_set_parameter;
+};
+
+MapGraphArgumentWiring build_map_graph_argument_wiring(util::symbol name, const WiringTemplate &function,
+                                                       ResolvedMapCall call, bool preserve_named_arguments,
+                                                       const TypeMap &type_map);
+
+} // namespace details
+} // namespace hg

@@ -1,22 +1,45 @@
-/docs/build/
-/dist/
-/wheelhouse/
-/CMakeFiles/
-/.idea/
-/cmake-build*/
-/*build*/
-/**/__pycache__/
-/docs/_build/
-/REVIEW.md
 
-.claude/
-benchmarks/.venv-upstream*/
-benchmarks/.venv-hg-cpp*/
-benchmarks/results/baseline-*.json
-benchmarks/results/memory-baseline-*.json
-/reports/
-/.parity/
+# local/private agentic setup
+/TODO.md
+/LOCAL_AGENTS.md
+/.lanes/
+/.codex/
 
-python/_hgraph.abi3.so
-test_package/build/
-test_package/CMakeUserPresets.json
+# Generated documentation downloads
+/docs/user/_generated/
+
+# CMake build trees
+/build/
+/cmake-build-*/
+/out/
+
+# CMake-generated files
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+CTestTestfile.cmake
+Testing/
+
+# Compiled artifacts
+*.a
+*.dll
+*.dylib
+*.lib
+*.o
+*.obj
+*.so
+
+# Python
+__pycache__/
+*.egg-info/
+*.py[cod]
+.pytest_cache/
+.venv/
+dist/
+
+# Editors and operating systems
+.DS_Store
+.idea/
+.vscode/
+*~

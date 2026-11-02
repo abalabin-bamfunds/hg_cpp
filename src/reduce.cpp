@@ -1,0 +1,215 @@
+#include <hg/reduce.hpp>
+
+#include <hg/graph/details/variadic_wiring_operations.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_template.hpp>
+#include <hg/node/node_template.hpp>
+#include <hg/reduce/details/default_reduce_wiring.hpp>
+#include <hg/reduce/details/reduce_node.hpp>
+#include "time_series/ref/ref_node.hpp"
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
+
+#include <memory>
+#include <optional>
+#include <span>
+#include <stdexcept>
+#include <utility>
+#include <vector>
+
+namespace hg::details {
+namespace {
+
+const TimeSeriesType &dictionary_type(const WiringArgument &argument) {
+    if (!argument.is_time_series()) {
+        throw WiringError{"reduce requires a TSD time-series argument"};
+    }
+    return static_cast<const TimeSeriesType &>(argument.type()).target_type();
+}
+
+} // namespace
+
+GraphArgument build_reduce_graph_argument(const WiringTemplate &function, const WiringArgument &dictionary,
+                                          const std::optional<WiringArgument> &default_value,
+                                          const TypeMap &type_map) {
+    const auto *dictionary_type_value = type_cast<TimeSeriesDictionaryType>(&dictionary_type(dictionary));
+    if (dictionary_type_value == nullptr) {
+        throw WiringError{"reduce requires a TSD time-series argument"};
+    }
+
+    const auto &item_type = dictionary_type_value->value_type().target_type();
+    const auto &reducer_item_type = item_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+    const auto item_runtime_type_is_fixed =
+        type_cast<TimeSeriesReferenceType>(&dictionary.type()) == nullptr &&
+        !dictionary_type_value->value_type().contains_reference();
+    auto built = build_reduce_graph_argument_wiring(
+        function, reducer_item_type, type_map, item_runtime_type_is_fixed);
+    const auto *output_value_type = type_cast<TimeSeriesValueType>(&item_type);
+
+    auto parameters = std::vector<ResolvedParameter>{};
+    auto outer_arguments = std::vector<WiringArgument>{};
+    const auto dictionary_parameter = std::uint32_t{};
+    const auto &value_dictionary_type = time_series_dictionary_type(
+        dictionary_type_value->key_type(), item_type, *dictionary_type_value->guarantee().value());
+    parameters.push_back({util::symbol{"dictionary"}, &value_dictionary_type, active, optional});
+
+    outer_arguments.push_back(dictionary);
+    outer_arguments.back().clear_name();
+
+    auto default_parameter = std::optional<std::uint32_t>{};
+    if (default_value) {
+        if (output_value_type != nullptr) {
+            if (!default_value->is_scalar() || !output_value_type->value_type().accepts(default_value->type())) {
+                throw WiringError{"reduce default must be a scalar value matching the TSD item type"};
+            }
+            default_parameter = static_cast<std::uint32_t>(parameters.size());
+            parameters.push_back({util::symbol{"default"}, &output_value_type->value_type(), active, optional, true});
+            outer_arguments.push_back(*default_value);
+            outer_arguments.back().clear_name();
+        } else {
+            if (!default_value->is_time_series()) {
+                throw WiringError{"reduce default must be a time series matching the TSD item type"};
+            }
+            const auto &provided_type = static_cast<const TimeSeriesType &>(default_value->type()).target_type();
+            const auto &ordinary_default_type = provided_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+            if (!reducer_item_type.accepts(ordinary_default_type) ||
+                !ordinary_default_type.accepts(reducer_item_type)) {
+                throw WiringError{"reduce default must have the TSD item time-series type"};
+            }
+
+            const auto &default_reference_type =
+                time_series_reference_type(reducer_item_type, TimeSeriesGuarantee::ordinary);
+            default_parameter = static_cast<std::uint32_t>(parameters.size());
+            parameters.push_back({util::symbol{"default"}, &default_reference_type, active, optional});
+            outer_arguments.emplace_back(
+                materialize_reference(default_value->time_series(), default_reference_type));
+        }
+    }
+
+    for (const auto &requirement : built.graph.nested.wiring->inherited_requirements()) {
+        parameters.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
+        outer_arguments.emplace_back(requirement.provider);
+    }
+
+    const auto &output_type = output_value_type != nullptr
+                                  ? static_cast<const TimeSeriesType &>(time_series_value_type(
+                                        output_value_type->value_type(), TimeSeriesGuarantee::ordinary))
+                                  : static_cast<const TimeSeriesType &>(time_series_reference_type(
+                                        reducer_item_type, TimeSeriesGuarantee::ordinary));
+    auto outer_signature = ResolvedSignature{util::symbol{"reduce"}, std::move(parameters), &output_type};
+    auto structure = built.structure;
+    auto payload = std::make_shared<DefaultReduceWiring>(DefaultReduceWiring{
+        .graph = std::move(built.graph),
+        .outer_signature = std::move(outer_signature),
+        .outer_arguments = std::move(outer_arguments),
+        .dictionary_parameter = dictionary_parameter,
+        .default_parameter = default_parameter,
+    });
+    return GraphArgument{std::move(structure), std::move(payload)};
+}
+
+const DefaultReduceWiring &DefaultReduceWiring::from(const GraphArgument &argument) {
+    const auto wiring = argument.payload<DefaultReduceWiring>();
+    if (wiring == nullptr) {
+        throw WiringError{"the default reduce overload requires a reduce graph argument"};
+    }
+    return *wiring;
+}
+
+std::optional<WiringPoint> DefaultReduceWiring::wire() const {
+    auto node_template = graph.compact_graph
+                             ? make_compact_reduce_node(*graph.compact_graph, outer_signature, dictionary_parameter,
+                                                        default_parameter)
+                             : make_nested_reduce_node(graph.nested, outer_signature, dictionary_parameter,
+                                                       default_parameter);
+    auto &outer = WiringContext::current().wiring();
+    auto arguments = std::vector<WiringArgument>{};
+    arguments.reserve(outer_arguments.size());
+    for (auto index = std::size_t{}; index < outer_arguments.size(); ++index) {
+        const auto &argument = outer_arguments[index];
+        if (index != dictionary_parameter) {
+            arguments.push_back(argument);
+            continue;
+        }
+
+        const auto &source_type = static_cast<const TimeSeriesDictionaryType &>(dictionary_type(argument));
+        const auto &reference_type = time_series_reference_type(source_type, TimeSeriesGuarantee::const_);
+        arguments.emplace_back(materialize_reference(argument.time_series(), reference_type));
+    }
+
+    const auto &owned = outer.own_node_template(std::move(node_template));
+    const auto invocation = outer.invoke_node(owned, std::span<const WiringArgument>{arguments});
+    outer.register_nested_service_consumers(*graph.nested.wiring, invocation.identity);
+    return invocation.output;
+}
+
+} // namespace hg::details
+
+namespace hg {
+namespace {
+
+Signature default_reduce_signature() {
+    auto parameters = std::vector<Parameter>{
+        {util::symbol{"function"}, &GraphArgument::type()},
+        {util::symbol{"args"}, &TSB<details::REDUCE_POSITIONAL>::type(), active, optional, false,
+         details::VariadicMode::positional, details::variadic_wiring_operations<TSB<details::REDUCE_POSITIONAL>>()},
+        {util::symbol{"kwargs"}, &TSB<details::REDUCE_NAMED>::type(), active, optional, false,
+         details::VariadicMode::named, details::variadic_wiring_operations<TSB<details::REDUCE_NAMED>>()},
+    };
+
+    const auto &result = details::TimeSeriesVariableInstance<TS_T>::get();
+    auto resolvers = std::vector<VariableResolver>{VariableResolver{
+        &result, [](const TypeMap &, const WiringArguments &arguments) -> TypeMapValue {
+            const auto *function = arguments.graph(0);
+            if (function == nullptr) {
+                return static_cast<const Type *>(nullptr);
+            }
+            return static_cast<const Type *>(details::DefaultReduceWiring::from(*function).outer_signature.output);
+        }}};
+    return {util::symbol{"default_reduce"}, std::move(parameters), result, std::move(resolvers)};
+}
+
+class DefaultReduceTemplate final : public WiringTemplate {
+  public:
+    DefaultReduceTemplate() : signature_{default_reduce_signature()} {}
+
+    const Signature &default_signature() const noexcept final { return signature_; }
+
+    RequirementResult requirement(const WiringArguments &arguments) const final {
+        const auto *function = arguments.graph(0);
+        if (function == nullptr) {
+            return reject("a reduce call requires a reducer graph");
+        }
+        return function->payload<details::DefaultReduceWiring>() != nullptr
+                   ? accept
+                   : reject("the graph was not prepared for reduce");
+    }
+
+  private:
+    std::optional<WiringPoint> wire(GraphWiring &, ResolvedSignature, const WiringArguments &,
+                                    std::span<const WiringArgument> arguments) const final {
+        return details::DefaultReduceWiring::from(arguments.front().graph()).wire();
+    }
+
+    Signature signature_;
+};
+
+} // namespace
+
+operator_<auto(GRAPH_T, TSB<details::REDUCE_POSITIONAL>, TSB<details::REDUCE_NAMED>) -> TS_T,
+          details::reduce_operator_implementation>
+    reduce{"reduce", {"graph", "args", "kwargs"}};
+
+namespace {
+
+const auto register_default_reduce = [] {
+    reduce.overload(DefaultReduceTemplate{});
+    return true;
+}();
+
+} // namespace
+} // namespace hg

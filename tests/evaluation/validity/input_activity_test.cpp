@@ -1,0 +1,490 @@
+#include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/runtime_graph.hpp>
+#include <hg/graph/wiring_context.hpp>
+#include <hg/map.hpp>
+#include <hg/nested.hpp>
+#include <hg/node.hpp>
+#include <hg/operators.hpp>
+#include <hg/run_graph.hpp>
+#include <hg/switch.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+
+#include <catch2/catch_test_macros.hpp>
+
+#include <chrono>
+#include <optional>
+#include <vector>
+
+using namespace hg;
+using namespace hg::literals;
+
+namespace {
+
+struct dynamic_nothing_input {
+    In<TS<i64>, dynamic_activity, optional> missing;
+    In<TS<bool>> trigger;
+    Out<TS<bool>> output;
+
+    void evaluate() const {
+        missing.make_passive();
+        output.set(!missing.valid() && *trigger);
+    }
+};
+
+template <template <typename, auto...> typename Field> struct NothingBundle {
+    Field<TS<i64>> value;
+};
+
+} // namespace
+
+TEST_CASE("nothing blocks required inputs and leaves optional inputs invalid",
+          "[evaluation][validity][feature:operator][guarantee:final]") {
+    auto evaluations = std::size_t{};
+    const auto required = node([&](In<TS<i64>>, bool trigger) {
+        ++evaluations;
+        return trigger;
+    });
+    const auto optional_input = node([](In<TS<i64>, optional> missing, bool trigger) {
+        return !missing.valid() && trigger;
+    });
+
+    const auto actual = hg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return required(operators::nothing[type<TS<i64>>](), trigger);
+        },
+        {true, false, true});
+    CHECK(evaluations == 0);
+    CHECK(actual.equals<bool>({std::nullopt, std::nullopt, std::nullopt}));
+
+    const auto optional_actual = hg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return optional_input(operators::nothing[type<TS<i64>>](), trigger);
+        },
+        {true, false, true});
+    CHECK(optional_actual.equals({true, false, true}));
+}
+
+TEST_CASE("nothing supports dynamic activity and collection input inspection",
+          "[evaluation][input_activity][feature:operator][guarantee:final][series:list]") {
+    const auto dynamic = node<dynamic_nothing_input>();
+    const auto actual = hg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return dynamic(operators::nothing[type<TS<i64>>](), trigger);
+        },
+        {true, false, true});
+    CHECK(actual.equals({true, false, true}));
+
+    const auto inspect = node([](In<TSL<TS<i64>, 2>, optional> missing, bool trigger) {
+        return !missing.valid() && missing.size() == 2 && trigger;
+    });
+    const auto collection_actual = hg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            return inspect(operators::nothing[type<TSL<TS<i64>, 2>>](), trigger);
+        },
+        {true, false});
+    CHECK(collection_actual.equals({true, false}));
+}
+
+TEST_CASE("nothing unwraps an explicit reference type and supplies a reference to its invalid target",
+          "[evaluation][validity][feature:operator][feature:reference][guarantee:final]") {
+    auto reference_validity = std::vector<bool>{};
+    auto target_validity = std::vector<bool>{};
+    const auto inspect = node([&](In<REF<TS<i64>, TimeSeriesGuarantee::final>, optional> reference,
+                                  In<TS<i64>, optional> target, bool trigger) {
+        reference_validity.push_back(reference.valid());
+        target_validity.push_back(target.valid());
+        return reference.valid() && static_cast<bool>(reference.value()) && !target.valid() && trigger;
+    });
+
+    const auto actual = hg::run_graph(
+        [&](wp<TS<bool>> trigger) {
+            const auto missing = operators::nothing[type<REF<TS<i64>>>]();
+            CHECK(&missing.type() == &TS<i64, TimeSeriesGuarantee::final>::type());
+            return inspect(missing, missing, trigger);
+        },
+        {true, false});
+
+    CHECK(actual.equals({true, false}));
+    CHECK(reference_validity == std::vector<bool>{true, true});
+    CHECK(target_validity == std::vector<bool>{false, false});
+}
+
+TEST_CASE("nothing crosses nested, map, and switch boundaries",
+          "[evaluation][feature:operator][feature:nested-graph][feature:map][feature:switch]"
+          "[validity:optional][guarantee:final]") {
+    const auto inner = graph("name"_n = "nothing_inner", []() -> wp<TS<i64, TimeSeriesGuarantee::final>> {
+        return operators::nothing[type<TS<i64>>]().as<TS<i64, TimeSeriesGuarantee::final>>();
+    });
+    const auto inspect_nested = node([](In<TS<i64>, optional> missing, bool run) {
+        return !missing.valid() && run;
+    });
+    const auto nested_graph = [&](wp<TS<bool>> run) { return inspect_nested(nested(inner, run), run); };
+    CHECK(hg::run_graph(nested_graph, {true, false}).equals({true, false}));
+
+    const auto inspect = node([](In<TS<i64>, optional> missing, i64 value) { return !missing.valid() && value > 0; });
+    const auto mapped = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto missing = operators::nothing[type<TS<i64>>]();
+        return map([&](auto value, auto missing_input) { return inspect(missing_input, value); }, values, missing)
+            [i64{1}];
+    };
+    CHECK(hg::run_graph(mapped, {{{1, 3}}}).equals({true}));
+
+    const auto switched = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
+        const auto missing = operators::nothing[type<TS<i64>>]();
+        return switch_(key, cases{case_(1, [&](auto item, auto missing_input) {
+                          return inspect(missing_input, item);
+                      })},
+                       value, missing);
+    };
+    CHECK(hg::run_graph(switched, {1, 1}, {3, 4}).equals({true, true}));
+}
+
+TEST_CASE("nothing remains invalid through descendant field and list selections",
+          "[evaluation][feature:operator][feature:getattr][feature:getitem][validity:optional]"
+          "[series:tsb][series:fixed-tsl][guarantee:final]") {
+    const auto inspect = node([](In<TS<i64>, optional> missing, bool trigger) {
+        return !missing.valid() && trigger;
+    });
+    const auto select_field = [&](wp<TS<bool>> trigger) {
+        const auto missing =
+            operators::nothing[type<TSB<NothingBundle>>]().as<TSB<NothingBundle, TimeSeriesGuarantee::final>>();
+        return inspect(missing->value, trigger);
+    };
+    const auto select_item = [&](wp<TS<bool>> trigger) {
+        const auto missing = operators::nothing[type<TSL<TS<i64>, 2>>]();
+        return inspect(missing[0], trigger);
+    };
+
+    CHECK(hg::run_graph(select_field, {true, false}).equals({true, false}));
+    CHECK(hg::run_graph(select_item, {true, false}).equals({true, false}));
+}
+
+TEST_CASE("an active input schedules evaluation and a passive input supplies its latest value",
+          "[evaluation][input_activity][feature:input-activity][activity:active][activity:passive]") {
+    const auto combine = node([](float trigger, In<TS<float>, passive> sampled) { return trigger + *sampled; });
+
+    const auto consume = node([](float sum) { return sum; });
+
+    const auto graph = hg::graph(
+        "name"_n = "combine_and_consume", [&](wp<TS<float>> trigger, wp<TS<float>> sampled) {
+        return consume(combine(trigger, sampled));
+    });
+
+    const auto actual = hg::run_graph(graph, {1.0F, literal::SKIP, 2.0F}, {10.0F, 20.0F, literal::SKIP});
+
+    CHECK(actual.equals({11.0F, literal::SKIP, 22.0F}));
+}
+
+TEST_CASE("an active optional input schedules evaluation on invalidation and revalidation",
+          "[evaluation][input_activity][validity][feature:input-activity][activity:active]"
+          "[validity:optional][transition:invalidation][transition:revalidation]") {
+    const auto observe = node([](In<TS<float>, optional> input) { return input.valid(); });
+
+    CHECK(hg::run_graph(observe, {1.0F, literal::INVALID, 1.0F}).equals({true, false, true}));
+}
+
+TEST_CASE("a passive optional input does not schedule evaluation",
+          "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
+          "[validity:optional]") {
+    const auto observe = node([](In<TS<float>, passive, optional> input, bool) { return input.valid(); });
+
+    const auto actual = hg::run_graph(
+        observe, {1.0F, literal::INVALID, literal::SKIP, 3.0F, literal::SKIP},
+        {true, literal::SKIP, true, literal::SKIP, true});
+
+    CHECK(actual.equals({true, literal::SKIP, false, literal::SKIP, true}));
+}
+
+TEST_CASE("a passive required input propagates invalidation without evaluation",
+          "[evaluation][input_activity][validity][feature:input-activity][activity:passive]"
+          "[validity:required][transition:invalidation]") {
+    const auto copy = node([](In<TS<float>, passive> input, bool) { return *input; });
+
+    const auto observe = node([](std::optional<float> input) { return input.value_or(-1.0F); });
+
+    const auto graph = hg::graph("name"_n = "observe_copy", [&](wp<TS<float>> input, wp<TS<bool>> pulse) {
+        return observe(copy(input, pulse));
+    });
+
+    const auto actual = hg::run_graph(
+        graph, {1.0F, literal::INVALID, 3.0F, literal::SKIP}, {true, literal::SKIP, literal::SKIP, true});
+
+    CHECK(actual.equals({1.0F, -1.0F, literal::SKIP, 3.0F}));
+}
+
+TEST_CASE("a dynamic input can stop and resume its own scheduling",
+          "[feature:input-activity][series:value][definition:aggregate][activity:active][shape:multiple]") {
+    struct dynamically_controlled_input {
+        In<TS<float>, dynamic_activity> input;
+        In<TS<float>> control;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
+
+        void evaluate() const {
+            ++*evaluations;
+            if (*control == 0.0F) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+
+            output.set(*evaluations);
+        }
+    };
+
+    const auto controlled = node<dynamically_controlled_input>();
+    const auto actual = hg::run_graph(
+        controlled, {1.0F, 2.0F, 3.0F, 4.0F, 5.0F, 6.0F},
+        {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
+
+    CHECK(actual.equals({1, 2, 3, literal::SKIP, 4, 5}));
+}
+
+TEST_CASE("a passive dynamic input starts passive",
+          "[feature:input-activity][series:value][definition:aggregate][activity:passive]") {
+    struct initially_passive_dynamic_input {
+        In<TS<float>, passive, dynamic_activity> input;
+        In<TS<bool>, optional> activate;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
+
+        void evaluate() const {
+            ++*evaluations;
+            if (activate.valid()) {
+                input.make_active();
+            }
+
+            output.set(*evaluations);
+        }
+    };
+
+    const auto activate = node<initially_passive_dynamic_input>();
+    const auto actual = hg::run_graph(activate, {1.0F, literal::SKIP, 2.0F},
+                                            {literal::SKIP, true, literal::SKIP});
+
+    CHECK(actual.equals({literal::SKIP, 1, 2}));
+}
+
+TEST_CASE("a callable dynamic input controls only its own scheduling",
+          "[feature:input-activity][series:value][definition:function][activity:active][shape:multiple]") {
+    const auto gate = node([](In<TS<i64>, dynamic_activity> input, In<TS<i64>, optional> control) {
+        if (control.valid()) {
+            if (*control == 0) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+        }
+        return *input;
+    });
+
+    const auto actual = hg::run_graph(gate, {1, 2, 3, 4, 5, 6},
+                                            {1, literal::SKIP, 0, literal::SKIP, 1, literal::SKIP});
+
+    CHECK(actual.equals({1, 2, 3, literal::SKIP, 5, 6}));
+}
+
+TEST_CASE("a dynamic input controls scheduling for a default binding",
+          "[feature:input-activity][feature:operator][series:value][definition:function]"
+          "[activity:active][shape:multiple]") {
+    const auto gate = node([](In<TS<i64>, dynamic_activity> input, In<TS<i64>, optional> control) {
+        if (control.valid()) {
+            if (*control == 0) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+        }
+        return *input;
+    });
+
+    const auto graph = hg::graph(
+        "name"_n = "default_binding_activity", [&](wp<TS<i64>> input, wp<TS<i64>> control) {
+        return gate(operators::default_(input, 7), control);
+    });
+
+    const auto actual = hg::run_graph(
+        graph, {literal::INVALID, 1, 2, 3, 4, 5}, {1, literal::SKIP, 0, literal::SKIP, 1, literal::SKIP});
+
+    CHECK(actual.equals({7, 1, 2, literal::SKIP, 4, 5}));
+}
+
+TEST_CASE("two dynamic inputs sharing one time series control scheduling independently",
+          "[feature:input-activity][series:value][definition:aggregate][activity:active][shape:fan-out]") {
+    struct independently_controlled_inputs {
+        In<TS<float>, dynamic_activity> left;
+        In<TS<float>, dynamic_activity> right;
+        In<TS<float>> control;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
+
+        void evaluate() const {
+            ++*evaluations;
+
+            if (*control == 0.0F) {
+                left.make_passive();
+                right.make_active();
+            } else if (*control == 1.0F) {
+                left.make_active();
+                right.make_passive();
+            } else {
+                left.make_passive();
+                right.make_passive();
+            }
+
+            output.set(*evaluations);
+        }
+    };
+
+    const auto control_activity = node<independently_controlled_inputs>();
+
+    const auto graph = hg::graph(
+        "name"_n = "independent_shared_input_activity", [&](wp<TS<float>> value, wp<TS<float>> control) {
+        return control_activity(value, value, control);
+    });
+
+    const auto actual = hg::run_graph(
+        graph, {1.0F, 2.0F, literal::SKIP, 3.0F, literal::SKIP, 4.0F},
+        {0.0F, literal::SKIP, 2.0F, literal::SKIP, 1.0F, literal::SKIP});
+
+    CHECK(actual.equals({1, 2, 3, literal::SKIP, 4, 5}));
+}
+
+TEST_CASE("a dynamically passive required input still propagates invalidation",
+          "[feature:input-activity][feature:validity][series:value][definition:aggregate]"
+          "[activity:passive][validity:required][transition:invalidation]") {
+    struct dynamic_required_copy {
+        In<TS<float>, dynamic_activity> input;
+        In<TS<float>> control;
+        State<i64> evaluations;
+        Out<TS<i64>> output;
+
+        void evaluate() const {
+            ++*evaluations;
+            if (*control == 0.0F) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+            output.set(*evaluations);
+        }
+    };
+
+    const auto copy = node<dynamic_required_copy>();
+    const auto actual = hg::run_graph(copy, {1.0F, literal::INVALID, 3.0F}, {0.0F, literal::SKIP, 1.0F});
+
+    CHECK(actual.equals({1, literal::INVALID, 2}));
+}
+
+TEST_CASE("a dynamic optional input applies its current activity to validity changes",
+          "[feature:input-activity][feature:validity][series:value][definition:aggregate]"
+          "[activity:active][activity:passive][validity:optional]"
+          "[transition:invalidation][transition:revalidation]") {
+    struct dynamic_optional_observer {
+        In<TS<float>, optional, dynamic_activity> input;
+        In<TS<float>> control;
+        Out<TS<bool>> output;
+
+        void evaluate() const {
+            if (*control == 0.0F) {
+                input.make_passive();
+            } else {
+                input.make_active();
+            }
+
+            output.set(input.valid());
+        }
+    };
+
+    const auto observe = node<dynamic_optional_observer>();
+
+    const auto actual = hg::run_graph(
+        observe, {1.0F, literal::INVALID, 1.0F, literal::INVALID, literal::SKIP, 1.0F},
+        {1.0F, literal::SKIP, 0.0F, literal::SKIP, 1.0F, literal::SKIP});
+
+    CHECK(actual.equals({true, false, true, literal::SKIP, false, true}));
+}
+
+TEST_CASE("a dynamic input connected to a collection item controls its scheduling",
+          "[feature:input-activity][feature:collection-change][series:fixed-tsl][definition:function]"
+          "[activity:active][shape:chain]") {
+    const auto gate = node([](In<TS<i64>, dynamic_activity> input) {
+        const auto value = *input;
+        input.make_passive();
+        return value;
+    });
+
+    const auto graph = [&](wp<TSL<TS<i64>, 1>> input) { return gate(input[0]); };
+
+    CHECK(hg::run_graph(graph, {{{0, 1}}, {{0, 2}}}).equals<i64>({1, std::nullopt}));
+}
+
+namespace {
+
+[[nodiscard]] EvaluationTime time(i64 microseconds) {
+    return MIN_DT + std::chrono::microseconds{microseconds};
+}
+
+struct runtime_local_activity_definition {
+    In<TS<float>, dynamic_activity> input;
+
+    void evaluate() const {
+        ++evaluation_count;
+        if (activate) {
+            input.make_active();
+        } else {
+            input.make_passive();
+        }
+    }
+
+    inline static bool activate{};
+    inline static int evaluation_count{};
+};
+
+} // namespace
+
+TEST_CASE("runtime graphs created from one compiled graph have independent input activity",
+          "[feature:input-activity][feature:graph-compilation][series:value][definition:aggregate]"
+          "[activity:active][shape:multiple]") {
+    const auto source = node([] { return 1.0F; });
+
+    const auto controlled = node<runtime_local_activity_definition>();
+    runtime_local_activity_definition::activate = false;
+    runtime_local_activity_definition::evaluation_count = 0;
+
+    GraphWiring wiring;
+    {
+        WiringContext context{wiring};
+        controlled(source());
+    }
+
+    wiring.finalize();
+    const CompiledGraph compiled{wiring};
+    auto first_global_state = GlobalState{};
+    RuntimeGraph first{compiled, first_global_state};
+    auto second_global_state = GlobalState{};
+    RuntimeGraph second{compiled, second_global_state};
+    first.start(time(1));
+    second.start(time(1));
+
+    first.schedule(0);
+    second.schedule(0);
+    first.evaluate(time(1));
+    second.evaluate(time(1));
+    REQUIRE(runtime_local_activity_definition::evaluation_count == 2);
+
+    runtime_local_activity_definition::activate = true;
+    first.schedule(1);
+    first.evaluate(time(2));
+    REQUIRE(runtime_local_activity_definition::evaluation_count == 3);
+
+    first.schedule(0);
+    second.schedule(0);
+    first.evaluate(time(3));
+    CHECK(runtime_local_activity_definition::evaluation_count == 4);
+    second.evaluate(time(2));
+    CHECK(runtime_local_activity_definition::evaluation_count == 4);
+}

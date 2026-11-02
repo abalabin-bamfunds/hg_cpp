@@ -1,0 +1,185 @@
+# Literal probes
+
+The literal carriers live in `include/hg/literal/`. Scalar construction lives in
+`include/hg/scalar/literal.hpp`; owning value transfer lives in
+`include/hg/scalar/value.hpp`. See the
+[literal API](../../docs/development/design/scalar-api.md#literals) for source lifetimes and scalar
+construction, and the [node API](../../docs/development/design/node-api.md) for `Out::apply()`.
+
+Configure and build from this lane's root. The engine target and build output
+are local to this lane; the dependency source paths may point to existing
+read-only dependency checkouts:
+
+```sh
+cmake -S prototypes/literal-input -B build/prototypes/literal-input -G Ninja \
+  -DFETCHCONTENT_SOURCE_DIR_TPACK=/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/tpack-src \
+  -DFETCHCONTENT_SOURCE_DIR_DDVISITOR=/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src
+cmake --build build/prototypes/literal-input --target literal_input_probe -j2
+build/prototypes/literal-input/literal_input_probe
+cmake --build build/prototypes/literal-input --target literal_time_series_apply_probe -j2
+build/prototypes/literal-input/literal_time_series_apply_probe
+```
+
+The probe covers scalar visitor dispatch, named native struct and Bundle
+construction, over-aligned native fields, provider-backed Bundle fields,
+recursive list, set, and dictionary construction, and rollback after
+construction failures. It also checks nested Bundles constructed with a
+different allocator while an outer scalar allocation context is active.
+
+`visit()` constructs a DDV adapter for one dispatch. `accept()` reuses a
+caller-owned scalar visitor mux:
+
+```cpp
+auto visitor = ddv::make_visitable_visitor<hg::ScalarVisitTypes>(
+    std::tuple<>{}, [](const hg::Scalar<hg::i64> *value) { (void)value->value(); }, ddv::noop);
+auto &scalar_types = static_cast<hg::ScalarVisitTypes &>(visitor);
+item.accept(scalar_types);
+```
+
+`ScalarValue<T>::from_literal(literal)` builds a typed owning scalar in its final
+storage. The erased overload takes the destination runtime type. Both use the engine's
+borrowed construction callbacks and recursively initialize lists, sets,
+dictionaries, compound scalars, and bundles:
+
+```cpp
+auto nested = hg::ScalarValue<hg::List<hg::List<hg::i64>>>::from_literal(
+    {{1, 2}, {}, {3}});
+
+auto dictionary = hg::ScalarValue<hg::Dict<hg::string, hg::List<hg::i64>>>::from_literal(
+    {{"a", {1, 2}}, {"b", {3, 4}}});
+
+auto set = hg::ScalarValue<hg::Set<hg::i64>>::from_literal({1, 2, 2});
+
+struct Point {
+    hg::i64 x;
+    const hg::i64 y;
+};
+auto point = hg::ScalarValue<Point>::from_literal({{"y", 2}, {"x", 1}});
+
+template <template <typename, auto...> typename Field> struct Record {
+    Field<hg::List<hg::i64>> values;
+    Field<hg::i64, hg::optional> note;
+};
+auto memory = hg::allocator{};
+auto record = hg::ScalarValue<hg::Bundle<Record>>::from_literal(
+    {{"values", {1, 2}}}, memory);
+
+const auto &item_runtime = hg::cpp_scalar_runtime_type<hg::i64>();
+const auto &inner_type = hg::list_scalar_type(item_runtime.type());
+const auto inner_available = std::array<const hg::ScalarRuntimeType *, 1>{&item_runtime};
+const auto &inner_runtime = hg::resolve_scalar_runtime_type(inner_type, inner_available);
+const auto &outer_type = hg::list_scalar_type(inner_type);
+const auto outer_available = std::array<const hg::ScalarRuntimeType *, 1>{&inner_runtime};
+const auto &runtime_type = hg::resolve_scalar_runtime_type(outer_type, outer_available);
+auto erased = hg::ScalarValue<>::from_literal(runtime_type, {{1, 2}, {}, {3}});
+```
+
+Sequence syntax, field validation, allocator ownership, and failure cleanup
+follow the [scalar API](../../docs/development/design/scalar-api.md#literals).
+
+`ScalarVisitTypes` dispatches built-in atomic types to typed scalar views and
+structural types to their generic views. Other declarations reach the
+`Scalar<>` extension callback, where the consumer owns extension behavior,
+optionally through `ScalarDispatch`; see [the scalar API](../../docs/development/design/scalar-api.md#optional-operations).
+
+`Out::apply()` accepts typed and runtime-selected scalar time series, fixed
+TSL, TSB, TSD, and TSS outputs:
+
+```cpp
+#include <hg/literal/time_series_literal.hpp>
+
+scalar_output.apply(42);
+list_output.apply({{0, 10}, {2, 30}});
+nested_list_output.apply({{1, {{0, 10}}}});
+bundle_output.apply({{"price", 100}});
+dictionary_output.apply({{"a", 10}, {"b", 20}});
+set_output.apply({1, 2, 3});
+dictionary_output.apply({{"a", literal::REMOVE}, {"b", literal::SKIP}});
+set_output.apply({literal::REMOVED(2), 4});
+scalar_output.apply(literal::INVALID);
+```
+
+Scalar TS application constructs an owning
+`ScalarValue` through `from_literal()` and passes it to the consuming
+`set_value()` overload. Scalar sequences construct complete replacements through
+the actual destination runtime. Compatible storage transfers without another
+collection element copy.
+Collection deltas follow the [output API](../../docs/development/design/node-api.md#output-parameters).
+Child outputs own validity, guarantees, notifications, and containing paths.
+Literal interpretation lives in the time series consumer. The prototype
+`literal::apply` function forwards to the public output API.
+
+The `literal_time_series_apply_probe` target checks typed and generic output
+dispatch, nested collection updates, notifications, validity, deduplicated outputs,
+borrowed scalar views, provider-backed rvalue leaves, malformed deltas, and
+unsupported output types. Scalar list checks cover native and composed runtimes,
+three nested list levels, empty replacements, deduplicated revalidation, provider
+items, and failed later-item construction preserving previous values and
+timestamps. Native and composed replacements each construct two supplied items
+with exactly two item copies, one collection allocation, and one temporary
+allocation for the owning value's storage block. The scalar storage
+regression checks the default provider assignment fallback and its cleanup.
+Retained owning copies of nested lists and shared strings preserve their values
+across replacement, failed construction, and destruction of the source output
+storage.
+
+Scalar replacement checks also cover native and composed sets and dictionaries,
+nested dictionary/list values, over-aligned compounds with const fields, and
+bundles containing dictionaries and compounds. They verify retained owning copies,
+failed replacement cleanup, and equality suppression. The default scalar provider
+fallback is exercised with a shared bundle representation.
+
+The probe reports object layout and counts global `operator new` calls for
+source construction, first visit, warmed visit, and recursive construction
+and traversal. It does not count allocations made directly through the engine
+allocator or C allocation functions. Construction, warmed visit, and recursive
+construction/traversal counts are asserted to be zero. The cold first-visit
+count is reported separately because runtime registration may allocate.
+
+With GCC 14.3, the measured sizes and counts were:
+
+```text
+ScalarLiteralItem: 16 bytes, alignment 8
+ScalarLiteral: 24 bytes, alignment 8
+operator new calls: first visit=0, source construction=0, warmed visit=0,
+                    recursive construction/traversal=0
+```
+
+The probe, provider fixture, and their header code can be checked with ASan and
+UBSan while linking the normal, lane-local engine library. This instruments
+the probe and provider fixture, not the engine library:
+
+```sh
+c++ -std=c++23 -fsanitize=address,undefined -fsanitize-address-use-after-scope \
+  -fno-omit-frame-pointer \
+  -Iprototypes/literal-input/include -Iinclude \
+  -Itests/value/scalar \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
+  prototypes/literal-input/probe.cpp tests/value/scalar/test_scalar_provider.cpp \
+  -Lbuild/prototypes/literal-input/hg \
+  -Wl,-rpath,$PWD/build/prototypes/literal-input/hg -lhg \
+  -o build/prototypes/literal-input/literal_input_probe_asan
+ASAN_OPTIONS=detect_stack_use_after_return=1:detect_stack_use_after_scope=1:detect_leaks=0 \
+  UBSAN_OPTIONS=print_stacktrace=1 build/prototypes/literal-input/literal_input_probe_asan
+```
+
+The time-series probe can also run under ASan and UBSan while linking the
+normal lane-local engine library:
+
+```sh
+/home/abalabin/miniforge3/envs/hg-build/bin/c++ -std=c++23 \
+  -fsanitize=address,undefined -fsanitize-address-use-after-scope \
+  -fno-omit-frame-pointer \
+  -Iprototypes/literal-input/include -Iinclude -Itests/value/scalar \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/ddvisitor-src/include \
+  -I/home/abalabin/_hg/.lanes/literal-implementation/build/dev/_deps/tpack-src/include \
+  prototypes/literal-input/time_series_apply_probe.cpp tests/value/scalar/test_scalar_provider.cpp \
+  -Lbuild/prototypes/literal-input/hg \
+  -Wl,-rpath,/home/abalabin/_hg/.lanes/literal-input-prototype/build/prototypes/literal-input/hg \
+  -lhg -o build/prototypes/literal-input/literal_time_series_apply_probe_asan
+ASAN_OPTIONS=detect_stack_use_after_return=1:detect_stack_use_after_scope=1:detect_leaks=0 \
+  UBSAN_OPTIONS=print_stacktrace=1 build/prototypes/literal-input/literal_time_series_apply_probe_asan
+```
+
+Leak detection is disabled because LeakSanitizer aborts in this environment.

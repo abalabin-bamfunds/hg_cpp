@@ -1,236 +1,235 @@
-# AGENTS.md
+# Project instructions
 
-## Project Direction
+These instructions apply to the complete repository.
 
-This repository is the C++-first implementation of hgraph. The runtime, system
-nodes, graph execution, time-series values, and native graph/node APIs are C++
-and are the primary source of truth.
+If there is a LOCAL_AGENTS.md in the directory, read and apply it too.
 
-Python remains a supported authoring and compatibility surface for:
+## Project direction
 
-- wiring against the current Python hgraph ecosystem,
-- Python user-authored nodes running inside the C++ runtime,
-- packaging and bindings through the optional Python bridge.
+[docs/development/project.md](docs/development/project.md) defines the project purpose and priorities.
+Use its priority order when design goals conflict.
 
-Do not implement runtime semantics independently in Python when they belong in
-C++. A feature exposed to Python must also have an equivalent, first-class C++
-wiring path and comparable C++ tests. Python should adapt Python values and
-callables to that path rather than become a second runtime implementation.
+[docs/development/proposals/node-layout.md](docs/development/proposals/node-layout.md) contains the current node object
+layout proposal. Do not treat a proposed choice as an approved design.
 
-## Downstream Extensions And Promotion
+[docs/development/design/node-api.md](docs/development/design/node-api.md) defines node inputs, evaluation functions,
+and output modification.
 
-- Treat downstream libraries as the normal incubation boundary for
-  domain-specific types, nodes, graphs, policies, and adapters. Generality of
-  an algorithm alone is not evidence that its current API belongs in hgraph.
-- Add a facility to `hg_cpp` only when it is useful across domains or is
-  required to let independently built extensions participate safely in the
-  shared runtime.
-- A capability promoted from a downstream library requires implementation
-  experience, a numbered core RFC, a first-class public C++ contract, matching
-  Python exposure where applicable, performance evidence for hot paths, and an
-  installed-SDK consumer test.
-- Promotion is a migration, not duplication. The linked downstream change
-  removes or delegates the former implementation, documents compatibility,
-  and coordinates the dependency and release transition.
-- Core code must never import, link against, or otherwise depend on a
-  downstream package. Public core documentation must not disclose a private
-  downstream design; describe the generic requirement and evidence instead.
-- Wiring-time scalar policies should select concrete overloads. Use a
-  graph-level switch for a genuinely dynamic policy. Do not add per-tick
-  strings or policy branches to a generic node without an accepted RFC and
-  measured justification.
+[docs/development/design/graph-wiring.md](docs/development/design/graph-wiring.md) defines graph functions, wiring
+templates, graph templates, wiring contexts, and wiring paths.
 
-## Working Method
+[docs/development/design/variadic-wiring.md](docs/development/design/variadic-wiring.md) defines variadic parameters,
+capture, forwarding, materialization, and nested graph boundaries.
 
-- Read the relevant implementation, tests, and nearby documentation before
-  editing. Prefer established repository patterns over new abstractions.
-- Use a short plan when work spans multiple modules or changes ownership,
-  lifecycle, type-system, or public API behavior. Keep the plan current while
-  implementing; do not stop after proposing it.
-- Use focused tests during development, then run the acceptance gates below.
-- Resolve decisions from the codebase when possible. Ask only when a missing
-  product or architecture decision would materially change the result.
-- Keep changes scoped. Do not combine unrelated cleanup with the requested
-  work, and do not rewrite user changes encountered in the worktree.
-- Treat compiler warnings as potential defects. Fix their cause; suppress one
-  only when it is a documented false positive with a narrow suppression.
-- Report exactly what changed, what was validated, and any remaining risk. Do
-  not describe code work as complete when a required gate was skipped or failed.
+[docs/development/design/operators.md](docs/development/design/operators.md) defines operators, overload resolution,
+requirements, resolution caching, and overload diagnostics.
 
-## Definition Of Done
+[docs/development/design/evaluation.md](docs/development/design/evaluation.md) defines evaluation order, context
+services, lifecycle, scheduling, cycle callbacks, and failure behavior.
 
-Focused tests are useful while iterating but are not completion evidence. For
-every code change, completion requires both of these local gates to pass:
+[docs/development/design/type-system.md](docs/development/design/type-system.md) defines type resolution, time series
+guarantees, compatibility, propagation, and runtime enforcement.
 
-1. The complete native C++ test suite.
-2. The complete non-WIP Python compatibility suite using the newest supported
-   Python version (currently Python 3.14).
+[docs/development/design/scalar-api.md](docs/development/design/scalar-api.md) defines scalar access, ownership,
+construction, and generic list access.
 
-Run the native acceptance preset with `--fresh` rather than relying on a stale
-IDE build. The preset selects `.venv/bin/python` for PyArrow discovery; do not
-replace this with an ad hoc configure command that may select the system Python:
+[docs/development/design/global-state.md](docs/development/design/global-state.md) defines scalar values shared by an
+outer graph and its inner graphs.
 
-```sh
-cmake --preset cpp --fresh
-cmake --build --preset cpp --target clean
-cmake --build --preset cpp --parallel
-ctest --preset cpp --parallel 2
-```
+[docs/development/design/nested-graphs.md](docs/development/design/nested-graphs.md) defines nested graph boundaries,
+ownership, lifecycle, and scheduling.
 
-Build the stable-ABI wheel with Python 3.12, install that wheel into a fresh
-environment, and run the suite with Python 3.14:
+[docs/development/design/map.md](docs/development/design/map.md) defines map arguments, key selection, output,
+evaluation, and lifecycle.
 
-```sh
-wheel_dir="$(mktemp -d)"
-test_env="$(mktemp -d)"
-uv build --wheel --python 3.12 --out-dir "$wheel_dir"
-uv venv --python 3.14 "$test_env"
-wheel_path="$(find "$wheel_dir" -maxdepth 1 -name '*.whl' -print -quit)"
-uv pip install --python "$test_env/bin/python" "${wheel_path}[test]"
-"$test_env/bin/python" -m pytest python/tests -q -m "not wip"
-```
+[docs/development/design/mesh.md](docs/development/design/mesh.md) defines mesh branch selection, dependency ordering,
+output, and lifecycle.
 
-For large changes, especially runtime, ownership, memory-layout, type-erasure,
-or cross-language changes, run the same full C++ and Python validation in the
-Linux environment before reporting completion. Use the `hg-linux` SSH host
-when it is available; use the Ubuntu/OrbStack VM only as a fallback. Follow the
-workflow in `docs/source/developer_guide/debugging.rst`; add ASan when lifetime
-or memory safety is involved. macOS is the normal local gate. Windows remains
-a best-effort CI platform, but portable code should still be maintained.
+[docs/development/design/switch.md](docs/development/design/switch.md) defines case selection, arguments, output,
+evaluation, and lifecycle.
 
-When it is reachable, use the Windows build host at
-`ssh hhenson@hg-windows` as the preferred local environment for reproducing
-Windows-specific failures and validating Windows builds, wheel installation,
-and runtime imports. The host is not guaranteed to be available, so inability
-to connect does not make this opportunistic Windows validation a completion
-blocker. Use the current stable Visual Studio 2026 Build Tools installation
-(MSVC 19.51 or newer), initialize it explicitly through its `vcvars64.bat`, and
-verify `cl.exe` before building; do not assume the newest compiler or CMake is
-already on `PATH`. The host has eight physical cores with hyper-threading, so
-use at least eight parallel build workers unless a specific diagnostic requires
-serial execution.
+[docs/development/testing.md](docs/development/testing.md) defines test organization and required
+coverage.
 
-The x86_64 OrbStack VM on Apple Silicon does not expose AVX/AVX2. Standard
-Polars warns about the missing CPU features and then segfaults inside
-`_polars_runtime` during ordinary `DataFrame` construction. This is a VM
-dependency issue, not an hgraph failure. Always install the compatibility
-runtime before running the Python suite in that VM:
+[docs/development/design/time-series-references.md](docs/development/design/time-series-references.md) defines reference
+routing, dynamic subscriptions, and removal lifetime.
 
-```sh
-uv pip install --python "$test_env/bin/python" "polars[rtcompat]>=1.32"
-```
+[docs/development/design/time-series-validity.md](docs/development/design/time-series-validity.md) defines invalidation,
+revalidation, and their effects on references, collections, and nodes.
 
-Do not retry the full suite with standard Polars after seeing its missing-CPU-
-features warning; switch to `rtcompat` immediately.
+[docs/development/design/time-series-types.md](docs/development/design/time-series-types.md) defines the initial time
+series types and their change information.
 
-GitHub CI runs after a push and is not a substitute for these local gates. The
-user monitors post-push CI and will report platform-specific failures. Do not
-wait for or monitor CI unless asked.
+[docs/development/design/tsd-layout.md](docs/development/design/tsd-layout.md) defines dictionary storage, shared
+representations, and tabular buffers.
 
-Documentation-only changes do not require the full runtime suites; validate
-the edited documentation, commands, links, or configuration directly.
+[docs/development/design/python.md](docs/development/design/python.md) defines Python graph authoring, Python node
+definitions, scalar integration, runtime access, and the Python extension
+boundary.
 
-## Runtime Invariants
+## Language
 
-- System nodes are implemented in C++ only. C++ graph and node authoring must
-  remain first-class, not a binding layer over Python concepts.
-- Keep Python-specific code behind explicit build and ownership boundaries.
-- Graph/run configuration belongs in `GlobalState`. Preserve its copy-in before
-  execution and copy-out after execution semantics for Python callers; do not
-  create unrelated process globals for graph-specific configuration.
-- Use planned storage and in-place construction for graph static memory.
-  Keyed nested graphs such as map and mesh use the slot-store and slot-observer
-  protocols for capacity, keys, and lifetime.
-- Nested graph deletion stops the graph and unsubscribes it; erase performs the
-  destructor. Do not add retired-object side containers to bypass that protocol.
-- Prefer existing scope guards from `scope.h` for cleanup and rollback.
-- Preserve type information and ownership explicitly across type-erased APIs;
-  do not extend a temporary's lifetime through a reference.
+Use clear English and precise terminology.
 
-## Type-Erased Strategy Boundaries
+- Use one term for one concept. Do not use synonyms only for variety.
+- Use short, direct sentences. Prefer active voice.
+- Avoid idioms, metaphors, and vague modifiers.
+- State requirements as explicit actions or conditions.
+- Do not restate the user's input unless you need clarification or identify a
+  problem in the reasoning.
+- When explaining thngs use technical langauge and code, avoid narrative. "X calls Y to",
+  "Z sets W.field because", "K owns L" are useful patterns
 
-- Put a reusable type-erased contract in its own clearly named public header.
-  Keep concrete representation strategies in files under an `impl` boundary;
-  semantic owners should depend on the contract, not name a strategy directly.
-- Select a concrete strategy once from immutable wiring-time or plan metadata.
-  Keep any required dispatch inside the type-erased contract; do not scatter
-  representation-policy branches through semantic owners or leak strategy-
-  specific containers into the public surface.
-- Represent strategy polymorphism with the project's passive ops-table plus
-  explicit erased-ownership pattern. Do not make the semantic facade hold a
-  `std::variant` of concrete strategies; reserve variants for cases where
-  the closed sum type is itself part of the contract.
-- Keep erased ops pointers non-null. Default and moved-from objects bind a
-  canonical no-op table, so ordinary queries dispatch through the contract
-  instead of branching around a missing implementation.
-- Publish explicit data-only inspection views when debugger metadata needs
-  representation details. Debuggers must not infer private implementation
-  member layouts or decode standard-library containers.
+Follow [docs/terminology.md](docs/terminology.md). Do not add, change, or remove a
+dictionary entry without explicit approval from the project owner. Propose a new
+term before you use it as project terminology.
 
-## Test Guidelines
+## Documentation
 
-- C++ tests live under `tests/cpp`; Python compatibility tests live under
-  `python/tests`.
-- Test behavior through public wiring APIs. Graph and node behavior tests should
-  use `eval_node`; construct runtime internals directly only for lower-level unit
-  tests whose subject is that internal contract.
-- When generic or erased wiring needs a concrete test signature, wrap the item
-  in a minimal graph with concrete `Port` parameters and return type, then call
-  `eval_node` on that graph. Do not hand-wire replay/record or run an executor
-  directly to work around type inference in a behavior test.
-- Every Python-visible behavior needs equivalent C++ wiring coverage at the same
-  behavioral level. Python tests additionally prove bridge and authoring parity.
-- Scale coverage with risk, including lifecycle, teardown, invalid input, and
-  mixed C++/Python execution where relevant.
-- Register new C++ test files in `tests/cpp/CMakeLists.txt`.
+Keep documentation brief and complete.
 
-## Build System
+`docs/user/` contains the published guides, task pages, and API reference for graph
+and node writers. `docs/development/` contains engine designs, contributor guidance,
+decision records, proposals, reports, and planning records. Use the
+[development index](docs/development/index.md) and
+[documentation maintenance guide](docs/development/documentation.md) for placement
+and verification rules. Both trees use the shared terminology dictionary.
 
-- Use CMake as the authoritative build system. Keep `pyproject.toml` as the
-  Python packaging bridge.
-- A normal CMake configure/build must not depend on Python, nanobind, or Python
-  package installation unless the relevant Python option is enabled.
-- Keep the main runtime target `hgraph_core` with public alias `hgraph::core`.
-- Prefer explicit CMake targets over directory-global include or link state.
-- Python bindings are opt-in through `HGRAPH_BUILD_PYTHON_BINDINGS`; Python
-  user-node support is opt-in through `HGRAPH_ENABLE_PYTHON_USER_NODES`.
-- For CMake, packaging, or public-header changes, also validate install and a
-  consumer build as described in `docs/source/developer_guide/build_system.rst`.
+- Include the information that a reader needs to act correctly.
+- Put the purpose before details.
+- Prefer short paragraphs and short lists.
+- Give an example when prose alone can be misread.
+- Do not repeat information that has one authoritative source.
+- State each fact once. Remove text that only repeats or negates an implication
+  of the surrounding text.
+- Distill discussion into design statements. Do not preserve conversational
+  wording or emphasis.
+- Do not explain what is already clear from the code.
+- Document the selected design. Do not record rejected alternatives.
+- When a design choice follows from another requirement, state the dependency
+  in positive language and link to its authoritative documentation. Use: “This
+  is required to …”
 
-## Source Layout
+## Decision records
 
-- `include/hgraph/...`: public C++ headers.
-- `src/...`: C++ runtime implementation.
-- `python/...`: Python package, optional extension bridge, and compatibility
-  layer.
-- `tests/cpp/...`: native C++ tests.
-- `python/tests/...`: Python bridge, authoring, and compatibility tests.
-- `docs/source/...`: Sphinx user and developer documentation.
+  - Documentation describes current behavior; `docs/development/decisions/` records why significant choices were made.
+  - Record only durable, non-obvious decisions implemented in committed code.
+    Include the record in the same authorized commit.
+  - Skip routine details, plans, experiments, and uncommitted work.
+  - Link relevant documentation instead of duplicating it.
+  - Preserve replaced decisions and mark them `superseded`.
+  - Never store secrets, transcripts, chain-of-thought, or speculation.
 
-`include/hgraph/version.h` is generated from `include/hgraph/version.h.in` into
-the CMake build tree and installed with the public headers. Do not commit build
-trees, CMake caches, virtual environments, Python bytecode, or other generated
-artifacts.
+## Code
 
-## Dependency Policy
+Prefer the smallest clear implementation, the code should be elegant.
 
-- Prefer CMake packages when available.
-- Use `FetchContent` deliberately and behind normal CMake options or dependency
-  discovery.
-- Do not add heavyweight runtime dependencies without a clear need.
-- Python packaging dependencies belong in `pyproject.toml`; C++ runtime
-  dependencies belong in CMake.
+- Use existing utilities fromm this project and the standard library before adding project code or
+  a dependency. Prefer utility code already in the project
+- Write each operation in execution order and at one consistent level of
+  detail. Use early returns and `continue` statements to keep nesting shallow.
+- Make each branch represent required behavior or a state transition. Prefer
+  one representation until another has a measured benefit.
+- Name intermediate values by their role and access clear members directly.
+  Avoid aliases, accessors, and wrappers that make readers follow more code.
+- Extract a function or class only when it has a coherent responsibility and
+  gives its caller a smaller, clearer interface. Keep simple operations at
+  their point of use.
+- Put an operation on the object that owns the state or invariant it uses. Use
+  a free function only for a symmetric algorithm, factory, public customization
+  point, or operation with no natural owner. Do not add namespace-scope helpers
+  that inspect an owner's internals or only forward to it.
+- Add defensive checks only when a value can be null or invalid by design.
+- Do not add ways to replace behavior, special object-creation code, or settings
+  for an unconfirmed need.
+- Keep ownership and lifetime visible at the point of use.
+- Use scope-bound cleanup for rollback. Create the guard after acquisition and release it at the commit point.
+- Remove dead code and duplicated logic.
+- Do not compress logic into a dense expression to reduce the line count.
+- When existing code is larger than necessary, propose a specific reduction.
+- Use empty lines to separate distinct parts of logic.
+- Keep related statements together.
+- Do not use repeated empty lines for decoration.
+- Keep code within 120 columns unless a longer line is clearer.
 
-## Git Hygiene
+### API and encapsulation
 
-- Develop every change on a dedicated non-`main` branch and merge it through a
-  pull request. Do not commit or push changes directly to `main`.
-- A change that affects this repository and a downstream project requires a
-  separate branch and pull request in each repository. Cross-link the related
-  pull requests so the complete change remains traceable.
-- Keep each branch and pull request focused on one coherent change.
-- The worktree may contain unrelated user or concurrent-agent changes. Ignore
-  them unless they directly affect the task; never revert them.
-- Keep edits and staging scoped to the requested task.
-- Do not delete or rewrite existing staged work unless explicitly asked.
-- Do not commit or push unless the user explicitly requests it.
+- Classify an API's audience through documentation, namespace, and header
+  placement. Do not use C++ access control to distinguish graph-author APIs
+  from engine APIs.
+- Use private state to protect a concrete invariant or lifetime constraint. An
+  engine-only type may expose its complete engine API publicly.
+- Design an interface around valid operations and states. Do not grant access
+  according to a list of trusted caller types.
+- Give each state transition one owner. Put the complete operation on the
+  object that owns the affected state and invariant. Other objects provide
+  values or behavior through their normal APIs.
+- Use a transparent data type when the data has no invariant that its interface
+  must enforce.
+- When a type develops a separate hidden interface, decide whether its normal
+  interface is artificially restricted or whether the type represents states
+  with different invariants. Expose the required operations in the first case.
+  Use separate representations with explicit transitions in the second case.
+- Extract a helper only when it establishes a coherent boundary and reduces
+  what its caller must understand. Keep direct access and simple forwarding at
+  the point of use.
+- Tests use the same engine API as production code or a test driver that owns
+  the tested operation. Do not introduce test-only access to production state
+  unless the test must verify an otherwise unobservable invariant.
+
+## Comments
+
+- Comment code when its purpose or contract is not clear from its interface.
+- State what the code provides, what it returns, and any non-obvious behavior.
+- Describe intent at the caller's level. Explain mechanics only when a
+  constraint makes them important.
+- Do not narrate statements that are already clear from the code.
+
+## C++
+
+Use C++23. The code must work with the latest Apple Clang, GCC, and Microsoft
+Visual C++ (MSVC) compilers.
+
+- Use `auto` by default. Spell out a type when it adds information that the
+  initializer does not show or selects a required representation.
+- Spell composite time series types directly in node and graph declarations.
+  Do not hide types such as `TSD<K, TS<V>>` behind a C++ type alias there.
+- Name graph type variables in uppercase, for example `KEY`, `VALUE`, and
+  `ITEM`.
+- Use `[[nodiscard]]` only when ignoring a result loses an operation outcome,
+  ownership, a handle, or error information. Do not apply it to observation APIs.
+- Do not use `dynamic_cast` in evaluation, notification, subscription,
+  time-series access, or other graph runtime paths. Put runtime dispatch on the
+  runtime type, visitor, tagged representation, or object that owns the
+  behavior. `dynamic_cast` is acceptable during wiring, type resolution,
+  diagnostics, and checked boundary validation.
+- Prefer C++23 language and library features when all supported compilers
+  implement them.
+- Prefer ranges, views, spans, structured bindings, and designated initializers
+  when they make data flow clearer.
+
+## Review
+
+Before completing a change, check:
+
+- Is every new part required now?
+- Can any helper, wrapper, or layer be removed?
+- Is each API's intended audience expressed independently of C++ access
+  control?
+- What invariant or lifetime constraint requires each private operation or
+  field? If there is none, is the interface artificially restricted?
+- Does each state transition live on the object that owns its state and
+  invariant?
+- Does any new friend, access helper, or forwarding function reveal an unclear
+  API audience, missing owner, or type that represents multiple states?
+- Does each new runtime downcast or namespace-scope helper indicate a missing
+  abstraction or owner?
+- Does each extracted helper create a coherent boundary, or does it only hide
+  direct access or forwarding?
+- Does any special-case logic indicate a missing abstraction or inconsistent
+  representation? Prefer a solution that follows the normal design. Keep a
+  special case only when a concrete constraint requires it. Raise it with the
+  project owner before retaining it, and document the constraint.
+- Are names consistent with the terminology dictionary?
+- Does whitespace show the structure of the logic?
+- Do the supported compilers accept every selected feature?

@@ -1,57 +1,56 @@
 {
-  "version": 6,
+  "version": 2,
+  "cmakeMinimumRequired": {
+    "major": 3,
+    "minor": 31,
+    "patch": 0
+  },
   "configurePresets": [
     {
-      "name": "cpp",
-      "displayName": "Native C++ Release",
-      "description": "Clean native acceptance build using the repository Python environment for PyArrow discovery.",
+      "name": "dev",
+      "displayName": "Development",
       "generator": "Ninja",
-      "binaryDir": "${sourceDir}/cmake-build-cpp",
+      "binaryDir": "${sourceDir}/build/dev",
       "cacheVariables": {
-        "CMAKE_BUILD_TYPE": "Release",
-        "BUILD_TESTING": "ON",
-        "HGRAPH_BUILD_PYTHON_BINDINGS": "OFF",
-        "HGRAPH_ENABLE_PYTHON_USER_NODES": "OFF",
-        "HGRAPH_ENABLE_IDE_PYTHON_HEADER_HINTS": "OFF",
-        "HGRAPH_USE_PYARROW_ARROW": "ON",
-        "HGRAPH_FETCH_SIMDJSON": "ON",
-        "HGRAPH_FETCH_DATE": "ON",
-        "HGRAPH_WARNINGS_AS_ERRORS": "ON",
-        "Python_EXECUTABLE": "${sourceDir}/.venv/bin/python"
+        "CMAKE_BUILD_TYPE": "Debug",
+        "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+        "BUILD_TESTING": "ON"
       }
     },
     {
-      "name": "python-user-nodes",
-      "displayName": "Python User Nodes",
-      "description": "Enable HGRAPH_ENABLE_PYTHON_USER_NODES for IDE indexing and Python bridge development.",
-      "binaryDir": "${sourceDir}/cmake-build-python-user-nodes",
+      "name": "release",
+      "displayName": "Release",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
-        "HGRAPH_ENABLE_PYTHON_USER_NODES": "ON",
-        "Python_EXECUTABLE": "${sourceDir}/.venv/bin/python",
-        "BUILD_TESTING": "OFF"
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "ON"
+      }
+    },
+    {
+      "name": "benchmark",
+      "displayName": "Benchmarks",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/benchmark",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "BUILD_TESTING": "OFF",
+        "HG_BUILD_BENCHMARKS": "ON"
       }
     }
   ],
   "buildPresets": [
     {
-      "name": "cpp",
-      "configurePreset": "cpp"
+      "name": "dev",
+      "configurePreset": "dev"
     },
     {
-      "name": "python-user-nodes",
-      "configurePreset": "python-user-nodes"
-    }
-  ],
-  "testPresets": [
+      "name": "release",
+      "configurePreset": "release"
+    },
     {
-      "name": "cpp",
-      "configurePreset": "cpp",
-      "output": {
-        "outputOnFailure": true
-      },
-      "environment": {
-        "CTEST_PARALLEL_LEVEL": "16"
-      }
+      "name": "benchmark",
+      "configurePreset": "benchmark"
     }
   ]
 }

@@ -1,0 +1,127 @@
+#pragma once
+
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/node_call_identity.hpp>
+#include <hg/graph/wiring_error.hpp>
+#include <hg/graph/wiring_point.hpp>
+#include <hg/graph/wired_input.hpp>
+#include <hg/time_series/item_id.hpp>
+#include <hg/util/scope_exit.hpp>
+#include <hg/util/symbol.hpp>
+
+#include <cstddef>
+#include <memory>
+#include <optional>
+#include <span>
+#include <string>
+#include <vector>
+
+namespace hg {
+
+class GraphWiring;
+class Signature;
+class TimeSeriesRuntimeType;
+class TimeSeriesType;
+namespace details {
+
+struct MaterialisationDependency {
+    WiringPoint point;
+    const TimeSeriesType *target_type;
+    util::symbol operation;
+    std::string path;
+    std::optional<util::symbol> parameter;
+    std::optional<item_id_t> item;
+};
+
+struct MaterialisationPreparation {
+    std::vector<WiringArgument> arguments;
+    std::vector<const TimeSeriesType *> input_targets;
+    std::vector<MaterialisationDependency> dependencies;
+};
+
+// Retains wiring-time behavior that is not represented by the semantic time series type.
+class WiringRecord {
+  public:
+    static constexpr auto no_output = static_cast<std::size_t>(-1);
+
+    virtual ~WiringRecord() = default;
+
+    GraphWiring &wiring() const noexcept { return *graph_; }
+    const TimeSeriesType &type() const noexcept { return *type_; }
+
+    // Associates a new record with its graph before exposing its wiring point.
+    void initialize(GraphWiring &wiring, std::size_t output = no_output) noexcept {
+        graph_ = &wiring;
+        output_ = output;
+        graph_owned_ = true;
+    }
+
+    void set_wired_output_index(std::size_t output) noexcept { output_ = output; }
+
+    void initialize_overlay(GraphWiring &wiring) noexcept {
+        graph_ = &wiring;
+        output_ = no_output;
+        graph_owned_ = false;
+    }
+
+    bool has_wired_output() const noexcept { return output_ != no_output; }
+    bool graph_owned() const noexcept { return graph_owned_; }
+    virtual bool has_default_materialisation() const noexcept { return true; }
+    bool materialisation_ready() const noexcept {
+        if (checking_materialisation_readiness_) {
+            // Materialisation reports dependency cycles with the active request path.
+            return true;
+        }
+        checking_materialisation_readiness_ = true;
+        auto reset = util::scope_exit{[this]() noexcept { checking_materialisation_readiness_ = false; }};
+        return materialisation_ready_impl();
+    }
+    virtual std::optional<NodeCallIdentity> node_call_identity() const noexcept { return std::nullopt; }
+    virtual const WiringRecord *source_identity() const noexcept { return this; }
+    std::size_t wired_output_index() const noexcept { return output_; }
+    // A record can bind an input directly to storage that has no wired output, such as an inherited slot.
+    virtual std::optional<WiredInput> input_binding(const TimeSeriesType &) const noexcept { return std::nullopt; }
+    // Returns a selected collection argument when the record retains or can select one.
+    virtual std::optional<WiringArgument> collection_argument(std::size_t) const { return std::nullopt; }
+    // Returned spans borrow from graph-owned records. Nullopt means the record has no original arguments.
+    virtual std::optional<std::span<const WiringArgument>> collection_original_arguments() const noexcept {
+        return std::nullopt;
+    }
+
+    // Returns a compatible point in this graph; it may still be lazy. GraphWiring completes lazy results to a wired
+    // output or direct input binding and validates their graph and type before returning them to a consumer.
+    virtual WiringPoint materialize(const TimeSeriesType &requested_type) const = 0;
+    virtual void add_materialisation_option(const TimeSeriesType &target_type, double cost,
+                                            Signature input_signature,
+                                            WiringMaterialisationBuilder builder) const;
+    virtual std::vector<WiringMaterialisationOption> materialisation_options() const;
+    virtual std::optional<WiringErrorContext>
+    materialisation_context(const TimeSeriesType &target_type) const;
+    // Reports child demands without expanding this record. Lazy records must report the same child targets their
+    // materialize() operation consumes; the collector uses them to discover upstream requirements first.
+    virtual MaterialisationPreparation prepare_materialisation(const TimeSeriesType &target_type) const;
+    virtual WiringPoint expand_materialisation(const TimeSeriesType &target_type,
+                                               std::span<const WiringArgument> arguments,
+                                               std::span<const TimeSeriesType *const> input_targets) const;
+
+    static WiringPoint point(const WiringRecord &record) noexcept;
+
+  protected:
+    explicit WiringRecord(const TimeSeriesType &type) noexcept : type_{&type} {}
+    virtual bool materialisation_ready_impl() const noexcept { return true; }
+
+  private:
+    GraphWiring *graph_{};
+    const TimeSeriesType *type_;
+    // A wired output index or no_output.
+    std::size_t output_;
+    bool graph_owned_{};
+    mutable bool checking_materialisation_readiness_{};
+};
+
+WiringPoint add_wiring_record(std::unique_ptr<WiringRecord> record);
+WiringPoint add_item_wiring_record(WiringPoint parent, item_id_t item,
+                                   std::unique_ptr<WiringRecord> record);
+
+} // namespace details
+} // namespace hg

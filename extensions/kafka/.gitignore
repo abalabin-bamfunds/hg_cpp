@@ -1,7 +1,0 @@
-/build/
-/build-*/
-/cmake-build-*/
-/dist/
-/.venv/
-__pycache__/
-*.pyc

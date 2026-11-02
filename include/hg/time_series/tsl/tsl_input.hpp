@@ -1,0 +1,89 @@
+#pragma once
+
+#include <hg/time_series/time_series_input.hpp>
+#include <hg/node/details/input_properties.hpp>
+#include <hg/node/input_fwd.hpp>
+#include <hg/node/input_properties.hpp>
+#include <hg/time_series/details/input_data.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
+#include <hg/time_series/ts/ts_input.hpp>
+#include <hg/time_series/tsl/details/wiring.hpp>
+#include <hg/time_series/tsl/tsl_runtime_type.hpp>
+#include <hg/time_series/tsl/tsl_storage.hpp>
+#include <hg/time_series/tsl/tsl_type.hpp>
+
+#include <string_view>
+
+namespace hg {
+
+template <typename Item, auto Size, auto... TimeSeriesProperties, auto... Properties>
+class In<TSL<Item, Size, TimeSeriesProperties...>, Properties...>
+    : public details::input_activity_control<details::basic_input_properties<true, Properties...>::dynamic_activity> {
+    using ParsedProperties = details::basic_input_properties<true, Properties...>;
+    using activity_control = details::input_activity_control<ParsedProperties::dynamic_activity>;
+    static_assert(ParsedProperties::valid);
+    static_assert(!ParsedProperties::valid_items, "valid_items applies only to TSD inputs");
+
+  public:
+    using storage_type = details::time_series_list_storage;
+
+    In() noexcept
+        requires(!details::size_variable_declaration<decltype(Size)>)
+        : activity_control{},
+          data_{cpp_time_series_runtime_type<TSL<Item, Size, TimeSeriesProperties...>>(), initial_time_series_state, nullptr} {}
+
+    In(const TimeSeriesState &last_updated, const void *value, const TimeSeriesRuntimeType &runtime_type,
+       bool modified = false, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{runtime_type, last_updated, value, modified} {}
+
+    explicit In(const TimeSeriesInputData &data, bool *activity = nullptr) noexcept
+        : activity_control{activity}, data_{data} {}
+
+    bool valid() const noexcept { return data_.valid(); }
+    bool all_valid() const noexcept {
+        return data_.valid() && data_.runtime_type().all_valid(data_.last_updated_ref(), data_.data());
+    }
+    bool became_valid() const noexcept { return data_.became_valid(); }
+    bool became_invalid() const noexcept { return data_.became_invalid(); }
+    bool modified() const noexcept { return data_.modified(); }
+    EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
+    const TimeSeriesInputData &input_data() const noexcept { return data_; }
+    std::size_t size() const noexcept { return data_.runtime_type().item_count(data_.data()); }
+
+    In<Item> operator[](std::size_t index) const {
+        return In<Item>{data_.item(static_cast<item_id_t>(index))};
+    }
+
+    bool item_updated(std::size_t index) const noexcept {
+        return data_.runtime_type().item_updated(data_.last_updated_ref(), data_.data(), static_cast<item_id_t>(index));
+    }
+
+    template <typename Function> void for_each_updated(Function &&function) const {
+        data_.runtime_type().for_each_updated_item(
+            data_.last_updated_ref(), data_.data(), std::addressof(function),
+            [](void *context, item_id_t id) { (*static_cast<std::remove_reference_t<Function> *>(context))(id); });
+    }
+
+    const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
+    const void *data() const noexcept { return data_.data(); }
+    const In *operator->() const noexcept { return this; }
+
+    template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {
+        return details::visit_time_series_input(data_, std::forward<Functions>(functions)...);
+    }
+
+    using time_series_type = TSL<Item, Size, TimeSeriesProperties...>;
+    using item_type = Item;
+
+    static constexpr std::string_view name = ParsedProperties::name;
+    static constexpr InputActivity activity = ParsedProperties::activity;
+    static constexpr InputValidity validity = ParsedProperties::validity;
+    static constexpr bool dynamic_binding = ParsedProperties::dynamic_binding;
+    static constexpr bool dynamic_activity = ParsedProperties::dynamic_activity;
+    static constexpr auto variadic_mode = details::variadic_mode<Properties...>();
+
+  private:
+    details::TimeSeriesInputData data_;
+};
+
+} // namespace hg

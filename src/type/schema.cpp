@@ -1,0 +1,263 @@
+#include <hg/type/schema.hpp>
+
+#include <hg/type/type_map.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+
+#include "type_registration.hpp"
+
+#include <algorithm>
+#include <atomic>
+#include <limits>
+#include <memory>
+#include <stdexcept>
+#include <string_view>
+#include <type_traits>
+#include <unordered_map>
+#include <utility>
+
+namespace hg {
+namespace {
+
+void cache_reserved_schema(const Schema &schema);
+
+} // namespace
+
+struct SchemaRegistration::Impl {
+    details::SemanticTypeRegistration registration;
+    std::vector<const Schema *> reserved_schemas;
+    bool committed{};
+};
+
+SchemaRegistration::SchemaRegistration() {
+    impl_ = std::make_unique<Impl>();
+}
+SchemaRegistration::~SchemaRegistration() = default;
+
+Schema &SchemaRegistration::reserve_schema(util::symbol name, SchemaIdentity identity, const Schema *base,
+                                           SchemaMetadata metadata) {
+    if (impl_->committed) {
+        throw std::logic_error{"a committed schema registration cannot reserve descriptors"};
+    }
+    auto descriptor = std::make_unique<Schema>(name, std::move(identity), base, std::move(metadata));
+    auto *result = descriptor.get();
+    TypeRegistry::instance().register_owned(std::move(descriptor));
+    impl_->reserved_schemas.push_back(result);
+    return *result;
+}
+
+const Type &SchemaRegistration::register_owned(std::unique_ptr<Type> type) {
+    if (impl_->committed) {
+        throw std::logic_error{"a committed schema registration cannot own more descriptors"};
+    }
+    return TypeRegistry::instance().register_owned(std::move(type));
+}
+
+void SchemaRegistration::commit() {
+    if (impl_->committed) {
+        throw std::logic_error{"a schema registration can be committed only once"};
+    }
+    impl_->registration.complete();
+    for (const auto *schema : impl_->reserved_schemas) {
+        cache_reserved_schema(*schema);
+    }
+    impl_->committed = true;
+}
+
+namespace {
+
+struct SchemaKey {
+    util::symbol name;
+    SchemaIdentity identity;
+    const Schema *base;
+    std::vector<SchemaField> direct_fields;
+    SchemaMetadata metadata;
+
+    bool operator==(const SchemaKey &) const = default;
+};
+
+void combine_hash(std::size_t &seed, std::size_t value) noexcept {
+    seed ^= value + 0x9e3779b9 + (seed << 6) + (seed >> 2);
+}
+
+struct SchemaKeyHash {
+    std::size_t operator()(const SchemaKey &key) const noexcept {
+        auto result = std::size_t{};
+        combine_hash(result, std::hash<std::string_view>{}(key.name.text()));
+        combine_hash(result, std::visit(
+                                 [](const auto &identity) -> std::size_t {
+                                     using Identity = std::remove_cvref_t<decltype(identity)>;
+                                     if constexpr (std::same_as<Identity, std::monostate>) {
+                                         return 0;
+                                     } else if constexpr (std::same_as<Identity, std::type_index>) {
+                                         return std::hash<std::type_index>{}(identity);
+                                     } else {
+                                         return std::hash<std::uint64_t>{}(identity.value());
+                                     }
+                                 },
+                                 key.identity));
+        combine_hash(result, std::hash<const Schema *>{}(key.base));
+        for (const auto &field : key.direct_fields) {
+            combine_hash(result, std::hash<std::string_view>{}(field.name.text()));
+            combine_hash(result, std::hash<const Type *>{}(field.type));
+            combine_hash(result, std::hash<bool>{}(field.optional));
+        }
+        combine_hash(result, key.metadata.hash());
+        return result;
+    }
+};
+
+using SchemaCache = std::unordered_map<SchemaKey, const Schema *, SchemaKeyHash>;
+
+SchemaCache &schema_cache() {
+    static auto cache = util::static_storage<SchemaCache>{};
+    return cache.get();
+}
+
+void cache_reserved_schema(const Schema &schema) {
+    if (!schema.is_finalized()) {
+        throw std::logic_error{"a reserved schema must be finalized before commit"};
+    }
+    auto key = SchemaKey{schema.name(), schema.identity(), schema.base(),
+                         {schema.direct_fields().begin(), schema.direct_fields().end()}, schema.direct_metadata()};
+    auto &cache = schema_cache();
+    const auto [entry, inserted] = cache.try_emplace(std::move(key), &schema);
+    if (!inserted && entry->second != &schema) {
+        throw std::logic_error{"a schema registration conflicts with an existing canonical descriptor"};
+    }
+}
+
+} // namespace
+
+Schema::Schema(util::symbol name, SchemaIdentity identity, const Schema *base, std::vector<SchemaField> fields,
+               SchemaMetadata metadata)
+    : name_{name}, identity_{std::move(identity)}, base_{base}, direct_metadata_{std::move(metadata)} {
+    finalize(fields);
+}
+
+Schema::Schema(util::symbol name, SchemaIdentity identity, const Schema *base, SchemaMetadata metadata)
+    : name_{name}, identity_{std::move(identity)}, base_{base}, direct_metadata_{std::move(metadata)} {}
+
+void Schema::finalize(std::span<const SchemaField> fields) {
+    if (finalized_) {
+        throw std::logic_error{"a schema descriptor can be finalized only once"};
+    }
+    if (TypeRegistry::instance().contains(*this) && details::SemanticTypeRegistration::current() == nullptr) {
+        throw std::logic_error{"finalizing a reserved schema requires its active schema registration"};
+    }
+
+    auto direct_fields = std::vector<SchemaField>{fields.begin(), fields.end()};
+    auto resolved_fields = std::vector<SchemaField>{};
+    for (auto index = std::size_t{}; index < direct_fields.size(); ++index) {
+        const auto &field = direct_fields[index];
+        if (field.type == nullptr) {
+            throw std::invalid_argument{"a schema field requires a type"};
+        }
+        const auto remaining_fields = std::span{direct_fields}.subspan(index + 1);
+        if (std::ranges::find(remaining_fields, field.name, &SchemaField::name) != remaining_fields.end()) {
+            throw std::invalid_argument{"a schema has duplicate field names"};
+        }
+
+        const auto *inherited = base_ == nullptr ? nullptr : base_->find(field.name);
+        if (inherited == nullptr) {
+            continue;
+        }
+        if (!inherited->optional && field.optional) {
+            throw std::invalid_argument{"a required schema field cannot become optional"};
+        }
+        if (inherited->type->is_resolved() && field.type->is_resolved() &&
+            !inherited->type->accepts(*field.type)) {
+            throw std::invalid_argument{"a redefined schema field must have a compatible narrower type"};
+        }
+    }
+
+    if (base_ != nullptr) {
+        resolved_fields.assign(base_->fields().begin(), base_->fields().end());
+    }
+
+    for (const auto &field : direct_fields) {
+        const auto inherited = std::ranges::find(resolved_fields, field.name, &SchemaField::name);
+        if (inherited == resolved_fields.end()) {
+            resolved_fields.push_back(field);
+        } else {
+            *inherited = field;
+        }
+    }
+
+    auto inherited_metadata = base_ == nullptr ? direct_metadata_ : base_->metadata().copy_with(direct_metadata_);
+    direct_fields_ = std::move(direct_fields);
+    fields_ = std::move(resolved_fields);
+    metadata_ = std::move(inherited_metadata);
+    finalized_ = true;
+}
+
+const SchemaField *Schema::find(util::symbol name) const noexcept {
+    const auto field = std::ranges::find(fields_, name, &SchemaField::name);
+    return field == fields_.end() ? nullptr : std::addressof(*field);
+}
+
+bool Schema::derives_from(const Schema &schema) const noexcept {
+    if (!schema.named()) {
+        return false;
+    }
+    for (auto current = this; current != nullptr; current = current->base()) {
+        if (current->identity() == schema.identity()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool Schema::is_resolved() const noexcept {
+    return finalized_ && (base_ == nullptr || base_->is_resolved()) &&
+           std::ranges::all_of(direct_fields_, [](const auto &field) { return field.type->is_resolved(); });
+}
+
+const Schema &Schema::resolve(const TypeMap &type_map) const {
+    if (!finalized_) {
+        throw std::logic_error{"a reserved schema must be finalized before type resolution"};
+    }
+    if (is_resolved()) {
+        return *this;
+    }
+
+    auto fields = std::vector<SchemaField>{};
+    fields.reserve(direct_fields_.size());
+    for (const auto &field : direct_fields_) {
+        fields.push_back({field.name, &field.type->resolve(type_map), field.optional});
+    }
+
+    const auto *resolved_base = base_ == nullptr ? nullptr : &base_->resolve(type_map);
+    return hg::schema(name_, identity_, resolved_base, fields, direct_metadata_);
+}
+
+RuntimeSchemaId new_runtime_schema_id() {
+    static auto next_id = std::atomic<std::uint64_t>{1};
+    auto id = next_id.load(std::memory_order_relaxed);
+    while (id != std::numeric_limits<std::uint64_t>::max()) {
+        if (next_id.compare_exchange_weak(id, id + 1, std::memory_order_relaxed)) {
+            return RuntimeSchemaId{id};
+        }
+    }
+    throw std::overflow_error{"runtime schema identity space is exhausted"};
+}
+
+const Schema &schema(util::symbol name, SchemaIdentity identity, const Schema *base,
+                     std::span<const SchemaField> fields, SchemaMetadata metadata) {
+    auto key = SchemaKey{name, std::move(identity), base, {fields.begin(), fields.end()}, std::move(metadata)};
+    auto &cache = schema_cache();
+    if (const auto found = cache.find(key); found != cache.end()) {
+        return *found->second;
+    }
+
+    const auto &descriptor = TypeRegistry::instance().register_owned(
+        std::make_unique<Schema>(key.name, key.identity, key.base, key.direct_fields, key.metadata));
+    cache.emplace(key, &descriptor);
+    return descriptor;
+}
+
+const Schema &anonymous_schema(std::span<const SchemaField> fields, SchemaMetadata metadata) {
+    return schema(util::symbol{""}, std::monostate{}, nullptr, fields, std::move(metadata));
+}
+
+} // namespace hg

@@ -1,0 +1,55 @@
+#pragma once
+
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/type/details/time_series_type_traits.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_set_type.hpp>
+#include <hg/type/type_registry.hpp>
+#include <hg/util/static_storage.hpp>
+
+namespace hg::details {
+
+template <typename Key, typename Item, auto... Properties>
+struct time_series_type_traits<TSD<Key, Item, Properties...>> {
+    using semantic_type = TimeSeriesDictionaryType;
+
+    static constexpr bool generic = scalar_declaration_traits<Key>::generic || generic_time_series<Item>;
+    static constexpr bool supported =
+        (scalar_declaration_traits<Key>::generic ||
+         (scalar_declaration_traits<Key>::supports_time_series && has_cpp_scalar_type<Key>)) &&
+        supported_time_series<Item>;
+
+    template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
+    static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+        const auto &key = scalar_type_for<Key>();
+        const auto &value = time_series_type_for<Scope, Index, Role, Item>(guarantee);
+        static const auto key_set = util::static_storage<GenericTimeSeriesSetType>{key, guarantee};
+        [[maybe_unused]] static const auto &key_set_registration = TypeRegistry::register_static(key_set.get());
+
+        if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<Key>::generic) {
+            static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set.get(),
+                                                                                          guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
+        }
+        if (!value.is_resolved() || !guarantee.is_resolved()) {
+            static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set.get(),
+                                                                                          guarantee};
+            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            return type.get();
+        }
+
+        return time_series_dictionary_type(key, value, *guarantee.value());
+    }
+};
+
+template <typename Key, typename Item, auto... Properties>
+struct declaration_variable_traits<TSD<Key, Item, Properties...>> {
+    template <typename Visitor> static void for_each(Visitor &&visitor) {
+        for_each_declaration_variable<Key>(visitor);
+        for_each_declaration_variable<Item>(visitor);
+        time_series_properties<Properties...>::for_each_variable(std::forward<Visitor>(visitor));
+    }
+};
+
+} // namespace hg::details

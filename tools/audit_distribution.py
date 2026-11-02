@@ -1,191 +1,168 @@
 #!/usr/bin/env python3
-"""Validate the contents of hg_cpp wheels and source distributions."""
+"""Check required files and metadata in hg_cpp wheel and source distributions."""
 
 from __future__ import annotations
 
 import argparse
-import glob
+from email.parser import Parser
 from pathlib import Path, PurePosixPath
 import tarfile
-from typing import Iterable
+import tomllib
 import zipfile
 
+from packaging.tags import Tag
+from packaging.utils import canonicalize_name, parse_wheel_filename
 
-SDIST_REQUIRED = {
+
+ROOT = Path(__file__).resolve().parents[1]
+FORBIDDEN_PARTS = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
+WHEEL_FILES = {
+    "hg/__init__.py",
+    "hg/operators.py",
+    "include/hg/hg.hpp",
+}
+SDIST_FILES = {
     "CMakeLists.txt",
+    "bindings/python/CMakeLists.txt",
+    "bindings/python/python/hg/__init__.py",
+    "bindings/python/src/module.cpp",
+    "bindings/python/tests/extension_module.cpp",
+    "cmake/hgConfig.cmake.in",
+    "include/hg/hg.hpp",
+    "packaging/consumer/CMakeLists.txt",
     "pyproject.toml",
-    "include/hgraph/hgraph.h",
-    "python/CMakeLists.txt",
-    "python/hgraph/__init__.py",
-    "src/CMakeLists.txt",
-    "tests/install_consumer/CMakeLists.txt",
-    "tests/python_extension_consumer/CMakeLists.txt",
-    "tests/python_extension_consumer/check.py",
-    "tests/python_extension_consumer/module.cpp",
-    "tools/audit_distribution.py",
+    "src/version.cpp",
 }
 
-WHEEL_REQUIRED = {
-    "hgraph/__init__.py",
-    "include/hgraph/hgraph.h",
-    "share/hgraph/debugger/hgraph_debug_common.py",
-}
 
-WHEEL_CMAKE_ROOTS = (
-    "lib/cmake/hgraph",
-    "lib64/cmake/hgraph",
-)
-
-WHEEL_CMAKE_FILES = (
-    "hgraphConfig.cmake",
-    "hgraphConfigVersion.cmake",
-)
-
-FORBIDDEN_PARTS = {
-    ".git",
-    ".mypy_cache",
-    ".pytest_cache",
-    ".ruff_cache",
-    "__pycache__",
-}
-
-FORBIDDEN_PREFIXES = (
-    "benchmarks/results/",
-    "ext/",
-    "reports/",
-)
-
-
-class AuditError(RuntimeError):
-    pass
-
-
-def _safe_name(name: str) -> PurePosixPath:
-    path = PurePosixPath(name)
-    if path.is_absolute() or ".." in path.parts:
-        raise AuditError(f"unsafe archive path: {name}")
-    return path
-
-
-def _validate_common(paths: set[str]) -> None:
-    forbidden = []
-    for name in sorted(paths):
+def check_paths(paths: set[str]) -> None:
+    for name in paths:
         path = PurePosixPath(name)
+        if path.is_absolute() or ".." in path.parts:
+            raise ValueError(f"unsafe archive path: {name}")
         if any(part in FORBIDDEN_PARTS for part in path.parts):
-            forbidden.append(name)
-            continue
-        if any(part.startswith((".venv", "cmake-build")) for part in path.parts):
-            forbidden.append(name)
-            continue
-        if name.startswith(FORBIDDEN_PREFIXES) or path.suffix in {".pyc", ".pyo"}:
-            forbidden.append(name)
-    if forbidden:
-        raise AuditError("forbidden distribution content: " + ", ".join(forbidden))
+            raise ValueError(f"archive contains a development-only path: {name}")
+        if path.suffix in {".pyc", ".pyo"}:
+            raise ValueError(f"archive contains Python bytecode: {name}")
 
 
-def _require(paths: set[str], required: set[str]) -> None:
-    missing = sorted(required - paths)
-    if missing:
-        raise AuditError("missing required distribution content: " + ", ".join(missing))
+def audit_wheel(path: Path, platform: str | None) -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
+    wheel_name, wheel_version, _, tags = parse_wheel_filename(path.name)
+    if canonicalize_name(wheel_name) != canonicalize_name(project["name"]):
+        raise ValueError(f"wheel name {wheel_name} does not match pyproject.toml")
+    if str(wheel_version) != project["version"]:
+        raise ValueError(f"wheel version {wheel_version} does not match pyproject.toml")
+    expected_tag = Tag("cp312", "abi3", platform) if platform else None
+
+    with zipfile.ZipFile(path) as wheel:
+        members = [info for info in wheel.infolist() if not info.is_dir()]
+        paths = {info.filename for info in members}
+        check_paths(paths)
+
+        metadata_paths = [name for name in paths if name.endswith(".dist-info/METADATA")]
+        if len(metadata_paths) != 1:
+            raise ValueError(f"expected one wheel METADATA file, found {metadata_paths}")
+        metadata = Parser().parsestr(wheel.read(metadata_paths[0]).decode("utf-8"))
+        if canonicalize_name(metadata["Name"]) != canonicalize_name(project["name"]):
+            raise ValueError(f"wheel METADATA has unexpected name {metadata['Name']}")
+        if metadata["Version"] != project["version"]:
+            raise ValueError(f"wheel METADATA has unexpected version {metadata['Version']}")
+
+        missing = WHEEL_FILES - paths
+        if missing:
+            raise ValueError("wheel is missing required files: " + ", ".join(sorted(missing)))
+
+        if not all(
+            f"lib/cmake/hg/{name}" in paths
+            for name in ("hgConfig.cmake", "hgConfigVersion.cmake", "hgTargets.cmake")
+        ):
+            raise ValueError("wheel is missing the HG CMake package under lib")
+
+        if "lib/cmake/ddvisitor/ddvisitor-config.cmake" not in paths:
+            raise ValueError("wheel is missing the ddvisitor CMake dependency")
+
+        if not any(name.startswith("hg/_hg") and name.endswith((".so", ".pyd")) for name in paths):
+            raise ValueError("wheel is missing the hg._hg native extension")
+
+        for library in ("hg", "hg_library", "hg_python", "nanobind", "fmt"):
+            if not any(is_runtime_library(name, library) for name in paths):
+                raise ValueError(f"wheel is missing the native runtime library {library}")
+
+        if not any("cmake/fmt/" in name and name.endswith("fmt-config.cmake") for name in paths):
+            raise ValueError("wheel is missing the fmt CMake package required by the installed SDK")
+        if not any(name.startswith("include/fmt/") for name in paths):
+            raise ValueError("wheel is missing fmt headers required by public HG headers")
+
+    if expected_tag is not None and expected_tag not in tags:
+        raise ValueError(f"wheel has no {expected_tag} tag: {path.name} contains {sorted(tags)}")
+    if any(tag.abi != "abi3" for tag in tags):
+        raise ValueError(f"wheel is not stable-ABI tagged: {path.name} contains {sorted(tags)}")
+
+    print(f"Audited wheel {path}: {len(paths)} files, {project['name']} {project['version']}")
 
 
-def _audit_wheel(path: Path) -> int:
-    with zipfile.ZipFile(path) as archive:
-        paths = {
-            str(_safe_name(info.filename))
-            for info in archive.infolist()
-            if not info.is_dir()
-        }
-
-    _validate_common(paths)
-    _require(paths, WHEEL_REQUIRED)
-
-    if not any(
-        all(f"{root}/{name}" in paths for name in WHEEL_CMAKE_FILES)
-        for root in WHEEL_CMAKE_ROOTS
-    ):
-        raise AuditError(
-            "wheel does not contain a complete hgraph CMake package under lib or lib64"
-        )
-
-    extension_names = {PurePosixPath(name).name for name in paths}
-    if not any(
-        name == "_hgraph.pyd" or (name.startswith("_hgraph.") and name.endswith(".so"))
-        for name in extension_names
-    ):
-        raise AuditError("wheel does not contain the _hgraph extension")
-
-    libraries = [
-        name
-        for name in paths
-        if PurePosixPath(name).parts[0] in {"lib", "lib64"}
-        and "hgraph" in PurePosixPath(name).name
-        and PurePosixPath(name).suffix in {".a", ".dylib", ".lib", ".so"}
-    ]
-    if not libraries:
-        raise AuditError("wheel does not contain the native hgraph libraries")
-    if not any("nanobind-abi3" in PurePosixPath(name).name for name in paths):
-        raise AuditError("wheel does not contain the shared nanobind runtime")
-    return len(paths)
+def is_runtime_library(path: str, library: str) -> bool:
+    name = PurePosixPath(path).name.lower()
+    base = name.removeprefix("lib")
+    prefix = library.lower()
+    matches_library = base == prefix or base.startswith((f"{prefix}.", f"{prefix}-"))
+    has_library_suffix = name.endswith((".dll", ".dylib", ".a", ".lib")) or ".so" in name
+    return matches_library and has_library_suffix
 
 
-def _audit_sdist(path: Path) -> int:
+def audit_sdist(path: Path) -> None:
+    project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     with tarfile.open(path, "r:gz") as archive:
-        members = archive.getmembers()
-        unsafe_links = [member.name for member in members if member.issym() or member.islnk()]
-        if unsafe_links:
-            raise AuditError("source distribution contains links: " + ", ".join(unsafe_links))
-        raw_paths = [_safe_name(member.name) for member in members if member.isfile()]
+        archive_members = archive.getmembers()
+        archive_paths = {PurePosixPath(member.name) for member in archive_members}
+        check_paths({str(member_path) for member_path in archive_paths})
+        roots = {member_path.parts[0] for member_path in archive_paths if member_path.parts}
+        if len(roots) != 1:
+            raise ValueError(f"sdist must contain one top-level directory, found {sorted(roots)}")
+        archive_root = next(iter(roots))
+        expected_root = f"{project['name'].replace('-', '_')}-{project['version']}"
+        if archive_root != expected_root:
+            raise ValueError(f"sdist root {archive_root} does not match {expected_root}")
+        if any(member.issym() or member.islnk() for member in archive_members):
+            raise ValueError("sdist must not contain symbolic or hard links")
 
-    roots = {item.parts[0] for item in raw_paths if item.parts}
-    if len(roots) != 1:
-        raise AuditError(f"source distribution must have one root directory, found {sorted(roots)}")
-    root = roots.pop()
-    if not root.startswith("hg_cpp-"):
-        raise AuditError(f"unexpected source distribution root: {root}")
+        members = [member for member in archive_members if member.isfile()]
+        paths = {"/".join(PurePosixPath(member.name).parts[1:]) for member in members}
+        check_paths(paths)
+        missing = SDIST_FILES - paths
+        if missing:
+            raise ValueError("sdist is missing required files: " + ", ".join(sorted(missing)))
 
-    paths = {
-        str(PurePosixPath(*item.parts[1:]))
-        for item in raw_paths
-        if len(item.parts) > 1
-    }
-    _validate_common(paths)
-    _require(paths, SDIST_REQUIRED)
-    return len(paths)
+        pyproject = next(member for member in members if member.name == f"{archive_root}/pyproject.toml")
+        project_data = tomllib.loads(archive.extractfile(pyproject).read().decode("utf-8"))["project"]
+        if project_data["name"] != project["name"] or project_data["version"] != project["version"]:
+            raise ValueError("sdist pyproject.toml metadata does not match the checkout")
 
-
-def audit(path: Path) -> int:
-    if path.name.endswith(".whl"):
-        return _audit_wheel(path)
-    if path.name.endswith(".tar.gz"):
-        return _audit_sdist(path)
-    raise AuditError(f"unsupported distribution type: {path}")
+    print(f"Audited sdist {path}: {len(paths)} files, {project['name']} {project['version']}")
 
 
-def _expand_artifacts(arguments: Iterable[str]) -> list[Path]:
-    artifacts = []
-    for argument in arguments:
-        matches = [Path(match) for match in glob.glob(argument)]
-        if not matches:
-            raise AuditError(f"distribution artifact not found: {argument}")
-        artifacts.extend(matches)
-    return artifacts
-
-
-def main() -> int:
+def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("artifacts", nargs="+", help="wheel/sdist paths or glob patterns")
+    parser.add_argument("archive", type=Path)
+    parser.add_argument("--platform", help="Require the cp312-abi3 wheel tag for this platform")
     args = parser.parse_args()
 
-    try:
-        artifacts = _expand_artifacts(args.artifacts)
-        for artifact in artifacts:
-            count = audit(artifact)
-            print(f"PASS {artifact.name}: {count} files")
-    except (AuditError, OSError, tarfile.TarError, zipfile.BadZipFile) as error:
-        parser.exit(1, f"FAIL {error}\n")
-    return 0
+    if args.archive.is_dir():
+        archives = sorted((*args.archive.glob("*.whl"), *args.archive.glob("*.tar.gz")))
+        if not archives:
+            raise FileNotFoundError(f"no wheel or sdist found in {args.archive}")
+    else:
+        archives = [args.archive]
+
+    for archive in archives:
+        if archive.name.endswith(".whl"):
+            audit_wheel(archive, args.platform)
+        elif archive.name.endswith(".tar.gz"):
+            audit_sdist(archive)
+        else:
+            raise ValueError(f"unsupported distribution archive: {archive}")
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    main()

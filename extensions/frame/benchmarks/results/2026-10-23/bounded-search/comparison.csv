@@ -1,0 +1,55 @@
+case,method,measure,before_median_ms,after_median_ms,before_process_min_ms,before_process_max_ms,after_process_min_ms,after_process_max_ms,speedup
+"50% clustered selection, clustered deletion",native batch sum,source_mutation_median_ms,0.016751,0.017471,0.016601,0.017561,0.017251,0.018131,0.9587888500944421
+"50% clustered selection, clustered deletion",native batch sum,graph_cycle_median_ms,0.486466,0.491516,0.483226,0.490416,0.489996,0.494267,0.9897256650851651
+"50% clustered selection, clustered deletion",native batch sum,consumer_sum_median_ms,0.098585,0.097855,0.097235,0.098846,0.097705,0.099075,1.0074600173726433
+"50% clustered selection, clustered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.018131,0.017311,0.016741,0.018261,0.016951,0.017361,1.0473687250880943
+"50% clustered selection, clustered deletion",borrowed Arrow + sum,graph_cycle_median_ms,0.573531,0.467965,0.55618,0.581701,0.462425,0.469656,1.2255852467599073
+"50% clustered selection, clustered deletion",borrowed Arrow + sum,consumer_sum_median_ms,0.179599,0.080894,0.172219,0.191121,0.077794,0.082404,2.220177021781591
+"50% clustered selection, clustered deletion",dense gather + sum,source_mutation_median_ms,0.017801,0.01733,0.016911,0.019321,0.017171,0.017461,1.0271783035199076
+"50% clustered selection, clustered deletion",dense gather + sum,graph_cycle_median_ms,0.766941,0.756811,0.75349,0.771861,0.75476,0.763292,1.0133851120028645
+"50% clustered selection, clustered deletion",dense gather + sum,consumer_sum_median_ms,0.36712,0.3661,0.358329,0.37161,0.36585,0.36747,1.0027861240098335
+"50% scattered selection, clustered deletion",native batch sum,source_mutation_median_ms,0.015121,0.014931,0.014681,0.01594,0.014741,0.015101,1.0127252025986204
+"50% scattered selection, clustered deletion",native batch sum,graph_cycle_median_ms,1.05456,1.05442,1.05418,1.0556,1.05201,1.06228,1.0001327744162667
+"50% scattered selection, clustered deletion",native batch sum,consumer_sum_median_ms,0.673386,0.672936,0.671366,0.675477,0.671165,0.674236,1.0006687114376405
+"50% scattered selection, clustered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.024461,0.024572,0.024121,0.024672,0.023011,0.024861,0.9954826631938792
+"50% scattered selection, clustered deletion",borrowed Arrow + sum,graph_cycle_median_ms,16.9379,16.874,16.6041,17.065,16.4596,18.0463,1.0037868910750267
+"50% scattered selection, clustered deletion",borrowed Arrow + sum,consumer_sum_median_ms,16.5296,16.4438,16.1757,16.6306,16.0067,17.641,1.0052177720478235
+"50% scattered selection, clustered deletion",dense gather + sum,source_mutation_median_ms,0.013681,0.01441,0.013661,0.01381,0.01422,0.014571,0.94941013185288
+"50% scattered selection, clustered deletion",dense gather + sum,graph_cycle_median_ms,1.4278,1.46256,1.41918,1.43207,1.4454,1.48623,0.9762334536702767
+"50% scattered selection, clustered deletion",dense gather + sum,consumer_sum_median_ms,1.05696,1.08718,1.05683,1.06622,1.06971,1.10447,0.9722033149984362
+"50% clustered selection, scattered deletion",native batch sum,source_mutation_median_ms,0.020141,0.019721,0.019121,0.020511,0.019351,0.019821,1.0212970944678261
+"50% clustered selection, scattered deletion",native batch sum,graph_cycle_median_ms,0.56952,0.569571,0.565661,0.572041,0.56935,0.574521,0.9999104589243483
+"50% clustered selection, scattered deletion",native batch sum,consumer_sum_median_ms,0.165788,0.165999,0.164868,0.166549,0.164979,0.169549,0.9987289080054698
+"50% clustered selection, scattered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.021041,0.022221,0.020712,0.022621,0.021061,0.023812,0.9468970793393636
+"50% clustered selection, scattered deletion",borrowed Arrow + sum,graph_cycle_median_ms,0.754461,0.695027,0.740559,0.759651,0.668096,0.731359,1.0855132246660923
+"50% clustered selection, scattered deletion",borrowed Arrow + sum,consumer_sum_median_ms,0.329458,0.254863,0.328238,0.335858,0.251474,0.277614,1.2926866591070496
+"50% clustered selection, scattered deletion",dense gather + sum,source_mutation_median_ms,0.021831,0.021842,0.021091,0.024121,0.021041,0.024002,0.9994963831150994
+"50% clustered selection, scattered deletion",dense gather + sum,graph_cycle_median_ms,0.741579,0.75191,0.736539,0.765731,0.7464,0.7531,0.9862603237089546
+"50% clustered selection, scattered deletion",dense gather + sum,consumer_sum_median_ms,0.331568,0.338908,0.329657,0.339848,0.338399,0.340499,0.978342204964179
+"50% scattered selection, scattered deletion",native batch sum,source_mutation_median_ms,0.017261,0.017401,0.017171,0.018431,0.016841,0.018271,0.9919544853744037
+"50% scattered selection, scattered deletion",native batch sum,graph_cycle_median_ms,1.0665,1.07246,1.06215,1.06849,1.0709,1.09711,0.994442683176995
+"50% scattered selection, scattered deletion",native batch sum,consumer_sum_median_ms,0.674716,0.674927,0.674207,0.675156,0.673796,0.683937,0.9996873735974408
+"50% scattered selection, scattered deletion",borrowed Arrow + sum,source_mutation_median_ms,0.059733,0.058303,0.056253,0.065004,0.056483,0.058393,1.0245270397749686
+"50% scattered selection, scattered deletion",borrowed Arrow + sum,graph_cycle_median_ms,16.6202,16.7064,16.3435,17.9461,16.5294,17.921,0.9948403007230763
+"50% scattered selection, scattered deletion",borrowed Arrow + sum,consumer_sum_median_ms,16.1674,16.2334,15.8784,17.3962,16.0617,17.4532,0.9959343082779948
+"50% scattered selection, scattered deletion",dense gather + sum,source_mutation_median_ms,0.01704,0.017401,0.016921,0.018611,0.016741,0.018541,0.979254065858284
+"50% scattered selection, scattered deletion",dense gather + sum,graph_cycle_median_ms,1.46699,1.4817,1.45212,1.84239,1.47045,1.49435,0.9900722143483837
+"50% scattered selection, scattered deletion",dense gather + sum,consumer_sum_median_ms,1.07053,1.07606,1.05584,1.31305,1.07054,1.07806,0.9948608813634927
+"100% selection, no deletion",native batch sum,source_mutation_median_ms,0.00571,0.00563,0.00564,0.00576,0.005581,0.00568,1.014209591474245
+"100% selection, no deletion",native batch sum,graph_cycle_median_ms,0.100285,0.100055,0.099715,0.102115,0.098666,0.120036,1.0022987356953674
+"100% selection, no deletion",native batch sum,consumer_sum_median_ms,0.085225,0.085655,0.085165,0.085654,0.084935,0.106155,0.9949798610705738
+"100% selection, no deletion",borrowed Arrow + sum,source_mutation_median_ms,0.00574,0.005831,0.005591,0.01106,0.0057,0.00949,0.9843937575030012
+"100% selection, no deletion",borrowed Arrow + sum,graph_cycle_median_ms,0.234773,0.050153,0.233152,0.412632,0.039051,0.059933,4.681135724682472
+"100% selection, no deletion",borrowed Arrow + sum,consumer_sum_median_ms,0.220122,0.032161,0.218581,0.38035,0.024612,0.033622,6.844376729579304
+"100% selection, no deletion",dense gather + sum,source_mutation_median_ms,0.005631,0.00583,0.00557,0.00996,0.00574,0.00589,0.9658662092624356
+"100% selection, no deletion",dense gather + sum,graph_cycle_median_ms,0.409702,0.425453,0.403002,0.630244,0.422683,0.431913,0.9629782843228276
+"100% selection, no deletion",dense gather + sum,consumer_sum_median_ms,0.395951,0.411092,0.388551,0.600482,0.408262,0.417202,0.9631688283887792
+10% scattered selection and deletion,native batch sum,source_mutation_median_ms,0.070214,0.068073,0.069463,0.072794,0.067694,0.070844,1.0314515299751739
+10% scattered selection and deletion,native batch sum,graph_cycle_median_ms,0.483596,0.484286,0.474666,0.499246,0.466905,0.485796,0.9985752220795151
+10% scattered selection and deletion,native batch sum,consumer_sum_median_ms,0.130147,0.129798,0.128927,0.133467,0.129747,0.130747,1.00268879335583
+10% scattered selection and deletion,borrowed Arrow + sum,source_mutation_median_ms,0.074384,0.077524,0.071274,0.075084,0.072124,0.084904,0.9594964140137249
+10% scattered selection and deletion,borrowed Arrow + sum,graph_cycle_median_ms,3.18177,3.21462,3.13884,3.2321,3.14846,3.50467,0.989781062769472
+10% scattered selection and deletion,borrowed Arrow + sum,consumer_sum_median_ms,2.81984,2.86902,2.79484,2.84962,2.77877,3.14604,0.9828582582205772
+10% scattered selection and deletion,dense gather + sum,source_mutation_median_ms,0.068143,0.065303,0.067584,0.068914,0.065264,0.065864,1.0434895793455123
+10% scattered selection and deletion,dense gather + sum,graph_cycle_median_ms,0.5498,0.545659,0.547639,0.56487,0.544559,0.55277,1.0075889887273919
+10% scattered selection and deletion,dense gather + sum,consumer_sum_median_ms,0.206071,0.210051,0.205411,0.219202,0.207291,0.210491,0.9810522206511753

@@ -1,0 +1,330 @@
+#include "tsd_reference_representation.hpp"
+
+#include <hg/time_series/ref/ref_provider.hpp>
+#include <hg/time_series/ref/ref_runtime_type.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/util/static_storage.hpp>
+
+#include <algorithm>
+#include <exception>
+#include <memory>
+#include <mutex>
+#include <ranges>
+#include <stdexcept>
+#include <vector>
+
+namespace hg::details {
+namespace {
+
+class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDictionaryRuntimeType {
+  public:
+    TimeSeriesDictionaryRepresentationRuntimeType(const TimeSeriesDictionaryType &type,
+                                                  const ScalarRuntimeType &key,
+                                                  const TimeSeriesRuntimeType &item)
+        : TimeSeriesDictionaryRuntimeType{type, key, item, 0, 1, false, false, false} {}
+
+    RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? RetainedDictionaryKey{}
+                                       : base_runtime_type(base).retain_key(const_cast<void *>(base.storage), key,
+                                                                            memory);
+    }
+
+    void release_key(void *, item_id_t, allocator &) const noexcept override {
+        std::terminate();
+    }
+
+    item_id_t find_key(const void *value, const ScalarData &key) const override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? util::occupancy_index::npos
+                                       : base_runtime_type(base).find_key(base.storage, key);
+    }
+
+    bool key_live(const void *value, item_id_t id) const noexcept override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage != nullptr && base_runtime_type(base).key_live(base.storage, id);
+    }
+
+    const void *key(const void *value, item_id_t id) const noexcept override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? nullptr : base_runtime_type(base).key(base.storage, id);
+    }
+
+    ScalarData key_data(const void *value, item_id_t id) const noexcept override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? ScalarData{key_runtime_type(), nullptr}
+                                       : base_runtime_type(base).key_data(base.storage, id);
+    }
+
+    void for_each_added(const TimeSeriesState &last_updated, const void *value, void *context,
+                        ItemIdFunction function) const override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        if (base.storage != nullptr) {
+            base_runtime_type(base).for_each_added(last_updated, base.storage, context, function);
+        }
+    }
+
+    void for_each_removed(const TimeSeriesState &last_updated, const void *value, void *context,
+                          ItemIdFunction function) const override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        if (base.storage != nullptr) {
+            base_runtime_type(base).for_each_removed(last_updated, base.storage, context, function);
+        }
+    }
+
+    void for_each_removed_physical_id(const TimeSeriesState &last_updated, const void *value, void *context,
+                                      ItemIdFunction function) const override {
+        const auto base = representation(value).base_time_series();
+        if (base.runtime_type != nullptr && base.storage != nullptr) {
+            base_runtime_type(base).for_each_removed_physical_id(last_updated, base.storage, context, function);
+        }
+    }
+
+    void for_each_updated(const TimeSeriesState &last_updated, const void *value, void *context,
+                          ItemIdFunction function) const override {
+        representation(value).for_each_updated(last_updated, context, function);
+    }
+
+    void for_each_modified(const TimeSeriesState &last_updated, const void *value, void *context,
+                           ItemIdFunction function) const override {
+        representation(value).for_each_modified(last_updated, context, function);
+    }
+
+    item_id_t next_item_id(const TimeSeriesState &last_updated, const void *value, ItemRange range,
+                           item_id_t start) const override {
+        const auto &view = representation(value);
+        if (range == ItemRange::updated) {
+            return view.next_updated_item_id(last_updated, start);
+        }
+        if (range == ItemRange::modified) {
+            return view.next_modified_item_id(last_updated, start);
+        }
+        const auto base = view.base_time_series();
+        return base.storage == nullptr
+                   ? util::occupancy_index::npos
+                   : base_runtime_type(base).next_item_id(last_updated, base.storage, range, start);
+    }
+
+    bool item_modified(const TimeSeriesState &last_updated, const void *value, item_id_t id) const override {
+        return representation(value).is_modified_item(last_updated, id);
+    }
+
+    ItemLayout item_layout(item_id_t id) const override {
+        (void)id;
+        throw std::logic_error{"a TSD reference representation has no packed output layout"};
+    }
+
+    std::size_t item_count(const void *value) const override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? 0 : base_runtime_type(base).item_count(base.storage);
+    }
+
+    ConstItem item(const void *value, item_id_t id) const override {
+        const auto &view = representation(value);
+        if (id != key_set_item_id) {
+            return view.item(id);
+        }
+        const auto base = view.base_time_series();
+        return base.storage == nullptr ? ConstItem{key_set_runtime_type(), initial_time_series_state, nullptr}
+                                       : base_runtime_type(base).item(base.storage, id);
+    }
+
+    MutableItem item(void *, item_id_t) const override {
+        throw std::logic_error{"a TSD reference representation is immutable"};
+    }
+
+    bool mark_item_modified(void *, item_id_t, EvaluationTime, bool, allocator &) const
+        noexcept override {
+        std::terminate();
+    }
+
+    void copy_tick(const TimeSeriesInputData &, OutputState &) const override {
+        throw std::logic_error{"a TSD reference representation cannot be an output"};
+    }
+
+    void copy(const TimeSeriesInputData &, OutputState &) const override {
+        throw std::logic_error{"a TSD reference representation cannot be an output"};
+    }
+
+    void for_each_item_id(const void *value, void *context, ItemIdFunction function) const override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        if (base.storage != nullptr) {
+            base_runtime_type(base).for_each_item_id(base.storage, context, function);
+        }
+    }
+
+    bool has_item_id_remapping(const void *value) const override {
+        const auto base = representation(value).base_time_series();
+        return base.runtime_type != nullptr && base.storage != nullptr &&
+               base_runtime_type(base).has_item_id_remapping(base.storage);
+    }
+
+    void for_each_item_id_remapping(const void *value, void *context,
+                                    ItemIdRemappingFunction function) const override {
+        const auto base = representation(value).base_time_series();
+        if (base.runtime_type != nullptr && base.storage != nullptr) {
+            base_runtime_type(base).for_each_item_id_remapping(base.storage, context, function);
+        }
+    }
+
+    bool item_updated(const TimeSeriesState &last_updated, const void *value, item_id_t id) const override {
+        return representation(value).item_updated(last_updated, id);
+    }
+
+    void for_each_updated_item(const TimeSeriesState &last_updated, const void *value, void *context,
+                               ItemIdFunction function) const override {
+        representation(value).for_each_updated_item(last_updated, context, function);
+    }
+
+    bool collection_valid(const void *value) const noexcept override {
+        const auto &view = representation(value);
+        const auto base = view.base_time_series();
+        return base.storage != nullptr && base_runtime_type(base).collection_valid(base.storage);
+    }
+
+    void for_each_modified_item(const TimeSeriesState &last_updated, const void *value,
+                                EvaluationTime evaluation_time, void *context,
+                                ModifiedItemFunction function) const override {
+        representation(value).for_each_modified_item(last_updated, evaluation_time, context, function);
+    }
+
+    void construct_initial_value(void *) const noexcept override { std::terminate(); }
+    void destroy_value(void *, allocator &) const noexcept override { std::terminate(); }
+
+  protected:
+    bool item_in_range(const TimeSeriesState &last_updated, const void *value, ItemRange range,
+                       item_id_t id) const override {
+        if (range == ItemRange::updated) {
+            return representation(value).is_updated_item(last_updated, id);
+        }
+        if (range == ItemRange::modified) {
+            return representation(value).is_modified_item(last_updated, id);
+        }
+        const auto base = representation(value).base_time_series();
+        return base.storage != nullptr &&
+               base_runtime_type(base).item_in_range(last_updated, base.storage, range, id);
+    }
+
+  private:
+    static const TimeSeriesDictionaryRuntimeType &base_runtime_type(const ResolvedTimeSeries &base) noexcept {
+        return static_cast<const TimeSeriesDictionaryRuntimeType &>(*base.runtime_type);
+    }
+
+    static const TimeSeriesDictionaryRepresentation &representation(const void *value) noexcept {
+        return *static_cast<const TimeSeriesDictionaryRepresentation *>(value);
+    }
+};
+
+bool representation_required(const TimeSeriesRuntimeType &provided, const TimeSeriesRuntimeType &requested) noexcept {
+    const auto &provided_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(provided);
+    const auto &requested_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(requested);
+    if (provided_tsd.item_runtime_type().is_reference() != requested_tsd.item_runtime_type().is_reference()) {
+        return true;
+    }
+    if (provided_tsd.item_runtime_type().is_reference()) {
+        return false;
+    }
+    return ReferenceProvider::representation_required(provided_tsd.item_runtime_type(),
+                                                      requested_tsd.item_runtime_type());
+}
+
+const TimeSeriesRuntimeType &representation_runtime_type(const TimeSeriesRuntimeType &provided,
+                                                         const TimeSeriesRuntimeType &requested) {
+    const auto &provided_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(provided);
+    const auto &requested_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(requested);
+
+    if (!provided_tsd.item_runtime_type().is_reference() && requested_tsd.item_runtime_type().is_reference()) {
+        const auto &provided_type = static_cast<const TimeSeriesDictionaryType &>(provided_tsd.type());
+        const auto item_guarantee = strongest(TimeSeriesGuarantee::final, *provided_type.guarantee().value());
+        const auto &reference_type = time_series_reference_type(provided_tsd.item_runtime_type().type(),
+                                                               item_guarantee);
+        const auto &representation_type = time_series_dictionary_type(
+            provided_type.key_type(), reference_type, *provided_type.guarantee().value());
+        return time_series_dictionary_representation_runtime_type(representation_type);
+    }
+    if (!requested_tsd.item_runtime_type().is_reference()) {
+        const auto &requested_type = static_cast<const TimeSeriesDictionaryType &>(requested_tsd.type());
+        return time_series_dictionary_representation_runtime_type(requested_type);
+    }
+
+    throw std::invalid_argument{"the requested TSD representation is not implemented"};
+}
+
+ReferenceRepresentation *create_representation(ReferenceProvider &provider, Reference base_reference,
+                                               const TimeSeriesRuntimeType &provided,
+                                               const TimeSeriesRuntimeType &requested, allocator &memory) {
+    const auto &provided_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(provided);
+    const auto &requested_tsd = static_cast<const TimeSeriesDictionaryRuntimeType &>(requested);
+    const auto &requested_type = static_cast<const TimeSeriesDictionaryType &>(requested_tsd.type());
+    if (!provided_tsd.item_runtime_type().is_reference() && requested_tsd.item_runtime_type().is_reference()) {
+        const auto &reference_type = static_cast<const TimeSeriesReferenceType &>(
+            requested_tsd.item_runtime_type().type());
+        const auto &routed_item_type = routed_time_series_reference_runtime_type(reference_type);
+        return make_tsd_item_reference_representation(provider, base_reference, requested_type, provided_tsd,
+                                                      routed_item_type, memory);
+    }
+    if (provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
+        return make_dereferenced_tsd_representation(provider, base_reference, requested_type, provided_tsd,
+                                                    requested_tsd.item_runtime_type(), memory);
+    }
+    if (!provided_tsd.item_runtime_type().is_reference() && !requested_tsd.item_runtime_type().is_reference()) {
+        return make_recursive_tsd_representation(provider, base_reference, requested_type, provided_tsd,
+                                                 requested_tsd.item_runtime_type(), memory);
+    }
+
+    throw std::invalid_argument{"the requested TSD representation is not implemented"};
+}
+
+const ReferenceRepresentationFactory factory{&representation_required, &representation_runtime_type,
+                                             &create_representation};
+
+} // namespace
+
+TimeSeriesDictionaryRepresentation::TimeSeriesDictionaryRepresentation(
+    Reference base_reference, const TimeSeriesDictionaryType &type)
+    : ReferenceRepresentation{base_reference},
+      runtime_type_{&time_series_dictionary_representation_runtime_type(type)} {}
+
+const TimeSeriesDictionaryRuntimeType &time_series_dictionary_representation_runtime_type(
+    const TimeSeriesDictionaryType &type) {
+    struct Entry {
+        const TimeSeriesDictionaryType *type;
+        std::unique_ptr<TimeSeriesDictionaryRuntimeType> runtime_type;
+    };
+
+    static auto mutex = util::static_storage<std::mutex>{};
+    static auto entries = util::static_storage<std::vector<Entry>>{};
+
+    const auto lock = std::lock_guard{mutex.get()};
+    auto &cache = entries.get();
+    const auto found = std::ranges::find_if(cache, [&](const auto &entry) { return entry.type == &type; });
+    if (found != cache.end()) {
+        return *found->runtime_type;
+    }
+
+    const auto *reference_type = type_cast<TimeSeriesReferenceType>(&type.value_type());
+    const auto &item = reference_type == nullptr ? resolve_time_series_runtime_type(type.value_type())
+                                                 : routed_time_series_reference_runtime_type(*reference_type);
+    auto runtime_type = std::make_unique<TimeSeriesDictionaryRepresentationRuntimeType>(
+        type, resolve_scalar_runtime_type(type.key_type(), {}), item);
+    auto &result = *runtime_type;
+    cache.push_back({&type, std::move(runtime_type)});
+    return result;
+}
+
+const ReferenceRepresentationFactory *TimeSeriesDictionaryRuntimeType::reference_representation_factory()
+    const noexcept {
+    return &factory;
+}
+
+} // namespace hg::details

@@ -1,0 +1,46 @@
+#pragma once
+
+#include <hg/export.hpp>
+#include <hg/type/type.hpp>
+#include <hg/type/variable.hpp>
+
+#include <concepts>
+#include <memory>
+#include <vector>
+
+namespace hg {
+
+class HG_EXPORT VariableRegistry {
+  public:
+    VariableRegistry(const VariableRegistry &) = delete;
+    VariableRegistry &operator=(const VariableRegistry &) = delete;
+
+    static VariableRegistry &instance() noexcept;
+
+    template <typename T>
+        requires std::derived_from<T, Variable> && (!std::derived_from<T, Type>)
+    static const T &register_static(const T &variable) noexcept {
+        register_static_variable(variable);
+        return variable;
+    }
+
+    template <typename T>
+        requires std::derived_from<T, Variable> && (!std::derived_from<T, Type>)
+    const T &register_owned(std::unique_ptr<T> variable) {
+        const auto *result = variable.get();
+        register_owned_variable(std::move(variable));
+        return *result;
+    }
+
+    bool contains(const Variable &variable) const;
+
+  private:
+    VariableRegistry() = default;
+    static void register_static_variable(const Variable &variable) noexcept;
+    void register_owned_variable(std::unique_ptr<Variable> variable);
+
+    details::StaticRegistryEntry<Variable> *static_entries_{};
+    std::vector<std::unique_ptr<Variable>> owned_variables_;
+};
+
+} // namespace hg
