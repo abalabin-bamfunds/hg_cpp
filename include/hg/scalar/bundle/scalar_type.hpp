@@ -298,12 +298,21 @@ struct scalar_type_traits<Bundle<Schema>> {
 };
 
 template <template <template <typename, auto...> typename> typename Schema>
+    requires details::schema_variable_template<Schema>
 struct scalar_declaration_traits<Bundle<Schema>> {
-    static constexpr bool generic = details::schema_variable_template<Schema>;
+    static constexpr bool generic = true;
     static constexpr bool is_collection = false;
     static constexpr bool supports_implicit_argument = false;
-    static constexpr bool supports_time_series = details::schema_variable_template<Schema> ||
-                                                 details::hierarchical_scalar_schema_supported<Schema>;
+    static constexpr bool supports_time_series = true;
+};
+
+template <template <template <typename, auto...> typename> typename Schema>
+    requires (!details::schema_variable_template<Schema>)
+struct scalar_declaration_traits<Bundle<Schema>> {
+    static constexpr bool generic = false;
+    static constexpr bool is_collection = false;
+    static constexpr bool supports_implicit_argument = false;
+    static constexpr bool supports_time_series = details::hierarchical_scalar_schema_supported<Schema>;
 };
 
 namespace details {

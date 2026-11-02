@@ -298,6 +298,8 @@ TEST_CASE("a generic bundle declaration captures a named schema variable",
     STATIC_CHECK_FALSE(scalar_storage_traits<Bundle<ENTITY>>::supports_hash);
     STATIC_CHECK(scalar_storage_traits<Bundle<Equity>>::supports_equality);
     STATIC_CHECK(scalar_storage_traits<Bundle<Equity>>::supports_hash);
+    STATIC_CHECK(scalar_declaration_traits<Bundle<ENTITY>>::supports_time_series);
+    STATIC_CHECK(scalar_declaration_traits<Bundle<Equity>>::supports_time_series);
 
     const auto &generic = cpp_scalar_type<Bundle<ENTITY>>();
     const auto &concrete = cpp_scalar_type<Bundle<Equity>>();

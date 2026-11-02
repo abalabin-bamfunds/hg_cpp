@@ -263,8 +263,14 @@ template <typename Key, typename Hash, typename Equal> class hash_key_table {
     occupancy_index positions_;
     sparse_bunch<Key> keys_;
     linear_hash_table lookup_;
+#if defined(_MSC_VER)
+    // MSVC ignores the standard attribute for ABI compatibility.
+    [[msvc::no_unique_address]] Hash hash_;
+    [[msvc::no_unique_address]] Equal equal_;
+#else
     [[no_unique_address]] Hash hash_;
     [[no_unique_address]] Equal equal_;
+#endif
 };
 
 } // namespace hg::util::details

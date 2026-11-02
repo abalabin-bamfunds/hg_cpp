@@ -336,6 +336,7 @@ TEST_CASE("schema aliases share scalar and time series identities",
 TEST_CASE("explicit time series fields remain time series fields",
           "[feature:type-system][series:tsb][schema:named][declaration:concrete]") {
     STATIC_CHECK_FALSE(details::hierarchical_scalar_schema_supported<BaseBundle>);
+    STATIC_CHECK_FALSE(scalar_declaration_traits<Bundle<BaseBundle>>::supports_time_series);
     STATIC_CHECK(details::supported_time_series<TSB<BaseBundle>>);
     CHECK(&TSB<BaseBundle>::type().item_type(0) == &TS<i64>::type());
 }
