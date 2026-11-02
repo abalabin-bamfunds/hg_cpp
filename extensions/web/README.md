@@ -5,7 +5,8 @@ incoming requests and completed client responses through engine queues.
 
 Enable the extension with `HG_BUILD_WEB=ON`. Enable `HG_BUILD_PYTHON=ON` to build
 the Python package. Boost.Asio and Boost.Beast provide the server transport;
-Boost.URL parses request targets. libcurl provides the client transport.
+Boost.URL parses request targets. OpenSSL provides TLS, and libcurl provides the
+HTTP client transport.
 These dependencies are private to the extension.
 
 ## Server
@@ -40,6 +41,10 @@ Runtime failures are logged and terminate the affected request or connection;
 the listener continues serving other entries. A duplicate route registration
 is logged and rejected, leaving the existing route active. Bind and listen
 failures prevent startup and propagate to the graph.
+
+Set `certificate_chain_file` and `private_key_file` together to enable HTTPS.
+Both files use PEM encoding, and the certificate file may contain the full chain.
+The listener requires TLS 1.2 or later.
 
 `http_handler(path, graph)` creates a callable handler. Invoke it wherever the
 route should be wired. The graph's first input receives the request. Remaining
@@ -334,7 +339,7 @@ do not reconnect it or pause messages on the established connection.
 
 ## WebSocket client
 
-`websocket_client` connects to a binary `ws://` endpoint. Its request is
+`websocket_client` connects to a binary `ws://` or `wss://` endpoint. Its request is
 `TSB<BinaryWebSocketClientRequest>` with a `connect_request` containing a URL
 and ordered handshake headers, a `message` containing bytes, and a `close`
 request. Each connect tick starts a new connection for that service client.
@@ -363,5 +368,7 @@ catalogue.register_impl(hg::web::websocket_client, hg::web::websocket_client_imp
 ```
 
 `WebSocketClientOptions` configures the timeout for resolve, connect, and
-handshake, plus the maximum received message size. The initial client supports
-only `ws://`, binary messages, and one active connection per service client.
+handshake, the maximum received message size, and an optional `ca_file` that
+adds a PEM CA file to OpenSSL's configured default trust paths. WSS verifies the
+server certificate and hostname. The client supports binary messages and one
+active connection per service client.

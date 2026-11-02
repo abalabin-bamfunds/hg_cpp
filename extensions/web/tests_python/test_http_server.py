@@ -1,5 +1,7 @@
 import http.client
 import os
+import pathlib
+import ssl
 import subprocess
 import sys
 import threading
@@ -7,6 +9,7 @@ from datetime import timedelta
 
 import hgraph as hg
 from hg_web import AuthDecision, HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
+import pytest
 
 
 def test_hg_web_imports_before_hgraph():
@@ -93,6 +96,75 @@ def test_http_server_routes_binary_request_and_returns_native_bytes():
     assert not errors, repr(errors)
     assert request_bodies == [b"\x00binary\xff", b"TSD response"]
     assert replies == [(200, b"\x00binary\xff"), (200, b"TSD response")]
+
+
+def test_https_server_uses_configured_certificate():
+    test_data = pathlib.Path(__file__).parent.parent / "tests" / "data"
+    certificate = test_data / "test_server_cert.pem"
+    private_key = test_data / "test_server_key.pem"
+    replies = []
+    errors = []
+    worker = None
+    stop = hg.StopSource()
+
+    @hg.compute_node
+    def echo(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
+        return HttpResponse(status=200, body=request.value.body)
+
+    @hg.graph
+    def echo_graph(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
+        return echo(request)
+
+    route = http_handler("/secure", echo_graph)
+
+    @hg.compute_node
+    def start_client(port: hg.TS[int]) -> hg.TS[int]:
+        nonlocal worker
+        bound_port = int(port.value)
+
+        def request():
+            try:
+                context = ssl.create_default_context(cafile=str(certificate))
+                connection = http.client.HTTPSConnection("localhost", bound_port, context=context, timeout=3)
+                connection.request("POST", "/secure", body=b"tls")
+                response = connection.getresponse()
+                replies.append((response.status, response.read()))
+                connection.close()
+            except BaseException as error:
+                errors.append(error)
+            finally:
+                stop.request_stop()
+
+        worker = threading.Thread(target=request)
+        worker.start()
+        return bound_port
+
+    @hg.graph
+    def application() -> hg.TS[int]:
+        route()
+        return start_client(http_server())
+
+    catalogue = hg.ServiceCatalogue()
+    register_http_server(
+        catalogue,
+        host="127.0.0.1",
+        port=0,
+        certificate_chain_file=str(certificate),
+        private_key_file=str(private_key),
+    )
+    hg.run_graph(application, catalogue=catalogue, engine=hg.EvaluationEngine.realtime,
+                 run_time=timedelta(seconds=5), stop_token=stop.get_token())
+    if worker is not None:
+        worker.join(3)
+
+    assert worker is not None and not worker.is_alive()
+    assert not errors, repr(errors)
+    assert replies == [(200, b"tls")]
+
+
+def test_https_server_requires_certificate_and_private_key_together():
+    with pytest.raises(ValueError, match="certificate_chain_file and private_key_file"):
+        register_http_server(hg.ServiceCatalogue(), certificate_chain_file="server-chain.pem")
 
 
 def test_http_handler_authentication_routes_identity_and_rejection():

@@ -19,6 +19,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <filesystem>
 #include <memory>
 #include <span>
 #include <stop_token>
@@ -84,7 +85,98 @@ std::vector<std::byte> copy_bytes(Scalar<bytes> value) {
     return {bytes.begin(), bytes.end()};
 }
 
+std::string test_data_file(std::string_view filename) {
+    return (std::filesystem::path{__FILE__}.parent_path() / "data" / filename).string();
+}
+
+struct WssResult {
+    i64 status{};
+    std::string failure;
+    std::vector<std::byte> message;
+};
+
+WssResult run_wss_attempt(WebSocketClientOptions options, std::string_view host) {
+    auto catalogue = ServiceCatalogue{};
+    register_http_server(catalogue, ServerOptions{.tls = ServerTlsOptions{
+                                    test_data_file("test_server_cert.pem"),
+                                    test_data_file("test_server_key.pem")}});
+    catalogue.register_impl(websocket_client, websocket_client_impl(std::move(options)), {});
+
+    auto writer = Queue{};
+    const auto requests = queue<TSB<BinaryWebSocketClientRequest>>(
+        start = [&](Queue queue) { writer = std::move(queue); });
+    const auto handler = graph([](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
+        const auto handshake = make_http_response(101, {}, {});
+        return bundle<WebSocketResponse<bytes>::schema>(
+            "connect_response"_n = operators::const_(handshake.view()),
+            "message"_n = operators::emit(request->messages),
+            "close"_n = operators::nothing[type<TS<Bundle<WebSocketClose>>>]());
+    });
+    const auto route = websocket_handler("/socket", handler);
+
+    auto stop = std::stop_source{};
+    auto submitted = false;
+    auto result = WssResult{};
+    const auto submit = node([&](In<TS<i64>> port) {
+        if (submitted) return;
+        submitted = true;
+        const auto url = "wss://" + std::string{host} + ":" + std::to_string(*port) + "/socket";
+        const auto request = make_connect_request(url);
+        const auto message = std::array{std::byte{0x6a}};
+        if (!writer.write(literal::TimeSeriesLiteral{{"connect_request", request.view()},
+                                                     {"message", literal::ScalarLiteral(
+                                                                     std::span<const std::byte>{message})}})) {
+            throw std::runtime_error{"could not queue the WSS connection request"};
+        }
+    });
+    const auto collect = node([&](In<TSB<BinaryWebSocketClientReply>> reply) {
+        if (reply->connect_response.valid() && reply->connect_response.modified()) {
+            const auto response = reply->connect_response.value();
+            result.status = scalar_cast<i64>(response[0]).value();
+            if (result.status != 101) {
+                const auto body = scalar_cast<bytes>(response[2]).value();
+                result.failure.assign(reinterpret_cast<const char *>(body.data()), body.size());
+                stop.request_stop();
+            }
+        }
+        if (reply->messages.valid() && reply->messages.modified()) {
+            const auto messages = reply->messages.value_view();
+            if (messages.size() != 0) result.message = copy_bytes(messages[0]);
+            stop.request_stop();
+        }
+    });
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            submit(port);
+            collect(websocket_client(requests()));
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{3},
+                        .stop_token = stop.get_token()});
+    return result;
+}
+
 } // namespace
+
+TEST_CASE("WSS verifies certificates and hostnames and exchanges messages", "[feature:websocket][feature:tls]") {
+    const auto trusted = WebSocketClientOptions{.ca_file = test_data_file("test_server_cert.pem")};
+    const auto connected = run_wss_attempt(trusted, "localhost");
+    CHECK(connected.status == 101);
+    CHECK(connected.message == std::vector<std::byte>{std::byte{0x6a}});
+
+    const auto wrong_host = run_wss_attempt(trusted, "127.0.0.1");
+    CHECK(wrong_host.status == 599);
+    CHECK(wrong_host.failure.find("certificate") != std::string::npos);
+
+    const auto untrusted = WebSocketClientOptions{.ca_file = test_data_file("test_wrong_ca.pem")};
+    const auto unknown_ca = run_wss_attempt(untrusted, "localhost");
+    CHECK(unknown_ca.status == 599);
+    CHECK(unknown_ca.failure.find("certificate") != std::string::npos);
+}
 
 TEST_CASE("WebSocket client runtime rejects a base-only authentication value",
           "[feature:websocket][feature:auth]") {
@@ -706,7 +798,7 @@ TEST_CASE("WebSocket client restarts a removed branch without a stale handshake 
                         .stop_token = stop.get_token()});
 
     CHECK(response_statuses == std::vector<i64>{599, 599});
-    CHECK(response_bodies == std::vector<std::string>{"WebSocket URL scheme must be ws",
+    CHECK(response_bodies == std::vector<std::string>{"WebSocket URL scheme must be ws or wss",
                                                        "WebSocket URL host contains a control character"});
     CHECK(branch_removed);
     CHECK(second_request_sent);

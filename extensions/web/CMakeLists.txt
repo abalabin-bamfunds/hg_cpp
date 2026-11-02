@@ -1,4 +1,5 @@
 find_package(CURL 7.85 REQUIRED)
+find_package(OpenSSL REQUIRED)
 find_package(Boost 1.87 CONFIG QUIET COMPONENTS system url)
 if(TARGET Boost::headers AND TARGET Boost::url)
     set(HG_WEB_BOOST_TARGETS Boost::headers Boost::url)
@@ -50,7 +51,10 @@ target_include_directories(
         $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
-target_link_libraries(hg_web PUBLIC hg::hg PRIVATE hg::library CURL::libcurl ICU::uc ${HG_WEB_BOOST_TARGETS} Threads::Threads)
+target_link_libraries(
+    hg_web PUBLIC hg::hg PRIVATE hg::library CURL::libcurl ICU::uc OpenSSL::SSL OpenSSL::Crypto
+                    ${HG_WEB_BOOST_TARGETS} Threads::Threads
+)
 set_target_properties(
     hg_web
     PROPERTIES
@@ -127,7 +131,10 @@ if(BUILD_TESTING)
     find_package(Catch2 3 REQUIRED)
     add_executable(hg_web_tests tests/http_client_test.cpp tests/http_server_test.cpp tests/websocket_client_test.cpp)
     target_compile_features(hg_web_tests PRIVATE cxx_std_23)
-    target_link_libraries(hg_web_tests PRIVATE hg::web hg::library Catch2::Catch2WithMain ${HG_WEB_BOOST_TARGETS})
+    target_link_libraries(
+        hg_web_tests PRIVATE hg::web hg::library Catch2::Catch2WithMain OpenSSL::SSL OpenSSL::Crypto
+                             ${HG_WEB_BOOST_TARGETS}
+    )
     add_test(NAME hg_web_tests COMMAND hg_web_tests)
     set_tests_properties(
         hg_web_tests PROPERTIES TIMEOUT 10 ENVIRONMENT "NO_PROXY=127.0.0.1,localhost;no_proxy=127.0.0.1,localhost"
