@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_time_series_set_value_and_delta():

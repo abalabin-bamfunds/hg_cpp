@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check required files and metadata in hg_cpp wheel and source distributions."""
+"""Check required files and metadata in hg-cpp wheel and source distributions."""
 
 from __future__ import annotations
 
@@ -17,14 +17,14 @@ from packaging.utils import canonicalize_name, parse_wheel_filename
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_PARTS = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
 WHEEL_FILES = {
-    "hg/__init__.py",
-    "hg/operators.py",
+    "hgraph/__init__.py",
+    "hgraph/operators.py",
     "include/hg/hg.hpp",
 }
 SDIST_FILES = {
     "CMakeLists.txt",
     "bindings/python/CMakeLists.txt",
-    "bindings/python/python/hg/__init__.py",
+    "bindings/python/python/hgraph/__init__.py",
     "bindings/python/src/module.cpp",
     "bindings/python/tests/extension_module.cpp",
     "cmake/hgConfig.cmake.in",
@@ -59,6 +59,12 @@ def audit_wheel(path: Path, platform: str | None) -> None:
         members = [info for info in wheel.infolist() if not info.is_dir()]
         paths = {info.filename for info in members}
         check_paths(paths)
+        legacy_package_files = {name for name in paths if name.startswith("hg/")}
+        if legacy_package_files:
+            raise ValueError(
+                "wheel contains the obsolete hg Python package: "
+                + ", ".join(sorted(legacy_package_files))
+            )
 
         metadata_paths = [name for name in paths if name.endswith(".dist-info/METADATA")]
         if len(metadata_paths) != 1:
@@ -82,8 +88,8 @@ def audit_wheel(path: Path, platform: str | None) -> None:
         if "lib/cmake/ddvisitor/ddvisitor-config.cmake" not in paths:
             raise ValueError("wheel is missing the ddvisitor CMake dependency")
 
-        if not any(name.startswith("hg/_hg") and name.endswith((".so", ".pyd")) for name in paths):
-            raise ValueError("wheel is missing the hg._hg native extension")
+        if not any(name.startswith("hgraph/_hg") and name.endswith((".so", ".pyd")) for name in paths):
+            raise ValueError("wheel is missing the hgraph._hg native extension")
 
         for library in ("hg", "hg_library", "hg_python", "nanobind", "fmt"):
             if not any(is_runtime_library(name, library) for name in paths):

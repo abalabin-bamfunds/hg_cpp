@@ -1,6 +1,6 @@
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_compute_node_activity_selects_scheduling_inputs_and_samples_passive_values():

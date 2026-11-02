@@ -1,4 +1,4 @@
-import hg
+import hgraph as hg
 
 
 def test_boolean_reductions_accept_named_values_for_tsd():

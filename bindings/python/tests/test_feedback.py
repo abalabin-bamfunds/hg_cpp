@@ -3,7 +3,7 @@ from typing import TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 VALUE = TypeVar("VALUE")

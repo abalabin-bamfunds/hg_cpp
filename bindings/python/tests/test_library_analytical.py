@@ -2,7 +2,7 @@ import math
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_diff_wraps_integer_subtraction_at_i64_width():

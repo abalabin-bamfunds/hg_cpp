@@ -4,7 +4,7 @@ from typing import TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 @hg.reference_service
@@ -37,7 +37,7 @@ def test_reference_service_captures_registered_graph_output_in_run_graph():
 
 
 def test_native_service_export_checks_signature_family_and_identity():
-    from hg._hg_test_extension import export_alternate_native_service, export_native_service
+    from hgraph._hg_test_extension import export_alternate_native_service, export_native_service
 
     @hg.service
     def declaration(value: hg.TS[int]) -> hg.TS[int]:

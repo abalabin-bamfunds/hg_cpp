@@ -3,7 +3,7 @@ import socket
 from threading import Event, Thread
 from datetime import timedelta
 
-import hg
+import hgraph as hg
 import pytest
 from hg_web import (
     Auth,

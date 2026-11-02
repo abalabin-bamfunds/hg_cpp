@@ -2,7 +2,7 @@ from collections.abc import Mapping
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_plain_node_receives_a_lazy_mapping_for_a_dictionary_time_series():

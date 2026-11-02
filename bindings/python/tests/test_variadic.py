@@ -2,7 +2,7 @@ import inspect
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_run_graph_var_kwargs_are_packed_as_a_generic_tsb():

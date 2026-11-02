@@ -6,7 +6,7 @@ import weakref
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 @pytest.mark.parametrize(
@@ -409,7 +409,7 @@ def test_queue_lifecycle_is_start_only_and_rejects_invalidation():
 
 
 def test_queue_mode_must_be_a_queue_mode():
-    with pytest.raises(TypeError, match="mode must be a hg.QueueMode"):
+    with pytest.raises(TypeError, match="mode must be a hgraph.QueueMode"):
         hg.queue(mode="batch")
 
 

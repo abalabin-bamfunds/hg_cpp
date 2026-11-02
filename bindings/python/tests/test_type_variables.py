@@ -4,7 +4,7 @@ from typing import Optional, TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_scalar_type_variable_in_time_series_input_and_output():
@@ -209,7 +209,7 @@ def test_type_variable_descriptors_are_released_at_shutdown():
         [
             sys.executable,
             "-c",
-            "from typing import TypeVar; import hg; VALUE = TypeVar('VALUE'); hg.TS[VALUE]",
+            "from typing import TypeVar; import hgraph as hg; VALUE = TypeVar('VALUE'); hg.TS[VALUE]",
         ],
         capture_output=True,
         text=True,

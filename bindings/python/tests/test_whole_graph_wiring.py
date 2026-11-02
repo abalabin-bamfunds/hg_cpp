@@ -1,4 +1,4 @@
-import hg
+import hgraph as hg
 
 
 def test_whole_graph_wiring():

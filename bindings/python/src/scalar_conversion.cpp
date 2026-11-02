@@ -431,7 +431,7 @@ ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const Pytho
     }
 
     if (!PyMemoryView_Check(value.ptr())) {
-        PyErr_SetString(PyExc_TypeError, "expected bytes or a contiguous memoryview for hg.bytes");
+        PyErr_SetString(PyExc_TypeError, "expected bytes or a contiguous memoryview for hgraph.bytes");
         nanobind::raise_python_error();
     }
 
@@ -439,7 +439,7 @@ ScalarValue<> from_python_bytes(nanobind::handle value, allocator &, const Pytho
     if (PyObject_GetBuffer(value.ptr(), &buffer, PyBUF_CONTIG_RO) < 0) {
         if (PyErr_ExceptionMatches(PyExc_BufferError)) {
             PyErr_Clear();
-            PyErr_SetString(PyExc_TypeError, "hg.bytes requires a contiguous memoryview");
+            PyErr_SetString(PyExc_TypeError, "hgraph.bytes requires a contiguous memoryview");
         }
         nanobind::raise_python_error();
     }
@@ -484,14 +484,14 @@ ScalarValue<> from_python_bool(nanobind::handle value, allocator &memory, const 
 ScalarValue<> from_python_byte(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
     const auto converted = nanobind::cast<int>(value);
     if (converted < 0 || converted > 255) {
-        throw std::out_of_range{"a Python integer for hg.byte must be in [0, 255]"};
+        throw std::out_of_range{"a Python integer for hgraph.byte must be in [0, 255]"};
     }
     return make_scalar<byte>(static_cast<byte>(converted), memory);
 }
 
 ScalarValue<> from_python_i64(nanobind::handle value, allocator &memory, const PythonScalarConversions &) {
     if (!PyLong_Check(value.ptr())) {
-        PyErr_SetString(PyExc_TypeError, "expected an integer for hg.i64");
+        PyErr_SetString(PyExc_TypeError, "expected an integer for hgraph.i64");
         nanobind::raise_python_error();
     }
 
@@ -513,12 +513,12 @@ ScalarValue<> from_python_date_time(nanobind::handle value, allocator &memory, c
         nanobind::raise_python_error();
     }
     if (is_datetime == 0) {
-        PyErr_SetString(PyExc_TypeError, "expected datetime.datetime for hg.date_time_t");
+        PyErr_SetString(PyExc_TypeError, "expected datetime.datetime for hgraph.date_time_t");
         nanobind::raise_python_error();
     }
 
     if (!value.attr("utcoffset")().is_none()) {
-        PyErr_SetString(PyExc_TypeError, "expected a timezone-naive datetime for hg.date_time_t");
+        PyErr_SetString(PyExc_TypeError, "expected a timezone-naive datetime for hgraph.date_time_t");
         nanobind::raise_python_error();
     }
 
@@ -532,7 +532,7 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
         nanobind::raise_python_error();
     }
     if (is_timedelta == 0) {
-        PyErr_SetString(PyExc_TypeError, "expected datetime.timedelta for hg.timedelta_t");
+        PyErr_SetString(PyExc_TypeError, "expected datetime.timedelta for hgraph.timedelta_t");
         nanobind::raise_python_error();
     }
 
@@ -547,7 +547,7 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
             const auto positive_days = static_cast<std::uint64_t>(days);
             const auto maximum = static_cast<std::uint64_t>(std::numeric_limits<i64>::max());
             if (positive_days > (maximum - remainder) / microseconds_per_day) {
-                throw std::overflow_error{"datetime.timedelta is outside the hg.timedelta_t range"};
+                throw std::overflow_error{"datetime.timedelta is outside the hgraph.timedelta_t range"};
             }
             return static_cast<i64>(positive_days * microseconds_per_day + remainder);
         }
@@ -556,11 +556,11 @@ ScalarValue<> from_python_timedelta(nanobind::handle value, allocator &memory, c
         const auto maximum_magnitude = std::uint64_t{1} << 63;
         const auto whole_days = negative_days - 1;
         if (whole_days > maximum_magnitude / microseconds_per_day) {
-            throw std::overflow_error{"datetime.timedelta is outside the hg.timedelta_t range"};
+            throw std::overflow_error{"datetime.timedelta is outside the hgraph.timedelta_t range"};
         }
         const auto magnitude = whole_days * microseconds_per_day + (microseconds_per_day - remainder);
         if (magnitude > maximum_magnitude) {
-            throw std::overflow_error{"datetime.timedelta is outside the hg.timedelta_t range"};
+            throw std::overflow_error{"datetime.timedelta is outside the hgraph.timedelta_t range"};
         }
         if (magnitude == maximum_magnitude) {
             return std::numeric_limits<i64>::min();
@@ -1190,7 +1190,7 @@ nanobind::object PythonScalarConversions::to_python(Scalar<> value) const {
 
 nanobind::object PythonScalarConversions::symbol_to_python(util::symbol value) const {
     if (!impl_->symbol_python_type) {
-        throw std::logic_error{"hg.Symbol must be registered before converting a symbol"};
+        throw std::logic_error{"hgraph.Symbol must be registered before converting a symbol"};
     }
 
     auto symbol_class = nanobind::borrow<nanobind::object>(impl_->symbol_python_type.get());

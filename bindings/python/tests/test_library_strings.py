@@ -1,6 +1,6 @@
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_string_multiplication_accepts_scalar_and_time_series_operands():

@@ -171,7 +171,7 @@ bool time_series_delta_shape(const TimeSeriesType &type, nb::handle value) {
 
 GraphRunInputs::GraphRunInputs(const Signature &signature, std::span<const Type *const> wiring_parameter_types,
                                nb::sequence fixed_values, nb::sequence positional_values, nb::dict named_values)
-    : ticks_type_{nb::module_::import_("hg").attr("_Ticks")} {
+    : ticks_type_{nb::module_::import_("hgraph").attr("_Ticks")} {
     const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
     if (nb::len(fixed_values) != fixed_count) {
         throw std::invalid_argument{"run_graph received the wrong number of fixed arguments"};
@@ -294,7 +294,7 @@ GraphRunInputs::Argument GraphRunInputs::prepare(nb::handle value, const Type &p
 
     if (nb::isinstance<PythonWiringPoint>(value) || type_cast<ScalarType>(&parameter_type) != nullptr) {
         if (force_ticks) {
-            throw std::invalid_argument{"hg.ticks requires a time-series graph input"};
+            throw std::invalid_argument{"hgraph.ticks requires a time-series graph input"};
         }
         return {nb::borrow<nb::object>(value), std::nullopt};
     }

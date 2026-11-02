@@ -4,7 +4,7 @@ from datetime import timedelta
 import inspect
 from functools import update_wrapper
 
-import hg
+import hgraph as hg
 
 from ._hg_web import (
     _http_client_impl,

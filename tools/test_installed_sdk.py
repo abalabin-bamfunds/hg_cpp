@@ -19,7 +19,7 @@ def main() -> None:
     project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
     distribution = metadata.distribution(project["name"])
     install_prefix = Path(distribution.locate_file("")).resolve()
-    package_dir = install_prefix / "hg"
+    package_dir = install_prefix / "hgraph"
 
     with tempfile.TemporaryDirectory(prefix="hg-sdk-consumer-") as temporary_directory:
         build_directory = Path(temporary_directory) / "build"
@@ -47,7 +47,7 @@ def main() -> None:
                 (
                     str(package_dir),
                     str(install_prefix / "bin"),
-                    str(install_prefix / f"{project['name']}.libs"),
+                    str(install_prefix / f"{project['name'].replace('-', '_')}.libs"),
                     runtime_environment["PATH"],
                 )
             )
@@ -56,7 +56,7 @@ def main() -> None:
             [
                 sys.executable,
                 "-c",
-                "import hg; import hg_sdk_python_consumer; assert hg_sdk_python_consumer.version()",
+                "import hgraph; import hg_sdk_python_consumer; assert hg_sdk_python_consumer.version()",
             ],
             cwd=build_directory,
             check=True,

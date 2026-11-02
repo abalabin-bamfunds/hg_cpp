@@ -4,7 +4,7 @@ from typing import List, Tuple, TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_tuple_scalar_annotation_accepts_builtin_and_typing_forms():
@@ -195,8 +195,8 @@ def test_fixed_tuple_scalar_conversion_recurses_through_dictionary_keys_and_valu
 
 def test_tuple_scalar_items_use_registered_extension_conversions():
     script = """
-import hg
-from hg._hg_test_extension import register_runtime_double_result_conversion
+import hgraph as hg
+from hgraph._hg_test_extension import register_runtime_double_result_conversion
 
 assert register_runtime_double_result_conversion()
 
@@ -215,8 +215,8 @@ assert hg.run_graph(graph) == [("extension scalar conversion", "extension scalar
 
 def test_fixed_tuple_items_use_registered_extension_conversions():
     script = """
-import hg
-from hg._hg_test_extension import register_runtime_double_result_conversion
+import hgraph as hg
+from hgraph._hg_test_extension import register_runtime_double_result_conversion
 
 assert register_runtime_double_result_conversion()
 

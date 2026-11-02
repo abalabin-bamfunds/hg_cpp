@@ -1,7 +1,7 @@
 import pytest
 
-import hg
-from hg._hg_test_extension import (
+import hgraph as hg
+from hgraph._hg_test_extension import (
     can_convert_python_type,
     copy_release_python_scalar_without_gil,
     native_concrete_type_name,

@@ -50,7 +50,7 @@ jobs:
             "pytest>=8,<9" "nanobind==3.1.0" "cmake>=3.31" "ninja==1.13.0"
           "$RUNNER_TEMP/hg-wheel-test/bin/python" -m pip install --no-deps dist/*.whl
           echo "HG_TEST_PYTHON=$RUNNER_TEMP/hg-wheel-test/bin/python" >> "$GITHUB_ENV"
-          echo "HG_PYTHON_PACKAGE_DIR=$($RUNNER_TEMP/hg-wheel-test/bin/python -c 'import hg; print(hg.__path__[0])')" >> "$GITHUB_ENV"
+          echo "HG_PYTHON_PACKAGE_DIR=$($RUNNER_TEMP/hg-wheel-test/bin/python -c 'import hgraph; print(hgraph.__path__[0])')" >> "$GITHUB_ENV"
           echo "CMAKE_GENERATOR=Ninja" >> "$GITHUB_ENV"
       - name: Create isolated Windows installed-wheel environment
         if: runner.os == 'Windows'
@@ -64,7 +64,7 @@ jobs:
           if ($wheels.Count -ne 1) { throw "Expected one wheel, found $($wheels.Count)" }
           & $python -m pip install --no-deps $wheels[0].FullName
           "HG_TEST_PYTHON=$python" | Out-File -FilePath $env:GITHUB_ENV -Append
-          $package = & $python -c "import hg; print(hg.__path__[0])"
+          $package = & $python -c "import hgraph; print(hgraph.__path__[0])"
           "HG_PYTHON_PACKAGE_DIR=$package" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
       - name: Build and test installed SDK consumers on Unix

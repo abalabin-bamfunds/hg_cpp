@@ -4,7 +4,7 @@ project(hg_installed_sdk_consumer LANGUAGES CXX)
 
 find_package(hg CONFIG REQUIRED COMPONENTS python)
 
-set(HG_TEST_PACKAGE_DIR "" CACHE PATH "Installed hg package directory for the test extension")
+set(HG_TEST_PACKAGE_DIR "" CACHE PATH "Installed hgraph package directory for the test extension")
 
 add_executable(hg_sdk_consumer main.cpp)
 target_compile_features(hg_sdk_consumer PRIVATE cxx_std_23)

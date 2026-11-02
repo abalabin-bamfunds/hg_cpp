@@ -2,7 +2,7 @@ from typing import TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_dispatch_selects_python_class_implementations_and_falls_back():

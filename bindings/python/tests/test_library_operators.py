@@ -6,7 +6,7 @@ from typing import Annotated
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_add_operator_accepts_double_scalars_and_time_series():
@@ -1214,7 +1214,7 @@ def test_reflected_add_preserves_operand_order_and_native_diagnostics():
 
 
 def test_add_operator_preserves_required_input_validity():
-    import hg._hg_test_extension as extension
+    import hgraph._hg_test_extension as extension
 
     @hg.compute_node
     def to_double(value: hg.TS[int]) -> hg.TS[float]:
@@ -1300,7 +1300,7 @@ def test_nothing_operator_is_typed_final_and_never_publishes():
 
 
 def test_add_optional_overload_substitutes_zero_for_invalid_inputs():
-    import hg._hg_test_extension as extension
+    import hgraph._hg_test_extension as extension
 
     @hg.node
     def to_double(value: int) -> float:
@@ -1328,7 +1328,7 @@ def test_add_optional_overload_substitutes_zero_for_invalid_inputs():
 
 
 def test_add_optional_i64_overload_substitutes_zero_for_invalid_inputs():
-    import hg._hg_test_extension as extension
+    import hgraph._hg_test_extension as extension
 
     @hg.graph
     def graph(lhs: hg.TS[int], rhs: hg.TS[int]) -> hg.TS[int]:
@@ -1338,7 +1338,7 @@ def test_add_optional_i64_overload_substitutes_zero_for_invalid_inputs():
 
 
 def test_add_optional_string_overload_substitutes_empty_string_for_invalid_inputs():
-    import hg._hg_test_extension as extension
+    import hgraph._hg_test_extension as extension
 
     @hg.node
     def to_string(value: int) -> str:
@@ -1366,7 +1366,7 @@ def test_optional_string_addition_waits_for_ticks_and_retains_latest_inputs():
 
 
 def test_wiring_point_addition_selects_optional_overload():
-    import hg._hg_test_extension as extension
+    import hgraph._hg_test_extension as extension
 
     @hg.node
     def to_double(value: int) -> float:
@@ -1383,8 +1383,8 @@ def test_wiring_point_addition_selects_optional_overload():
 def test_wiring_point_addition_does_not_depend_on_python_operator_attributes():
     script = """
 import gc
-import hg
-import hg._hg as native
+import hgraph as hg
+import hgraph._hg as native
 
 del hg.operators.add
 del native.operators.add
@@ -1428,7 +1428,7 @@ def test_add_reports_native_overload_diagnostics_for_unsupported_types():
 
 
 def test_operator_namespace_reexports_existing_higher_order_apis():
-    import hg._hg as native
+    import hgraph._hg as native
 
     assert hg.operators.add is native.operators.add
     assert hg.operators.map is hg.map
@@ -1438,7 +1438,7 @@ def test_operator_namespace_reexports_existing_higher_order_apis():
 
 def test_string_switch_cache_is_released_before_scalar_runtime_shutdown():
     script = """
-import hg
+import hgraph as hg
 
 @hg.graph
 def a(value: hg.TS[str]) -> hg.TS[str]:

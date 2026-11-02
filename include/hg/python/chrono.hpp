@@ -60,7 +60,7 @@ template <> class type_caster<hg::EvaluationTime> {
         constexpr auto first = sys_days{year{1} / January / 1};
         constexpr auto last = sys_days{year{10000} / January / 1};
         if (source < first || source >= last) {
-            PyErr_SetString(PyExc_OverflowError, "hg.EvaluationTime is outside the datetime.datetime range");
+            PyErr_SetString(PyExc_OverflowError, "hgraph.EvaluationTime is outside the datetime.datetime range");
             return {};
         }
 

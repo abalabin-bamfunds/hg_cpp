@@ -4,8 +4,8 @@ import struct
 
 import pytest
 
-import hg
-from hg._hg_test_extension import bytes_conversion_addresses, const_, round_trip_bytes
+import hgraph as hg
+from hgraph._hg_test_extension import bytes_conversion_addresses, const_, round_trip_bytes
 
 
 def test_bytes_export_is_readonly_and_outlives_the_graph():

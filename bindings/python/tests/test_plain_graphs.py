@@ -2,7 +2,7 @@ from typing import Optional
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_plain_graph_input_accepts_a_scalar_or_time_series():
@@ -285,7 +285,7 @@ def test_plain_graph_return_rejects_an_incompatible_scalar():
     def graph() -> int:
         return "wrong"
 
-    with pytest.raises(TypeError, match="expected an integer for hg.i64"):
+    with pytest.raises(TypeError, match="expected an integer for hgraph.i64"):
         hg.run_graph(graph)
 
 

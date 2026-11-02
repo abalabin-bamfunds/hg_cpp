@@ -5,7 +5,7 @@ import sys
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_compute_node_injects_clock_between_inputs():
@@ -146,7 +146,7 @@ def test_scheduler_injects_and_cancels_timed_node_evaluations():
 def test_scheduler_handles_wall_clock_timers_and_preserves_callback_scope():
     script = """
 from datetime import timedelta
-import hg
+import hgraph as hg
 
 stop_source = hg.StopSource()
 handles = []

@@ -1,4 +1,4 @@
-import hg
+import hgraph as hg
 
 
 def test_scalar_dictionary_keys_reconcile_and_values_preserve_duplicates():

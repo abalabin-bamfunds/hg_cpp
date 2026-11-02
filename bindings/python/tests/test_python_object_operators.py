@@ -1,6 +1,6 @@
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_getitem_infers_python_object_result_for_scalar_key():

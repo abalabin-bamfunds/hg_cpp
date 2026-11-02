@@ -1,6 +1,6 @@
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_node_accepts_scalar_arguments_and_runs_at_graph_start():

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_take_drop_and_step_are_available_to_python_graphs():
@@ -383,7 +383,7 @@ def test_route_by_index_requires_an_explicit_fixed_list_result():
 
 
 def test_merge_with_one_input_preserves_invalidation():
-    import hg._hg_test_extension as extension
+    import hgraph._hg_test_extension as extension
 
     @hg.graph
     def merge(value: hg.TS[int]) -> hg.TS[bool]:

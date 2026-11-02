@@ -1,6 +1,6 @@
 import pytest
 
-import hg
+import hgraph as hg
 
 
 @hg.node

@@ -3,7 +3,7 @@ from datetime import datetime, timedelta
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_node_lifecycle_callbacks_select_definition_arguments_in_declared_order():

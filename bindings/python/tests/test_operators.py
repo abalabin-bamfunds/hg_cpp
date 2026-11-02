@@ -1,9 +1,9 @@
 import pytest
 
-import hg
+import hgraph as hg
 
 
-extension = pytest.importorskip("hg._hg_test_extension")
+extension = pytest.importorskip("hgraph._hg_test_extension")
 
 
 def test_const_operator_accepts_positional_and_named_scalars():

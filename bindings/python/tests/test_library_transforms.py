@@ -1,4 +1,4 @@
-import hg
+import hgraph as hg
 
 
 def test_flip_defaults_to_unique_values_and_accepts_named_ts():

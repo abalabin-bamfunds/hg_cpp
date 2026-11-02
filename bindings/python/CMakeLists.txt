@@ -69,10 +69,10 @@ add_dependencies(hg_python nanobind-abi3)
 target_link_libraries(_hg PRIVATE hg::python)
 target_compile_features(_hg PRIVATE cxx_std_23)
 
-set(python_package_dir "${PROJECT_BINARY_DIR}/bindings/python/hg")
+set(python_package_dir "${PROJECT_BINARY_DIR}/bindings/python/hgraph")
 file(MAKE_DIRECTORY "${python_package_dir}")
-configure_file(python/hg/__init__.py "${python_package_dir}/__init__.py" COPYONLY)
-configure_file(python/hg/operators.py "${python_package_dir}/operators.py" COPYONLY)
+configure_file(python/hgraph/__init__.py "${python_package_dir}/__init__.py" COPYONLY)
+configure_file(python/hgraph/operators.py "${python_package_dir}/operators.py" COPYONLY)
 if(APPLE)
     set(python_build_rpath "@loader_path/..;@loader_path/../../..")
     set(python_install_rpath "@loader_path/../${CMAKE_INSTALL_LIBDIR}")
@@ -114,7 +114,7 @@ if(WIN32)
                     "$<TARGET_FILE:${runtime_target}>" "$<TARGET_FILE_DIR:_hg>"
             VERBATIM
         )
-        install(FILES "$<TARGET_FILE:${runtime_target}>" DESTINATION hg)
+        install(FILES "$<TARGET_FILE:${runtime_target}>" DESTINATION hgraph)
     endforeach()
 endif()
 
@@ -131,8 +131,8 @@ install(
     LIBRARY DESTINATION "${CMAKE_INSTALL_LIBDIR}"
     RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}"
 )
-install(TARGETS _hg LIBRARY DESTINATION hg RUNTIME DESTINATION hg)
-install(FILES python/hg/__init__.py python/hg/operators.py DESTINATION hg)
+install(TARGETS _hg LIBRARY DESTINATION hgraph RUNTIME DESTINATION hgraph)
+install(FILES python/hgraph/__init__.py python/hgraph/operators.py DESTINATION hgraph)
 
 if(BUILD_TESTING)
     nanobind_add_module(_hg_test_extension STABLE_ABI NB_SHARED tests/extension_module.cpp)
@@ -153,7 +153,7 @@ if(BUILD_TESTING)
         message(
             FATAL_ERROR
             "pytest is required for Python tests. Install it with: "
-            "${Python_EXECUTABLE} -m pip install 'hg_cpp[test]'"
+            "${Python_EXECUTABLE} -m pip install 'hg-cpp[test]'"
         )
     endif()
 
@@ -164,7 +164,7 @@ if(BUILD_TESTING)
     set(
         python_test_environment
         "PYTHONPATH=${PROJECT_BINARY_DIR}/bindings/python"
-        "HG_PYTHON_PACKAGE_DIR=${PROJECT_BINARY_DIR}/bindings/python/hg"
+        "HG_PYTHON_PACKAGE_DIR=${PROJECT_BINARY_DIR}/bindings/python/hgraph"
     )
     set_tests_properties(
         python_tests

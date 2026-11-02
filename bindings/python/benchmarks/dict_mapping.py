@@ -23,8 +23,8 @@ import sys
 import time
 from collections.abc import Callable, Mapping
 
-import hg
-from hg._hg import _dict_view_layout
+import hgraph as hg
+from hgraph._hg import _dict_view_layout
 
 
 def timed(function: Callable[[], object], repeats: int, rounds: int = 7) -> float:

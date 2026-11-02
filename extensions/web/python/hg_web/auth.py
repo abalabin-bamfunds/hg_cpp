@@ -3,14 +3,14 @@
 from functools import cache
 from typing import get_type_hints
 
-import hg
+import hgraph as hg
 
 from . import HttpResponse
 
 
 def _policy_graphs(policy):
     if not isinstance(policy, hg._ServiceDefinition):
-        raise TypeError("authentication policy must be a hg.service declaration")
+        raise TypeError("authentication policy must be a hgraph.service declaration")
 
     parameters = tuple(policy.signature.parameters.values())
     if len(parameters) != 1:

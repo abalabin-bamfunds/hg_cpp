@@ -3,7 +3,7 @@ from typing import TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_reduce_combines_dictionary_values_and_tracks_sparse_updates():
@@ -293,7 +293,7 @@ def test_reduce_rejects_a_mismatched_scalar_default():
     def graph(values: hg.TSD[int, hg.TS[int]]) -> hg.TS[int]:
         return hg.reduce(add, values, default="not an integer")
 
-    with pytest.raises(TypeError, match="expected an integer for hg.i64"):
+    with pytest.raises(TypeError, match="expected an integer for hgraph.i64"):
         hg.run_graph(graph, [{}])
 
 

@@ -1,7 +1,7 @@
 import gc
 import weakref
 
-import hg
+import hgraph as hg
 import pytest
 
 

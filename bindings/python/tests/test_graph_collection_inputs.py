@@ -4,7 +4,7 @@ from typing import Annotated, TypeVar
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_run_graph_tsd_inputs_accept_deltas_and_removals():
@@ -197,7 +197,7 @@ def test_valid_items_argument_requires_a_valid_items_receiver():
 
 
 def test_valid_items_metadata_requires_a_tsd_annotation():
-    with pytest.raises(ValueError, match="hg.valid_items requires a TSD input annotation"):
+    with pytest.raises(ValueError, match="hgraph.valid_items requires a TSD input annotation"):
 
         @hg.compute_node
         def invalid(value: Annotated[hg.TS[int], hg.valid_items]) -> hg.TS[int]:

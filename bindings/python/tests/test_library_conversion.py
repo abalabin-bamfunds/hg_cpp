@@ -1,4 +1,4 @@
-import hg
+import hgraph as hg
 import pytest
 
 

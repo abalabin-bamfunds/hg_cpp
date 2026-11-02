@@ -4,7 +4,7 @@ import subprocess
 import sys
 from time import monotonic
 
-import hg
+import hgraph as hg
 import pytest
 
 
@@ -263,7 +263,7 @@ def test_run_graph_realtime_accepts_start_time_and_profile_recorder():
     _run_script(
         """
 import datetime
-import hg
+import hgraph as hg
 
 default_observed = []
 default_stop = hg.StopSource()
@@ -317,7 +317,7 @@ def test_run_graph_realtime_stop_from_another_thread_completes_downstream_tick()
     _run_script(
         """
 import threading
-import hg
+import hgraph as hg
 
 entered = threading.Event()
 received = []
@@ -357,7 +357,7 @@ assert received == [41]
 def test_run_graph_realtime_honors_pre_requested_token_and_token_lifetime():
     _run_script(
         """
-import hg
+import hgraph as hg
 
 stop_source = hg.StopSource()
 token = stop_source.get_token()
@@ -398,9 +398,9 @@ import signal
 import threading
 import time
 
-import hg
-from hg._hg_test_extension import native_continuous_timer, native_interruption_lifecycle
-from hg._hg_test_extension import reset_native_interruption_lifecycle
+import hgraph as hg
+from hgraph._hg_test_extension import native_continuous_timer, native_interruption_lifecycle
+from hgraph._hg_test_extension import reset_native_interruption_lifecycle
 
 reset_native_interruption_lifecycle()
 @hg.node
@@ -449,7 +449,7 @@ def test_run_graph_custom_sigint_handler_runs_and_requests_normal_stop():
         """
 import signal
 import threading
-import hg
+import hgraph as hg
 
 entered = threading.Event()
 events = []
@@ -502,9 +502,9 @@ import copy
 import signal
 import threading
 import time
-import hg
-from hg._hg_test_extension import native_continuous_timer, native_interruption_lifecycle
-from hg._hg_test_extension import reset_native_interruption_lifecycle
+import hgraph as hg
+from hgraph._hg_test_extension import native_continuous_timer, native_interruption_lifecycle
+from hgraph._hg_test_extension import reset_native_interruption_lifecycle
 
 reset_native_interruption_lifecycle()
 writers = []
@@ -551,9 +551,9 @@ import copy
 import signal
 import threading
 import time
-import hg
-from hg._hg_test_extension import native_continuous_timer, native_interruption_lifecycle
-from hg._hg_test_extension import reset_native_interruption_lifecycle
+import hgraph as hg
+from hgraph._hg_test_extension import native_continuous_timer, native_interruption_lifecycle
+from hgraph._hg_test_extension import reset_native_interruption_lifecycle
 
 reset_native_interruption_lifecycle()
 writers = []
@@ -612,7 +612,7 @@ import datetime
 import signal
 import threading
 import time
-import hg
+import hgraph as hg
 
 events = []
 wired = threading.Event()
@@ -666,13 +666,13 @@ def test_runner_options_validate_engine_start_time_and_stop_token():
     def graph() -> int:
         return 1
 
-    with pytest.raises(TypeError, match="engine must be a hg.EvaluationEngine"):
+    with pytest.raises(TypeError, match="engine must be a hgraph.EvaluationEngine"):
         hg.run_graph(graph, engine="realtime")
     with pytest.raises(TypeError, match="start_time must be a datetime or None"):
         hg.run_graph(graph, start_time=1)
     with pytest.raises(ValueError, match="timezone-naive"):
         hg.run_graph(graph, start_time=datetime.now(timezone.utc))
-    with pytest.raises(TypeError, match="stop_token must be a hg.StopToken or None"):
+    with pytest.raises(TypeError, match="stop_token must be a hgraph.StopToken or None"):
         hg.run_graph(graph, stop_token=hg.StopSource())
 
 

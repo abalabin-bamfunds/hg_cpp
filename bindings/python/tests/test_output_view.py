@@ -2,7 +2,7 @@ from datetime import datetime
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_output_view_reads_previous_scalar_tick_and_does_not_publish_none():
@@ -137,7 +137,7 @@ def test_output_injection_requires_a_node_output_and_is_rejected_for_generators(
         def sink(output: hg.Output = None) -> None:
             pass
 
-    with pytest.raises(TypeError, match="generators cannot use hg.Output"):
+    with pytest.raises(TypeError, match="generators cannot use hgraph.Output"):
 
         @hg.generator
         def source(output: hg.Output = None) -> hg.TS[int]:

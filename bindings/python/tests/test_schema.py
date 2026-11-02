@@ -2,7 +2,7 @@ from typing import Optional
 
 import pytest
 
-import hg
+import hgraph as hg
 
 
 def test_bundle_construction_and_python_class_round_trip():
@@ -247,7 +247,7 @@ def test_schema_value_converts_inside_scalar_dictionary():
 
 
 def test_native_schema_export_supports_tsb_and_scalar_projections():
-    from hg._hg_test_extension import export_native_pair_schema, native_pair_consumer
+    from hgraph._hg_test_extension import export_native_pair_schema, native_pair_consumer
 
     class NativePair:
         def __init__(self, value):
@@ -291,7 +291,7 @@ def test_native_schema_export_supports_tsb_and_scalar_projections():
 
 
 def test_native_tsb_only_schema_export_does_not_require_scalar_projection():
-    from hg._hg_test_extension import export_native_tsb_schema, native_pair_consumer
+    from hgraph._hg_test_extension import export_native_tsb_schema, native_pair_consumer
 
     class NativeBase:
         pass
@@ -330,7 +330,7 @@ def test_native_tsb_only_schema_export_does_not_require_scalar_projection():
 
 
 def test_native_schema_export_is_idempotent_and_can_add_scalar_projection():
-    from hg._hg_test_extension import export_native_pair_schema, export_native_tsb_schema
+    from hgraph._hg_test_extension import export_native_pair_schema, export_native_tsb_schema
 
     class NativePair:
         pass
@@ -357,7 +357,7 @@ def test_native_schema_export_is_idempotent_and_can_add_scalar_projection():
 
 
 def test_native_scalar_export_installs_constructor_with_scalar_optional_fields():
-    from hg._hg_test_extension import export_native_optional_schema, export_native_optional_tsb_schema
+    from hgraph._hg_test_extension import export_native_optional_schema, export_native_optional_tsb_schema
 
     class NativeOptional:
         pass
@@ -386,7 +386,7 @@ def test_native_scalar_export_installs_constructor_with_scalar_optional_fields()
 
 
 def test_native_schema_export_rejects_conflicting_rebinding():
-    from hg._hg_test_extension import export_conflicting_tsb_schema, export_native_pair_schema
+    from hgraph._hg_test_extension import export_conflicting_tsb_schema, export_native_pair_schema
 
     class NativePair:
         pass

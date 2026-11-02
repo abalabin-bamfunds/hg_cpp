@@ -33,7 +33,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[3]
 if str(REPOSITORY_ROOT) not in sys.path:
     sys.path.insert(0, str(REPOSITORY_ROOT))
 
-import hg
+import hgraph as hg
 from benchmarks.high_count_map_workload import (
     CHILD_COUNT,
     PROFILES,
@@ -496,7 +496,7 @@ def run_benchmark(profile_name: str, cycle_count: int, arithmetic: str = "callba
             "valid": True,
         },
         "notes": [
-            "hg.run_graph owns wiring, compilation, runtime creation, evaluation, and stop as one call.",
+            "hgraph.run_graph owns wiring, compilation, runtime creation, evaluation, and stop as one call.",
             "Per-cycle timing starts at flat_source and ends after both output observers; it excludes run_graph input dispatch.",
             "Per-cycle timing includes source callbacks, graph evaluation, and checksum observers.",
         ],

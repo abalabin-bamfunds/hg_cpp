@@ -18,11 +18,14 @@ from importlib.metadata import distribution
 import os
 from pathlib import Path
 from sysconfig import get_paths
-import hg
+import hgraph as hg
 
 package_dir = Path(hg.__file__).resolve().parent
 assert package_dir.is_relative_to(Path(get_paths()["purelib"]).resolve())
-assert distribution(os.environ["HG_DISTRIBUTION_NAME"]).version == os.environ["HG_DISTRIBUTION_VERSION"]
+installed_distribution = distribution(os.environ["HG_DISTRIBUTION_NAME"])
+assert installed_distribution.metadata["Name"] == "hg-cpp"
+assert installed_distribution.version == os.environ["HG_DISTRIBUTION_VERSION"]
+assert hg.__name__ == "hgraph"
 
 @hg.node
 def increment(value: int) -> int:
@@ -33,7 +36,7 @@ def graph(value: int) -> int:
     return increment(value)
 
 assert hg.run_graph(graph, [1, 4, None, 7]) == [2, 5, None, 8]
-print(f"Imported hg from {package_dir}; graph smoke passed")
+print(f"Imported hgraph from {package_dir}; hg-cpp graph smoke passed")
 '''
 
 

@@ -5,12 +5,12 @@ import sys
 import threading
 from datetime import timedelta
 
-import hg
+import hgraph as hg
 from hg_web import AuthDecision, HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
 
 
-def test_hg_web_imports_before_hg():
-    subprocess.run([sys.executable, "-c", "import hg_web; import hg"], check=True,
+def test_hg_web_imports_before_hgraph():
+    subprocess.run([sys.executable, "-c", "import hg_web; import hgraph"], check=True,
                    env=os.environ.copy(), timeout=5)
 
 

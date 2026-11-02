@@ -65,7 +65,7 @@ class PythonFeedback {
 };
 
 PythonFeedback *make_feedback(nb::handle type, std::string name) {
-    const auto native_type = nb::module_::import_("hg").attr("_native_type")(type);
+    const auto native_type = nb::module_::import_("hgraph").attr("_native_type")(type);
     const auto &type_argument = python_type_argument(native_type);
     const auto *output_type = type_cast<TimeSeriesType>(&type_argument);
     if (output_type == nullptr) {

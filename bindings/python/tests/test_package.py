@@ -7,9 +7,9 @@ import sys
 import weakref
 from datetime import datetime, timedelta, timezone
 
-import hg
+import hgraph as hg
 import pytest
-from hg import _hg
+from hgraph import _hg
 
 
 def test_imports_the_expected_package():
@@ -19,8 +19,10 @@ def test_imports_the_expected_package():
 
     package_dir = Path(expected_package).resolve()
     assert Path(hg.__file__).resolve().parent == package_dir
+    assert hg.__name__ == "hgraph"
+    assert package_dir.name == "hgraph"
 
-    extension = importlib.util.find_spec("hg._hg")
+    extension = importlib.util.find_spec("hgraph._hg")
     assert extension is not None
     assert Path(extension.origin).resolve().parent == package_dir
 
@@ -134,13 +136,13 @@ def test_source_node_scalar_outputs(annotation, value):
 
 
 def test_extension_modules_share_python_conversion_registry():
-    extension = pytest.importorskip("hg._hg_test_extension")
+    extension = pytest.importorskip("hgraph._hg_test_extension")
 
     assert _hg._scalar_conversions_address() == extension.scalar_conversions_address()
 
 
 def test_runtime_scalar_conversion_overrides_semantic_type_conversion():
-    extension = pytest.importorskip("hg._hg_test_extension")
+    extension = pytest.importorskip("hgraph._hg_test_extension")
 
     added, value, view_added, view = extension.runtime_conversion_overrides_type_conversion()
 
@@ -151,7 +153,7 @@ def test_runtime_scalar_conversion_overrides_semantic_type_conversion():
 
 
 def test_date_time_scalar_conversion_is_builtin_and_extensions_cannot_override_it():
-    extension = pytest.importorskip("hg._hg_test_extension")
+    extension = pytest.importorskip("hgraph._hg_test_extension")
 
     date_time_added, date_time, timedelta_added, duration, date_time_view = (
         extension.date_time_conversions_can_be_registered()
@@ -269,12 +271,12 @@ def test_timedelta_scalar_conversion_rejects_values_outside_i64_microseconds(mic
     def constant() -> hg.TS[timedelta]:
         return hg.operators.const_(value)
 
-    with pytest.raises(OverflowError, match="outside the hg.timedelta_t range"):
+    with pytest.raises(OverflowError, match="outside the hgraph.timedelta_t range"):
         hg.run_graph(constant)
 
 
 def test_timedelta_conversion_accepts_subclasses_and_rejects_other_values():
-    extension = pytest.importorskip("hg._hg_test_extension")
+    extension = pytest.importorskip("hgraph._hg_test_extension")
 
     class CustomTimedelta(timedelta):
         pass
@@ -334,8 +336,8 @@ def test_nested_delay_releases_pending_python_values_when_stopped():
 
 def test_run_graph_uses_registered_runtime_scalar_conversion():
     script = """
-import hg
-from hg._hg_test_extension import register_runtime_double_result_conversion
+import hgraph as hg
+from hgraph._hg_test_extension import register_runtime_double_result_conversion
 
 assert register_runtime_double_result_conversion()
 
@@ -617,7 +619,7 @@ def test_python_string_rejects_lone_surrogates():
 
 
 def test_python_string_rejects_invalid_hg_utf8():
-    extension = pytest.importorskip("hg._hg_test_extension")
+    extension = pytest.importorskip("hgraph._hg_test_extension")
 
     with pytest.raises(UnicodeDecodeError):
         extension.decode_invalid_string()
@@ -770,7 +772,7 @@ def test_python_callback_receives_interleaved_time_series_and_scalars():
 
 def test_module_scope_definitions_do_not_leak_native_instances_at_shutdown():
     script = """
-import hg
+import hgraph as hg
 
 @hg.compute_node
 def identity(value: hg.TS[int]) -> hg.TS[int]:

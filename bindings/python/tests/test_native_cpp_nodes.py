@@ -2,8 +2,8 @@ import sys
 
 import pytest
 
-import hg
-from hg._hg_test_extension import (
+import hgraph as hg
+from hgraph._hg_test_extension import (
     native_callable_gil,
     native_gil,
     native_node_lifecycle,
