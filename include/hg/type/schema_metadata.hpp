@@ -17,6 +17,8 @@ class ScalarData;
 class SchemaMetadata;
 struct SchemaMetadataEntry;
 
+[[nodiscard]] HG_EXPORT SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries);
+
 // Immutable scalar metadata attached to a schema declaration.
 class HG_EXPORT SchemaMetadata {
   public:

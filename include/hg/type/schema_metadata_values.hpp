@@ -16,8 +16,6 @@ struct SchemaMetadataEntry {
     ScalarData value;
 };
 
-[[nodiscard]] HG_EXPORT SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries);
-
 [[nodiscard]] inline SchemaMetadata make_schema_metadata(std::initializer_list<SchemaMetadataEntry> entries) {
     return make_schema_metadata(std::span{entries.begin(), entries.size()});
 }
