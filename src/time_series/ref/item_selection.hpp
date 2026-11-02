@@ -288,7 +288,7 @@ template <typename Derived, typename RuntimeType> class ItemSelectionSubscriptio
         release_queue_.push_back(&entry);
         entry.set_release_queue_index(static_cast<std::uint32_t>(release_queue_.size() - 1));
         if (!cycle_callback_registered_) {
-            provider_->add_cycle_callback(this, &release_queued_entries);
+            provider_->add_cycle_callback(this, &ItemSelectionSubscriptions::release_queued_entries);
             cycle_callback_registered_ = true;
         }
     }
