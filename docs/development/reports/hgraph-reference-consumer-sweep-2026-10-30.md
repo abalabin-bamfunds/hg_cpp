@@ -3,7 +3,8 @@
 This follow-up checks source switching and consumers of mapped references.
 It uses BG `61574125` with the six tests from `b25ff057`, and the
 upstream revisions pinned in the [preceding sweep](hgraph-pattern-sweep-2026-10-30.md).
-No production code is changed.
+The initial sweep changed only tests and this report. The sampling correction
+below is a subsequent implementation change in the same lane.
 
 The batch adds ten passing cases and four hidden reproductions of two findings:
 mesh branch output inference fails during wiring, and dictionary selection
@@ -85,6 +86,27 @@ This branch has no dependency selection, so that
 [mesh constraint](../design/mesh.md#purpose) does not require an output
 annotation here.
 
+Two cases must remain distinct:
+
+- A branch without a selection from the same mesh can infer its output from
+  the returned wiring point. The wrapper currently prevents this ordinary
+  graph behavior.
+- A branch selecting from the same mesh needs its output type when the
+  selection is wired. An input type mapping, graph signature, annotated lambda
+  result, or explicit type argument can establish it before the body runs.
+
+Existing unannotated branch lambdas can satisfy the second condition when
+their C++ result wrapper already supplies a concrete time series type. A
+generic operator result such as `wp<TS_T>` does not supply that information,
+even when the operator's returned wiring point will have a concrete type.
+Returning only `mesh()[key]` provides no independent output-type constraint.
+
+Forwarding the wrapper's output-inference policy fixes the reproduced case.
+It does not infer types through an unresolved same-mesh selection. That would
+require separate type-inference work. Existing deferred wiring points require
+a resolved semantic type and do not provide unresolved-type inference.
+No mesh correction is implemented in this follow-up.
+
 ### Selected-key invalidation after source switching
 
 Both direct and identity-mapped selection omit an invalidation delta when a
@@ -136,6 +158,24 @@ receives key 1, so the result retains its previous reference. The correction
 belongs in dictionary sampling, where the transition from the previous
 source's pre-cycle membership to the current source must be computed.
 
+### Sampling correction, 2026-11-02
+
+`SampledDictionary` now reconstructs the previous source's pre-cycle membership.
+It excludes that source's same-cycle additions and recovers its same-cycle
+removals. Both item-change classification and `item_was_valid()` use the same
+previous-item lookup. Removal enumeration includes previously present keys
+that both sources removed in the switching cycle.
+
+The correction preserves child sampling and item-ID remapping. It adds no
+persistent fields or graph nodes. The three selected-key reproductions now
+run as ordinary tests; the mesh reproduction remains hidden.
+
+A new four-cycle test covers an old-source addition during switching, an
+old-source removal whose key remains present in the new source, and a later
+update. It asserts selected values and the added-item count exposed by a
+`valid_items` input. The count distinguishes an addition from an update and
+checks that old removal information is not replayed.
+
 ## Scope
 
 These are selected products from the upstream reference-consumer sweep, with
@@ -161,7 +201,7 @@ field from the entire mapped dictionary. BG's
 or scalar Bundle, not `TSD<K, TSB<...>>`. This convenience form was skipped.
 The explicit map projection is covered by the preceding sweep.
 
-## Verification
+## Verification of the initial sweep
 
 The focused runners use GCC Release flags (`-O3 -DNDEBUG`) and the matching BG
 runtime. The library runner covers `stream`, `collection`, `merge`,
@@ -177,17 +217,8 @@ Independent final runs passed **501 cases and 886 assertions**:
 | Engine | 272 | 409 |
 
 Explicit `[repro]` runs confirmed the three collection failures and the mesh
-wiring failure above. Their assertions retain the required behavior. The
-hidden tag excludes them from ordinary runs. Run both groups from the lane:
-
-```sh
-build/integration/hgraph-pattern-library-tests
-build/integration/hgraph-pattern-engine-tests
-build/integration/hgraph-pattern-library-tests '[repro]'
-build/integration/hgraph-pattern-engine-tests '[repro]'
-```
-
-The four reproductions fail as documented. All fourteen new cases have valid
+wiring failure above. At that revision, the hidden tag excluded all four from
+ordinary runs. All fourteen new cases had valid
 coverage tags. Library coverage-tag validation passes.
 
 Engine coverage-tag validation reports four existing diagnostics in unrelated
@@ -196,3 +227,31 @@ unknown `lifetime` dimension, and one test missing a `feature` tag. These tags
 are present in the baseline. The existing invalid `error:operator-resolution`
 tag in the touched stream file was changed to a plain `operator-resolution`
 marker.
+
+## Verification of the sampling correction
+
+The GCC Release runtime and changed collection tests were rebuilt. The engine
+runner also freshly compiled the reference, dictionary, dictionary-getitem,
+and `valid_items` test files. Independent runs passed **673 cases and 1,672
+assertions**:
+
+| Runner | Passing cases | Passing assertions |
+| --- | ---: | ---: |
+| Library | 233 | 482 |
+| Expanded engine | 440 | 1,190 |
+
+The three collection reproductions are included in these ordinary runs.
+The remaining hidden mesh reproduction still fails during output-type
+resolution. Run the current checks from the lane:
+
+```sh
+build/integration/hgraph-pattern-library-tests
+build/integration/hgraph-pattern-engine-tests
+build/integration/hgraph-pattern-engine-tests '[repro]'
+```
+
+The complete current BG suite was not run. Historical full-suite binaries
+predate runtime API changes and were not used as verification.
+Library coverage-tag validation passes. Expanded engine validation reports the
+four baseline diagnostics above and an existing `invalidation:preserve-output`
+tag in the dictionary tests; the new sampling test's tags are valid.
