@@ -23,7 +23,9 @@
 #include "../src/http_server_internal.hpp"
 
 #include <boost/asio.hpp>
+#include <boost/asio/ssl.hpp>
 #include <boost/beast.hpp>
+#include <boost/beast/ssl.hpp>
 #include <boost/system/system_error.hpp>
 
 #include <algorithm>
@@ -31,6 +33,7 @@
 #include <atomic>
 #include <condition_variable>
 #include <exception>
+#include <filesystem>
 #include <functional>
 #include <initializer_list>
 #include <memory>
@@ -71,9 +74,9 @@ struct ServerTest {
 
     template <typename Wire, typename Client, typename Configure>
         requires std::invocable<Wire> && std::invocable<Configure, ServiceCatalogue &>
-    void run_with_services(Wire wire, Client client_function, Configure configure) {
+    void run_with_services(Wire wire, Client client_function, Configure configure, ServerOptions options = {}) {
         auto catalogue = ServiceCatalogue{};
-        register_http_server(catalogue);
+        register_http_server(catalogue, std::move(options));
         std::invoke(configure, catalogue);
         run_graph(
             [&] {
@@ -112,6 +115,10 @@ struct ServerTest {
     std::exception_ptr client_failure;
 };
 
+std::string test_data_file(std::string_view filename) {
+    return (std::filesystem::path{__FILE__}.parent_path() / "data" / filename).string();
+}
+
 template <template <typename, auto...> typename Field> struct RichHandlerOutput {
     Field<TS<Bundle<HttpResponse>>> response;
     Field<TS<i64>> extra;
@@ -123,9 +130,11 @@ struct RawHttpResponse {
     std::string body;
 };
 
-ScalarValue<Bundle<HttpResponse>> make_http_response(i64 status, std::string_view body = {}) {
+ScalarValue<Bundle<HttpResponse>> make_http_response(
+    i64 status, std::string_view body = {},
+    std::vector<std::pair<std::string, std::string>> header_values = {}) {
     using Header = Tuple<string, string>;
-    const auto headers = ScalarValue<List<Header>>{std::vector<Scalar<Header>>{}};
+    const auto headers = ScalarValue<List<Header>>{std::move(header_values)};
     const auto body_bytes = std::span<const std::byte>{reinterpret_cast<const std::byte *>(body.data()), body.size()};
     const auto body_value = ScalarValue<bytes>{body_bytes};
     auto memory = allocator{};
@@ -400,7 +409,7 @@ TEST_CASE("WebSocket authentication rejects connections and closes accepted conn
 
         const auto path = scalar_cast<string>(request.value()[2]).value();
         if (path == "/auth/rejected") {
-            const auto response = make_http_response(401);
+            const auto response = make_http_response(401, {}, {{"WWW-Authenticate", "Basic realm=\"test\""}});
             const auto result = auth::reject<i64>(response.view());
             decision.set_value(result.view());
             return;
@@ -424,6 +433,7 @@ TEST_CASE("WebSocket authentication rejects connections and closes accepted conn
     auto server = ServerTest{};
     auto rejected_status = 0U;
     auto accepted_status = 0U;
+    auto rejected_challenge = std::string{};
     auto rejected_handler_starts = -1;
     auto accepted_handler_starts = -1;
     auto close_received = false;
@@ -436,21 +446,34 @@ TEST_CASE("WebSocket authentication rejects connections and closes accepted conn
         [&](std::uint16_t port) {
             namespace asio = boost::asio;
             namespace beast = boost::beast;
+            namespace http = beast::http;
+            namespace ssl = asio::ssl;
             namespace websocket = beast::websocket;
             using tcp = asio::ip::tcp;
 
             auto context = asio::io_context{};
-            auto rejected = websocket::stream<tcp::socket>{context};
-            rejected.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            auto tls = ssl::context{ssl::context::tls_client};
+            tls.set_verify_mode(ssl::verify_none);
+            auto rejected_tls = ssl::stream<tcp::socket>{context, tls};
+            rejected_tls.lowest_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            rejected_tls.handshake(ssl::stream_base::client);
+            auto rejected = websocket::stream<ssl::stream<tcp::socket>>{std::move(rejected_tls)};
             auto rejected_response = websocket::response_type{};
             auto error = beast::error_code{};
             rejected.handshake(rejected_response, "localhost", "/auth/rejected", error);
             rejected_status = rejected_response.result_int();
+            if (const auto challenge = rejected_response.find(http::field::www_authenticate);
+                challenge != rejected_response.end()) {
+                rejected_challenge = std::string{challenge->value()};
+            }
             rejected_handler_starts = AuthenticatedWebSocketHandler::starts.load();
-            rejected.next_layer().close();
+            beast::error_code ignored;
+            rejected.next_layer().lowest_layer().close(ignored);
 
-            auto accepted = websocket::stream<tcp::socket>{context};
-            accepted.next_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            auto accepted_tls = ssl::stream<tcp::socket>{context, tls};
+            accepted_tls.lowest_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            accepted_tls.handshake(ssl::stream_base::client);
+            auto accepted = websocket::stream<ssl::stream<tcp::socket>>{std::move(accepted_tls)};
             auto accepted_response = websocket::response_type{};
             accepted.handshake(accepted_response, "localhost", "/auth/accepted");
             accepted_status = accepted_response.result_int();
@@ -465,9 +488,12 @@ TEST_CASE("WebSocket authentication rejects connections and closes accepted conn
             close_code = static_cast<unsigned>(accepted.reason().code);
             server.stop.request_stop();
         },
-        [&](ServiceCatalogue &catalogue) { catalogue.register_impl(policy, policy_implementation); });
+        [&](ServiceCatalogue &catalogue) { catalogue.register_impl(policy, policy_implementation); },
+        ServerOptions{.tls = ServerTlsOptions{test_data_file("test_server_cert.pem"),
+                                             test_data_file("test_server_key.pem")}});
 
     CHECK(rejected_status == 401);
+    CHECK(rejected_challenge == "Basic realm=\"test\"");
     CHECK(rejected_handler_starts == 0);
     CHECK(accepted_status == 101);
     CHECK(accepted_handler_starts == 1);
@@ -1654,4 +1680,163 @@ TEST_CASE("HTTP server closes a connection with a pending request when the graph
     });
     CHECK(request_seen);
     CHECK(pending_connection_closed);
+}
+
+TEST_CASE("HTTPS server serves a request and completes TLS shutdown", "[feature:https][feature:http]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace http = boost::beast::http;
+    namespace ssl = asio::ssl;
+    using tcp = asio::ip::tcp;
+
+    const auto handler = Route{"/secure", echo_handler};
+    auto server = ServerTest{};
+    auto response_status = 0U;
+    auto response_body = std::string{};
+    server.run_with_services(
+        [&] { (void)handler.handler(); },
+        [&](std::uint16_t port) {
+            auto context = asio::io_context{};
+            auto tls = ssl::context{ssl::context::tls_client};
+            tls.load_verify_file(test_data_file("test_server_cert.pem"));
+            auto stream = ssl::stream<tcp::socket>{context, tls};
+            stream.set_verify_mode(ssl::verify_peer);
+            stream.set_verify_callback(ssl::host_name_verification{"localhost"});
+            stream.lowest_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            stream.handshake(ssl::stream_base::client);
+
+            auto request = http::request<http::string_body>{http::verb::get, "/secure", 11};
+            request.set(http::field::host, "localhost");
+            request.keep_alive(false);
+            http::write(stream, request);
+
+            auto buffer = boost::beast::flat_buffer{};
+            auto response = http::response<http::string_body>{};
+            http::read(stream, buffer, response);
+            response_status = response.result_int();
+            response_body = std::move(response.body());
+
+            beast::error_code error;
+            stream.shutdown(error);
+            if (error) {
+                throw boost::system::system_error{error};
+            }
+        },
+        [](ServiceCatalogue &) {},
+        ServerOptions{.tls = ServerTlsOptions{test_data_file("test_server_cert.pem"),
+                                             test_data_file("test_server_key.pem")}});
+
+    CHECK(response_status == 200);
+    CHECK(response_body.empty());
+}
+
+TEST_CASE("HTTPS server closes pending TLS sessions when the graph stops",
+          "[feature:https][feature:lifecycle][transition:stop]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace ssl = asio::ssl;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto request_seen = false;
+    auto pending_handshake_closed = false;
+    auto pending_request_closed = false;
+    auto pending_response_closed = false;
+    const auto hold_open = node([&](In<TS<Bundle<HttpServerRequest>>> request,
+                                    Out<TS<Bundle<HttpResponse>>>) {
+        if (request.valid()) {
+            request_seen = true;
+            server.stop.request_stop();
+        }
+    });
+    const auto route = Route{"/hold", hold_open};
+    server.run_with_services(
+        [&] { (void)route.handler(); },
+        [&](std::uint16_t port) {
+            auto context = asio::io_context{};
+            auto pending_handshake = tcp::socket{context};
+            pending_handshake.connect({asio::ip::make_address("127.0.0.1"), port});
+
+            auto tls = ssl::context{ssl::context::tls_client};
+            tls.set_verify_mode(ssl::verify_none);
+            auto pending_request = ssl::stream<tcp::socket>{context, tls};
+            pending_request.lowest_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            pending_request.handshake(ssl::stream_base::client);
+            const auto partial_request = std::string{"GET / HTTP/1.1\r\nHost: localhost\r\nX-Test: "};
+            asio::write(pending_request, asio::buffer(partial_request));
+            auto held_response = ssl::stream<tcp::socket>{context, tls};
+            held_response.lowest_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            held_response.handshake(ssl::stream_base::client);
+            const auto held_request = std::string{
+                "GET /hold HTTP/1.1\r\nHost: localhost\r\nConnection: keep-alive\r\n\r\n"};
+            asio::write(held_response, asio::buffer(held_request));
+
+            auto byte = std::array<char, 1>{};
+            beast::error_code error;
+            (void)held_response.read_some(asio::buffer(byte), error);
+            pending_response_closed = static_cast<bool>(error);
+            error.clear();
+            (void)pending_request.read_some(asio::buffer(byte), error);
+            pending_request_closed = static_cast<bool>(error);
+            error.clear();
+            (void)pending_handshake.read_some(asio::buffer(byte), error);
+            pending_handshake_closed = static_cast<bool>(error);
+        },
+        [](ServiceCatalogue &) {},
+        ServerOptions{.tls = ServerTlsOptions{test_data_file("test_server_cert.pem"),
+                                             test_data_file("test_server_key.pem")}});
+
+    CHECK(request_seen);
+    CHECK(pending_response_closed);
+    CHECK(pending_request_closed);
+    CHECK(pending_handshake_closed);
+}
+
+TEST_CASE("HTTPS server stops a WebSocket connection awaiting graph admission",
+          "[feature:websocket][feature:https][feature:lifecycle][transition:stop]") {
+    namespace asio = boost::asio;
+    namespace beast = boost::beast;
+    namespace ssl = asio::ssl;
+    namespace websocket = beast::websocket;
+    using tcp = asio::ip::tcp;
+
+    auto server = ServerTest{};
+    auto request_seen = false;
+    auto handshake_closed = false;
+    const auto handler = graph([&](wp<TSB<WebSocketServerRequest<bytes>::schema>> request) {
+        (void)node([&](In<TS<Bundle<HttpServerRequest>>> connect_request) {
+            if (connect_request.valid()) {
+                request_seen = true;
+                server.stop.request_stop();
+            }
+        })(request->connect_request);
+        return bundle<WebSocketResponse<bytes>::schema>(
+            "connect_response"_n = operators::nothing[type<TS<Bundle<HttpResponse>>>](),
+            "message"_n = operators::nothing[type<TS<bytes>>](),
+            "close"_n = operators::nothing[type<TS<Bundle<WebSocketClose>>>]());
+    });
+    const auto route = websocket_handler("/pending", handler);
+
+    server.run_with_services(
+        [&] { (void)route(); },
+        [&](std::uint16_t port) {
+            auto context = asio::io_context{};
+            auto tls = ssl::context{ssl::context::tls_client};
+            tls.set_verify_mode(ssl::verify_none);
+            auto stream = ssl::stream<tcp::socket>{context, tls};
+            stream.lowest_layer().connect({asio::ip::make_address("127.0.0.1"), port});
+            stream.handshake(ssl::stream_base::client);
+            auto socket = websocket::stream<ssl::stream<tcp::socket>>{std::move(stream)};
+
+            auto response = websocket::response_type{};
+            beast::error_code error;
+            socket.handshake(response, "localhost:" + std::to_string(port), "/pending", error);
+            handshake_closed = static_cast<bool>(error);
+        },
+        [](ServiceCatalogue &) {},
+        ServerOptions{.tls = ServerTlsOptions{test_data_file("test_server_cert.pem"),
+                                             test_data_file("test_server_key.pem")}});
+
+    CHECK(request_seen);
+    CHECK(handshake_closed);
 }

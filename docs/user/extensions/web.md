@@ -109,6 +109,12 @@ publishes its bound port when the listener and initial routes are ready. `port=0
 selects an available port; an explicit port supports a known application address.
 Use the realtime engine so the graph can wait for network events.
 
+Pass `certificate_chain_file` and `private_key_file` to enable HTTPS. Both arguments are
+required together. The files must be PEM encoded, and the certificate file may contain
+the full certificate chain. The listener then accepts TLS 1.2 or later on its configured
+port. C++ uses `.tls = ServerTlsOptions{"server-chain.pem", "server-key.pem"}` in
+`ServerOptions`.
+
 Keep each C++ route callable alive through graph compilation and execution. It owns the
 handler definition. Bind and listen errors fail startup. Stopping the graph closes the
 listener and its connections.

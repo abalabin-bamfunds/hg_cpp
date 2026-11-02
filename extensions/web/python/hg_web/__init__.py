@@ -201,14 +201,19 @@ def http_handler(path, graph, policy=None):
     return HttpHandler(path, graph, policy)
 
 
-def register_http_server(catalogue, host="127.0.0.1", port=0):
-    """Register an HTTP server implementation in a service catalogue."""
+def register_http_server(
+    catalogue, host="127.0.0.1", port=0, *, certificate_chain_file=None, private_key_file=None
+):
+    """Register an HTTP or HTTPS server implementation in a service catalogue."""
+    if (certificate_chain_file is None) != (private_key_file is None):
+        raise ValueError("HTTPS requires both certificate_chain_file and private_key_file")
+
     @hg.graph
     def implementation():
         service_requests = _http_handler_service.implementation_requests()
         routes = hg.operators.getattr(service_requests, hg.Symbol("route"))
         responses = hg.operators.getattr(service_requests, hg.Symbol("responses"))
-        outputs = _http_server_impl(routes, responses, host, port)
+        outputs = _http_server_impl(routes, responses, host, port, certificate_chain_file, private_key_file)
         _http_handler_service.implementation_replies(hg.operators.getattr(outputs, hg.Symbol("requests")))
         _http_server_port_service.implementation_replies(hg.operators.getattr(outputs, hg.Symbol("port")))
 
