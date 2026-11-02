@@ -55,14 +55,18 @@ rather than supplying an old result.
 ## reduce
 
 `reduce(graph, values, default=...)` in Python and
-`reduce(graph, values, "default"_n = ...)` in C++ combine valid TSD items. Python requires
-a decorated `@graph` reducer. Plain scalar annotations on its inputs resolve to time
-series inputs. The reducer graph has two explicit time-series inputs and returns a
-time series compatible with the item type. Scalar-valued items produce a scalar-valued
-result; other item types produce a reference to the reduced time series. The scalar case
-accepts a scalar default. Other
-item types accept a time-series default of the item type. The operation must be
-associative and commutative; dictionary order is unspecified. C++ context inputs are allowed.
+`reduce(graph, values, "default"_n = ...)` in C++ combine valid TSD items. Python accepts
+a decorated `@graph` reducer or a binary callable, including a lambda. A callable receives
+two wiring points during graph construction and must return a compatible wiring point.
+Its input types and expected result type come from the TSD item type. Plain scalar
+annotations on decorated graph inputs resolve to time-series inputs.
+
+The reducer graph has two explicit time-series inputs and returns a time series
+compatible with the item type. Scalar-valued items produce a scalar-valued result; other
+item types produce a reference to the reduced time series. The scalar case accepts a
+scalar default. Other item types accept a time-series default of the item type. The
+operation must be associative and commutative; dictionary order is unspecified. C++ context
+inputs are allowed.
 
 One valid item is forwarded directly. With no valid items, a valid dictionary uses the
 supplied default or has no result. An invalid dictionary has no result. Target changes

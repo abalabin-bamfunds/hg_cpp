@@ -910,7 +910,9 @@ selected = hg.switch_(key, {(1, 2): first, 3: second, hg.DEFAULT: fallback}, val
 `hg.reduce(reducer, values, default=...)` uses the native
 [reduce implementation](reduce.md). The binding specializes scalar-or-time-series
 graph inputs to the dictionary's ordinary-guarantee item type before native signature
-validation. A private sentinel distinguishes an omitted default from explicit `None`.
+validation. For an undecorated callable, it creates a Python graph definition whose two
+inputs and output use that item type. The callable receives wiring points during graph
+construction. A private sentinel distinguishes an omitted default from explicit `None`.
 See the [public contract](../../user/reference/higher-order.md#reduce) for defaults
 and result types.
 

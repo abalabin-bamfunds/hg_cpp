@@ -193,12 +193,8 @@ of current values.
 from hg import REMOVE, TS, TSD, graph, reduce, run_graph
 
 @graph
-def multiply(left: TS[int], right: TS[int]) -> TS[int]:
-    return left * right
-
-@graph
 def combined(values: TSD[int, TS[int]]) -> int:
-    return reduce(multiply, values, default=1)
+    return reduce(lambda left, right: left * right, values, default=1)
 
 print(run_graph(combined, [{1: 2, 2: 3}, {1: 4}, {2: REMOVE}]))
 ```
