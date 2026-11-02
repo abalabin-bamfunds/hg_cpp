@@ -778,6 +778,10 @@ For each reusable node and graph, test:
   callables, captured values, sparse TSD updates,
   invalid roots and items, omitted and explicit defaults, collection and reference
   items, guarantee weakening, invalid reducer signatures, and wiring exception identity
+- Python feedback through inferred connections and explicit handles, bounded loops,
+  first-tick timing, sparse updates, invalidation and revalidation, collection deltas,
+  independent handles and runs, guarantee compatibility, reference sampling, and
+  duplicate, cross-graph, and expired-handle rejection
 
 ### HTTP extension
 

@@ -38,6 +38,7 @@ imports and headers.
 | `emit` | [Reference](library-collections.md#construction-and-conversion) |
 | `eq` | [Reference](library-numeric.md#arithmetic) |
 | `ewma` | [Reference](library-stateful.md#ewma) |
+| `feedback` | [Reference](sources.md#feedback) |
 | `filter_` | [Reference](library-selection.md#filter_) |
 | `flip` | [Reference](library-collections.md#dictionary-transforms) |
 | `flip_keys` | [Reference](library-collections.md#dictionary-transforms) |

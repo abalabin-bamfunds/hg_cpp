@@ -879,6 +879,19 @@ that storage from a longer-lived owner or the current runtime allocation context
 Python wiring points are temporary proxies used while a graph is being
 constructed. They expire when graph construction returns.
 
+## Feedback
+
+`Feedback(time_series_type, name="")` owns the native `Feedback<TS_T>` wiring handle.
+Its `output` property returns a Python wiring point; `bind(value)` assigns the native
+capture sink once. The wrapper retains the graph's Python wiring lifetime and checks it
+before accessing the handle. Binding also checks the active owning graph.
+
+`feedback(value, name="")` uses native type inference and returns the delayed wiring
+point. `bg.operators.feedback` aliases `bg.feedback`. Both forms use the existing
+[feedback source and sink](evaluation.md#feedback). The
+[public contract](../../user/reference/sources.md#feedback) defines types, timing, and
+lifetime.
+
 ## Higher-order graphs
 
 `map`, `mesh`, `switch_`, and `reduce` accept decorated Python graph definitions and use

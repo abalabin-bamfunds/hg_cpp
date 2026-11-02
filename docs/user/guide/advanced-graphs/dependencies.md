@@ -206,3 +206,108 @@ Each requested key owns a graph instance. Dependency requests establish evaluati
 order. Recursive cycles are errors; the dependency graph must be acyclic.
 The [mesh reference](../../reference/higher-order.md#mesh) specifies branch selection,
 output access, and instance lifecycle.
+
+## Feedback loops
+
+Feedback sends an output change to a later evaluation time. A handle lets the graph
+connect a loop before the calculation that supplies its input has been wired.
+
+This loop starts from `1`, advances to `3`, and then stops publishing.
+
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from bg import Feedback, TS, graph, node, run_graph
+
+@node
+def advance(seed: int | None, previous: int | None) -> int:
+    if previous is None:
+        return seed
+    if previous < 3:
+        return previous + 1
+    return None
+
+@graph
+def bounded(seed: TS[int]) -> TS[int]:
+    loop = Feedback(TS[int], name="loop")
+    loop.bind(advance(seed, loop.output))
+    return loop.output
+
+print(run_graph(bounded, [1]))
+```
+
+Output:
+
+```text
+[None, 1, 2, 3]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <bg/feedback.hpp>
+#include <bg/node.hpp>
+#include <bg/run_graph.hpp>
+#include <iostream>
+#include <optional>
+
+using namespace bg;
+
+const auto advance = node([](std::optional<i64> seed, std::optional<i64> previous) -> std::optional<i64> {
+    if (!previous) {
+        return seed;
+    }
+    if (*previous < 3) {
+        return *previous + 1;
+    }
+    return std::nullopt;
+});
+
+auto bounded(wp<TS<i64>> seed) {
+    auto loop = feedback<TS<i64>>("loop");
+    loop = advance(seed, loop);
+    return static_cast<wp<TS<i64>>>(loop);
+}
+
+int main() {
+    std::cout << run_graph(bounded, {1}) << '\n';
+}
+```
+
+Output:
+
+```text
+[None, 1, 2, 3]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+The first result is invalid because feedback has not replayed an input yet. Each
+publication schedules the next iteration. Returning `None` in Python or `std::nullopt`
+in C++ leaves the node output unchanged and ends this loop. See the
+[feedback contract](../../reference/sources.md#feedback) for types, timing, and lifetime.

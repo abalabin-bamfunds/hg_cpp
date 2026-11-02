@@ -1,4 +1,4 @@
-# Sources, timers, and queues
+# Sources, feedback, timers, and queues
 
 Sources introduce updates without changing graph inputs. Use library `const_` and
 `schedule` for fixed values and periodic signals. Custom sources supply
@@ -30,6 +30,30 @@ The type argument uses normal time-series type-variable matching. A reference
 type argument matches through its target, so `nothing[REF[TS[int]]]()` creates
 an invalid target series. A reference input can receive a valid reference to
 that invalid series.
+
+## Feedback
+
+`feedback(value, name="")` returns a time series that replays the input's final change
+state from each evaluation cycle at the next minimum evaluation time, one microsecond
+later. It is initially invalid. Replay preserves invalidation,
+revalidation, and collection deltas. Python imports `Feedback` and `feedback` from `bg`;
+`bg.operators.feedback` is the same function. C++ includes `<bg/feedback.hpp>` and uses
+`bg::feedback`.
+
+To wire a loop before its input exists, Python creates `Feedback(TS[int], name="loop")`.
+Use its `.output` connection in downstream graph code, then call `.bind(value)` once to
+connect the capture sink. C++ creates `feedback<TS<i64>>("loop")`, uses the handle as a
+wiring point, and assigns its input once. The source and sink must belong to the same
+graph. Python handles expire when their graph construction returns.
+
+An explicit output type must be a resolved time-series type with no contained
+references and no root `const` guarantee. The input must satisfy that type, including
+its guarantees. `feedback(value)` infers the reference-free value type and changes a
+root `const` guarantee to `final`. The optional name labels the source and capture sink.
+
+A loop continues while it produces changes. Stop publication when the computation
+finishes or supply a runner time limit. See the
+[bounded loop example](../guide/advanced-graphs/dependencies.md#feedback-loops).
 
 ## Callback sources
 
