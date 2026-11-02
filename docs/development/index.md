@@ -52,3 +52,4 @@ history and are marked `superseded`.
 - [hgraph pattern recheck, 2026-10-30](reports/hgraph-pattern-recheck-2026-10-30.md): historical `2de7d53f` results and current focused verification after the nested-reference and switch-output corrections.
 - [hgraph pattern sweep, 2026-10-30](reports/hgraph-pattern-sweep-2026-10-30.md): additional collection and graph-composition cases with current classifications.
 - [hgraph reference-consumer sweep, 2026-10-30](reports/hgraph-reference-consumer-sweep-2026-10-30.md): source switching, mapped references, and higher-order consumers.
+- [hgraph reference-consumer sweep, 2026-11-02](reports/hgraph-reference-consumer-sweep-2026-11-02.md): metadata, stateful consumers, free collections, and branch lifetime.
