@@ -2,6 +2,7 @@
 
 #include <hg/evaluation_context.hpp>
 #include <hg/python/callback_scope.hpp>
+#include <hg/python/chrono.hpp>
 #include <hg/python/export.hpp>
 #include <hg/schedule_handle.hpp>
 

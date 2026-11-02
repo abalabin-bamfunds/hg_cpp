@@ -1,6 +1,7 @@
 #pragma once
 
 #include <hg/allocator.hpp>
+#include <hg/python/chrono.hpp>
 #include <hg/python/export.hpp>
 #include <hg/type/schema.hpp>
 #include <hg/scalar/dispatch.hpp>

@@ -157,18 +157,22 @@ def test_date_time_scalar_conversion_is_builtin_and_extensions_cannot_override_i
         extension.date_time_conversions_can_be_registered()
     )
     assert not date_time_added
-    assert date_time == datetime.fromtimestamp(0)
+    assert date_time == datetime(1970, 1, 1)
     assert not timedelta_added
     assert duration == timedelta(0)
-    assert date_time_view == datetime.fromtimestamp(0)
+    assert date_time_view == datetime(1970, 1, 1)
 
 
 @pytest.mark.parametrize(
     "value",
     [
+        datetime.min,
+        datetime(1900, 2, 28, 23, 59, 59, 123456),
         datetime(1970, 1, 1),
         datetime(1969, 12, 31, 23, 59, 59, 999999),
+        datetime(1970, 1, 1, 0, 0, 0, 1),
         datetime(2024, 5, 6, 7, 8, 9, 123456),
+        datetime.max,
     ],
 )
 def test_date_time_scalar_conversion_round_trips_microseconds(value):

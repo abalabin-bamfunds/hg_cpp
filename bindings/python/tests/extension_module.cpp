@@ -479,6 +479,12 @@ NB_MODULE(_hg_test_extension, module) {
                                     conversions.to_python(timedelta_scalar),
                                     conversions.to_python_view(date_time_scalar, lifetime, callback.generation()));
     });
+    module.def("evaluation_time_microseconds", [](hg::EvaluationTime value) {
+        return value.time_since_epoch().count();
+    });
+    module.def("evaluation_time_from_microseconds", [](std::int64_t value) {
+        return hg::EvaluationTime{std::chrono::microseconds{value}};
+    });
     module.def("convert_timedelta", [](nanobind::handle value) {
         auto memory = hg::allocator{};
         auto &conversions = hg::python::scalar_conversions();

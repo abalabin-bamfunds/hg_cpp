@@ -22,7 +22,7 @@
 #include <hg/util/scope_exit.hpp>
 
 #include <datetime.h>
-#include <nanobind/stl/chrono.h>
+#include <hg/python/chrono.hpp>
 
 #include <algorithm>
 #include <atomic>

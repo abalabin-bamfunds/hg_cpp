@@ -259,7 +259,7 @@ arguments follow the declared parameter types. Returned output is captured by
 default. Pass `capture_output=False` to omit the capture sink and storage.
 Outputless graphs and runs with capture disabled return `None`.
 
-`start_time` sets the first evaluation time using a timezone-naive local Python
+`start_time` sets the first evaluation time using a timezone-naive UTC Python
 `datetime`, as returned by `EvaluationClock`. When omitted, the defaults follow
 [direct execution](graph-wiring.md#direct-execution).
 `stop_time` accepts a timezone-naive `datetime`; `run_time` accepts a `timedelta`.
@@ -678,8 +678,11 @@ applies when a nested TSS or TSD item becomes invalid.
 
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
 `datetime.datetime`, `datetime.timedelta`, and `hg.Symbol`. A `datetime`
-maps to `EvaluationTime` with microsecond precision using the timezone-naive
-local contract. Timezone-aware values, `date`, and `time` objects are rejected.
+maps to `EvaluationTime` as a timezone-naive UTC timestamp with microsecond
+precision. Conversion uses UTC calendar fields and signed microseconds since
+the Unix epoch. Scalar values and evaluation timestamps use the same conversion.
+Timezone-aware values, `date`, and `time` objects are rejected.
+See the [UTC datetime decision](../decisions/0099-utc-python-datetimes.md).
 Durations map to signed 64-bit microseconds; conversion rejects values outside
 that range.
 `list[T]` declares an engine scalar list. Conversion copies its items using

@@ -744,8 +744,9 @@ For each reusable node and graph, test:
 - homogeneous scalar tuple annotations, nested and generic items, immutable
   Python materialization, expected-type sequence conversion and ownership,
   and rejection of mutable sequence annotations
-- timezone-naive datetime scalar conversion through scalar, time-series, and
-  nested scalar paths, including microsecond and pre-epoch values
+- timezone-naive UTC datetime conversion through scalar, time-series, nested
+  scalar, clock, scheduling, and run-limit paths, including microsecond and
+  pre-epoch values and independence from the machine's timezone
 - conversion between scalar tuple lists and TSL/TSS, scalar dictionaries and
   TSD, named scalar Bundle/TSB schemas, partially valid free combine results,
   and collect reset and emit behavior for supported collection types;

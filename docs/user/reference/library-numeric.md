@@ -36,7 +36,7 @@ Negation and absolute value of the minimum integer or duration return that same 
 value. Floating-point arithmetic uses normal C++ operations. String operations process
 bytes, including embedded NUL bytes. Temporal operators are native C++ overloads.
 Python `datetime.datetime` and `datetime.timedelta` map to `date_time_t` and
-`timedelta_t`; timestamp conversion uses a timezone-naive local datetime.
+`timedelta_t`; timestamp conversion uses a timezone-naive UTC datetime.
 
 Integer division converts both operands to `double` and uses native floating-point
 division. Conversion can round operands outside the consecutive-integer range, so

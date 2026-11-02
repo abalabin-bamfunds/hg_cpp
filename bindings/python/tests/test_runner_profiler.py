@@ -190,7 +190,7 @@ def test_run_graph_defaults_to_simulation_and_accepts_a_start_time():
     hg.run_graph(graph, engine=hg.EvaluationEngine.simulation, start_time=start_time)
 
     assert len(observed) == 2
-    assert observed[0] == datetime.fromtimestamp(0) + timedelta(microseconds=1)
+    assert observed[0] == datetime(1970, 1, 1) + timedelta(microseconds=1)
     assert observed[1] == start_time
 
 
@@ -267,7 +267,7 @@ import hg
 
 default_observed = []
 default_stop = hg.StopSource()
-before = datetime.datetime.now()
+before = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 
 @hg.node
 def default_source(clock: hg.EvaluationClock = None) -> int:
@@ -280,7 +280,7 @@ def default_graph() -> int:
     return default_source()
 
 hg.run_graph(default_graph, engine=hg.EvaluationEngine.realtime, stop_token=default_stop.get_token())
-after = datetime.datetime.now()
+after = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 assert len(default_observed) == 1
 assert before <= default_observed[0] <= after
 
@@ -647,7 +647,7 @@ try:
     hg.run_graph(
         graph,
         engine=hg.EvaluationEngine.realtime,
-        start_time=datetime.datetime.now() + datetime.timedelta(hours=1),
+        start_time=datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None) + datetime.timedelta(hours=1),
     )
 except KeyboardInterrupt:
     pass

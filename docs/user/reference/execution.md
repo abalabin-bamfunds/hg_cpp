@@ -68,9 +68,9 @@ start time. `stop_time` must be later than start; `run_time` must be positive. I
 limits are supplied, the earlier boundary wins. Work at the boundary is excluded.
 Scheduled work must fit the supported evaluation-time range.
 
-Python uses timezone-naive local `datetime` and `timedelta`. C++ uses `EvaluationTime`
-and its duration. Evaluation time describes graph events; wall-clock time describes
-physical time.
+Python uses timezone-naive UTC `datetime` for timestamps and `timedelta` for durations.
+C++ uses `EvaluationTime` and its duration. Evaluation time describes graph events;
+wall-clock time describes physical time.
 
 Python cancellation uses `StopSource().get_token()` and `request_stop()`. C++ uses
 `std::stop_source`. Simulation ignores stop tokens. Realtime cancellation completes

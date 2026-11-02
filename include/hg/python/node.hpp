@@ -4,6 +4,7 @@
 #include <hg/node/details/aggregate_node.hpp>
 #include <hg/node/details/aggregate_node_descriptor.hpp>
 #include <hg/node/details/callable_node.hpp>
+#include <hg/python/chrono.hpp>
 #include <hg/python/gil.hpp>
 
 #include <tuple>

@@ -1,6 +1,6 @@
 #include <hg/python/python_node_injection.hpp>
 
-#include <nanobind/stl/chrono.h>
+#include <hg/python/chrono.hpp>
 
 #include <stdexcept>
 

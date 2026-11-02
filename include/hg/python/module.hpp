@@ -1,5 +1,6 @@
 #pragma once
 
+#include <hg/python/chrono.hpp>
 #include <hg/python/export.hpp>
 
 #include <nanobind/nanobind.h>

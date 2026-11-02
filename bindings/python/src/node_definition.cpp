@@ -19,7 +19,7 @@
 #include <hg/util/scope_exit.hpp>
 
 #include <nanobind/stl/string.h>
-#include <nanobind/stl/chrono.h>
+#include <hg/python/chrono.hpp>
 
 #include <algorithm>
 #include <array>

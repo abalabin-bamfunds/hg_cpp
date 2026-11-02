@@ -12,7 +12,7 @@
 
 #include "delta.hpp"
 
-#include <nanobind/stl/chrono.h>
+#include <hg/python/chrono.hpp>
 #include <nanobind/stl/string.h>
 
 #include <memory_resource>

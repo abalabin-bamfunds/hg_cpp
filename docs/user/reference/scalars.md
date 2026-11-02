@@ -12,7 +12,7 @@ scalar types inside `TS` when the complete value should update together.
 | `bool` | `bool` | Boolean |
 | `str` | `string` | UTF-8 text at the Python boundary |
 | `Symbol` | `util::symbol` | Interned text; null differs from empty text |
-| `datetime.datetime` | `date_time_t` | Timezone-naive local timestamp with microsecond precision |
+| `datetime.datetime` | `date_time_t` | Timezone-naive UTC timestamp with microsecond precision |
 | `datetime.timedelta` | `timedelta_t` | Signed 64-bit microseconds |
 | `tuple[T, ...]` | `List<T>` | Homogeneous immutable scalar sequence |
 | `tuple[A, B]` | `Tuple<A, B>` | Fixed heterogeneous scalar sequence |
@@ -23,9 +23,10 @@ accepts tuples and lists when the expected type is known, owns the stored value,
 returns immutable tuples. Optional tuple items are unsupported. Python scalar set
 annotations are unsupported. C++ supports scalar sets and timestamp arithmetic.
 
-Timestamp conversion uses Python's timezone-naive local `datetime` contract.
-Conversion rejects timezone-aware values, `date`, and `time` objects. Values
-are preserved to microsecond precision.
+Timestamp conversion interprets a timezone-naive `datetime` as UTC:
+`datetime(1970, 1, 1)` maps to the Unix epoch. Values before and after the epoch
+retain microsecond precision, independently of the machine's timezone.
+Conversion rejects timezone-aware values, `date`, and `time` objects.
 
 Python dictionary node arguments use a read-only callback-scoped mapping view. `copy()`
 materializes it. C++ `Scalar<T>` borrows a value; `ScalarValue<T>` owns one. Retain

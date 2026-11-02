@@ -56,7 +56,7 @@
 #include "wiring_argument.hpp"
 
 #include <nanobind/stl/optional.h>
-#include <nanobind/stl/chrono.h>
+#include <hg/python/chrono.hpp>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>

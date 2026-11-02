@@ -9,7 +9,7 @@
 
 #include "delta.hpp"
 
-#include <nanobind/stl/chrono.h>
+#include <hg/python/chrono.hpp>
 
 #include <algorithm>
 #include <stdexcept>
