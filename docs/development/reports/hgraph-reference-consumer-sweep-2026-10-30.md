@@ -8,6 +8,8 @@ No production code is changed.
 The batch adds ten passing cases and four hidden reproductions of two findings:
 mesh branch output inference fails during wiring, and dictionary selection
 retains a valid item after its selected source removes that item.
+Both findings were reproduced and traced on 2026-11-02 against the unchanged
+BG baseline. Both are implementation bugs under the existing contracts.
 
 ## Source patterns
 
@@ -66,13 +68,22 @@ const auto sum_inner = graph([](wp<TSD<i64, TS<i64>>> items) -> wp<TS<i64>> {
 });
 ```
 
-Classification: wiring output-inference limitation. The explicit-output case
+Classification: wiring implementation bug. The explicit-output case
 establishes the mapped-reference runtime behavior.
 
 [`GraphTemplate`](../../../include/bg/graph/graph_template.hpp) permits output
 inference. Mesh wraps the branch in
 [`ScopedWiringTemplate`](../../../include/bg/graph/details/scoped_wiring_template.hpp),
-which inherits `allows_output_inference() == false` from `WiringTemplate`.
+which inherits `allows_output_inference() == false` from `WiringTemplate`
+instead of forwarding the target's policy. Signature resolution therefore
+requires an output mapping before invoking the graph body. It cannot use the
+body's returned wiring point to resolve `TS_T`, as required by the
+[graph output-inference contract](../design/graph-wiring.md#graph-templates).
+
+Mesh needs a known branch output type before wiring a `mesh()[key]` selection.
+This branch has no dependency selection, so that
+[mesh constraint](../design/mesh.md#purpose) does not require an output
+annotation here.
 
 ### Selected-key invalidation after source switching
 
@@ -105,8 +116,25 @@ A temporary node with an independent cycle input inspected
 at cycles 3 and 4. This confirms stale selected state or routing, rather than
 only missing change notifications. The diagnostic was removed after this check;
 the three retained reproductions assert collection deltas and scalar validity
-through ordinary downstream consumers. The exact production cause remains
-uninvestigated.
+through ordinary downstream consumers.
+
+Classification: runtime implementation bug in
+[`SampledDictionary::populate_changes`](../../../src/time_series/tsd/tsd_reference_sample.cpp).
+At cycle 3 both sources remove key 1 before the selection node runs. The sample
+enumerates only the currently live keys of the previous and current sources.
+Key 1 is absent from both enumerations, so the sample never reports its removal.
+The previous source's same-cycle removal information is available but unused.
+
+The paired [`SampledSet`](../../../src/time_series/tss/tss_reference_sample.cpp)
+reconstructs pre-cycle membership using same-cycle additions and removals.
+The dictionary item comparison does not apply that rule. Its sampled key set
+can therefore report a removal that its item delta omits.
+
+[`tsd_getitem_tss`](../../../src/time_series/tsd/operators.cpp) invalidates
+selected keys reported by `dictionary.for_each_removed`. That callback never
+receives key 1, so the result retains its previous reference. The correction
+belongs in dictionary sampling, where the transition from the previous
+source's pre-cycle membership to the current source must be computed.
 
 ## Scope
 
