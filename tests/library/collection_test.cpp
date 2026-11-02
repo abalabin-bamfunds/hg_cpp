@@ -562,7 +562,7 @@ TEST_CASE("map can select its own changing key set",
         return materialize(operators::getitem(mapped, operators::keys_(mapped)));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 20}},
                          {{1, 11}},
                          {{2, literal::REMOVE}, {3, 30}},
@@ -610,7 +610,7 @@ TEST_CASE("map rebinds items when a switch replaces a direct dictionary with map
         return materialize(map(add_cycle, selected, cycle));
     };
 
-    CHECK(bg::run_graph(tested, {0, 1, 2, 3})
+    CHECK(hg::run_graph(tested, {0, 1, 2, 3})
               .equals({{{1, 1}, {2, 2}}, {{1, 2}, {2, 3}}, {{1, 4}, {2, 5}}, {{1, 5}, {2, 6}}}));
 }
 
@@ -630,7 +630,7 @@ TEST_CASE("key-only map observes removal and re-addition through a retained mapp
         return map(observe, selected_keys, pass_through(mapped), "__key_arg__"_n = 0)[i64{2}];
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {{{1, 10}, {2, 20}}, {{1, 11}, {2, literal::REMOVE}}, {{1, 12}}, {{2, 22}}},
                         {{2}, literal::SKIP, literal::SKIP, literal::SKIP})
               .equals<bool>({true, false, std::nullopt, true}));
@@ -646,7 +646,7 @@ TEST_CASE("getitem validity follows a removed and re-added key after a source sw
         return operators::valid(operators::getitem(values, i64{1}));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {true, literal::SKIP, false, true, literal::SKIP, literal::SKIP, false, literal::SKIP},
         {{{1, 1}, {2, 2}}, {{1, 3}}, {{1, 4}}, {{1, literal::REMOVE}, {2, 5}},
@@ -673,7 +673,7 @@ TEST_CASE("getitem follows a changing key set across switched dictionary sources
         return materialize(operators::getitem(selected, keys));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {true, literal::SKIP, false, true, literal::SKIP, literal::SKIP, false, literal::SKIP},
         {{{1, 1}, {2, 2}}, {{1, 3}}, {{1, 4}}, {{1, literal::REMOVE}, {2, 5}},
@@ -705,7 +705,7 @@ TEST_CASE("getitem follows a changing key set through an identity map of switche
         return materialize(operators::getitem(map(identity, selected), keys));
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {true, literal::SKIP, false, true, literal::SKIP, literal::SKIP, false, literal::SKIP},
         {{{1, 1}, {2, 2}}, {{1, 3}}, {{1, 4}}, {{1, literal::REMOVE}, {2, 5}},
@@ -745,7 +745,7 @@ TEST_CASE("getitem reconciles same-cycle source changes when switching dictionar
                                {{1, 102}, {2, literal::REMOVE}}, literal::SKIP});
     const auto keys = ticks({{1}, {1, 2}, literal::SKIP, literal::SKIP});
 
-    CHECK(bg::run_graph(tested, selector, first, second, keys)
+    CHECK(hg::run_graph(tested, selector, first, second, keys)
               .equals({{{1, 10}}, {{1, 101}, {2, 201}}, {{1, 11}, {2, 20}}, {{2, 21}}}));
 
     const auto count_added = node([](In<TSD<i64, TS<i64>>, valid_items> input) {
@@ -759,7 +759,7 @@ TEST_CASE("getitem reconciles same-cycle source changes when switching dictionar
         return count_added(select_source(select_first, left, right));
     };
 
-    CHECK(bg::run_graph(added_count, selector, first, second).equals<i64>({1, 1, 0, 0}));
+    CHECK(hg::run_graph(added_count, selector, first, second).equals<i64>({1, 1, 0, 0}));
 }
 
 TEST_CASE("keys_ projects an ordinary dictionary without adding a runtime node",

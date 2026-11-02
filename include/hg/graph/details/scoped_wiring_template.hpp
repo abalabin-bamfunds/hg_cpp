@@ -18,6 +18,8 @@ template <typename ScopeFactory> class ScopedWiringTemplate final : public Wirin
         return target_->requirement(arguments);
     }
 
+    bool allows_output_inference() const noexcept final { return target_->allows_output_inference(); }
+
   private:
     util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,
                        util::symbol default_label) const final {

@@ -3,8 +3,8 @@
 #include <hg/node.hpp>
 #include <hg/operators.hpp>
 #include <hg/reduce.hpp>
-#include <hg/switch.hpp>
 #include <hg/run_graph.hpp>
+#include <hg/switch.hpp>
 #include <hg/testing/test_wiring.hpp>
 #include <hg/time_series/tsd/tsd_type.hpp>
 #include <hg/time_series/tss/tss_type.hpp>
@@ -21,6 +21,28 @@ namespace {
 
 using namespace hg;
 using namespace hg::literals;
+
+TEST_CASE("mesh infers its branch output and wires the branch graph once",
+          "[feature:mesh][feature:nested-graph][series:tsd][shape:nested]") {
+    const auto increment = node([](i64 value) { return value + 1; });
+    auto branch_wiring_count = std::size_t{};
+
+    const auto branch = graph("name"_n = "increment_mesh_item",
+                              [&](wp<TS<i64>> value) -> wp<> {
+                                  ++branch_wiring_count;
+                                  return wp<>{increment(value)};
+                              });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
+        const auto result = mesh(branch, values);
+        return result[i64{1}];
+    };
+
+    const auto actual = hg::run_graph(tested, {{{1, 1}}, {{1, 3}}});
+
+    CHECK(actual.equals<hg::i64>({2, 4}));
+    CHECK(branch_wiring_count == 1);
+}
 
 const auto add_mesh_dependency = node([](i64 value, std::optional<i64> dependency) {
     return value + dependency.value_or(0);
@@ -639,7 +661,7 @@ TEST_CASE("mesh reduces dictionary references returned by a map",
         return reduce(sum_mesh_values, totals, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{10, 1}, {20, 2}}}, {2, {{10, 4}}}},
          {{1, {{10, 10}, {20, literal::REMOVE}}}, {2, {{10, 8}}}},
@@ -650,7 +672,7 @@ TEST_CASE("mesh reduces dictionary references returned by a map",
 }
 
 TEST_CASE("mesh infers a reduction output while consuming mapped dictionary references",
-          "[.][repro][feature:mesh][feature:map][feature:reduce][feature:reference][series:tsd]"
+          "[feature:mesh][feature:map][feature:reduce][feature:reference][series:tsd]"
           "[shape:deeply-nested][transition:update][transition:removal][transition:addition]") {
     const auto identity = graph("name"_n = "identity_dictionary_for_mesh",
                                 [](wp<TSD<i64, TS<i64>>> values) { return values; });
@@ -666,7 +688,7 @@ TEST_CASE("mesh infers a reduction output while consuming mapped dictionary refe
         return reduce(sum_mesh_values, totals, "default"_n = i64{0});
     };
 
-    const auto actual = bg::run_graph(
+    const auto actual = hg::run_graph(
         tested,
         {{{1, {{10, 1}, {20, 2}}}, {2, {{10, 4}}}},
          {{1, {{10, 10}, {20, literal::REMOVE}}}, {2, {{10, 8}}}},

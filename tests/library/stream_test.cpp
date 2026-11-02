@@ -636,7 +636,7 @@ TEST_CASE("switching REF-forwarding branches that target the same scalar preserv
         return selected + i64{10};
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
                         {1, literal::SKIP, literal::SKIP, 2, 3, literal::SKIP, 4})
               .equals<i64>({11, std::nullopt, std::nullopt, 12, 13, std::nullopt, 14}));
@@ -655,7 +655,7 @@ TEST_CASE("switching REF-forwarding branches that target the same TSS preserves 
         return operators::len_(selected);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP, literal::SKIP},
                         {{1}, literal::SKIP, literal::SKIP, {2}, {3}, literal::SKIP,
                          {literal::REMOVED(2)}, {4}})
@@ -677,7 +677,7 @@ TEST_CASE("switching REF-forwarding branches that target the same TSD preserves 
         return operators::sum_("values"_n = opt(selected));
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
                         {{{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, {{1, 11}},
                          {{2, literal::REMOVE}}, literal::SKIP, {{2, 20}}})
@@ -700,7 +700,7 @@ TEST_CASE("switching REF-forwarding branches that target the same fixed TSL pres
                            values));
     };
 
-    CHECK(bg::run_graph(tested, {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
+    CHECK(hg::run_graph(tested, {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
                         {{{0, 1}, {1, 10}}, literal::SKIP, literal::SKIP, {{0, 2}}, {{1, 20}},
                          literal::SKIP, {{0, 3}}})
               .equals<i64>({11, std::nullopt, std::nullopt, 12, 22, std::nullopt, 23}));
@@ -721,7 +721,7 @@ TEST_CASE("switching REF-forwarding branches that target the same TSB preserves 
         return operators::getattr(selected, "left"_sym) + operators::getattr(selected, "right"_sym);
     };
 
-    CHECK(bg::run_graph(tested,
+    CHECK(hg::run_graph(tested,
                         {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
                         {{{"left", 1}, {"right", 10}}, literal::SKIP, literal::SKIP, {{"left", 2}},
                          {{"right", 20}}, literal::SKIP, {{"left", 3}}})
