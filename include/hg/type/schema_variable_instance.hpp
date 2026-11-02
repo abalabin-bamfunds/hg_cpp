@@ -10,9 +10,12 @@ namespace hg::details {
 
 template <util::compile_time_string Name>
 const TypeVariableType<SchemaType> &schema_variable_instance() {
-    static const auto variable = util::static_storage<TypeVariableType<SchemaType>>{util::symbol{Name.view()}};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
-    return variable.get();
+    static const auto &variable = TypeRegistry::instance().get_or_create_static<
+        SchemaVariableDeclaration<Name>, TypeVariableType<SchemaType>>([&]() -> const auto & {
+            static const auto variable = util::static_storage<TypeVariableType<SchemaType>>{util::symbol{Name.view()}};
+            return variable.get();
+        });
+    return variable;
 }
 
 template <typename Declaration>

@@ -45,6 +45,9 @@ template <typename T>
 concept graph_declaration = is_graph_declaration<std::remove_cv_t<T>>::value;
 
 template <typename Scope, typename Declaration, std::size_t Index>
+struct declared_graph_parameter_identity {};
+
+template <typename Scope, typename Declaration, std::size_t Index>
 const Type &declared_graph_parameter_type() {
     using Value = std::remove_cv_t<Declaration>;
 
@@ -55,10 +58,13 @@ const Type &declared_graph_parameter_type() {
             return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(
                 guarantee_parameter<Value::guarantee>());
         } else {
-            static const auto guarantee = util::static_storage<GuaranteeVariable>{
-                util::symbol{std::to_string(Index)}};
-            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
-            return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(guarantee.get());
+            static const auto &guarantee = VariableRegistry::instance().get_or_create_static<
+                declared_graph_parameter_identity<Scope, Declaration, Index>, GuaranteeVariable>([&]() -> const auto & {
+                    static const auto guarantee = util::static_storage<GuaranteeVariable>{
+                        util::symbol{std::to_string(Index)}};
+                    return guarantee.get();
+                });
+            return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, Value>(guarantee);
         }
     } else if constexpr (generic_scalar<Value>) {
         return scalar_variable_instance<Value>();

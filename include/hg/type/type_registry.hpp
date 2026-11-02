@@ -8,6 +8,7 @@
 #include <memory>
 #include <stdexcept>
 #include <typeindex>
+#include <type_traits>
 #include <unordered_map>
 #include <utility>
 #include <vector>
@@ -50,6 +51,20 @@ class HG_EXPORT TypeRegistry {
     TypeRegistry &operator=(const TypeRegistry &) = delete;
 
     static TypeRegistry &instance() noexcept;
+
+    // The factory runs only on a miss and returns a new, unregistered process-static descriptor.
+    template <typename Declaration, typename Descriptor, typename Factory>
+        requires std::derived_from<Descriptor, Type> &&
+                 std::same_as<std::invoke_result_t<Factory>, const Descriptor &>
+    const Descriptor &get_or_create_static(Factory &&factory) noexcept(std::is_nothrow_invocable_v<Factory>) {
+        if (const auto *found = find_static_type(typeid(Declaration), typeid(Descriptor))) {
+            return static_cast<const Descriptor &>(*found);
+        }
+
+        const auto &descriptor = std::invoke(std::forward<Factory>(factory));
+        register_static_type(descriptor, typeid(Declaration), typeid(Descriptor));
+        return descriptor;
+    }
 
     // Registration runs on one thread, including during evaluation. Factories must return a new descriptor and
     // must not request their own key recursively. Completed descriptors support concurrent reads.
@@ -97,6 +112,9 @@ class HG_EXPORT TypeRegistry {
 
     TypeRegistry() = default;
     static void register_static_type(const Type &type) noexcept;
+    void register_static_type(const Type &type, const std::type_info &declaration,
+                              const std::type_info &descriptor);
+    const Type *find_static_type(const std::type_info &declaration, const std::type_info &descriptor) const noexcept;
     void register_owned_type(std::unique_ptr<Type> type);
 
     std::unordered_map<std::type_index, std::unique_ptr<CacheBase>> caches_;

@@ -21,22 +21,32 @@ struct time_series_type_traits<TSD<Key, Item, Properties...>> {
 
     template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+        using Declaration = time_series_declaration_identity<time_series_type_traits, Scope, Index, Role>;
         const auto &key = scalar_type_for<Key>();
         const auto &value = time_series_type_for<Scope, Index, Role, Item>(guarantee);
-        static const auto key_set = util::static_storage<GenericTimeSeriesSetType>{key, guarantee};
-        [[maybe_unused]] static const auto &key_set_registration = TypeRegistry::register_static(key_set.get());
+        static const auto &key_set = TypeRegistry::instance().get_or_create_static<
+            Declaration, GenericTimeSeriesSetType>([&]() -> const auto & {
+                static const auto key_set = util::static_storage<GenericTimeSeriesSetType>{key, guarantee};
+                return key_set.get();
+            });
 
         if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<Key>::generic) {
-            static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set.get(),
-                                                                                          guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesDictionaryType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set,
+                                                                                                  guarantee};
+                    return type.get();
+                });
+            return type;
         }
         if (!value.is_resolved() || !guarantee.is_resolved()) {
-            static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set.get(),
-                                                                                          guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesDictionaryType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesDictionaryType>{key, value, key_set,
+                                                                                                  guarantee};
+                    return type.get();
+                });
+            return type;
         }
 
         return time_series_dictionary_type(key, value, *guarantee.value());

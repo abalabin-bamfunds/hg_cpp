@@ -115,6 +115,8 @@ using callable_wiring_output_t = std::conditional_t<
         typename callable_return_output<typename callable<Function>::result_type>::type>::time_series_type,
     callable_output_t<Function>>;
 
+template <typename Scope, typename Function, std::size_t Index> struct callable_input_identity {};
+
 template <typename Scope, typename Function, std::size_t Index>
 const TimeSeriesType &callable_input_type(util::symbol name) {
     using Field = callable_field<Function, Index>;
@@ -126,9 +128,12 @@ const TimeSeriesType &callable_input_type(util::symbol name) {
         return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(
             guarantee_parameter<TimeSeries::guarantee>());
     } else {
-        static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
-        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
-        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
+        static const auto &guarantee = VariableRegistry::instance().get_or_create_static<
+            callable_input_identity<Scope, Function, Index>, GuaranteeVariable>([&]() -> const auto & {
+                static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
+                return guarantee.get();
+            });
+        return time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
     }
 }
 

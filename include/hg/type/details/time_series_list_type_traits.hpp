@@ -17,6 +17,7 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
 
     template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+        using Declaration = time_series_declaration_identity<time_series_type_traits, Scope, Index, Role>;
         if constexpr (!size_variable_declaration<decltype(Size)>) {
             static_assert(Size != std::dynamic_extent, "variable-size time series lists are not implemented");
         }
@@ -24,14 +25,20 @@ template <typename Item, auto Size, auto... Properties> struct time_series_type_
         const auto size = size_parameter<Size>();
 
         if constexpr (Role == TimeSeriesTypeRole::input) {
-            static const auto type = util::static_storage<GenericTimeSeriesListType>{item, size, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesListType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesListType>{item, size, guarantee};
+                    return type.get();
+                });
+            return type;
         }
         if (!item.is_resolved() || !size.is_resolved() || !guarantee.is_resolved()) {
-            static const auto type = util::static_storage<GenericTimeSeriesListType>{item, size, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesListType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesListType>{item, size, guarantee};
+                    return type.get();
+                });
+            return type;
         }
 
         return time_series_list_type(item, *size.value(), *guarantee.value());

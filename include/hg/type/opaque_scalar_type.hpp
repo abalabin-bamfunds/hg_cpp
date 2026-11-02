@@ -19,10 +19,13 @@ template <typename T> class OpaqueScalarType final : public ScalarType {
 };
 
 template <typename T> const ScalarType &opaque_scalar_type() noexcept {
-    static const auto type = util::static_storage<OpaqueScalarType<T>>{};
-    type.get().set_default_runtime_type_factory(&cpp_scalar_runtime_type_for_type<Opaque<T>>);
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-    return type.get();
+    static const auto &type = TypeRegistry::instance().get_or_create_static<
+        Opaque<T>, OpaqueScalarType<T>>([&]() -> const auto & {
+            static const auto type = util::static_storage<OpaqueScalarType<T>>{};
+            type.get().set_default_runtime_type_factory(&cpp_scalar_runtime_type_for_type<Opaque<T>>);
+            return type.get();
+        });
+    return type;
 }
 
 } // namespace hg::details

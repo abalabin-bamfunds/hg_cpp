@@ -58,10 +58,13 @@ namespace details {
 
 template <typename... Items> const ScalarType &tuple_declaration_type() {
     if constexpr ((scalar_declaration_traits<Items>::generic || ...)) {
-        static const auto type = util::static_storage<GenericTupleScalarType>{
-            std::vector<const ScalarType *>{&scalar_type_for<Items>()...}};
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-        return type.get();
+        static const auto &type = TypeRegistry::instance().get_or_create_static<
+            Tuple<Items...>, GenericTupleScalarType>([&]() -> const auto & {
+                static const auto type = util::static_storage<GenericTupleScalarType>{
+                    std::vector<const ScalarType *>{&scalar_type_for<Items>()...}};
+                return type.get();
+            });
+        return type;
     } else {
         const auto item_types = std::array<const ScalarType *, sizeof...(Items)>{&cpp_scalar_type<Items>()...};
         return tuple_scalar_type(item_types);

@@ -35,21 +35,27 @@ template <typename Declaration> struct TimeSeriesVariableInstance;
 
 template <util::compile_time_string Name> struct TimeSeriesVariableInstance<TimeSeriesVariable<Name>> {
     static const TypeVariableType<TimeSeriesType> &get() {
-        static const auto variable = util::static_storage<TypeVariableType<TimeSeriesType>>{util::symbol{Name.view()}};
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
+        static const auto &variable = TypeRegistry::instance().get_or_create_static<
+            TimeSeriesVariable<Name>, TypeVariableType<TimeSeriesType>>([&]() -> const auto & {
+                static const auto variable = util::static_storage<TypeVariableType<TimeSeriesType>>{util::symbol{Name.view()}};
+                return variable.get();
+            });
 
-        return variable.get();
+        return variable;
     }
 };
 
 template <typename Variable, auto Guarantee>
 struct TimeSeriesVariableInstance<TimeSeriesVariableWithGuarantee<Variable, Guarantee>> {
     static const GenericTimeSeriesVariableType &get() {
-        static const auto type = util::static_storage<GenericTimeSeriesVariableType>{
-            TimeSeriesVariableInstance<Variable>::get(), guarantee_parameter<Guarantee>()};
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+        static const auto &type = TypeRegistry::instance().get_or_create_static<
+            TimeSeriesVariableWithGuarantee<Variable, Guarantee>, GenericTimeSeriesVariableType>([&]() -> const auto & {
+                static const auto type = util::static_storage<GenericTimeSeriesVariableType>{
+                    TimeSeriesVariableInstance<Variable>::get(), guarantee_parameter<Guarantee>()};
+                return type.get();
+            });
 
-        return type.get();
+        return type;
     }
 };
 

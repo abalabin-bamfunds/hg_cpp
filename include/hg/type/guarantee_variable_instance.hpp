@@ -14,11 +14,14 @@ template <typename Declaration>
     requires guarantee_variable_declaration<Declaration>
 const GuaranteeVariable &guarantee_variable_instance() {
     using Variable = std::remove_cv_t<Declaration>;
-    static const auto variable = util::static_storage<GuaranteeVariable>{util::symbol{Variable::name.view()},
-                                                                          Variable::minimum};
-    [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(variable.get());
+    static const auto &variable = VariableRegistry::instance().get_or_create_static<
+        Variable, GuaranteeVariable>([&]() -> const auto & {
+            static const auto variable = util::static_storage<GuaranteeVariable>{util::symbol{Variable::name.view()},
+                                                                                  Variable::minimum};
+            return variable.get();
+        });
 
-    return variable.get();
+    return variable;
 }
 
 template <auto Declaration>

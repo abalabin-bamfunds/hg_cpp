@@ -279,9 +279,12 @@ const ResolvedHierarchicalScalarType &hierarchical_scalar_type() {
 
 template <template <template <typename, auto...> typename> typename Schema>
 const GenericHierarchicalScalarType &generic_hierarchical_scalar_type() {
-    static const auto type = util::static_storage<GenericHierarchicalScalarType>{schema_type<Schema>::type()};
-    [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-    return type.get();
+    static const auto &type = TypeRegistry::instance().get_or_create_static<
+        Bundle<Schema>, GenericHierarchicalScalarType>([&]() -> const auto & {
+            static const auto type = util::static_storage<GenericHierarchicalScalarType>{schema_type<Schema>::type()};
+            return type.get();
+        });
+    return type;
 }
 
 } // namespace details

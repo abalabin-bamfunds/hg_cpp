@@ -13,6 +13,9 @@
 
 namespace hg::details {
 
+template <typename Declaration, typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
+struct time_series_declaration_identity {};
+
 template <typename T>
 concept has_cpp_scalar_type = requires { cpp_scalar_type<T>(); };
 

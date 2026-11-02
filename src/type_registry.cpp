@@ -17,6 +17,23 @@ void TypeRegistry::register_static_type(const Type &type) noexcept {
     type.registry_entry().link(instance().static_entries_);
 }
 
+void TypeRegistry::register_static_type(const Type &type, const std::type_info &declaration,
+                                        const std::type_info &descriptor) {
+    if (!type.registry_entry().link(static_entries_, declaration, descriptor)) {
+        throw std::invalid_argument{"a static declaration factory returned a registered type"};
+    }
+}
+
+const Type *TypeRegistry::find_static_type(const std::type_info &declaration,
+                                          const std::type_info &descriptor) const noexcept {
+    for (auto *entry = static_entries_; entry != nullptr; entry = entry->next()) {
+        if (entry->matches(declaration, descriptor)) {
+            return &entry->object();
+        }
+    }
+    return nullptr;
+}
+
 void TypeRegistry::register_owned_type(std::unique_ptr<Type> type) {
     owned_types_.push_back(std::move(type));
 }

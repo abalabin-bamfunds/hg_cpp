@@ -177,11 +177,14 @@ template <util::compile_time_string Name, typename... Alternatives> struct TypeV
     static_assert(sizeof...(Alternatives) > 0, "a type variable requires at least one alternative");
 
     static const TypeVariableType<Type> &type() {
-        static const auto variable = util::static_storage<TypeVariableType<Type>>{
-            util::symbol{Name.view()}, std::vector<const Type *>{&alternative_type<Alternatives>()...}};
-        [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(variable.get());
+        static const auto &variable = TypeRegistry::instance().get_or_create_static<
+            TypeVariable<Name, Alternatives...>, TypeVariableType<Type>>([&]() -> const auto & {
+                static const auto variable = util::static_storage<TypeVariableType<Type>>{
+                    util::symbol{Name.view()}, std::vector<const Type *>{&alternative_type<Alternatives>()...}};
+                return variable.get();
+            });
 
-        return variable.get();
+        return variable;
     }
 
     static constexpr auto name = Name;

@@ -482,6 +482,10 @@ template <typename Definition> struct aggregate_node_class<Definition, true> {
                                   (aggregate_node_has_evaluate<Definition> || aggregate_node_has_start<Definition>);
 };
 
+template <typename Definition, std::size_t Index> struct aggregate_input_identity {};
+
+template <typename Scope, std::size_t Index, typename Value> struct promoted_argument_identity {};
+
 template <typename Definition, std::size_t Index> const TimeSeriesType &input_type() {
     using Field = std::remove_cv_t<util::aggregate_member_type<Index, Definition>>;
     using TimeSeries = typename input_field<Field>::time_series_type;
@@ -492,10 +496,13 @@ template <typename Definition, std::size_t Index> const TimeSeriesType &input_ty
         return time_series_type_for<Definition, Index, TimeSeriesTypeRole::input, TimeSeries>(
             guarantee_parameter<TimeSeries::guarantee>());
     } else {
-        static const auto guarantee = util::static_storage<GuaranteeVariable>{
-            util::symbol{util::aggregate_member_names<Definition>[Index]}};
-        [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
-        return time_series_type_for<Definition, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
+        static const auto &guarantee = VariableRegistry::instance().get_or_create_static<
+            aggregate_input_identity<Definition, Index>, GuaranteeVariable>([&]() -> const auto & {
+                static const auto guarantee = util::static_storage<GuaranteeVariable>{
+                    util::symbol{util::aggregate_member_names<Definition>[Index]}};
+                return guarantee.get();
+            });
+        return time_series_type_for<Definition, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
     }
 }
 
@@ -503,14 +510,20 @@ template <typename Scope, std::size_t Index, typename Value>
 const Type &promoted_type(util::symbol name) {
     using TimeSeries = TS<Value>;
 
-    static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
-    [[maybe_unused]] static const auto &guarantee_registration = VariableRegistry::register_static(guarantee.get());
-    const auto &time_series = time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
-    static const auto variable = util::static_storage<TypeVariableType<Type>>{
-        name, std::vector<const Type *>{&scalar_type_for<Value>(), &time_series}};
-    [[maybe_unused]] static const auto &type_registration = TypeRegistry::register_static(variable.get());
+    static const auto &guarantee = VariableRegistry::instance().get_or_create_static<
+        promoted_argument_identity<Scope, Index, Value>, GuaranteeVariable>([&]() -> const auto & {
+            static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
+            return guarantee.get();
+        });
+    const auto &time_series = time_series_type_for<Scope, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
+    static const auto &variable = TypeRegistry::instance().get_or_create_static<
+        promoted_argument_identity<Scope, Index, Value>, TypeVariableType<Type>>([&]() -> const auto & {
+            static const auto variable = util::static_storage<TypeVariableType<Type>>{
+                name, std::vector<const Type *>{&scalar_type_for<Value>(), &time_series}};
+            return variable.get();
+        });
 
-    return variable.get();
+    return variable;
 }
 
 template <typename Definition, std::size_t Index> const Type &aggregate_promoted_type() {

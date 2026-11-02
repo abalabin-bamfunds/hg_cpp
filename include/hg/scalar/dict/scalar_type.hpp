@@ -50,11 +50,14 @@ const DictScalarType &dict_scalar_type(const ScalarType &key_type, const ScalarT
 template <typename K, typename V> struct scalar_type_traits<Dict<K, V>> {
     static const ScalarType &type() {
         if constexpr (scalar_declaration_traits<K>::generic || scalar_declaration_traits<V>::generic) {
-            static const auto type = util::static_storage<GenericDictScalarType>{details::scalar_type_for<K>(),
-                                                                                 details::scalar_type_for<V>()};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Dict<K, V>, GenericDictScalarType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericDictScalarType>{details::scalar_type_for<K>(),
+                                                                                         details::scalar_type_for<V>()};
+                    return type.get();
+                });
 
-            return type.get();
+            return type;
         } else {
             const auto &type = dict_scalar_type(details::scalar_type_for<K>(), details::scalar_type_for<V>());
             type.set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<Dict<K, V>>);

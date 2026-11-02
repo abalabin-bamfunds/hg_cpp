@@ -16,6 +16,7 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
 
     template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+        using Declaration = time_series_declaration_identity<time_series_type_traits, Scope, Index, Role>;
         constexpr auto target_role = Role == TimeSeriesTypeRole::input ? Role : TimeSeriesTypeRole::declaration;
         const auto &target = time_series_type_for<Scope, Index, target_role, Target>(TimeSeriesGuarantee::ordinary);
 
@@ -26,14 +27,20 @@ template <typename Target, auto... Properties> struct time_series_type_traits<RE
         }
 
         if constexpr (Role == TimeSeriesTypeRole::input || generic_time_series<Target>) {
-            static const auto type = util::static_storage<GenericTimeSeriesReferenceType>{target, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesReferenceType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesReferenceType>{target, guarantee};
+                    return type.get();
+                });
+            return type;
         }
         if (!target.is_resolved() || !guarantee.is_resolved()) {
-            static const auto type = util::static_storage<GenericTimeSeriesReferenceType>{target, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesReferenceType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesReferenceType>{target, guarantee};
+                    return type.get();
+                });
+            return type;
         }
 
         return time_series_reference_type(target, *guarantee.value());

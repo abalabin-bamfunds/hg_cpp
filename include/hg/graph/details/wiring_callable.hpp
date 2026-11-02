@@ -172,6 +172,8 @@ decltype(auto) invoke_graph_function(const Function &function, const WiringArgum
     }
 }
 
+template <typename Function, std::size_t Index> struct wiring_parameter_identity {};
+
 template <typename Function, std::size_t Index>
 bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParameter &parameter) {
     using Parameter = typename graph_callable<Function>::template argument_type<Index>;
@@ -192,9 +194,12 @@ bool wiring_parameter_matches(const Parameter &declaration, const ResolvedParame
                     return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(
                         guarantee_parameter<TimeSeries::guarantee>());
                 } else {
-                    static const auto guarantee = util::static_storage<GuaranteeVariable>{parameter.name};
-                    [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
-                    return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
+                    static const auto &guarantee = VariableRegistry::instance().get_or_create_static<
+                        wiring_parameter_identity<Function, Index>, GuaranteeVariable>([&]() -> const auto & {
+                            static const auto guarantee = util::static_storage<GuaranteeVariable>{parameter.name};
+                            return guarantee.get();
+                        });
+                    return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
                 }
             }();
             return declared.accepts(*parameter.type);

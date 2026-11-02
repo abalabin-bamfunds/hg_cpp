@@ -17,6 +17,26 @@ target_link_libraries(test_shared_schema_provider PRIVATE hg::hg)
 target_include_directories(test_shared_schema_provider PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
 set_target_properties(test_shared_schema_provider PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
 
+add_library(test_shared_declarations_provider SHARED type/test_shared_declarations_provider.cpp)
+target_link_libraries(test_shared_declarations_provider PRIVATE hg::hg)
+set_target_properties(test_shared_declarations_provider PROPERTIES WINDOWS_EXPORT_ALL_SYMBOLS ON)
+
+add_executable(hg_declaration_identity_tests type/declaration_identity_test.cpp)
+target_link_libraries(hg_declaration_identity_tests PRIVATE hg::library Catch2::Catch2WithMain
+                                                          test_shared_declarations_provider)
+target_compile_definitions(hg_declaration_identity_tests PRIVATE
+                           $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
+if(WIN32)
+    add_custom_command(
+        TARGET hg_declaration_identity_tests POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                $<TARGET_RUNTIME_DLLS:hg_declaration_identity_tests>
+                $<TARGET_FILE_DIR:hg_declaration_identity_tests>
+        COMMAND_EXPAND_LISTS
+    )
+endif()
+add_test(NAME hg_declaration_identity_tests COMMAND hg_declaration_identity_tests)
+
 add_library(test_shared_literal_sentinel SHARED type/test_shared_literal_sentinel.cpp)
 target_link_libraries(test_shared_literal_sentinel PRIVATE hg::hg)
 target_include_directories(test_shared_literal_sentinel PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/type")
@@ -288,7 +308,13 @@ if(Python3_Interpreter_FOUND)
             --dimensions "${PROJECT_SOURCE_DIR}/docs/development/testing.md"
             --output "${PROJECT_BINARY_DIR}/library-test-coverage.md"
             --check
-        DEPENDS hg_tests hg_library_tests
+        COMMAND
+            "${Python3_EXECUTABLE}" "${PROJECT_SOURCE_DIR}/tools/test_coverage.py"
+            "$<TARGET_FILE:hg_declaration_identity_tests>"
+            --dimensions "${PROJECT_SOURCE_DIR}/docs/development/testing.md"
+            --output "${PROJECT_BINARY_DIR}/declaration-test-coverage.md"
+            --check
+        DEPENDS hg_tests hg_library_tests hg_declaration_identity_tests
         VERBATIM
     )
 endif()

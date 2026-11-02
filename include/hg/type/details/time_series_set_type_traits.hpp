@@ -18,17 +18,24 @@ template <typename Item, auto... Properties> struct time_series_type_traits<TSS<
 
     template <typename Scope, std::size_t Index, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {
+        using Declaration = time_series_declaration_identity<time_series_type_traits, Scope, Index, Role>;
         const auto &item = scalar_type_for<Item>();
 
         if constexpr (Role == TimeSeriesTypeRole::input || scalar_declaration_traits<Item>::generic) {
-            static const auto type = util::static_storage<GenericTimeSeriesSetType>{item, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesSetType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesSetType>{item, guarantee};
+                    return type.get();
+                });
+            return type;
         }
         if (!guarantee.is_resolved()) {
-            static const auto type = util::static_storage<GenericTimeSeriesSetType>{item, guarantee};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
-            return type.get();
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Declaration, GenericTimeSeriesSetType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericTimeSeriesSetType>{item, guarantee};
+                    return type.get();
+                });
+            return type;
         }
 
         return time_series_set_type(item, *guarantee.value());

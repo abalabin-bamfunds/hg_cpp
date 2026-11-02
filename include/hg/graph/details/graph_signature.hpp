@@ -42,6 +42,8 @@ template <util::compile_time_string Name, typename... Alternatives>
 struct graph_time_series_union<TypeVariable<Name, Alternatives...>>
     : std::bool_constant<(supported_time_series<Alternatives> && ...)> {};
 
+template <typename Function, std::size_t Index> struct graph_parameter_identity {};
+
 template <typename Function, std::size_t Index> const Type &graph_parameter_type(util::symbol name) {
     using Parameter = std::remove_cvref_t<typename graph_callable<Function>::template argument_type<Index>>;
 
@@ -58,9 +60,12 @@ template <typename Function, std::size_t Index> const Type &graph_parameter_type
             return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(
                 guarantee_parameter<TimeSeries::guarantee>());
         } else {
-            static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
-            [[maybe_unused]] static const auto &registration = VariableRegistry::register_static(guarantee.get());
-            return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee.get());
+            static const auto &guarantee = VariableRegistry::instance().get_or_create_static<
+                graph_parameter_identity<Function, Index>, GuaranteeVariable>([&]() -> const auto & {
+                    static const auto guarantee = util::static_storage<GuaranteeVariable>{name};
+                    return guarantee.get();
+                });
+            return time_series_type_for<Function, Index, TimeSeriesTypeRole::input, TimeSeries>(guarantee);
         }
     } else if constexpr (supported_optional_scalar_argument<Parameter>) {
         using Scalar = typename optional_scalar_argument<Parameter>::value_type;

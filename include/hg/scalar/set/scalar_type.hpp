@@ -43,10 +43,13 @@ const SetScalarType &set_scalar_type(const ScalarType &item_type);
 template <typename T> struct scalar_type_traits<Set<T>> {
     static const ScalarType &type() {
         if constexpr (scalar_declaration_traits<T>::generic) {
-            static const auto type = util::static_storage<GenericSetScalarType>{details::scalar_type_for<T>()};
-            [[maybe_unused]] static const auto &registration = TypeRegistry::register_static(type.get());
+            static const auto &type = TypeRegistry::instance().get_or_create_static<
+                Set<T>, GenericSetScalarType>([&]() -> const auto & {
+                    static const auto type = util::static_storage<GenericSetScalarType>{details::scalar_type_for<T>()};
+                    return type.get();
+                });
 
-            return type.get();
+            return type;
         } else {
             const auto &type = set_scalar_type(details::scalar_type_for<T>());
             type.set_default_runtime_type_factory(&details::cpp_scalar_runtime_type_for_type<Set<T>>);
