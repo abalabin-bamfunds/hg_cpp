@@ -53,8 +53,9 @@ After installation, CMake consumers can use
 
 ## Python bindings
 
-The optional Python package uses nanobind. Install nanobind and pytest in the
-Python environment selected by CMake, then configure and build with:
+The `hg-cpp` distribution provides the `hgraph` Python module through nanobind.
+Install nanobind and pytest in the Python environment selected by CMake, then
+configure and build with:
 
 ```sh
 python -m pip install nanobind pytest
@@ -64,7 +65,7 @@ ctest --test-dir build/dev --output-on-failure -R '^python_tests$'
 ```
 
 This builds the `hg::python` CMake target and the Python package in
-`build/dev/bindings/python`. Installed CMake consumers can link `hg::python`;
+`build/dev/bindings/python/hgraph`. Installed CMake consumers can link `hg::python`;
 request it with `find_package(hg COMPONENTS python REQUIRED)`. Consumers that
 use only `hg::hg` do not require Python or nanobind. See [Python
 integration](docs/development/design/python.md) for the implemented API and package details. The

@@ -16,8 +16,8 @@ results can be returned, passed to another calculation, or used by several consu
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 
 @graph
@@ -107,8 +107,8 @@ argument supplies a fixed value; a connection preserves its dependency.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 
 @graph
@@ -201,7 +201,7 @@ Here, `apply_offset` selects the calculation for the complete run.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 
 @graph

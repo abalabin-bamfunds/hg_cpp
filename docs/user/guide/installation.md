@@ -1,8 +1,9 @@
 # Installation
 
 HG requires a C++23 compiler and CMake 3.31 or later. Python authoring requires
-Python 3.12 or later. The following commands build from a local repository checkout;
-configuration downloads build dependencies.
+Python 3.12 or later. The `hg-cpp` distribution provides the `hgraph` import package.
+The following commands build from a local repository checkout; configuration downloads
+build dependencies.
 
 ::::{tab-set}
 :sync-group: language
@@ -19,7 +20,7 @@ or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 
 ```sh
 python -m pip install .
-python -c "from hg import graph, run_graph; print('HG is available')"
+python -c "from hgraph import graph, run_graph; print('HG is available')"
 ```
 :::
 

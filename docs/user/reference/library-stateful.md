@@ -38,8 +38,8 @@ Keep a two-event separation from the current value:
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import lag
+from hgraph import graph, run_graph
+from hgraph.operators import lag
 
 @graph
 def previous(value: int) -> int:
@@ -137,7 +137,7 @@ input. Invalidating `reset` does not clear history or contribute another value.
 :sync: python
 
 ```python
-from hg.operators import sums
+from hgraph.operators import sums
 
 total = sums(value)
 restarted_total = sums(value, reset=reset)
@@ -171,8 +171,8 @@ Skipped positions do not advance history.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import diff
+from hgraph import graph, run_graph
+from hgraph.operators import diff
 
 @graph
 def change(value: int) -> int:
@@ -257,8 +257,8 @@ to final.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import ewma
+from hgraph import graph, run_graph
+from hgraph.operators import ewma
 
 @graph
 def smoothed(value: float) -> float:

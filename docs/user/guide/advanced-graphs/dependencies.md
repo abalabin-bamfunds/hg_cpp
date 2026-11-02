@@ -16,8 +16,8 @@ but its updates alone do not publish a sample.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import sample
+from hgraph import graph, run_graph
+from hgraph.operators import sample
 
 
 @graph
@@ -120,7 +120,7 @@ expresses relationships such as a component total depending on its parent total.
 :sync: python
 
 ```python
-from hg import TS, TSD, graph, mesh, node, run_graph
+from hgraph import TS, TSD, graph, mesh, node, run_graph
 
 @node
 def add_available(reading: int, dependency: int | None) -> int:
@@ -222,7 +222,7 @@ This loop starts from `1`, advances to `3`, and then stops publishing.
 :sync: python
 
 ```python
-from hg import Feedback, TS, graph, node, run_graph
+from hgraph import Feedback, TS, graph, node, run_graph
 
 @node
 def advance(seed: int | None, previous: int | None) -> int:

@@ -17,7 +17,7 @@ response. Register the service implementation in the same catalogue as the liste
 :sync: python
 
 ```python
-from hg import TS, service
+from hgraph import TS, service
 from hg_web import AuthDecision, HttpServerRequest, http_handler
 
 @service
@@ -107,8 +107,8 @@ arguments. It returns `TS[Auth]` or a supported derived authentication type.
 :sync: python
 
 ```python
-from hg import TS, graph
-from hg.operators import const_
+from hgraph import TS, graph
+from hgraph.operators import const_
 from hg_web import BearerAuth, register_client_auth, register_client_transports
 
 @graph

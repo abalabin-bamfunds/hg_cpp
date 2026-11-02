@@ -15,8 +15,8 @@ Prerequisites: [Graph functions](../guide/graphs/composition.md#graph-functions)
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import dedup
+from hgraph import graph, run_graph
+from hgraph.operators import dedup
 
 @graph
 def temperature_alarm(reading: int, limit: int) -> bool:

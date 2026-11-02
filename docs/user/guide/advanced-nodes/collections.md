@@ -16,7 +16,7 @@ Validity-aware traversal omits unavailable values.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, compute_node, graph, run_graph
+from hgraph import REMOVE, TS, TSD, compute_node, graph, run_graph
 
 @compute_node
 def product(values: TSD[int, TS[int]]) -> TS[int]:
@@ -132,8 +132,8 @@ changes as key additions and removals.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, compute_node, graph, run_graph
-from hg.operators import sum_
+from hgraph import REMOVE, TS, TSD, compute_node, graph, run_graph
+from hgraph.operators import sum_
 
 @compute_node
 def adjust(readings: TSD[int, TS[int]]) -> TSD[int, TS[int]]:
@@ -236,7 +236,7 @@ unchanged. C++ nodes can return values or use an explicit `Out<>` field.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def accepted(reading: int) -> int:

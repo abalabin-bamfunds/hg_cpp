@@ -31,8 +31,8 @@ A **graph function** constructs these connections; node code computes their valu
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 @graph
 def subtotal(price: int, quantity: int) -> int:

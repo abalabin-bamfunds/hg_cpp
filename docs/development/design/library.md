@@ -3,7 +3,7 @@
 ## Public surface
 
 C++ graph code includes `<hg/library.hpp>` and links `hg::library`. Python
-graph code uses `hg.operators`. Both surfaces expose native library operators
+graph code uses `hgraph.operators`. Both surfaces expose native library operators
 and the engine's `const_`, `default_`, `getitem`, `getattr`, `map`, `mesh`, and
 `switch_` operators. All use normal overload resolution.
 
@@ -18,10 +18,10 @@ const auto calculate = graph([](wp<TS<double>> x, wp<TS<double>> y) {
 ```
 
 ```python
-import hg
+import hgraph
 
-@hg.graph
-def calculate(x: hg.TS[float], y: hg.TS[float]) -> hg.TS[float]:
+@hgraph.graph
+def calculate(x: hgraph.TS[float], y: hgraph.TS[float]) -> hgraph.TS[float]:
     return (x + 2.0) * y
 ```
 
@@ -135,7 +135,7 @@ The collection overloads support these conversions:
 | Named TSB with scalar-valued fields | `TS<Bundle<SCHEMA>>` |
 
 Python uses `tuple[T, ...]` for scalar List annotations. Scalar Set annotations
-are not yet exposed; `hg.TSS[T]` is available. See the
+are not yet exposed; `hgraph.TSS[T]` is available. See the
 [Python type mappings](python.md).
 
 Set items and dictionary keys must support hashing. List-to-TSL conversion
@@ -197,7 +197,7 @@ their normal membership and item changes.
 | `TSD<K, TS<V>>` | Added or modified valid entries |
 
 Dictionary events use the public `operators::key_value` schema, exposed as
-`hg.KeyValue` in Python. Its `key` and `value` field types resolve from the
+`hgraph.KeyValue` in Python. Its `key` and `value` field types resolve from the
 source dictionary. A downstream node can name the schema directly:
 
 ```cpp
@@ -208,8 +208,8 @@ const auto read_value = node(
 ```
 
 ```python
-@hg.compute_node
-def read_value(entry: hg.TSB[hg.KeyValue]) -> hg.TS[int]:
+@hgraph.compute_node
+def read_value(entry: hgraph.TSB[hgraph.KeyValue]) -> hgraph.TS[int]:
     return entry.value.value
 ```
 
@@ -292,7 +292,7 @@ repeated identical condition values do not publish additional ticks. Selection
 applies to the whole collection. Both inputs must have a
 [common time series type](type-system.md#time-series-guarantees).
 
-These operators are available under `hg::operators` in C++ and `hg.operators`
+These operators are available under `hg::operators` in C++ and `hgraph.operators`
 in Python.
 
 ## Merge
@@ -494,8 +494,8 @@ auto restarted_total = operators::sums(value, "reset"_n = reset);
 ```
 
 ```python
-total = hg.operators.sums(value)
-restarted_total = hg.operators.sums(value, reset=reset)
+total = hgraph.operators.sums(value)
+restarted_total = hgraph.operators.sums(value, reset=reset)
 ```
 
 ## Collection reductions
@@ -515,8 +515,8 @@ auto available_total = operators::sum_(opt(values));
 ```
 
 ```python
-complete_total = hg.operators.sum_(values)
-available_total = hg.operators.sum_(hg.opt(values))
+complete_total = hgraph.operators.sum_(values)
+available_total = hgraph.operators.sum_(hgraph.opt(values))
 ```
 
 With no contributing items, sum publishes zero and the other reductions
@@ -555,8 +555,8 @@ auto available = operators::any_(opt(values));
 ```
 
 ```python
-complete = hg.operators.all_(values)
-available = hg.operators.any_(hg.opt(values))
+complete = hgraph.operators.all_(values)
+available = hgraph.operators.any_(hgraph.opt(values))
 ```
 
 Use `valid_items(values)` to exclude invalid TSD items while still requiring
@@ -636,7 +636,7 @@ TSD `getitem` accepts a TSS of keys. It returns a dictionary of references for
 the selected keys. A selected key absent from the source dictionary remains in
 the result with an invalid reference. This composes with `keys_where_true`:
 C++ uses `values[operators::keys_where_true(mask)]`; Python uses
-`values[hg.operators.keys_where_true(mask)]`.
+`values[hgraph.operators.keys_where_true(mask)]`.
 
 ## Text operations
 
@@ -733,8 +733,8 @@ If all groups are absent, the TSL is invalid under the normal
 succeeds. Capture output guarantees limit const to final.
 
 ```python
-found = hg.operators.matches(r"(\w+)-(\d+)", text)
-captures = hg.operators.match_(r"(\w+)-(\d+)", text)
+found = hgraph.operators.matches(r"(\w+)-(\d+)", text)
+captures = hgraph.operators.match_(r"(\w+)-(\d+)", text)
 word, number = captures[0], captures[1]
 ```
 
@@ -809,8 +809,8 @@ auto empty = operators::is_empty(available);
 
 ```python
 shared = lhs & rhs
-available = hg.opt(lhs) | hg.opt(rhs)
-empty = hg.operators.is_empty(available)
+available = hgraph.opt(lhs) | hgraph.opt(rhs)
+empty = hgraph.operators.is_empty(available)
 ```
 
 TSS set results publish only actual membership changes, including a first
@@ -864,8 +864,8 @@ operators. Python uses the named Boolean operators because its `and`, `or`,
 and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
 ```python
-bounded = hg.operators.and_(x > 0, x < 10)
-negated = hg.operators.not_(bounded)
+bounded = hgraph.operators.and_(x > 0, x < 10)
+negated = hgraph.operators.not_(bounded)
 ```
 
 Boolean graph operations do not short-circuit. C++ evaluates both operand

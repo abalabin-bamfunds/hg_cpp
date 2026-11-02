@@ -17,7 +17,7 @@ updates produce one evaluation with all current values.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 
 @graph
@@ -119,7 +119,7 @@ A calculation can accept an input without publishing a new result. Python return
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def accepted(reading: int) -> int:

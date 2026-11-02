@@ -24,7 +24,7 @@ current value and update information.
 :sync: python
 
 ```python
-from hg import TS, TSL, graph, run_graph
+from hgraph import TS, TSL, graph, run_graph
 
 @graph
 def first_sensor(readings: TSL[TS[int], 2]) -> int:
@@ -107,8 +107,8 @@ field names and types.
 :sync: python
 
 ```python
-from hg import TSB, graph, schema, symbol, run_graph
-from hg.operators import getattr
+from hgraph import TSB, graph, schema, symbol, run_graph
+from hgraph.operators import getattr
 
 @schema
 class Sensor:
@@ -203,7 +203,7 @@ A supplied mapping is a delta: omitted keys remain unchanged.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, graph, run_graph
+from hgraph import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def sensor_one(readings: TSD[int, TS[int]]) -> int:
@@ -286,8 +286,8 @@ for removal; C++ literals use `REMOVED`.
 :sync: python
 
 ```python
-from hg import Removed, TSS, graph, run_graph
-from hg.operators import contains_
+from hgraph import Removed, TSS, graph, run_graph
+from hgraph.operators import contains_
 
 @graph
 def sensor_one_active(sensors: TSS[int]) -> bool:
@@ -369,8 +369,8 @@ valid immediate items. An optional reduction ignores unavailable items.
 :sync: python
 
 ```python
-from hg import INVALID, TS, TSD, graph, opt, run_graph
-from hg.operators import sum_
+from hgraph import INVALID, TS, TSD, graph, opt, run_graph
+from hgraph.operators import sum_
 
 @graph
 def total(values: TSD[int, TS[int]]) -> int:

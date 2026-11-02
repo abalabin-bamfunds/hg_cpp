@@ -1,6 +1,6 @@
 # Text operations
 
-Python imports text operators from `hg.operators`. C++ imports `hg::operators` from
+Python imports text operators from `hgraph.operators`. C++ imports `hg::operators` from
 `<hg/library.hpp>`. Text operands can be scalar strings or string time series.
 Symbol operands are accepted by character and case operations; produced text is a
 string. Required input invalidation invalidates the result. Operations propagate
@@ -33,8 +33,8 @@ Unicode. Case folding also does not normalize Unicode.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import substr, upper
+from hgraph import graph, run_graph
+from hgraph.operators import substr, upper
 
 @graph
 def prefix(name: str) -> str:
@@ -213,8 +213,8 @@ Accepted levels are `trace`, `debug`, `info`, `warning`, `error`, `critical`, an
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import format_
+from hgraph import graph, run_graph
+from hgraph.operators import format_
 
 @graph
 def label(value: int) -> str:
@@ -304,8 +304,8 @@ invalidates every item. Capture guarantees limit const to final.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import matches
+from hgraph import graph, run_graph
+from hgraph.operators import matches
 
 @graph
 def valid_name(name: str) -> bool:
@@ -394,8 +394,8 @@ empty string.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import join, split
+from hgraph import graph, run_graph
+from hgraph.operators import join, split
 
 @graph
 def path(text: str) -> str:

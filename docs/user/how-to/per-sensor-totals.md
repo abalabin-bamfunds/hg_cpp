@@ -16,8 +16,8 @@ Prerequisites: [Dictionaries](../guide/advanced-graphs/collections.md#dictionari
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, graph, map, run_graph
-from hg.operators import sums
+from hgraph import REMOVE, TS, TSD, graph, map, run_graph
+from hgraph.operators import sums
 
 @graph
 def accumulated_quantity(quantity: int) -> int:

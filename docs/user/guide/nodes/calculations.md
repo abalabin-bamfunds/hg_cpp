@@ -16,7 +16,7 @@ them from the callable's signature.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def correct(reading: int) -> int:
@@ -119,7 +119,7 @@ inside the callback.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def total(prices: tuple[int, ...]) -> int:

@@ -29,8 +29,8 @@ Skipping an update preserves it. `valid` exposes availability as a Boolean resul
 :sync: python
 
 ```python
-from hg import INVALID, graph, run_graph
-from hg.operators import valid
+from hgraph import INVALID, graph, run_graph
+from hgraph.operators import valid
 
 @graph
 def has_temperature(reading: int) -> bool:
@@ -131,8 +131,8 @@ scalar sequence's two positions independent time series outputs.
 :sync: python
 
 ```python
-from hg import TS, TSL, graph, run_graph
-from hg.operators import convert
+from hgraph import TS, TSL, graph, run_graph
+from hgraph.operators import convert
 
 @graph
 def first(prices: tuple[int, ...]) -> int:

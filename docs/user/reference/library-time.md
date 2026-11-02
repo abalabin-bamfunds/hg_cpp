@@ -29,8 +29,8 @@ Measure spacing between input updates in microseconds. Each literal position is 
 
 ```python
 from datetime import timedelta
-from hg import node, graph, run_graph
-from hg.operators import elapsed
+from hgraph import node, graph, run_graph
+from hgraph.operators import elapsed
 
 @node
 def microseconds(value: timedelta) -> int:
@@ -200,8 +200,8 @@ shows period and run-limit syntax.
 
 ```python
 from datetime import timedelta
-from hg import graph, run_graph
-from hg.operators import resample
+from hgraph import graph, run_graph
+from hgraph.operators import resample
 
 @graph
 def snapshots(value: int) -> int:

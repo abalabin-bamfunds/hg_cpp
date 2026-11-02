@@ -23,8 +23,8 @@ a violating publication fails.
 :sync: python
 
 ```python
-from hg import TS, final, graph, run_graph
-from hg.operators import const_
+from hgraph import TS, final, graph, run_graph
+from hgraph.operators import const_
 
 @graph
 def configured(offset: TS[int, final]) -> int:
@@ -125,7 +125,7 @@ uses of one variable constrain those arguments together.
 
 ```python
 from typing import TypeVar
-from hg import TS, graph, run_graph
+from hgraph import TS, graph, run_graph
 
 VALUE = TypeVar("VALUE")
 
@@ -214,7 +214,7 @@ constructs connections for the supplied argument list.
 :sync: python
 
 ```python
-from hg import SIZE, TS, TSL, compute_node, graph, run_graph
+from hgraph import SIZE, TS, TSL, compute_node, graph, run_graph
 
 @compute_node
 def total(*values: TSL[TS[int], SIZE]) -> TS[int]:

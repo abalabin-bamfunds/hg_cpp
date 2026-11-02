@@ -19,7 +19,7 @@ keeps the test's separate input times visible in the node history.
 
 ```python
 from datetime import timedelta
-from hg import EvaluationProfiler, graph, run_graph
+from hgraph import EvaluationProfiler, graph, run_graph
 
 @graph
 def temperature(reading: int) -> int:

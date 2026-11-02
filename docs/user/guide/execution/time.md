@@ -16,8 +16,8 @@ Time operations schedule results independently of input arrival. Durations use
 
 ```python
 from datetime import timedelta
-from hg import graph, run_graph
-from hg.operators import count, schedule
+from hgraph import graph, run_graph
+from hgraph.operators import count, schedule
 
 @graph
 def requests() -> int:
@@ -103,8 +103,8 @@ order, including repeated values.
 
 ```python
 from datetime import timedelta
-from hg import graph, run_graph
-from hg.operators import delay
+from hgraph import graph, run_graph
+from hgraph.operators import delay
 
 @graph
 def delayed(reading: int) -> int:
@@ -186,8 +186,8 @@ input event to publish the preceding event.
 
 ```python
 from datetime import timedelta
-from hg import graph, run_graph
-from hg.operators import throttle
+from hgraph import graph, run_graph
+from hgraph.operators import throttle
 
 @graph
 def reported(reading: int) -> int:

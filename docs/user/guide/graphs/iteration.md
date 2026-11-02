@@ -16,8 +16,8 @@ Each iteration can add calculations to the graph.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 @graph
 def total() -> int:
@@ -106,7 +106,7 @@ that instance.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, graph, map, run_graph
+from hgraph import REMOVE, TS, TSD, graph, map, run_graph
 
 @graph
 def calibrate(reading: int) -> int:
@@ -203,7 +203,7 @@ mapped by key.
 :sync: python
 
 ```python
-from hg import TS, TSD, graph, map, pass_through, run_graph
+from hgraph import TS, TSD, graph, map, pass_through, run_graph
 
 @graph
 def calibrate(reading: int, offset: int) -> int:

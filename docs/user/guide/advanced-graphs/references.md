@@ -16,7 +16,7 @@ the calculation even when the key does not change.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, graph, run_graph
+from hgraph import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def selected(readings: TSD[int, TS[int]], sensor: int) -> int:

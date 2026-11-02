@@ -27,7 +27,7 @@ The graph function connects outputs; a node receives their current values:
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def correct(reading: int) -> int:
@@ -124,8 +124,8 @@ an explicit conversion to floating point.
 :sync: python
 
 ```python
-from hg import TS, graph, run_graph
-from hg.operators import convert
+from hgraph import TS, graph, run_graph
+from hgraph.operators import convert
 
 @graph
 def scaled(reading: int) -> float:

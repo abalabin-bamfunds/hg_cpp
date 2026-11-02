@@ -18,7 +18,7 @@ reference targets. Ordinary integer connections use this form:
 :sync: python
 
 ```python
-from hg import TS, graph, run_graph
+from hgraph import TS, graph, run_graph
 
 @graph
 def corrected(reading: TS[int]) -> TS[int]:
@@ -99,7 +99,7 @@ A time series dictionary updates individual items. Omitted keys retain their val
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, graph, run_graph
+from hgraph import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def sensor_one(readings: TSD[int, TS[int]]) -> int:
@@ -181,7 +181,7 @@ uses time series annotations for views; C++ uses `In<TS<T>>`.
 :sync: python
 
 ```python
-from hg import TS, compute_node, graph, run_graph
+from hgraph import TS, compute_node, graph, run_graph
 
 @compute_node
 def reading_changed(reading: TS[int], offset: TS[int]) -> TS[bool]:
@@ -271,7 +271,7 @@ separately for each independent instance.
 :sync: python
 
 ```python
-from hg import State, graph, node, run_graph
+from hgraph import State, graph, node, run_graph
 
 class Readings:
     def __init__(self):
@@ -382,7 +382,7 @@ an ordinary value input follows.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, graph, run_graph
+from hgraph import REMOVE, TS, TSD, graph, run_graph
 
 @graph
 def selected(readings: TSD[int, TS[int]], sensor: int) -> int:

@@ -21,8 +21,8 @@ The full error also lists the rejected overloads and their reasons.
 :sync: python
 
 ```python
-from hg import TS, graph, run_graph
-from hg.operators import convert
+from hgraph import TS, graph, run_graph
+from hgraph.operators import convert
 
 @graph
 def mixed_types(reading: int) -> float:
@@ -135,7 +135,7 @@ first rejects zero, then implements a policy that skips the result for zero.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def ratio(reading: int, divisor: int) -> int:

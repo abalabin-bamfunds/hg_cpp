@@ -31,7 +31,7 @@ with `hg::python`.
 
 ## Distribution
 
-The Python distribution is named `hg_cpp`; its import package remains `hg`.
+The Python distribution is named `hg-cpp`; its import package is `hgraph`.
 The distribution workflow builds one `cp312-abi3` wheel for Linux
 `manylinux_2_28_x86_64`, macOS arm64, and Windows amd64, plus a source
 distribution. It audits the wheel ABI and contents, repairs platform
@@ -49,38 +49,38 @@ The package exports time-series annotations, node and graph decorators,
 `run_graph`, engine operators, `Symbol`, and `symbol`.
 
 ```python
-import hg
+import hgraph
 from typing import TypeVar
 
-@hg.source_node
-def source() -> hg.TS[int]:
+@hgraph.source_node
+def source() -> hgraph.TS[int]:
     return 1
 
-@hg.compute_node
-def add(value: hg.TS[int], amount: int = 2) -> hg.TS[int]:
+@hgraph.compute_node
+def add(value: hgraph.TS[int], amount: int = 2) -> hgraph.TS[int]:
     return value.value + amount
 
-@hg.graph
-def example() -> hg.TS[int]:
+@hgraph.graph
+def example() -> hgraph.TS[int]:
     return add(source())
 
-assert hg.run_graph(example) == [3]
+assert hgraph.run_graph(example) == [3]
 ```
 
 Use standard `typing.TypeVar` declarations for generic graph signatures. An
 unbounded or scalar-constrained TypeVar represents a scalar type; use it inside
 `TS[...]` or as a plain scalar graph parameter. Bind a TypeVar to
-`hg.TimeSeries` when it represents an entire time-series type:
+`hgraph.TimeSeries` when it represents an entire time-series type:
 
 ```python
 VALUE = TypeVar("VALUE")
-SERIES = TypeVar("SERIES", bound=hg.TimeSeries)
+SERIES = TypeVar("SERIES", bound=hgraph.TimeSeries)
 
-@hg.graph
-def identity(value: hg.TS[VALUE]) -> hg.TS[VALUE]:
+@hgraph.graph
+def identity(value: hgraph.TS[VALUE]) -> hgraph.TS[VALUE]:
     return value
 
-@hg.graph
+@hgraph.graph
 def forward(value: SERIES) -> SERIES:
     return value
 ```
@@ -90,17 +90,17 @@ root guarantee, so repeated occurrences require that same type.
 
 TypeVar identity determines which occurrences share a type mapping. Names are
 descriptive only, so separate TypeVar objects with the same name remain
-independent. `hg.TimeSeries` is a typing marker for the TypeVar bound; it is not
+independent. `hgraph.TimeSeries` is a typing marker for the TypeVar bound; it is not
 a value annotation.
 
 Specialize a generic graph with its fully resolved input types. The resulting
 graph definition can be called from normal wiring and passed to `run_graph`:
 
 ```python
-specialized = graph[hg.TS[int], hg.TSD[int, hg.TS[str]]]
+specialized = graph[hgraph.TS[int], hgraph.TSD[int, hgraph.TS[str]]]
 ```
 
-`hg.operators` is the shared namespace for engine and library operators,
+`hgraph.operators` is the shared namespace for engine and library operators,
 including higher-order graph operators. Native operators use C++ overload
 resolution for both explicit calls and wiring-point special methods.
 Wiring-point arithmetic and comparison methods call the native operators and
@@ -108,25 +108,25 @@ preserve operand order. See the [standard library](library.md) for supported
 types and wiring syntax.
 
 Wiring points support `/`, `//`, `%`, and `**`; `round(point, ndigits)` and
-`abs(point)` call the corresponding operators. `hg.operators.convert` takes an
+`abs(point)` call the corresponding operators. `hgraph.operators.convert` takes an
 explicit full result type descriptor:
 
 ```python
-converted = hg.operators.convert[hg.TS[float]](integer_value)
+converted = hgraph.operators.convert[hgraph.TS[float]](integer_value)
 ```
 
 The built-in conversions support `int` and `float`. C++ overload registration
 can extend `convert` to other time-series inputs and collection outputs.
 Positional and named arguments can contain wiring points or registered Python
 scalar values. A sink operator returns `None`. The higher-order operators are
-the same objects as `hg.map`, `hg.mesh`, `hg.switch_`, and `hg.reduce`.
+the same objects as `hgraph.map`, `hgraph.mesh`, `hgraph.switch_`, and `hgraph.reduce`.
 
 ```python
-@hg.graph
-def constant() -> hg.TS[int]:
-    return hg.operators.const_(value=42)
+@hgraph.graph
+def constant() -> hgraph.TS[int]:
+    return hgraph.operators.const_(value=42)
 
-item = collection[key]  # hg.operators.getitem(collection, key)
+item = collection[key]  # hgraph.operators.getitem(collection, key)
 ```
 
 `getitem` and `getattr` also accept Python-object time series. `getitem` accepts
@@ -134,27 +134,27 @@ a scalar or time-series key. `getattr` accepts a scalar string or symbol name.
 The output scalar type is inferred from the Python `__getitem__` return
 annotation or the selected attribute's annotation; provide an explicit output
 type when inference is unavailable, for example
-`hg.operators.getitem[int](value, key)` or
-`hg.operators.getattr[int](value, "count")`. The bracketed type is the scalar
+`hgraph.operators.getitem[int](value, key)` or
+`hgraph.operators.getattr[int](value, "count")`. The bracketed type is the scalar
 value type; these overloads return `TS` of that type.
 Time-series collection overloads do not accept a bracketed output type.
 
-`hg.opt(point)` requires an optional receiving parameter. It returns a new
+`hgraph.opt(point)` requires an optional receiving parameter. It returns a new
 wiring proxy for the same time series and leaves `point` unchanged. It adds no
 runtime node or fallback value. The selected node defines how it handles an
 invalid input. See [optional arguments](operators.md#optional-arguments).
 
-`Annotated[TSD[K, V], hg.valid_items]` declares a filtered input view.
-`hg.valid_items(point)` requires that annotation on the receiving parameter:
+`Annotated[TSD[K, V], hgraph.valid_items]` declares a filtered input view.
+`hgraph.valid_items(point)` requires that annotation on the receiving parameter:
 
 ```python
 from typing import Annotated
 
-@hg.compute_node
-def count(values: Annotated[hg.TSD[int, hg.TS[int]], hg.valid_items]) -> hg.TS[int]:
+@hgraph.compute_node
+def count(values: Annotated[hgraph.TSD[int, hgraph.TS[int]], hgraph.valid_items]) -> hgraph.TS[int]:
     return len(values)
 
-count(hg.valid_items(values))
+count(hgraph.valid_items(values))
 ```
 
 The annotation adds no runtime node and leaves the original wiring point
@@ -194,16 +194,16 @@ Variadic parameters use a collection annotation. The function body receives
 one collection rather than expanded Python arguments:
 
 ```python
-@hg.graph
-def homogeneous(*values: hg.TSL[hg.TS[int], hg.SIZE]) -> hg.TS[int]:
+@hgraph.graph
+def homogeneous(*values: hgraph.TSL[hgraph.TS[int], hgraph.SIZE]) -> hgraph.TS[int]:
     return values[0]
 
-@hg.graph
-def positional(*values: hg.TSB[hg.TS_SCHEMA]) -> hg.TS[int]:
+@hgraph.graph
+def positional(*values: hgraph.TSB[hgraph.TS_SCHEMA]) -> hgraph.TS[int]:
     return values[0]
 
-@hg.graph
-def named(**values: hg.TSB[hg.TS_SCHEMA]) -> hg.TS[int]:
+@hgraph.graph
+def named(**values: hgraph.TSB[hgraph.TS_SCHEMA]) -> hgraph.TS[int]:
     return values["value"]
 ```
 
@@ -231,7 +231,7 @@ type. `INVALID` invalidates TS, TSL, TSB, TSS, or TSD inputs. A scalar collectio
 such as `TS[dict[int, str]]` remains one scalar value and is not interpreted as
 a TSD delta. Generic graph definitions
 require explicit, fully resolved input types, for example
-`run_graph(graph[hg.TS[int], hg.TSD[int, hg.TS[str]]], ...)`.
+`run_graph(graph[hgraph.TS[int], hgraph.TSD[int, hgraph.TS[str]]], ...)`.
 The graph can return `TS`, `TSS`, `TSL`, `TSD`, or `TSB`, including nested
 collections. `GraphRunResult` stores timestamped output events. Its `events` contain
 `(time, value)` pairs; `event_count` reports their count. `start_time` defines
@@ -243,18 +243,18 @@ results use `SetDelta`. Skipped and invalid root ticks become `None`.
 Invalidated collection items use `INVALID` and removed TSD keys use `REMOVE`.
 
 ```python
-@hg.graph
-def identity(values: hg.TSD[int, hg.TS[str]]) -> hg.TSD[int, hg.TS[str]]:
+@hgraph.graph
+def identity(values: hgraph.TSD[int, hgraph.TS[str]]) -> hgraph.TSD[int, hgraph.TS[str]]:
     return values
 
-assert hg.run_graph(identity, [{1: "first"}, {1: hg.REMOVE}, None]) == [
-    {1: "first"}, {1: hg.REMOVE}, None,
+assert hgraph.run_graph(identity, [{1: "first"}, {1: hgraph.REMOVE}, None]) == [
+    {1: "first"}, {1: hgraph.REMOVE}, None,
 ]
 ```
 
 `run_graph` wires a graph with normal Python arguments and selects its engine
-through `engine=hg.EvaluationEngine.simulation` or
-`engine=hg.EvaluationEngine.realtime`. Simulation is the default. Scalar
+through `engine=hgraph.EvaluationEngine.simulation` or
+`engine=hgraph.EvaluationEngine.realtime`. Simulation is the default. Scalar
 arguments follow the declared parameter types. Returned output is captured by
 default. Pass `capture_output=False` to omit the capture sink and storage.
 Outputless graphs and runs with capture disabled return `None`.
@@ -268,23 +268,23 @@ Input sequences and output capture support both engines. Result positions are
 relative to the run's start time.
 
 Realtime execution waits for work until a run limit or `stop_token` ends the run.
-Create a `hg.StopSource`, pass `source.get_token()` as `stop_token`, and call
+Create a `hgraph.StopSource`, pass `source.get_token()` as `stop_token`, and call
 `source.request_stop()` from a graph callback or another thread. Cancellation
 follows the [engine lifecycle](evaluation.md#realtime-evaluation).
 
 ```python
-stop_source = hg.StopSource()
+stop_source = hgraph.StopSource()
 
-@hg.node
+@hgraph.node
 def finish() -> int:
     stop_source.request_stop()
     return 42
 
-@hg.graph
-def realtime_example() -> hg.TS[int]:
+@hgraph.graph
+def realtime_example() -> hgraph.TS[int]:
     return finish()
 
-hg.run_graph(realtime_example, engine=hg.EvaluationEngine.realtime,
+hgraph.run_graph(realtime_example, engine=hgraph.EvaluationEngine.realtime,
              stop_token=stop_source.get_token())
 ```
 
@@ -306,8 +306,8 @@ Pass an optional recorder created by `EvaluationProfiler.recorder()` through
 the `recorder` keyword. Profiling follows the selected engine and start time.
 
 ```python
-profiler = hg.EvaluationProfiler()
-hg.run_graph(example, recorder=profiler.recorder())
+profiler = hgraph.EvaluationProfiler()
+hgraph.run_graph(example, recorder=profiler.recorder())
 print(profiler.report())
 ```
 
@@ -339,26 +339,26 @@ Register graph implementations with `ServiceCatalogue.register_impl`, then
 pass the catalogue to `run_graph`:
 
 ```python
-@hg.reference_service
-def clock() -> hg.TS[int]:
+@hgraph.reference_service
+def clock() -> hgraph.TS[int]:
     pass
 
-@hg.source_node
-def source() -> hg.TS[int]:
+@hgraph.source_node
+def source() -> hgraph.TS[int]:
     return 42
 
-@hg.graph
-def clock_implementation() -> hg.TS[int]:
+@hgraph.graph
+def clock_implementation() -> hgraph.TS[int]:
     return source()
 
-catalogue = hg.ServiceCatalogue()
+catalogue = hgraph.ServiceCatalogue()
 catalogue.register_impl(clock, clock_implementation)
 
-@hg.graph
-def client() -> hg.TS[int]:
+@hgraph.graph
+def client() -> hgraph.TS[int]:
     return clock()
 
-assert hg.run_graph(client, catalogue=catalogue) == [42]
+assert hgraph.run_graph(client, catalogue=catalogue) == [42]
 ```
 
 For a request/reply service, the implementation graph receives the request
@@ -370,7 +370,7 @@ implementation graph as installation arguments. The catalogue retains the
 Python service and graph wrappers while its native registrations are in use.
 
 Wrap a request/reply or subscription implementation with
-`hg.feedback_service_implementation(service, implementation)` to delay each
+`hgraph.feedback_service_implementation(service, implementation)` to delay each
 request by one cycle before the implementation receives it. The returned
 service implementation keeps the service and graph alive. Pass it to
 `ServiceCatalogue.register_impl` with the same scalar filters and installation
@@ -379,7 +379,7 @@ arguments:
 ```python
 catalogue.register_impl(
     echo,
-    hg.feedback_service_implementation(echo, echo_implementation),
+    hgraph.feedback_service_implementation(echo, echo_implementation),
     mode=2,
     factor=3,
 )
@@ -393,28 +393,28 @@ Connect each service's request and reply ports inside the graph, then register
 the graph and its service claims:
 
 ```python
-@hg.reference_service
-def clock() -> hg.TS[int]:
+@hgraph.reference_service
+def clock() -> hgraph.TS[int]:
     pass
 
-@hg.subscription_service
-def lookup(key: hg.TS[int, hg.final]) -> hg.TS[int]:
+@hgraph.subscription_service
+def lookup(key: hgraph.TS[int, hgraph.final]) -> hgraph.TS[int]:
     pass
 
-@hg.source_node
-def clock_source() -> hg.TS[int]:
+@hgraph.source_node
+def clock_source() -> hgraph.TS[int]:
     return 5
 
-@hg.compute_node
-def answer(keys: hg.TSS[int]) -> hg.TSD[int, hg.TS[int]]:
+@hgraph.compute_node
+def answer(keys: hgraph.TSS[int]) -> hgraph.TSD[int, hgraph.TS[int]]:
     return {key: key * 10 for key in keys.value}
 
-@hg.graph
+@hgraph.graph
 def implementation() -> None:
     lookup.implementation_replies(answer(lookup.implementation_requests()))
     clock.implementation_replies(clock_source())
 
-catalogue = hg.ServiceCatalogue()
+catalogue = hgraph.ServiceCatalogue()
 registration = catalogue.register_multiservice(implementation)
 registration.register_impl(clock)
 registration.register_impl(lookup)
@@ -430,8 +430,8 @@ by the Python multiservice API. Scalar filters passed to
 parameters.
 
 A subscription key uses a final-or-stronger time series, for example
-`hg.TS[int, hg.final]`. Its implementation receives `hg.TSS[int]` and returns
-`hg.TSD[int, R]` for the declared result type `R`. See
+`hgraph.TS[int, hgraph.final]`. Its implementation receives `hgraph.TSS[int]` and returns
+`hgraph.TSD[int, R]` for the declared result type `R`. See
 [graph services](services.md) for the signatures and request behavior.
 
 ## Time-series types
@@ -444,18 +444,18 @@ process lifetime. Definition and callback ownership follows the
 Python definitions can use these annotations:
 
 ```python
-hg.TS[int]
-hg.REF[hg.TS[int]]
-hg.TSS[int]
-hg.TSL[hg.TS[int], 4]
-hg.TSD[int, hg.TS[float]]
-hg.TSB[Quote]
+hgraph.TS[int]
+hgraph.REF[hgraph.TS[int]]
+hgraph.TSS[int]
+hgraph.TSL[hgraph.TS[int], 4]
+hgraph.TSD[int, hgraph.TS[float]]
+hgraph.TSB[Quote]
 ```
 
 A time-series annotation can add a root guarantee, for example
-`hg.TS[int, hg.final]` or `hg.TSD[int, hg.TS[float], hg.deduplicated]`.
-The available values are `hg.ordinary`, `hg.deduplicated`, `hg.final`, and
-`hg.const_`. An explicit input guarantee is a minimum: stronger sources also
+`hgraph.TS[int, hgraph.final]` or `hgraph.TSD[int, hgraph.TS[float], hgraph.deduplicated]`.
+The available values are `hgraph.ordinary`, `hgraph.deduplicated`, `hgraph.final`, and
+`hgraph.const_`. An explicit input guarantee is a minimum: stronger sources also
 match. An omitted input guarantee accepts and retains the source guarantee.
 Guarantees can also qualify concrete collection items and schema fields.
 The outer collection of a variadic `TSL[..., SIZE]` or `TSB[TS_SCHEMA]`
@@ -467,17 +467,17 @@ bundle fields and their TSB projection:
 ```python
 from typing import Optional
 
-@hg.schema
+@hgraph.schema
 class BaseQuote:
     bid: float
 
-@hg.schema
+@hgraph.schema
 class Quote(BaseQuote):
     ask: Optional[float]
 ```
 
-`hg.Bundle[Quote]` is a scalar type for schemas whose fields are all scalar.
-`hg.TSB[Quote]` is a time-series bundle type. A scalar field projects to a
+`hgraph.Bundle[Quote]` is a scalar type for schemas whose fields are all scalar.
+`hgraph.TSB[Quote]` is a time-series bundle type. A scalar field projects to a
 time series of that scalar type; an explicit time-series field passes through.
 The TSB projection does not preserve optional scalar presence. The scalar
 `Bundle` retains it, and the generated constructor defaults an omitted optional
@@ -486,10 +486,10 @@ field to `None`.
 Explicit time-series fields pass through to the TSB projection:
 
 ```python
-@hg.schema
+@hgraph.schema
 class MarketData:
     price: float
-    venue: hg.TS[str]
+    venue: hgraph.TS[str]
 ```
 
 Schemas support single inheritance. Each declaration has one identity shared by
@@ -497,7 +497,7 @@ its scalar and TSB projections. The qualified Python name is descriptive.
 Optional direct self-fields support recursive scalar bundles:
 
 ```python
-@hg.schema
+@hgraph.schema
 class Node:
     value: int
     child: Optional["Node"]
@@ -527,7 +527,7 @@ callback's declared order. A parameter name not present on the decorated
 function is an error.
 
 ```python
-@hg.node
+@hgraph.node
 def add(value: int, offset: int) -> int:
     return value + offset
 
@@ -542,26 +542,26 @@ must increase strictly. An empty generator is valid. The engine closes the
 generator when its node stops. Exceptions from stop callbacks are reported
 through Python's unraisable-exception hook after stop cleanup.
 
-Nodes can request `hg.EvaluationClock`, `hg.Scheduler`, or `hg.State[T]` as
+Nodes can request `hgraph.EvaluationClock`, `hgraph.Scheduler`, or `hgraph.State[T]` as
 parameters. Each injectable must have `= None` as its default and is omitted
 from the wiring signature. Place positional injectables after required
 positional parameters, or declare them keyword-only, because Python does not
 allow a required positional parameter after a defaulted one.
-An evaluation callback can also request `output: hg.Output = None`. This
+An evaluation callback can also request `output: hgraph.Output = None`. This
 provides the same read-only API as an input view, over the node's retained
 output before the callback's returned delta is applied. `modified` and
 `delta_value` keep their current-cycle meaning, so they are normally `False`
 and `None` during evaluation. Output views are valid only during their callback;
 the node publishes changes only by returning a delta. A lifecycle callback can
 request the same view by selecting the `output` parameter by name. `@generator`
-rejects `hg.Output` because its function parameters remain in the generator
+rejects `hgraph.Output` because its function parameters remain in the generator
 frame between callback invocations.
 `EvaluationClock.evaluation_time` exposes the evaluation time. `EvaluationClock.now`
 exposes the current time for the engine mode: evaluation time in simulation mode
 and wall-clock time in real-time mode. Both are Python `datetime` values.
 `Scheduler.schedule_at(time)` schedules that node at a later evaluation time.
 `Scheduler.schedule_wall_clock_at(time)` schedules it when the wall clock
-reaches the deadline. Both return a `hg.ScheduleHandle` and follow the
+reaches the deadline. Both return a `hgraph.ScheduleHandle` and follow the
 [timer semantics](evaluation.md#timed-scheduling).
 `Scheduler.cancel(handle)` cancels a pending handle for the same node.
 `Scheduler.timer_fired(handle)` reports whether that node's timer activated in
@@ -591,12 +591,12 @@ Omitting the return annotation declares a sink. The node runs at graph start
 only when all resolved inputs are scalar arguments.
 
 ```python
-@hg.node
+@hgraph.node
 def add(value: int, offset: int) -> int:
     return value + offset
 
-@hg.graph
-def example(value: hg.TS[int]) -> hg.TS[int]:
+@hgraph.graph
+def example(value: hgraph.TS[int]) -> hgraph.TS[int]:
     return add(value, 1)
 ```
 
@@ -621,7 +621,7 @@ the automatic optional validity from `Optional[T]`; an explicit `valid` tuple
 determines validity for every input.
 
 `dict[K, V]` declares a scalar dictionary. A plain `@node` callback receives a
-read-only `hg.Dict` mapping view for a dictionary parameter, whether graph code
+read-only `hgraph.Dict` mapping view for a dictionary parameter, whether graph code
 supplies a scalar or a `TS[dict[K, V]]`. The view expires when the callback returns.
 Length and key lookup do not convert unrelated entries; `[]` and `get()` each
 perform one dictionary lookup. Iterators advance a native cursor and convert
@@ -677,7 +677,7 @@ invalid. The delta is `None` on a later unchanged invalid cycle. This also
 applies when a nested TSS or TSD item becomes invalid.
 
 The built-in scalar annotations are `bool`, `int`, `float`, `str`,
-`datetime.datetime`, `datetime.timedelta`, and `hg.Symbol`. A `datetime`
+`datetime.datetime`, `datetime.timedelta`, and `hgraph.Symbol`. A `datetime`
 maps to `EvaluationTime` as a timezone-naive UTC timestamp with microsecond
 precision. Conversion uses UTC calendar fields and signed microseconds since
 the Unix epoch. Scalar values and evaluation timestamps use the same conversion.
@@ -687,10 +687,10 @@ Durations map to signed 64-bit microseconds; conversion rejects values outside
 that range.
 `list[T]` declares an engine scalar list. Conversion copies its items using
 the declared scalar type `T`; conversion back to Python produces a list.
-`hg.Symbol` is a `str` subclass. Non-null symbols compare and
-hash like their text; `hg.Symbol()` represents a null symbol and differs from
+`hgraph.Symbol` is a `str` subclass. Non-null symbols compare and
+hash like their text; `hgraph.Symbol()` represents a null symbol and differs from
 the empty string. `str(symbol)` returns ordinary Python text, so converting a
-null symbol produces `""`. `hg.Symbol` cannot be subclassed. Python `int` maps
+null symbol produces `""`. `hgraph.Symbol` cannot be subclassed. Python `int` maps
 to the engine's signed 64-bit integer type.
 Python `str` maps to `hg::string` and supports scalar arguments and `TS[str]`
 inputs and outputs. Conversion uses strict UTF-8: lone surrogates raise
@@ -698,9 +698,9 @@ inputs and outputs. Conversion uses strict UTF-8: lone surrogates raise
 C++ callers must provide valid UTF-8. For canonical strings whose storage has
 no other final-release hook, the extension retains the originating Python
 string object while the HG storage lives and removes the cache entry when that
-storage is released. `hg.Symbol` values infer the engine symbol type, while ordinary
-`str` values infer the engine string type. `hg.symbol` is an alias for the
-`hg.Symbol` constructor. A `Symbol` supplied to a `str`-typed input is
+storage is released. `hgraph.Symbol` values infer the engine symbol type, while ordinary
+`str` values infer the engine string type. `hgraph.symbol` is an alias for the
+`hgraph.Symbol` constructor. A `Symbol` supplied to a `str`-typed input is
 normalized to ordinary Python text; a plain `str` supplied to a `Symbol`-typed
 input is interned as a non-null symbol. The Python class reuses objects
 produced from the same interned engine symbol while retaining the class-level
@@ -712,7 +712,7 @@ scalar type variables or nested scalar collections. Items require scalar types;
 optional items are unsupported. For example:
 
 ```python
-@hg.node
+@hgraph.node
 def total(values: tuple[int, ...]) -> int:
     return sum(values)
 ```
@@ -724,7 +724,7 @@ tuples support heterogeneous types, including the one-item form `tuple[T]` and
 the empty form `tuple[()]`. `typing.Tuple` supports the same forms. For example:
 
 ```python
-@hg.node
+@hgraph.node
 def describe(value: tuple[str, int]) -> str:
     return f"{value[0]}: {value[1]}"
 ```
@@ -760,36 +760,36 @@ that affects equality or hashing.
 
 ### Queue nodes
 
-`@hg.queue` declares a queue node whose decorated function runs at graph start.
+`@hgraph.queue` declares a queue node whose decorated function runs at graph start.
 Its return annotation declares the output time series type; its return value is
-ignored. The function declares exactly one `q: hg.Queue = None` parameter.
+ignored. The function declares exactly one `q: hgraph.Queue = None` parameter.
 Graph code supplies its scalar parameters. A queue node has no evaluation
 callback and runs in the outer graph. Register cleanup with `@name.stop`,
 selecting parameters by name as for other Python nodes.
 Queue callbacks can also request `State[T]` and `EvaluationClock`.
 
 ```python
-@hg.queue(mode=hg.QueueMode.batch)
-def values(count: int, q: hg.Queue = None) -> hg.TS[tuple[int, ...]]:
+@hgraph.queue(mode=hgraph.QueueMode.batch)
+def values(count: int, q: hgraph.Queue = None) -> hgraph.TS[tuple[int, ...]]:
     for value in range(count):
         q.write(value)
 
-@hg.graph
-def example() -> hg.TS[tuple[int, ...]]:
+@hgraph.graph
+def example() -> hgraph.TS[tuple[int, ...]]:
     return values(3)
 
-assert hg.run_graph(example) == [(0, 1, 2)]
+assert hgraph.run_graph(example) == [(0, 1, 2)]
 ```
 
-The default mode is `hg.QueueMode.standard`. `hg.QueueMode.elide` and
-`hg.QueueMode.batch` follow the [queue message rules](time-series-types.md#queue-messages).
+The default mode is `hgraph.QueueMode.standard`. `hgraph.QueueMode.elide` and
+`hgraph.QueueMode.batch` follow the [queue message rules](time-series-types.md#queue-messages).
 Queue outputs use ordinary time series. Batch outputs have `TS[tuple[T, ...]]`
 leaves, including leaves inside fixed `TSL`, `TSB`, and `TSD` collections.
 
 `Queue.write(delta)` returns whether it committed a message. It accepts the
 existing Python output delta forms. `None` requests no message and returns
 `False`. Batch mode accepts one `T` for each updated `TS[tuple[T, ...]]` leaf.
-Invalidation uses `hg.INVALID`; dictionary removal uses `hg.REMOVE`. An open
+Invalidation uses `hgraph.INVALID`; dictionary removal uses `hgraph.REMOVE`. An open
 writer propagates conversion and serialization errors without committing a
 partial message.
 
@@ -908,7 +908,7 @@ capture sink once. The wrapper retains the graph's Python wiring lifetime and ch
 before accessing the handle. Binding also checks the active owning graph.
 
 `feedback(value, name="")` uses native type inference and returns the delayed wiring
-point. `hg.operators.feedback` aliases `hg.feedback`. Both forms use the existing
+point. `hgraph.operators.feedback` aliases `hgraph.feedback`. Both forms use the existing
 [feedback source and sink](evaluation.md#feedback). The
 [public contract](../../user/reference/sources.md#feedback) defines types, timing, and
 lifetime.
@@ -919,11 +919,11 @@ lifetime.
 the engine's normal C++ implementations.
 
 ```python
-@hg.graph
-def branch(key: hg.TS[int], value: hg.TS[float]) -> hg.TS[float]:
+@hgraph.graph
+def branch(key: hgraph.TS[int], value: hgraph.TS[float]) -> hgraph.TS[float]:
     return scale(value)
 
-mapped = hg.map(branch, values, __key_arg__="key")
+mapped = hgraph.map(branch, values, __key_arg__="key")
 ```
 
 Map and mesh accept positional and named arguments. `pass_through(value)`
@@ -938,10 +938,10 @@ Switch cases use a dictionary. A tuple groups keys that use the same graph, and
 `DEFAULT` supplies the fallback graph:
 
 ```python
-selected = hg.switch_(key, {(1, 2): first, 3: second, hg.DEFAULT: fallback}, value)
+selected = hgraph.switch_(key, {(1, 2): first, 3: second, hgraph.DEFAULT: fallback}, value)
 ```
 
-`hg.reduce(reducer, values, default=...)` uses the native
+`hgraph.reduce(reducer, values, default=...)` uses the native
 [reduce implementation](reduce.md). The binding specializes scalar-or-time-series
 graph inputs to the dictionary's ordinary-guarantee item type before native signature
 validation. For an undecorated callable, it creates a Python graph definition whose two
@@ -950,30 +950,30 @@ construction. A private sentinel distinguishes an omitted default from explicit 
 See the [public contract](../../user/reference/higher-order.md#reduce) for defaults
 and result types.
 
-`@hg.dispatch` declares an input/output contract for runtime type selection.
+`@hgraph.dispatch` declares an input/output contract for runtime type selection.
 Its function body is not called. Register decorated graph or node definitions
 with `overload`; the declared input type is the fallback when an implementation
 accepts it:
 
 ```python
-@hg.dispatch
-def choose(value: hg.TS[Base]) -> hg.TS[str]: ...
+@hgraph.dispatch
+def choose(value: hgraph.TS[Base]) -> hgraph.TS[str]: ...
 
 @choose.overload
-@hg.compute_node
-def base(value: hg.TS[Base]) -> hg.TS[str]:
+@hgraph.compute_node
+def base(value: hgraph.TS[Base]) -> hgraph.TS[str]:
     return "base"
 
 @choose.overload
-@hg.compute_node
-def derived(value: hg.TS[Derived]) -> hg.TS[str]:
+@hgraph.compute_node
+def derived(value: hgraph.TS[Derived]) -> hgraph.TS[str]:
     return "derived"
 
 result = choose(value)
 ```
 
 Construct an explicit implementation list with
-`choose = hg.dispatch(signature_function, [base, derived])`. Dispatch accepts
+`choose = hgraph.dispatch(signature_function, [base, derived])`. Dispatch accepts
 positional and named arguments and selects on covariance-capable time-series
 inputs. An unmatched runtime type raises `IndexError` if no fallback
 implementation applies. Other matching and output rules follow

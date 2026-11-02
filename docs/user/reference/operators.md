@@ -65,7 +65,7 @@ and implementations. The most specific applicable implementation wins.
 :sync: python
 
 ```python
-from hg import Bundle, TS, compute_node, dispatch, graph, run_graph, schema
+from hgraph import Bundle, TS, compute_node, dispatch, graph, run_graph, schema
 
 @schema
 class Asset:

@@ -16,7 +16,7 @@ Python `@compute_node` passes a view for each time series parameter. C++
 :sync: python
 
 ```python
-from hg import TS, compute_node, graph, run_graph
+from hgraph import TS, compute_node, graph, run_graph
 
 @compute_node
 def reading_changed(reading: TS[int], offset: TS[int]) -> TS[bool]:
@@ -112,7 +112,7 @@ parameters are useful when only a fallback value is required.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def correct(reading: int, offset: int | None) -> int:
@@ -203,7 +203,7 @@ before accessing the value.
 :sync: python
 
 ```python
-from hg import INVALID, TS, compute_node, graph, run_graph
+from hgraph import INVALID, TS, compute_node, graph, run_graph
 
 @compute_node(valid=("reading",))
 def uses_offset(reading: TS[int], offset: TS[int]) -> TS[bool]:
@@ -294,7 +294,7 @@ current state when another input or a timer schedules evaluation.
 :sync: python
 
 ```python
-from hg import TS, compute_node, graph, run_graph
+from hgraph import TS, compute_node, graph, run_graph
 
 @compute_node(active=("request",))
 def snapshot(request: TS[bool], reading: TS[int]) -> TS[int]:

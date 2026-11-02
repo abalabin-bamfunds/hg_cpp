@@ -87,7 +87,7 @@ A valid root alone permits missing child values.
 :sync: python
 
 ```python
-from hg import INVALID, TS, TSL, compute_node, graph, run_graph
+from hgraph import INVALID, TS, TSL, compute_node, graph, run_graph
 
 @compute_node(all_valid=("values",))
 def total(values: TSL[TS[int], 2]) -> TS[int]:

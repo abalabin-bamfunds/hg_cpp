@@ -31,7 +31,7 @@ connections for the complete run.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 
 @graph
@@ -129,8 +129,8 @@ changing Boolean condition. A condition change exposes the selected current valu
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_, if_then_else
+from hgraph import graph, run_graph
+from hgraph.operators import const_, if_then_else
 
 
 @graph
@@ -219,8 +219,8 @@ the corresponding overloaded operators on connections.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import and_
+from hgraph import graph, run_graph
+from hgraph.operators import and_
 
 
 @graph
@@ -300,8 +300,8 @@ compatible value type.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_, if_then_else
+from hgraph import graph, run_graph
+from hgraph.operators import const_, if_then_else
 
 
 @graph
@@ -394,8 +394,8 @@ it has changed since the last forwarding.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import filter_
+from hgraph import graph, run_graph
+from hgraph.operators import filter_
 
 
 @graph
@@ -487,8 +487,8 @@ The source remains unavailable; only the derived result receives the fallback.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import default_
+from hgraph import graph, run_graph
+from hgraph.operators import default_
 
 @graph
 def configured(offset: int) -> int:
@@ -569,8 +569,8 @@ input that changed. A retained primary value does not block a secondary update.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import merge
+from hgraph import graph, run_graph
+from hgraph.operators import merge
 
 @graph
 def readings(primary: int, secondary: int) -> int:
@@ -652,8 +652,8 @@ fresh state.
 :sync: python
 
 ```python
-from hg import graph, switch_, run_graph
-from hg.operators import sums
+from hgraph import graph, switch_, run_graph
+from hgraph.operators import sums
 
 @graph
 def accumulated(reading: int) -> int:

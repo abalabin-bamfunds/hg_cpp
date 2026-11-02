@@ -17,7 +17,7 @@ existing `const_` operator and requires no new scalar conversions.
 After building `sensor_native`, graph code can import its exported operator:
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 from sensor_native import constant
 
 @graph

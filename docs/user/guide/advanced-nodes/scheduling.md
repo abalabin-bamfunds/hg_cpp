@@ -16,7 +16,7 @@ last update time can be older than the current evaluation time.
 :sync: python
 
 ```python
-from hg import EvaluationClock, graph, node, run_graph
+from hgraph import EvaluationClock, graph, node, run_graph
 
 @node
 def microsecond(reading: int, clock: EvaluationClock = None) -> int:
@@ -116,7 +116,7 @@ source makes simulation termination explicit.
 
 ```python
 from datetime import timedelta
-from hg import TS, generator, graph, run_graph
+from hgraph import TS, generator, graph, run_graph
 
 @generator
 def readings() -> TS[int]:
@@ -219,7 +219,7 @@ and stop behavior must be respected when the owning graph ends.
 :sync: python
 
 ```python
-from hg import Queue, TS, graph, queue, run_graph
+from hgraph import Queue, TS, graph, queue, run_graph
 
 @queue
 def readings(q: Queue = None) -> TS[int]:

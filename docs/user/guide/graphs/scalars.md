@@ -16,8 +16,8 @@ Python `tuple[int, ...]` and C++ `List<i64>` describe homogeneous scalar sequenc
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import len_
+from hgraph import graph, run_graph
+from hgraph.operators import len_
 
 @graph
 def batch_size(prices: tuple[int, ...]) -> int:
@@ -99,8 +99,8 @@ types. `contains_` tests the current mapping for a key.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import contains_
+from hgraph import graph, run_graph
+from hgraph.operators import contains_
 
 @graph
 def has_bid(quote: dict[str, int]) -> bool:
@@ -183,7 +183,7 @@ explains the node declaration used here. C++ `In<TS<...>>` receives a changing i
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def quantity(order: tuple[str, int]) -> int:
@@ -270,7 +270,7 @@ fields from the current record.
 :sync: python
 
 ```python
-from hg import Bundle, graph, node, run_graph, schema
+from hgraph import Bundle, graph, node, run_graph, schema
 
 @schema
 class Quote:

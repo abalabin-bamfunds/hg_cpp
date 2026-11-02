@@ -18,7 +18,7 @@ wait for other graph inputs before responding.
 :sync: python
 
 ```python
-from hg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
+from hgraph import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
 from hg_web import HttpResponse, HttpServerRequest, http_handler, http_server, register_http_server
 
 @compute_node
@@ -190,8 +190,8 @@ same request IDs.
 
 ```python
 from datetime import timedelta
-from hg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
-from hg.operators import const_
+from hgraph import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
+from hgraph.operators import const_
 from hg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
 
 @compute_node
@@ -298,7 +298,7 @@ transport. These inputs include successful and error statuses:
 :sync: python
 
 ```python
-from hg import TS, compute_node, graph, run_graph
+from hgraph import TS, compute_node, graph, run_graph
 from hg_web import HttpResponse
 
 @compute_node
@@ -420,7 +420,7 @@ the run ends after two seconds.
 ```python
 from datetime import timedelta
 
-from hg import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
+from hgraph import EvaluationEngine, ServiceCatalogue, TS, compute_node, graph, run_graph
 from hg_web import HttpClientRequest, HttpResponse, HttpServerRequest
 from hg_web import http_client, http_client_impl, http_handler, http_server, register_http_server
 

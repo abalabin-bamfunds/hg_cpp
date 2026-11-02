@@ -17,7 +17,7 @@ explicit arguments for the equivalent calculation.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 @graph
 def calibrated(reading: int, offset: int) -> int:
@@ -109,8 +109,8 @@ graphs. Python applications can retain application-owned storage in sink callbac
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
-from hg.operators import const_
+from hgraph import graph, node, run_graph
+from hgraph.operators import const_
 
 results = {}
 
@@ -216,8 +216,8 @@ the implementation selected for the run.
 :sync: python
 
 ```python
-from hg import TS, ServiceCatalogue, graph, reference_service, run_graph
-from hg.operators import const_
+from hgraph import TS, ServiceCatalogue, graph, reference_service, run_graph
+from hgraph.operators import const_
 
 @reference_service
 def offset() -> TS[int]:

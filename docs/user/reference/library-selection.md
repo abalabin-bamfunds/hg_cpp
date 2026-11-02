@@ -1,7 +1,7 @@
 # Selection and validity
 
 These operators decide which values or updates reach downstream calculations. Python
-imports them from `hg.operators`; C++ uses `hg::operators` from `<hg/library.hpp>`.
+imports them from `hgraph.operators`; C++ uses `hg::operators` from `<hg/library.hpp>`.
 Inputs can include compatible reference connections.
 
 ## valid
@@ -86,8 +86,8 @@ Select the current input for a changing condition:
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import if_then_else
+from hgraph import graph, run_graph
+from hgraph.operators import if_then_else
 
 @graph
 def chosen(condition: bool, first: int, second: int) -> int:
@@ -156,7 +156,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 `false_value` reference fields. A valid condition routes `value` to the matching field
 and invalidates the other field. An invalid condition invalidates both fields. Access a
 field with `getattr(result, symbol("true_value"))` in Python or
-`getattr(result, "true_value"_sym)` in C++. The native schema is `hg.IfResult` in Python
+`getattr(result, "true_value"_sym)` in C++. The native schema is `hgraph.IfResult` in Python
 and `hg::operators::if_result` in C++.
 
 Observe the true branch of a routed value:
@@ -169,8 +169,8 @@ Observe the true branch of a routed value:
 :sync: python
 
 ```python
-from hg import graph, run_graph, symbol
-from hg.operators import getattr, if_
+from hgraph import graph, run_graph, symbol
+from hgraph.operators import getattr, if_
 
 @graph
 def when_true(condition: bool, value: int) -> int:
@@ -253,8 +253,8 @@ Turn true condition ticks into a signal:
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import if_true
+from hgraph import graph, run_graph
+from hgraph.operators import if_true
 
 @graph
 def signal(condition: bool) -> bool:
@@ -337,8 +337,8 @@ Keep the earliest valid publisher until it becomes invalid:
 :sync: python
 
 ```python
-from hg import graph, run_graph, INVALID
-from hg.operators import race
+from hgraph import graph, run_graph, INVALID
+from hgraph.operators import race
 
 @graph
 def publisher(primary: int, backup: int) -> int:
@@ -429,8 +429,8 @@ Observe slot zero while the selected destination changes:
 :sync: python
 
 ```python
-from hg import TS, TSL, graph, run_graph
-from hg.operators import getitem, route_by_index
+from hgraph import TS, TSL, graph, run_graph
+from hgraph.operators import getitem, route_by_index
 
 @graph
 def slot_zero(index: int, value: int) -> int:
@@ -559,8 +559,8 @@ take and returns the input unchanged for drop.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import step
+from hgraph import graph, run_graph
+from hgraph.operators import step
 
 @graph
 def every_other(value: int) -> int:
@@ -636,8 +636,8 @@ Limit forwarding to three microseconds from the first valid value:
 
 ```python
 from datetime import timedelta
-from hg import graph, run_graph
-from hg.operators import take
+from hgraph import graph, run_graph
+from hgraph.operators import take
 
 @graph
 def initial_interval(value: int) -> int:
@@ -724,8 +724,8 @@ Select a bounded range of valid input ticks:
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import slice_
+from hgraph import graph, run_graph
+from hgraph.operators import slice_
 
 @graph
 def window(value: int) -> int:

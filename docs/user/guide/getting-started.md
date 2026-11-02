@@ -16,8 +16,8 @@ A graph function connects calculations. `const_` supplies a fixed graph value;
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 
 @graph
@@ -100,8 +100,8 @@ literals, such as `18 + 2`, runs while the graph function executes.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 
 @graph
@@ -186,8 +186,8 @@ function adds its calculations to the same graph.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_
+from hgraph import graph, run_graph
+from hgraph.operators import const_
 
 
 @graph
@@ -279,7 +279,7 @@ and `SKIP` in C++ mean that the input has no update at that position.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 
 @graph
@@ -374,8 +374,8 @@ current value; both input calculations remain part of the graph.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import const_, if_then_else
+from hgraph import graph, run_graph
+from hgraph.operators import const_, if_then_else
 
 
 @graph
@@ -461,7 +461,7 @@ on those values during evaluation.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
+from hgraph import graph, node, run_graph
 
 @node
 def correct(reading: int) -> int:

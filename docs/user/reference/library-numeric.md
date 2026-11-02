@@ -2,7 +2,7 @@
 
 Use numeric and Boolean operators to construct calculations over fixed scalars or
 changing values. C++ includes `<hg/library.hpp>` and imports `hg::operators`; Python
-imports names from `hg.operators`. The fragments below use existing connections `x`,
+imports names from `hgraph.operators`. The fragments below use existing connections `x`,
 `y`, and `integer_value`.
 
 ## Arithmetic
@@ -72,8 +72,8 @@ Extract the low three bits of each integer:
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import bit_and
+from hgraph import graph, run_graph
+from hgraph.operators import bit_and
 
 @graph
 def low_bits(value: int) -> int:
@@ -147,8 +147,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :sync: python
 
 ```python
-from hg import TS
-from hg.operators import convert
+from hgraph import TS
+from hgraph.operators import convert
 
 convert[TS[float]](integer_value)
 ```
@@ -193,8 +193,8 @@ behavior for both operands.
 :sync: python
 
 ```python
-from hg import opt
-from hg.operators import default_
+from hgraph import opt
+from hgraph.operators import default_
 
 total = opt(x) + opt(y)
 product = opt(x) * opt(y)
@@ -240,7 +240,7 @@ their corresponding operators. Python uses the named Boolean operators because i
 `and`, `or`, and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
 ```python
-from hg.operators import and_, not_
+from hgraph.operators import and_, not_
 
 bounded = and_(x > 0, x < 10)
 negated = not_(bounded)
@@ -270,8 +270,8 @@ propagates the weakest observed input guarantee.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import clip
+from hgraph import graph, run_graph
+from hgraph.operators import clip
 
 @graph
 def limited(value: int) -> int:

@@ -11,7 +11,7 @@ without the library.
 ## Decision
 
 Expose engine and library operators together through `<hg/library.hpp>` and
-`hg.operators`. Keep their existing operator identities and normal overload
+`hgraph.operators`. Keep their existing operator identities and normal overload
 resolution. Place native library implementations in `hg::library`, which
 depends on `hg::hg`; keep the engine independent of that target. Export native
 operators to Python through the existing operator wrapper.

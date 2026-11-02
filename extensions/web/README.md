@@ -11,25 +11,25 @@ These dependencies are private to the extension.
 ## Server
 
 ```python
-import hg
+import hgraph
 from hg_web import HttpServerRequest, HttpResponse, http_handler, http_server, register_http_server
 
-@hg.compute_node
-def echo_response(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
+@hgraph.compute_node
+def echo_response(request: hgraph.TS[HttpServerRequest]) -> hgraph.TS[HttpResponse]:
     return HttpResponse(status=200, body=request.value.body)
 
-@hg.graph
-def echo(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
+@hgraph.graph
+def echo(request: hgraph.TS[HttpServerRequest]) -> hgraph.TS[HttpResponse]:
     return echo_response(request)
 
-@hg.graph
+@hgraph.graph
 def application() -> None:
     http_handler("/echo", echo)()
     http_server()
 
-catalogue = hg.ServiceCatalogue()
+catalogue = hgraph.ServiceCatalogue()
 register_http_server(catalogue, host="127.0.0.1", port=8080)
-hg.run_graph(application, catalogue=catalogue, engine=hg.EvaluationEngine.realtime)
+hgraph.run_graph(application, catalogue=catalogue, engine=hgraph.EvaluationEngine.realtime)
 ```
 
 `register_http_server` installs the server implementation in a service
@@ -152,23 +152,23 @@ catalogue alongside the server implementation:
 ```python
 from hg_web import AuthDecision
 
-@hg.schema
+@hgraph.schema
 class User:
     name: str
 
-@hg.service
-def orders_access(request: hg.TS[HttpServerRequest]) -> hg.TS[AuthDecision[User]]:
+@hgraph.service
+def orders_access(request: hgraph.TS[HttpServerRequest]) -> hgraph.TS[AuthDecision[User]]:
     ...
 
-@hg.graph
-def orders(request: hg.TS[HttpServerRequest], identity: hg.TS[User],
-           prices: hg.TSD[str, hg.TS[float]]) -> hg.TS[HttpResponse]:
+@hgraph.graph
+def orders(request: hgraph.TS[HttpServerRequest], identity: hgraph.TS[User],
+           prices: hgraph.TSD[str, hgraph.TS[float]]) -> hgraph.TS[HttpResponse]:
     return order_response(request, identity, prices)
 
 orders_route = http_handler("/orders", orders, policy=orders_access)
 
-@hg.graph
-def application(prices: hg.TSD[str, hg.TS[float]]) -> None:
+@hgraph.graph
+def application(prices: hgraph.TSD[str, hgraph.TS[float]]) -> None:
     orders_route(prices)
 
 catalogue.register_impl(orders_access, orders_access_impl)
@@ -209,22 +209,22 @@ declaration's catalogue identity.
 in the graph's service catalogue:
 
 ```python
-import hg
+import hgraph
 from hg_web import HttpClientRequest, HttpResponse, http_client, http_client_impl
 
-@hg.compute_node
-def show_response(response: hg.TS[HttpResponse]) -> None:
+@hgraph.compute_node
+def show_response(response: hgraph.TS[HttpResponse]) -> None:
     print(response.value.status, bytes(response.value.body))
 
-@hg.graph
+@hgraph.graph
 def application() -> None:
-    request = hg.operators.const_(HttpClientRequest("http://127.0.0.1:8080/echo"))
+    request = hgraph.operators.const_(HttpClientRequest("http://127.0.0.1:8080/echo"))
     show_response(http_client(request))
 
-catalogue = hg.ServiceCatalogue()
+catalogue = hgraph.ServiceCatalogue()
 catalogue.register_impl(http_client, http_client_impl())
-hg.run_graph(application, catalogue=catalogue,
-             engine=hg.EvaluationEngine.realtime)
+hgraph.run_graph(application, catalogue=catalogue,
+             engine=hgraph.EvaluationEngine.realtime)
 ```
 
 `HttpClientRequest` contains `method`, `url`, `headers`, and `body`. Its Python

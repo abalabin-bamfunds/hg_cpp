@@ -16,8 +16,8 @@ effect without producing a graph output.
 :sync: python
 
 ```python
-from hg import graph, node, run_graph
-from hg.operators import const_
+from hgraph import graph, node, run_graph
+from hgraph.operators import const_
 
 @node
 def display(temperature: int) -> None:

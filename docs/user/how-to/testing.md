@@ -12,7 +12,7 @@ matters to downstream users.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 @graph
 def temperature(reading: int) -> int:

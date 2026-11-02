@@ -15,8 +15,8 @@ Prerequisites: [Sampling](../guide/graphs/updates.md#signal-driven-publication),
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import means, sample
+from hgraph import graph, run_graph
+from hgraph.operators import means, sample
 
 @graph
 def requested_average(reading: int, request: bool) -> float:

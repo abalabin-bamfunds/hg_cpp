@@ -16,7 +16,7 @@ previous position. `None` in Python and `SKIP` in C++ supply no input update.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 
 @graph
@@ -118,7 +118,7 @@ when its required inputs have values and an active dependency updates.
 :sync: python
 
 ```python
-from hg import graph, run_graph
+from hgraph import graph, run_graph
 
 
 @graph
@@ -219,8 +219,8 @@ which downstream calculations observe repeated input values.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import dedup
+from hgraph import graph, run_graph
+from hgraph.operators import dedup
 
 
 @graph
@@ -305,8 +305,8 @@ Changes to `value` alone do not publish a sampled result.
 :sync: python
 
 ```python
-from hg import graph, run_graph
-from hg.operators import sample
+from hgraph import graph, run_graph
+from hgraph.operators import sample
 
 
 @graph

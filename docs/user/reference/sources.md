@@ -9,7 +9,7 @@ application-specific values or external events.
 `const_(value)` creates a time series whose scalar type is inferred from `value`. It
 publishes once at the start when observable and never changes. It accepts registered
 scalar values, including scalar collections; it does not split them into independently
-updating items. Python imports it from `hg.operators`; C++ uses `hg::operators::const_`
+updating items. Python imports it from `hgraph.operators`; C++ uses `hg::operators::const_`
 from `<hg/library.hpp>`.
 
 ## nothing
@@ -19,7 +19,7 @@ guarantee. Required inputs connected to it remain blocked; optional inputs can
 evaluate from another active input and observe `valid == False`. It produces no
 updates and compiles without a runtime producer node.
 
-Python imports `nothing` from `hg.operators`. C++ supplies the time-series type
+Python imports `nothing` from `hgraph.operators`. C++ supplies the time-series type
 explicitly:
 
 ```cpp
@@ -37,7 +37,7 @@ that invalid series.
 state from each evaluation cycle at the next minimum evaluation time, one microsecond
 later. It is initially invalid. Replay preserves invalidation,
 revalidation, and collection deltas. Python imports `Feedback` and `feedback` from `hg`;
-`hg.operators.feedback` is the same function. C++ includes `<hg/feedback.hpp>` and uses
+`hgraph.operators.feedback` is the same function. C++ includes `<hg/feedback.hpp>` and uses
 `hg::feedback`.
 
 To wire a loop before its input exists, Python creates `Feedback(TS[int], name="loop")`.

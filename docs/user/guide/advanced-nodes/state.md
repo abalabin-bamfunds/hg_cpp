@@ -16,7 +16,7 @@ provides access to that node's retained value.
 :sync: python
 
 ```python
-from hg import State, graph, node, run_graph
+from hgraph import State, graph, node, run_graph
 
 class Readings:
     def __init__(self):
@@ -142,7 +142,7 @@ resources when the instance stops, including an instance selected by `switch_`.
 :sync: python
 
 ```python
-from hg import State, graph, node, run_graph
+from hgraph import State, graph, node, run_graph
 
 class Session:
     def __init__(self):
