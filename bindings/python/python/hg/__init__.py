@@ -543,13 +543,19 @@ def map(function: GraphDefinition, *args: Any, **kwargs: Any) -> Any:
 _REDUCE_OMITTED = object()
 
 
-def reduce(function: GraphDefinition, values: Any, default: Any = _REDUCE_OMITTED) -> Any:
-    """Reduce the valid values in a time-series dictionary with a graph."""
-    if not isinstance(function, GraphDefinition):
-        raise TypeError("reduce expects a decorated @graph definition")
+def reduce(function: Any, values: Any, default: Any = _REDUCE_OMITTED) -> Any:
+    """Reduce the valid values in a time-series dictionary with a graph or callable."""
+    if isinstance(function, GraphDefinition):
+        reducer = function._native_definition
+    elif callable(function):
+        def reducer(left: Any, right: Any) -> Any:
+            return function(left, right)
+
+    else:
+        raise TypeError("reduce expects a decorated @graph definition or callable")
     if default is None:
         raise ValueError("reduce default cannot be None; omit it to leave an empty reduction invalid")
-    return _reduce(function._native_definition, values, default is not _REDUCE_OMITTED, default)
+    return _reduce(reducer, values, default is not _REDUCE_OMITTED, default)
 
 
 class _MeshSelector:

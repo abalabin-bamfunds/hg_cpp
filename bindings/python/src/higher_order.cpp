@@ -125,7 +125,7 @@ nb::object wire_map(const PythonGraphDefinition &function, nb::sequence position
         hg::map(static_cast<const WiringTemplate &>(function), std::span<const MapArgument>{arguments})));
 }
 
-nb::object wire_reduce(const PythonGraphDefinition &function, nb::handle values, bool has_default,
+nb::object wire_reduce(nb::handle function, nb::handle values, bool has_default,
                        nb::handle default_value) {
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
@@ -141,16 +141,36 @@ nb::object wire_reduce(const PythonGraphDefinition &function, nb::handle values,
             throw WiringError{"reduce requires a TSD time-series argument"};
         }
         const auto &item_type = dictionary_type->value_type().target_type();
+        const auto &reducer_item_type = item_type.dereferenced_type().with_guarantee_limit(
+            TimeSeriesGuarantee::ordinary);
 
-        auto specialized_reducer = std::optional<PythonGraphDefinition>{};
-        const WiringTemplate *reducer = &function;
-        const auto &signature = function.default_signature();
-        if (signature.parameter_count() == 2 &&
-            (!signature.parameter(0).type->is_time_series() || !signature.parameter(1).type->is_time_series())) {
-            const auto &reducer_item_type = item_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
-            const auto input_types = std::array<const Type *, 2>{&reducer_item_type, &reducer_item_type};
-            specialized_reducer.emplace(function.specialize(input_types));
-            reducer = &*specialized_reducer;
+        auto prepared_reducer = std::optional<PythonGraphDefinition>{};
+        const WiringTemplate *reducer{};
+        if (nb::isinstance<PythonGraphDefinition>(function)) {
+            const auto &graph = nb::cast<const PythonGraphDefinition &>(function);
+            reducer = &graph;
+            const auto &signature = graph.default_signature();
+            if (signature.parameter_count() == 2 &&
+                (!signature.parameter(0).type->is_time_series() || !signature.parameter(1).type->is_time_series())) {
+                const auto input_types = std::array<const Type *, 2>{&reducer_item_type, &reducer_item_type};
+                prepared_reducer.emplace(graph.specialize(input_types));
+                reducer = &*prepared_reducer;
+            }
+        } else {
+            if (!PyCallable_Check(function.ptr())) {
+                throw std::invalid_argument{"reduce expects a decorated @graph definition or callable"};
+            }
+            auto parameters = std::vector<Parameter>{
+                {util::symbol{"left"}, &reducer_item_type},
+                {util::symbol{"right"}, &reducer_item_type},
+            };
+            auto wiring_parameter_types = std::vector<const Type *>{&reducer_item_type, &reducer_item_type};
+            auto signature = Signature{util::symbol{"reduce_callable"}, std::move(parameters), reducer_item_type};
+            auto signature_definition =
+                std::make_shared<const PythonNodeDefinition::SignatureDefinition>(std::move(wiring_parameter_types),
+                                                                                  std::move(signature));
+            prepared_reducer.emplace(std::move(signature_definition), function, false);
+            reducer = &*prepared_reducer;
         }
 
         if (!has_default) {
