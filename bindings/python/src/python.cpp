@@ -25,6 +25,7 @@
 #include <hg/scalar/dict/scalar_type.hpp>
 #include <hg/scalar/list/scalar_type.hpp>
 #include <hg/scalar/runtime_type.hpp>
+#include <hg/scalar/set/scalar_type.hpp>
 #include <hg/scalar/tuple/scalar_type.hpp>
 #include <hg/time_series/tsb/details/wiring.hpp>
 #include <hg/time_series/tsb/tsb.hpp>
@@ -949,6 +950,20 @@ void bind_core(nb::module_ &module) {
             return TypeDescriptor{list_scalar_type(*item)};
         }
         const auto &type = TypeRegistry::instance().register_owned(std::make_unique<GenericListScalarType>(*item));
+        return TypeDescriptor{type};
+    });
+    module.def("_set_scalar_type", [](const TypeDescriptor &item_value) {
+        if (item_value.accepts_absent_scalar()) {
+            throw std::invalid_argument{"Optional[...] cannot be used as a set item type"};
+        }
+        const auto *item = type_cast<ScalarType>(&item_value.type());
+        if (item == nullptr) {
+            throw std::invalid_argument{"frozenset[T] requires a scalar item annotation"};
+        }
+        if (item->is_resolved()) {
+            return TypeDescriptor{set_scalar_type(*item)};
+        }
+        const auto &type = TypeRegistry::instance().register_owned(std::make_unique<GenericSetScalarType>(*item));
         return TypeDescriptor{type};
     });
     module.def("_tuple_scalar_type", [](std::vector<TypeDescriptor> item_values) {

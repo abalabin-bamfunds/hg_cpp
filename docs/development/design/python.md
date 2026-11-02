@@ -740,6 +740,16 @@ mutable sequences. Bare `list` and `tuple` annotations are unsupported. Fixed
 tuple conversion requires the declared number of items and converts each
 position using its declared scalar type.
 
+`frozenset[T]` and `typing.FrozenSet[T]` declare `hg::Set<T>`. The item annotation
+can contain scalar type variables or nested scalar collections and must resolve
+to a hashable scalar type. Optional items, bare `frozenset`, and mutable `set[T]`
+annotations are unsupported. When the expected type is known, conversion accepts
+Python sets and frozensets, converts each item through its scalar conversion,
+and owns the engine storage. Node arguments and graph results materialize as
+immutable frozensets. Later mutations of the source Python set do not change
+the stored value. `TS[frozenset[T]]` holds a complete scalar set; `TSS[T]` uses
+the collection delta contract described above.
+
 Other Python classes can be used as scalar annotations and values. The first
 use registers one semantic scalar type for that exact class. Python inheritance
 defines scalar compatibility, including multiple inheritance; a derived value

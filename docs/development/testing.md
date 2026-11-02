@@ -749,6 +749,9 @@ For each reusable node and graph, test:
 - homogeneous scalar tuple annotations, nested and generic items, immutable
   Python materialization, expected-type sequence conversion and ownership,
   and rejection of mutable sequence annotations
+- scalar frozenset annotations, nested and generic items, immutable results,
+  expected-type set conversion and snapshot ownership, invalid item diagnostics,
+  and conversion between scalar sets and TSS without changing TSS deltas
 - timezone-naive UTC datetime conversion through scalar, time-series, nested
   scalar, clock, scheduling, and run-limit paths, including microsecond and
   pre-epoch values and independence from the machine's timezone

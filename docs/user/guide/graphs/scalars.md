@@ -358,9 +358,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 C++ scalar bundle views access fields in schema order; `scalar_cast` supplies each
 field's declared type. Python receives the schema object with named attributes.
 
-The [scalar reference](../../reference/scalars.md#schemas) specifies schema
-construction and compatibility. C++ also supports scalar `Set<T>`; Python scalar
-set annotations are not exposed.
+The [scalar reference](../../reference/scalars.md) specifies scalar mappings,
+including Python `frozenset[T]` for C++ `Set<T>`, and schema construction and compatibility.
 
 For independently changing positions, fields, or keys, use
 [time series collections](../advanced-graphs/collections.md). A node processes a

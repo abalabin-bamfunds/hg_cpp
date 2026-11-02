@@ -177,8 +177,7 @@ can publish equal query results on successive changes; deduplicated outputs supp
 equal results.
 
 Use named calls in Python. Its `len()` and `in` syntax cannot return wiring points.
-Python uses `tuple[T, ...]` for scalar lists. Scalar set annotations are not currently
-exposed.
+See the [scalar annotation mappings](scalars.md#built-in-mappings) for scalar lists and sets.
 
 Find the first matching position without changing list indices:
 
