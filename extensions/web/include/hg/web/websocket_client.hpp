@@ -19,9 +19,8 @@ struct WebSocketClientOptions {
     std::optional<std::string> ca_file;
 };
 
-inline const auto websocket_client =
-    service<auto(TSB<BinaryWebSocketClientRequest>) -> TSB<BinaryWebSocketClientReply>>{
-        "websocket_client", {"request"}};
+extern HG_WEB_EXPORT const service<auto(TSB<BinaryWebSocketClientRequest>) -> TSB<BinaryWebSocketClientReply>>
+    websocket_client;
 
 // Builds a request/reply service implementation for binary ws:// and wss:// connections.
 HG_WEB_EXPORT std::shared_ptr<const WiringTemplate> websocket_client_impl(WebSocketClientOptions options = {});

@@ -27,6 +27,13 @@ namespace {
 
 using namespace hg::literals;
 
+} // namespace
+
+const service<auto(TSB<BinaryWebSocketClientRequest>) -> TSB<BinaryWebSocketClientReply>> websocket_client{
+    "websocket_client", {"request"}};
+
+namespace {
+
 struct WebSocketClientSource {
     Scalar<Opaque<WebSocketClientOptions>> options;
     State<WebSocketClientRuntime *> runtime_state;
