@@ -5,9 +5,9 @@ lifecycle belong to those instances. Use ordinary graph calls when a runtime bou
 not required. C++ graph arguments need a concrete output type. Use
 `.as<TS<T>>()` when a library expression returns an untyped connection.
 
-Python imports `map`, `mesh`, `switch_`, and `pass_through` from `hg`. C++ imports
-`hg` and includes the corresponding `<hg/map.hpp>`, `<hg/mesh.hpp>`, or
-`<hg/switch.hpp>` header.
+Python imports `map`, `mesh`, `switch_`, `reduce`, and `pass_through` from `hg`. C++ imports
+`hg` and includes the corresponding `<hg/map.hpp>`, `<hg/mesh.hpp>`, `<hg/switch.hpp>`,
+or `<hg/reduce.hpp>` header.
 
 ## map
 
@@ -54,12 +54,15 @@ rather than supplying an old result.
 
 ## reduce
 
-C++ `reduce(graph, values, "default"_n = ...)` combines valid TSD items. The reducer
-graph has two explicit time-series inputs and returns a time series compatible with the
-item type. Scalar-valued items produce a scalar-valued result; other item types produce
-a reference to the reduced time series. The scalar case accepts a scalar default. Other
+`reduce(graph, values, default=...)` in Python and
+`reduce(graph, values, "default"_n = ...)` in C++ combine valid TSD items. Python requires
+a decorated `@graph` reducer. Plain scalar annotations on its inputs resolve to time
+series inputs. The reducer graph has two explicit time-series inputs and returns a
+time series compatible with the item type. Scalar-valued items produce a scalar-valued
+result; other item types produce a reference to the reduced time series. The scalar case
+accepts a scalar default. Other
 item types accept a time-series default of the item type. The operation must be
-associative and commutative; dictionary order is unspecified. Context inputs are allowed.
+associative and commutative; dictionary order is unspecified. C++ context inputs are allowed.
 
 One valid item is forwarded directly. With no valid items, a valid dictionary uses the
 supplied default or has no result. An invalid dictionary has no result. Target changes
@@ -67,6 +70,6 @@ of referenced items contribute even when keys do not change. Reducer inputs and 
 use ordinary guarantees because their tree positions can receive different items. Do not
 depend on a particular reduction tree or wiring-call count.
 
-Python does not currently expose `reduce`. Use built-in collection reductions or a
-custom collection node. The [custom aggregation guide](../guide/graphs/aggregation.md#custom-aggregation) shows the
-same scalar calculation through the available APIs.
+Omit `default` when an empty reduction should have no result. Python `None` is not a
+default value. The [custom aggregation guide](../guide/graphs/aggregation.md#custom-aggregation)
+shows a product with an empty-collection default.

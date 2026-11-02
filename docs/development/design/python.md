@@ -119,7 +119,7 @@ The built-in conversions support `int` and `float`. C++ overload registration
 can extend `convert` to other time-series inputs and collection outputs.
 Positional and named arguments can contain wiring points or registered Python
 scalar values. A sink operator returns `None`. The higher-order operators are
-the same objects as `hg.map`, `hg.mesh`, and `hg.switch_`.
+the same objects as `hg.map`, `hg.mesh`, `hg.switch_`, and `hg.reduce`.
 
 ```python
 @hg.graph
@@ -881,7 +881,7 @@ constructed. They expire when graph construction returns.
 
 ## Higher-order graphs
 
-`map`, `mesh`, and `switch_` accept decorated Python graph definitions and use
+`map`, `mesh`, `switch_`, and `reduce` accept decorated Python graph definitions and use
 the engine's normal C++ implementations.
 
 ```python
@@ -906,6 +906,13 @@ Switch cases use a dictionary. A tuple groups keys that use the same graph, and
 ```python
 selected = hg.switch_(key, {(1, 2): first, 3: second, hg.DEFAULT: fallback}, value)
 ```
+
+`hg.reduce(reducer, values, default=...)` uses the native
+[reduce implementation](reduce.md). The binding specializes scalar-or-time-series
+graph inputs to the dictionary's ordinary-guarantee item type before native signature
+validation. A private sentinel distinguishes an omitted default from explicit `None`.
+See the [public contract](../../user/reference/higher-order.md#reduce) for defaults
+and result types.
 
 `@hg.dispatch` declares an input/output contract for runtime type selection.
 Its function body is not called. Register decorated graph or node definitions
@@ -936,8 +943,7 @@ inputs. An unmatched runtime type raises `IndexError` if no fallback
 implementation applies. Other matching and output rules follow
 [runtime dispatch](operators.md#runtime-dispatch).
 
-Source and sink branch graphs are supported. A sink higher-order call returns
-`None`.
+Map, mesh, and switch support source and sink branch graphs. A sink call returns `None`.
 
 ## Runtime boundary
 

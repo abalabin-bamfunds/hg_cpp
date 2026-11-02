@@ -7,7 +7,7 @@ updates over time. The operations answer different questions.
 | --- | --- |
 | Total, extrema, or mean of current items | `sum_`, `min_`, `max_`, `mean` |
 | All or any current Boolean items | `all_`, `any_` |
-| Application-specific combination of items | `reduce` in C++; collection node in Python |
+| Application-specific combination of items | `reduce` |
 | Count or previous update | `count`, `lag` |
 | Total or mean across updates | `sums`, `means` |
 | Difference between successive values | `diff` |
@@ -179,8 +179,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Custom aggregation
 
-An application-specific operation can combine current values. C++ `reduce` maintains
-a reducer graph. Python uses a collection node for the equivalent product.
+`reduce` maintains a binary reducer graph for an application-specific combination
+of current values.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -190,18 +190,15 @@ a reducer graph. Python uses a collection node for the equivalent product.
 :sync: python
 
 ```python
-from hg import REMOVE, TS, TSD, compute_node, graph, run_graph
+from hg import REMOVE, TS, TSD, graph, reduce, run_graph
 
-@compute_node
-def product(values: TSD[int, TS[int]]) -> TS[int]:
-    result = 1
-    for item in values.valid_values():
-        result *= item.value
-    return result
+@graph
+def multiply(left: TS[int], right: TS[int]) -> TS[int]:
+    return left * right
 
 @graph
 def combined(values: TSD[int, TS[int]]) -> int:
-    return product(values)
+    return reduce(multiply, values, default=1)
 
 print(run_graph(combined, [{1: 2, 2: 3}, {1: 4}, {2: REMOVE}]))
 ```
@@ -270,8 +267,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 The reducer must be associative and commutative; item order and tree shape are
-unspecified. The product uses `1` when no valid items contribute. Python's collection
-view is explained in [advanced nodes](../advanced-nodes/collections.md).
+unspecified. The product uses `1` when no valid items contribute. See
+[reduction contracts](../../reference/higher-order.md#reduce) for validity and defaults.
 
 ## Counts and previous values
 

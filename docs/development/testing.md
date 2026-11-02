@@ -774,6 +774,9 @@ For each reusable node and graph, test:
 - Python runtime dispatch on Python classes and derived schemas, explicit
   implementation lists, node and graph branches, fallback, type transitions,
   scalar arguments, sinks, and invalid declarations
+- Python reduction through concrete and generic graph definitions, sparse TSD updates,
+  invalid roots and items, omitted and explicit defaults, collection and reference
+  items, guarantee weakening, invalid reducer signatures, and wiring exception identity
 
 ### HTTP extension
 
