@@ -38,6 +38,7 @@ from ._hg import (
     _map,
     _mesh,
     _mesh_dependency,
+    _reduce,
     _node_input_type,
     _optional_type,
     _register_key_value_schema,
@@ -537,6 +538,18 @@ def map(function: GraphDefinition, *args: Any, **kwargs: Any) -> Any:
         raise TypeError("map expects a decorated @graph definition")
     positional, named = _map_arguments(args, kwargs)
     return _map(function._native_definition, positional, named)
+
+
+_REDUCE_OMITTED = object()
+
+
+def reduce(function: GraphDefinition, values: Any, default: Any = _REDUCE_OMITTED) -> Any:
+    """Reduce the valid values in a time-series dictionary with a graph."""
+    if not isinstance(function, GraphDefinition):
+        raise TypeError("reduce expects a decorated @graph definition")
+    if default is None:
+        raise ValueError("reduce default cannot be None; omit it to leave an empty reduction invalid")
+    return _reduce(function._native_definition, values, default is not _REDUCE_OMITTED, default)
 
 
 class _MeshSelector:
@@ -1580,6 +1593,7 @@ def run_graph(
 
 
 operators.map = map
+operators.reduce = reduce
 operators.mesh = mesh
 operators.switch_ = switch_
 operators.dispatch = dispatch
@@ -1641,6 +1655,7 @@ __all__ = [
     "run_graph",
     "schema",
     "reference_service",
+    "reduce",
     "service",
     "subscription_service",
     "service_client_id",

@@ -5,6 +5,7 @@
 
 #include <hg/dispatch.hpp>
 #include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_error.hpp>
 #include <hg/graph/wiring_context.hpp>
 #include <hg/map.hpp>
 #include <hg/mesh.hpp>
@@ -12,12 +13,17 @@
 #include <hg/node/runtime_signature_node_template.hpp>
 #include <hg/python/graph_definition.hpp>
 #include <hg/python/wiring_point.hpp>
+#include <hg/reduce.hpp>
 #include <hg/switch.hpp>
+#include <hg/time_series/time_series_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 #include <hg/util/named_argument.hpp>
 
 #include <nanobind/stl/optional.h>
 #include <nanobind/stl/string.h>
 
+#include <array>
 #include <memory_resource>
 #include <optional>
 #include <span>
@@ -117,6 +123,58 @@ nb::object wire_map(const PythonGraphDefinition &function, nb::sequence position
 
     return wiring_result(static_cast<WiringPoint>(
         hg::map(static_cast<const WiringTemplate &>(function), std::span<const MapArgument>{arguments})));
+}
+
+nb::object wire_reduce(const PythonGraphDefinition &function, nb::handle values, bool has_default,
+                       nb::handle default_value) {
+    auto &wiring = WiringContext::current().wiring();
+    auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
+    auto memory = allocator{temporary_memory};
+    auto dictionary = wiring_argument(values, memory, wiring);
+
+    try {
+        const auto *dictionary_series = type_cast<TimeSeriesType>(&dictionary.type());
+        const auto *dictionary_type = dictionary_series == nullptr
+                                          ? nullptr
+                                          : type_cast<TimeSeriesDictionaryType>(&dictionary_series->target_type());
+        if (dictionary_type == nullptr) {
+            throw WiringError{"reduce requires a TSD time-series argument"};
+        }
+        const auto &item_type = dictionary_type->value_type().target_type();
+
+        auto specialized_reducer = std::optional<PythonGraphDefinition>{};
+        const WiringTemplate *reducer = &function;
+        const auto &signature = function.default_signature();
+        if (signature.parameter_count() == 2 &&
+            (!signature.parameter(0).type->is_time_series() || !signature.parameter(1).type->is_time_series())) {
+            const auto &reducer_item_type = item_type.with_guarantee_limit(TimeSeriesGuarantee::ordinary);
+            const auto input_types = std::array<const Type *, 2>{&reducer_item_type, &reducer_item_type};
+            specialized_reducer.emplace(function.specialize(input_types));
+            reducer = &*specialized_reducer;
+        }
+
+        if (!has_default) {
+            return wiring_result(static_cast<WiringPoint>(hg::reduce(*reducer, std::move(dictionary))));
+        }
+
+        auto default_argument = [&] {
+            const auto *value_type = type_cast<TimeSeriesValueType>(&item_type);
+            return value_type == nullptr
+                       ? wiring_argument(default_value, memory, wiring)
+                       : wiring_argument(value_type->value_type(), default_value, memory, wiring);
+        }();
+        return wiring_result(static_cast<WiringPoint>(
+            hg::reduce(*reducer, std::move(dictionary), std::move(default_argument))));
+    } catch (const nb::python_error &) {
+        throw;
+    } catch (const WiringError &error) {
+        if (has_python_error(error)) {
+            rethrow_python_error(error);
+        }
+        throw std::invalid_argument{std::string{"cannot wire reduce: "} + error.what()};
+    } catch (const std::exception &error) {
+        throw std::invalid_argument{std::string{"cannot wire reduce: "} + error.what()};
+    }
 }
 
 nb::object wire_mesh(const PythonGraphDefinition &function, nb::sequence positional, nb::sequence named,
@@ -230,6 +288,7 @@ nb::object wire_dispatch(const PythonGraphDefinition &contract, nb::sequence imp
 
 void bind_higher_order(nb::module_ &module) {
     module.def("_map", &wire_map);
+    module.def("_reduce", &wire_reduce);
     module.def("_mesh", &wire_mesh);
     module.def("_mesh_dependency", &wire_mesh_dependency);
     module.def("_switch", &wire_switch);

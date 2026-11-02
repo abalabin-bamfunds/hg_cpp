@@ -187,6 +187,7 @@ __all__ = [
     "print_",
     "replace",
     "pos",
+    "reduce",
     "round",
     "resample",
     "route_by_index",
