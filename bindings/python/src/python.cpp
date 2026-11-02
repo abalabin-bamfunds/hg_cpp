@@ -59,6 +59,7 @@
 #include <hg/python/chrono.hpp>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/string_view.h>
 #include <nanobind/stl/tuple.h>
 #include <nanobind/stl/vector.h>
 
@@ -1475,6 +1476,19 @@ void bind_core(nb::module_ &module) {
         .def("_as_optional", &PythonWiringPoint::as_optional)
         .def("_as_valid_items", &PythonWiringPoint::as_valid_items)
         .def("__getitem__", &details::getitem)
+        .def("__getattr__", [](const PythonWiringPoint &self, std::string_view name) {
+            const auto *operation = details::find_wiring_method(name, self.type());
+            if (operation == nullptr) {
+                const auto message = "'WiringPoint' object has no attribute '" + std::string{name} + "'";
+                throw nb::attribute_error(message.c_str());
+            }
+
+            const auto bound_operator = details::PythonOperator{*operation};
+            const auto receiver = nb::cast(self);
+            return nb::cpp_function([bound_operator, receiver](nb::args positional, nb::kwargs named) {
+                return bound_operator.call_with_receiver(receiver, positional, named);
+            });
+        })
         .def(
             "__add__",
             [add_operator](const PythonWiringPoint &self, nb::handle other) {
