@@ -94,7 +94,8 @@ response writes each time out after 30 seconds.
 
 ## WebSocket server
 
-The WebSocket server API is currently C++ only.
+WebSocket server and client APIs are available in C++ and Python. The public API is
+documented in the [WebSocket guide](../../docs/user/extensions/websocket.md).
 
 `websocket_handler(path, graph)` registers a WebSocket route on the HTTP server's
 listener. HTTP and WebSocket routes can use the same path. A WebSocket handler
@@ -298,7 +299,7 @@ Windows SSPI support. It uses the current user's credentials; obtaining and
 renewing Kerberos tickets remains the application's responsibility.
 
 `register_client_transports(catalogue, scope)` installs clients with a shared
-authentication scope: HTTP and WebSocket in C++, HTTP in Python. Existing service
+authentication scope: HTTP and WebSocket in C++ and Python. Existing service
 calls keep their signatures. Use this installation instead of installing their
 standalone implementations in that catalogue.
 The C++ registration functions are declared in `<hg/web/client_auth.hpp>`.

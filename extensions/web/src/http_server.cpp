@@ -300,6 +300,11 @@ void validate_route(std::string_view path) {
 
 } // namespace
 
+const service<
+    auto(TS<string, TimeSeriesGuarantee::final>, TSD<i64, TSB<BinaryWebSocketResponse>>) ->
+        TSD<i64, TSB<BinaryWebSocketServerRequest>>>
+    websocket_handler_service{"websocket_handler", {"route", "responses"}};
+
 WiringPoint details::wire_http_server(ServerOptions options, WiringPoint routes, WiringPoint responses,
                                       WiringPoint websocket_routes, WiringPoint websocket_responses) {
     const auto source = server_source(std::move(options));

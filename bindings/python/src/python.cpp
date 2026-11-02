@@ -798,6 +798,17 @@ void export_service(nb::handle python_service, const ServiceDefinition &service)
     nb::cast<PythonServiceDefinition &>(definition).bind_native_service(service);
 }
 
+const ServiceDefinition &service_definition(nb::handle python_service) {
+    if (!nb::hasattr(python_service, "_native_definition")) {
+        throw std::invalid_argument{"native service wiring requires a Python service declaration"};
+    }
+    const auto definition = nb::getattr(python_service, "_native_definition");
+    if (!nb::isinstance<PythonServiceDefinition>(definition)) {
+        throw std::invalid_argument{"native service wiring requires a Python service declaration"};
+    }
+    return nb::cast<const PythonServiceDefinition &>(definition).service();
+}
+
 void export_schema(nb::handle python_type, const Schema &time_series_schema, const Schema *scalar_schema) {
     if (!PyType_Check(python_type.ptr())) {
         throw std::invalid_argument{"a native schema registration requires a Python type"};

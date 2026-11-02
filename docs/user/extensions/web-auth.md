@@ -95,7 +95,7 @@ route wiring.
 
 `register_client_transports(catalogue, scope)` installs transports sharing an
 authentication scope. Use it in place of the standalone client implementations.
-It installs HTTP in Python, and HTTP plus WebSocket in C++.
+It installs HTTP and WebSocket in both Python and C++.
 `register_client_auth(scope, origin, graph, ...)` associates an origin with a
 credential graph. The graph receives the normalized origin and any supplied ambient
 arguments. It returns `TS[Auth]` or a supported derived authentication type.
@@ -149,7 +149,7 @@ One credential graph instance serves each demanded origin, shared by its clients
 A matched registration with invalid credentials waits for a valid value within the
 request timeout. An unmatched origin uses anonymous access.
 
-| Type | Fields | HTTP | C++ WebSocket |
+| Type | Fields | HTTP | WebSocket |
 | --- | --- | --- | --- |
 | `AnonymousAuth` | None | Yes | Yes |
 | `BasicAuth` | `username`, `password` | Yes | Yes |
