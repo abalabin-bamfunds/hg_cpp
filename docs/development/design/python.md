@@ -908,7 +908,7 @@ capture sink once. The wrapper retains the graph's Python wiring lifetime and ch
 before accessing the handle. Binding also checks the active owning graph.
 
 `feedback(value, name="")` uses native type inference and returns the delayed wiring
-point. `bg.operators.feedback` aliases `bg.feedback`. Both forms use the existing
+point. `hg.operators.feedback` aliases `hg.feedback`. Both forms use the existing
 [feedback source and sink](evaluation.md#feedback). The
 [public contract](../../user/reference/sources.md#feedback) defines types, timing, and
 lifetime.

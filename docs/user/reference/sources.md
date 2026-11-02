@@ -36,9 +36,9 @@ that invalid series.
 `feedback(value, name="")` returns a time series that replays the input's final change
 state from each evaluation cycle at the next minimum evaluation time, one microsecond
 later. It is initially invalid. Replay preserves invalidation,
-revalidation, and collection deltas. Python imports `Feedback` and `feedback` from `bg`;
-`bg.operators.feedback` is the same function. C++ includes `<bg/feedback.hpp>` and uses
-`bg::feedback`.
+revalidation, and collection deltas. Python imports `Feedback` and `feedback` from `hg`;
+`hg.operators.feedback` is the same function. C++ includes `<hg/feedback.hpp>` and uses
+`hg::feedback`.
 
 To wire a loop before its input exists, Python creates `Feedback(TS[int], name="loop")`.
 Use its `.output` connection in downstream graph code, then call `.bind(value)` once to

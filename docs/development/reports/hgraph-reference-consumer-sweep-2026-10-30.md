@@ -1,7 +1,7 @@
 # hgraph reference-consumer sweep, 2026-10-30
 
 This follow-up checks source switching and consumers of mapped references.
-It uses BG `61574125` with the six tests from `b25ff057`, and the
+It uses HG `61574125` with the six tests from `b25ff057`, and the
 upstream revisions pinned in the [preceding sweep](hgraph-pattern-sweep-2026-10-30.md).
 The initial sweep changed only tests and this report. The sampling and mesh
 corrections below are subsequent implementation changes in the same lane.
@@ -10,18 +10,18 @@ The initial batch added ten passing cases and four hidden reproductions of two f
 mesh branch output inference fails during wiring, and dictionary selection
 retains a valid item after its selected source removes that item.
 Both findings were reproduced and traced on 2026-11-02 against the unchanged
-BG baseline. Both are implementation bugs under the existing contracts.
+HG baseline. Both are implementation bugs under the existing contracts.
 
 ## Source patterns
 
-| Upstream source | BG composition |
+| Upstream source | HG composition |
 | --- | --- |
 | 0.5 `hgraph_unit_tests/_operators/test_tsd_operators.py::test_tsd_get_items_change_tsd`; 0.8 `python/tests/ported/_operators/test_tsd_operators.py::test_tsd_get_items_change_tsd` | Select keys after switching between dictionaries; repeat through an identity map. |
 | 0.8 `python/tests/test_ref_consumer_sweep.py::test_ref_source_matches_plain`, `switch_flip` source | Replace switch branches whose REF outputs select the same outer TS, TSS, TSD, fixed TSL, or TSB; observe later target updates through ordinary value consumers. |
 | 0.5 `hgraph_unit_tests/_wiring/test_map.py::test_map_input_rebind_to_nonpeer` | Switch from a direct dictionary to a mapped dictionary, then replace mapped item references before a downstream map consumes them. |
 | 0.5 `hgraph_unit_tests/_wiring/test_map.py::test_map_reference_cleanup_2` | Keep a key-selected map branch alive across source removal, unrelated item updates, and source re-addition. |
 | 0.8 `python/tests/test_ref_consumer_sweep.py::test_ref_source_matches_plain`, `map_nested` source with `self_keyed` and `reduce` consumers | Select a mapped dictionary using its own key set; reduce mapped scalar references across updates and membership changes. |
-| The same `map_nested` source with the `mesh_` consumer | BG extension: map nested dictionaries by identity, reduce each dictionary inside a mesh branch, then reduce the mesh results. |
+| The same `map_nested` source with the `mesh_` consumer | HG extension: map nested dictionaries by identity, reduce each dictionary inside a mesh branch, then reduce the mesh results. |
 
 The five shape-specific switch cases are in
 [`stream_test.cpp`](../../../tests/library/stream_test.cpp). Dictionary
@@ -72,9 +72,9 @@ const auto sum_inner = graph([](wp<TSD<i64, TS<i64>>> items) -> wp<TS<i64>> {
 Classification: wiring implementation bug. The explicit-output case
 establishes the mapped-reference runtime behavior.
 
-[`GraphTemplate`](../../../include/bg/graph/graph_template.hpp) permits output
+[`GraphTemplate`](../../../include/hg/graph/graph_template.hpp) permits output
 inference. Mesh wraps the branch in
-[`ScopedWiringTemplate`](../../../include/bg/graph/details/scoped_wiring_template.hpp),
+[`ScopedWiringTemplate`](../../../include/hg/graph/details/scoped_wiring_template.hpp),
 which inherits `allows_output_inference() == false` from `WiringTemplate`
 instead of forwarding the target's policy. Signature resolution therefore
 requires an output mapping before invoking the graph body. It cannot use the
@@ -125,7 +125,7 @@ diagnostic. Existing dependency tests cover selection with resolved outputs.
 
 Both direct and identity-mapped selection omit an invalidation delta when a
 selected key is absent from the newly selected source. The key remains in the
-selected key set. BG's
+selected key set. HG's
 [collection-selection contract](../design/library.md#collection-selection)
 requires that key to remain present with an invalid reference.
 
@@ -193,24 +193,24 @@ checks that old removal information is not replayed.
 ## Scope
 
 These are selected products from the upstream reference-consumer sweep, with
-explicit BG output assertions. They do not establish the complete Cartesian
+explicit HG output assertions. They do not establish the complete Cartesian
 product of upstream source, shape, and consumer combinations.
 
-Higher-order map and reduce over fixed TSL remain outside BG's supported
+Higher-order map and reduce over fixed TSL remain outside HG's supported
 surface. The fixed-TSL switch case uses an ordinary value consumer. Python
 scalar conversions and aggregate conversion behavior are outside this C++
 composition check.
 
 The 0.8 operator test
 `test_default_adapts_non_empty_tsd_to_unpartition_reference_leaves` requires
-`default(unpartition(primary), fallback)` with a TSD fallback. BG declares
-[`default_`](../../../include/bg/operators.hpp) as
+`default(unpartition(primary), fallback)` with a TSD fallback. HG declares
+[`default_`](../../../include/hg/operators.hpp) as
 `(TS<SCALAR>, SCALAR) -> TS<SCALAR>`. Collection inputs and time-series fallbacks
 are unsupported, so this composition was skipped.
 
 The attribute variant of 0.8
 `test_nested_map_projection_preserves_final_key_removal` projects a bundle
-field from the entire mapped dictionary. BG's
+field from the entire mapped dictionary. HG's
 [`getattr` overloads](../../../src/time_series/tsb/operators.cpp) accept a TSB
 or scalar Bundle, not `TSD<K, TSB<...>>`. This convenience form was skipped.
 The explicit map projection is covered by the preceding sweep.
@@ -240,7 +240,7 @@ build/integration/hgraph-pattern-library-tests
 build/integration/hgraph-pattern-engine-tests
 ```
 
-The complete current BG suite was not run. Library coverage-tag validation
+The complete current HG suite was not run. Library coverage-tag validation
 passes. Engine validation reports five existing diagnostics: an undocumented
 `definition:graph` value, two uses of an unknown `lifetime` dimension, one test
 missing a `feature` tag, and an unknown `invalidation` dimension. All added cases

@@ -5,7 +5,7 @@ from hgraph 0.5 and 0.8. It checks reference routing through maps and nested
 collections, empty collection states, and updates after membership changes. It
 does not change production code.
 
-The BG baseline is `61574125750b0f048432ebb7dd8d10d1f507491d`. The upstream
+The HG baseline is `61574125750b0f048432ebb7dd8d10d1f507491d`. The upstream
 snapshots are hgraph 0.5.42 at
 [`c34dba1db8a1c873ee303796db4c8fc48c8cc5be`](https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be)
 and hgraph's current 0.8 development branch at
@@ -18,12 +18,12 @@ The [latest recheck](hgraph-pattern-recheck-2026-10-30.md) records the status of
 the earlier findings. This sweep adds six cases; it does not rerun those reports'
 historical failure audits.
 
-## New BG cases
+## New HG cases
 
-All six cases pass. Each case checks a supported BG composition derived from
+All six cases pass. Each case checks a supported HG composition derived from
 the named upstream test.
 
-| BG test | Upstream source | Coverage |
+| HG test | Upstream source | Coverage |
 | --- | --- | --- |
 | `dedup publishes an initially empty dictionary before its first item` in [`stream_test.cpp`](../../../tests/library/stream_test.cpp) | 0.5 `_operators/test_stream_operators.py::test_drop_dups_tsd_preserves_initial_empty_value` | Empty, first item, removal, and re-addition states |
 | `dedup publishes an empty dictionary child in a bundle` in [`stream_test.cpp`](../../../tests/library/stream_test.cpp) | 0.5 `_operators/test_stream_operators.py::test_drop_dups_tsb_preserves_initial_empty_tsd_child` | A free bundle containing an initially empty dictionary child |
@@ -51,19 +51,19 @@ the normal downstream graph path.
 
 No new graph-runtime defect was confirmed.
 
-BG `TSD` `getitem` keeps a selected key when the source key is removed and
+HG `TSD` `getitem` keeps a selected key when the source key is removed and
 invalidates its reference. Upstream's selection tests remove that result key.
 The new direct and identity-map traces both end with `{2: INVALID}`, as required
-by BG's [collection-selection contract](../design/library.md#collection-selection).
+by HG's [collection-selection contract](../design/library.md#collection-selection).
 
 Nested merge selects the leftmost valid changed input for an overlapping key.
-The new test asserts this precedence. Partition uses BG's default
+The new test asserts this precedence. Partition uses HG's default
 `remove_empty=true`, so removing a group's last member removes that group.
 
 ## Remaining scope
 
 Three-level `test_collapse_more_keys_tsd`, `test_uncollapse_more_keys_tsd`, and
-its keep-empty variant require more than BG's supported
+its keep-empty variant require more than HG's supported
 [two key levels](../../user/reference/library-collections.md#dictionary-transforms).
 They remain excluded.
 
@@ -82,5 +82,5 @@ attribute projection exclusion.
 The focused library runner passed **221 test cases and 469 assertions**. It
 includes all cases from `stream_test.cpp`, `collection_test.cpp`,
 `merge_test.cpp`, `tsd_transform_test.cpp`, and `tick_selection_test.cpp`.
-It was built with GCC Release flags (`-O3 -DNDEBUG`) against the matching BG
-runtime. The complete BG test suite was not run for this tests-and-report change.
+It was built with GCC Release flags (`-O3 -DNDEBUG`) against the matching HG
+runtime. The complete HG test suite was not run for this tests-and-report change.

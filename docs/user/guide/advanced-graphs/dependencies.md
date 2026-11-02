@@ -222,7 +222,7 @@ This loop starts from `1`, advances to `3`, and then stops publishing.
 :sync: python
 
 ```python
-from bg import Feedback, TS, graph, node, run_graph
+from hg import Feedback, TS, graph, node, run_graph
 
 @node
 def advance(seed: int | None, previous: int | None) -> int:
@@ -256,13 +256,13 @@ Output:
 :::{tab-item} Code
 
 ```cpp
-#include <bg/feedback.hpp>
-#include <bg/node.hpp>
-#include <bg/run_graph.hpp>
+#include <hg/feedback.hpp>
+#include <hg/node.hpp>
+#include <hg/run_graph.hpp>
 #include <iostream>
 #include <optional>
 
-using namespace bg;
+using namespace hg;
 
 const auto advance = node([](std::optional<i64> seed, std::optional<i64> previous) -> std::optional<i64> {
     if (!previous) {
@@ -297,7 +297,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/bg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
 cmake --build build --config Release
 ```
 
