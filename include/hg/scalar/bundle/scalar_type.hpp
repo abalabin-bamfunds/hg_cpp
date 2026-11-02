@@ -208,10 +208,10 @@ struct hierarchical_scalar_schema_supported_impl<Schema, hierarchical_scalar_sch
                 ...);
     }
 
-    static consteval bool calculate() {
+    template <typename SchemaReflection = Reflection> static consteval bool calculate() {
         auto supported = direct_fields(std::make_index_sequence<Reflection::direct_field_count>{});
-        if constexpr (Reflection::has_base) {
-            using Base = typename Reflection::base_schema;
+        if constexpr (SchemaReflection::has_base) {
+            using Base = typename SchemaReflection::base_schema;
             supported = supported &&
                         hierarchical_scalar_schema_supported_impl<Base::template apply, Stack>::value;
         }

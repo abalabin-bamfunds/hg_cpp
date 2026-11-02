@@ -1,7 +1,7 @@
 # Installation
 
 HG requires a C++23 compiler and CMake 3.31 or later. Python authoring requires
-Python 3.13 or later. The following commands build from a local repository checkout;
+Python 3.12 or later. The following commands build from a local repository checkout;
 configuration downloads build dependencies.
 
 ::::{tab-set}
@@ -58,6 +58,8 @@ cmake --build build --config Release
 Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
 Shared-library installations may require the installation's library directory on the
 platform's library search path. On Windows, add its `bin` directory to `PATH`.
+For the SDK included in a Windows wheel, also add `hg_cpp.libs` from the same
+installation prefix.
 
 The [example downloads](../how-to/examples.md) include Python source and C++ projects.
 

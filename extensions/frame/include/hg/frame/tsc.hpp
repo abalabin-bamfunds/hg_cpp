@@ -637,7 +637,7 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
     }
 
     template <frame::cell_type Cell>
-        requires details::scalar_variable<T>
+        requires(details::scalar_variable<T> && !std::same_as<Cell, frame::cell_value_t<Cell>>)
     void set(frame::row_id_t id, std::optional<frame::cell_value_t<Cell>> value) const {
         auto &output = storage<Cell>();
         output.set(id, value, binding_->context().evaluation_time(), binding_->allocator());
@@ -653,7 +653,7 @@ class Out<frame::TSC<T, Properties...>, frame::computed<>> {
     }
 
     template <frame::cell_type Cell>
-        requires details::scalar_variable<T>
+        requires(details::scalar_variable<T> && !std::same_as<Cell, frame::cell_value_t<Cell>>)
     void set(frame::row_id_t id, frame::cell_value_t<Cell> value) const {
         set<Cell>(id, std::optional<frame::cell_value_t<Cell>>{value});
     }

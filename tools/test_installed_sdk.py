@@ -30,6 +30,7 @@ def main() -> None:
                 str(ROOT / "packaging/consumer"),
                 "-B",
                 str(build_directory),
+                "-DCMAKE_BUILD_TYPE=Release",
                 f"-DCMAKE_PREFIX_PATH={install_prefix}",
                 f"-DPython_EXECUTABLE={sys.executable}",
                 f"-DHG_TEST_PACKAGE_DIR={package_dir}",
@@ -43,14 +44,19 @@ def main() -> None:
         runtime_environment = os.environ.copy()
         if os.name == "nt":
             runtime_environment["PATH"] = os.pathsep.join(
-                (str(package_dir), str(install_prefix / "bin"), runtime_environment["PATH"])
+                (
+                    str(package_dir),
+                    str(install_prefix / "bin"),
+                    str(install_prefix / f"{project['name']}.libs"),
+                    runtime_environment["PATH"],
+                )
             )
         subprocess.run([str(executable)], check=True, env=runtime_environment)
         subprocess.run(
             [
                 sys.executable,
                 "-c",
-                "import hg_sdk_python_consumer; assert hg_sdk_python_consumer.version()",
+                "import hg; import hg_sdk_python_consumer; assert hg_sdk_python_consumer.version()",
             ],
             cwd=build_directory,
             check=True,

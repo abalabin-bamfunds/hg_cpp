@@ -38,8 +38,8 @@
 #include <sys/resource.h>
 #elif defined(_WIN32)
 #define NOMINMAX
-#include <psapi.h>
 #include <windows.h>
+#include <psapi.h>
 #endif
 
 namespace {

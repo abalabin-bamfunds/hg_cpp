@@ -344,22 +344,29 @@ struct string_format_overloads {
         return false;
     }
 
+    static constexpr auto str_scalar_evaluation = [](Scalar<SCALAR> value, Out<TS<string, G>> output) {
+        output.set_value(ScalarValue<string>{scalar_text(value)});
+    };
+
+    static constexpr auto str_evaluation = [](In<TS<SCALAR, G>> value, Out<TS<string, G>> output) {
+        output.set_value(ScalarValue<string>{scalar_text(value.value_view())});
+    };
+
+    static constexpr auto format_evaluation = [](
+        std::string_view pattern, In<TSB<FORMAT_POSITIONAL>, var_args, hg::all_valid> positional,
+        In<TSB<FORMAT_NAMED>, var_kwargs, hg::all_valid> named, Out<TS<string, G>> output) {
+        output.set_value(ScalarValue<string>{format(pattern, positional, named)});
+    };
+
     overload<str_> str_scalar{node(
-        eval = [](Scalar<SCALAR> value, Out<TS<string, G>> output) {
-            output.set_value(ScalarValue<string>{scalar_text(value)});
-        },
+        eval = str_scalar_evaluation,
         resolve<decltype(G)> = resolve_output)};
 
     overload<str_> str_impl{node(
-        eval = [](In<TS<SCALAR, G>> value, Out<TS<string, G>> output) {
-            output.set_value(ScalarValue<string>{scalar_text(value.value_view())});
-        })};
+        eval = str_evaluation)};
 
     overload<format_> format_impl{node(
-        eval = [](std::string_view pattern, In<TSB<FORMAT_POSITIONAL>, var_args, hg::all_valid> positional,
-                 In<TSB<FORMAT_NAMED>, var_kwargs, hg::all_valid> named, Out<TS<string, G>> output) {
-            output.set_value(ScalarValue<string>{format(pattern, positional, named)});
-        },
+        eval = format_evaluation,
         resolve<decltype(G)> = resolve_output)};
 
     struct print_definition {

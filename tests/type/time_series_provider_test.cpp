@@ -3328,7 +3328,8 @@ TEST_CASE("feedback uses registered handlers for provider time series",
 
     const auto graph = [&](wp<TS<i64>> input) {
         auto loop = feedback<Series>("provider_feedback");
-        const auto output = consume(static_cast<wp<Series>>(loop));
+        const wp<Series> feedback_output = loop;
+        const auto output = consume(feedback_output);
         loop = provide(input);
         return output;
     };

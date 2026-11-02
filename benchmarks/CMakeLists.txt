@@ -34,6 +34,18 @@ target_link_libraries(hg_string_regex_benchmark PRIVATE hg::library)
 if(WIN32)
     target_link_libraries(hg_high_count_map_benchmark PRIVATE psapi)
     target_link_libraries(hg_reduce_benchmark PRIVATE psapi)
+
+    get_property(benchmark_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+    foreach(benchmark_target IN LISTS benchmark_targets)
+        add_custom_command(
+            TARGET ${benchmark_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:${benchmark_target}>
+                    $<TARGET_FILE_DIR:${benchmark_target}>
+            COMMAND_EXPAND_LISTS
+            VERBATIM
+        )
+    endforeach()
 endif()
 
 if(BUILD_TESTING)

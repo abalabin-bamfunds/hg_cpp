@@ -202,8 +202,13 @@ template <typename T, typename Source>
         auto storage = Stored{};
         auto value_memory = scalar_value_allocator(memory);
         Traits::construct(std::addressof(storage), std::forward<Source>(source), value_memory);
-        return {&cpp_scalar_runtime_type<T>(), reinterpret_cast<std::uintptr_t>(storage),
-                ScalarDataMode::shared_value};
+        auto data = std::uintptr_t{};
+        if constexpr (std::is_pointer_v<Stored>) {
+            data = reinterpret_cast<std::uintptr_t>(storage);
+        } else {
+            data = storage;
+        }
+        return {&cpp_scalar_runtime_type<T>(), data, ScalarDataMode::shared_value};
     }
 
     if constexpr (inline_scalar_value<T> && std::same_as<std::remove_cvref_t<Source>, typename Traits::value_type>) {

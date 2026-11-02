@@ -4691,8 +4691,7 @@ class Out<frame::TSF<Schema, Properties...>, Option>
 
     template <util::compile_time_string Name, frame::cell_type Cell>
     void set_batch(std::span<const frame::row_id_t> ids, const frame::ColumnBatch<Cell> &batch) const {
-        this->template set_computed_batch(this->runtime_storage().field_index(util::symbol{Name.view()}), ids,
-                                          batch);
+        this->set_computed_batch(this->runtime_storage().field_index(util::symbol{Name.view()}), ids, batch);
     }
 
     template <frame::cell_type Cell>
@@ -4754,13 +4753,13 @@ class Out<frame::TSF<Schema, Properties...>, Option>
     template <frame::cell_type Cell>
     void set_batch(util::symbol name, std::span<const frame::row_id_t> ids,
                    const frame::ColumnBatch<Cell> &batch) const {
-        this->template set_computed_batch(this->runtime_storage().field_index(name), ids, batch);
+        this->set_computed_batch(this->runtime_storage().field_index(name), ids, batch);
     }
 
     template <frame::cell_type Cell>
     void set_batch(std::size_t index, std::span<const frame::row_id_t> ids,
                    const frame::ColumnBatch<Cell> &batch) const {
-        this->template set_computed_batch(index, ids, batch);
+        this->set_computed_batch(index, ids, batch);
     }
 };
 

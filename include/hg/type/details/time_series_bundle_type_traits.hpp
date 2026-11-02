@@ -84,21 +84,24 @@ struct time_series_type_traits<TSB<Schema, Properties...>> {
         return (true && ... && bundle_field_type_traits<direct_bundle_field<Index, Schema>>::supported);
     }
 
-    static constexpr bool generic = [] {
+    static consteval bool is_generic() {
         if constexpr (schema_variable) {
             return true;
         } else {
             return BaseTraits::generic || fields_generic(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
         }
-    }();
-    static constexpr bool supported = [] {
+    }
+    static consteval bool is_supported() {
         if constexpr (schema_variable) {
             return true;
         } else {
             return BaseTraits::supported &&
                    fields_supported(std::make_index_sequence<direct_bundle_field_count<Schema>>{});
         }
-    }();
+    }
+
+    static constexpr bool generic = is_generic();
+    static constexpr bool supported = is_supported();
 
     template <typename Scope, std::size_t, TimeSeriesTypeRole Role>
     static const TimeSeriesType &get(GuaranteeParameter guarantee) {

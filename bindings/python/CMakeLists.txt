@@ -103,19 +103,19 @@ set_target_properties(
 )
 
 if(WIN32)
-    add_custom_command(
-        TARGET _hg
-        POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hg>" "$<TARGET_FILE_DIR:_hg>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hg_library>" "$<TARGET_FILE_DIR:_hg>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:hg_python>" "$<TARGET_FILE_DIR:_hg>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:nanobind-abi3>" "$<TARGET_FILE_DIR:_hg>"
-        VERBATIM
-    )
-    install(FILES "$<TARGET_FILE:hg>" DESTINATION hg)
-    install(FILES "$<TARGET_FILE:hg_library>" DESTINATION hg)
-    install(FILES "$<TARGET_FILE:hg_python>" DESTINATION hg)
-    install(FILES "$<TARGET_FILE:nanobind-abi3>" DESTINATION hg)
+    set(python_runtime_targets hg hg_library hg_python nanobind-abi3)
+    if(HG_BUNDLE_FMT)
+        list(APPEND python_runtime_targets fmt)
+    endif()
+    foreach(runtime_target IN LISTS python_runtime_targets)
+        add_custom_command(
+            TARGET _hg POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    "$<TARGET_FILE:${runtime_target}>" "$<TARGET_FILE_DIR:_hg>"
+            VERBATIM
+        )
+        install(FILES "$<TARGET_FILE:${runtime_target}>" DESTINATION hg)
+    endforeach()
 endif()
 
 install(

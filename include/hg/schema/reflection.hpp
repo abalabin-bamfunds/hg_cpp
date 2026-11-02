@@ -118,7 +118,7 @@ template <template <template <typename, auto...> typename> typename Schema,
 struct schema_initializers {
     using Reflection = schema_reflection<Schema, ReflectionField>;
 
-    static constexpr std::size_t base_probe_count = [] {
+    static consteval std::size_t base_probe_count_of() {
         if constexpr (Reflection::has_base) {
             using Base = typename Reflection::base_schema;
             using BaseReflection = schema_reflection<Base::template apply, ReflectionField>;
@@ -129,9 +129,9 @@ struct schema_initializers {
             }
         }
         return std::size_t{};
-    }();
+    }
 
-    using base_initializers = decltype([] {
+    static auto base_initializer_list() {
         if constexpr (!Reflection::has_base) {
             return schema_initializer_list<>{};
         } else {
@@ -144,7 +144,10 @@ struct schema_initializers {
                                                     RootReflection>::type{};
             }
         }
-    }());
+    }
+
+    static constexpr std::size_t base_probe_count = base_probe_count_of();
+    using base_initializers = decltype(base_initializer_list());
 
     using direct_initializers = typename schema_direct_initializers<
         Schema, ReflectionField, RootReflection, base_probe_count,

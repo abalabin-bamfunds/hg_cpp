@@ -77,6 +77,7 @@ The HG Python component finds nanobind in the selected Python environment.
 Put the module's output directory on `PYTHONPATH` before running the Python
 example; multi-configuration generators place it under `build/Release`.
 Use the same Python interpreter and compatible compiler as the HG installation.
+On Windows, import `hg` before the native module to register the wheel's DLL directories.
 :::
 ::::
 :::::

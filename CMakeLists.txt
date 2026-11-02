@@ -208,6 +208,7 @@ add_library(
 add_library(hg::hg ALIAS hg)
 
 target_compile_features(hg PUBLIC cxx_std_23)
+target_compile_options(hg PUBLIC $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
 target_compile_definitions(hg PRIVATE HG_BUILDING_ENGINE HG_VERSION="${PROJECT_VERSION}" QUILL_DLL_EXPORT)
 target_link_libraries(hg PUBLIC ddv::ddvisitor fmt::fmt PRIVATE quill::quill Threads::Threads)
 target_include_directories(

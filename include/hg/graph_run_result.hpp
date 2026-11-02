@@ -98,7 +98,8 @@ template <typename T = void> class GraphRunResult {
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
     bool equals(
-        std::initializer_list<std::optional<std::remove_cvref_t<typename hg::scalar_storage_traits<Value>::value_type>>>
+        std::initializer_list<std::optional<std::remove_cvref_t<typename hg::scalar_storage_traits<
+            std::enable_if_t<!std::same_as<Value, void>, Value>>::value_type>>>
             expected) const {
         if (size() != expected.size()) {
             return false;
@@ -126,7 +127,8 @@ template <typename T = void> class GraphRunResult {
     template <typename Value = T>
         requires(!std::same_as<Value, void>)
     bool operator==(
-        std::initializer_list<std::optional<std::remove_cvref_t<typename hg::scalar_storage_traits<Value>::value_type>>>
+        std::initializer_list<std::optional<std::remove_cvref_t<typename hg::scalar_storage_traits<
+            std::enable_if_t<!std::same_as<Value, void>, Value>>::value_type>>>
             expected) const {
         return equals(expected);
     }

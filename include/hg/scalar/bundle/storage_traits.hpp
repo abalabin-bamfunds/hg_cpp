@@ -55,13 +55,13 @@ struct hierarchical_capability<Bundle<Schema>, hierarchical_capability_stack<See
                 ...);
     }
 
-    static consteval bool calculate() {
+    template <typename SchemaReflection = Reflection> static consteval bool calculate() {
         if constexpr ((std::same_as<Declaration, Seen> || ...)) {
             return true;
         } else {
             auto result = direct_fields(std::make_index_sequence<Reflection::direct_field_count>{});
-            if constexpr (Reflection::has_base) {
-                using Base = typename Reflection::base_schema;
+            if constexpr (SchemaReflection::has_base) {
+                using Base = typename SchemaReflection::base_schema;
                 result = result && hierarchical_capability<Bundle<Base::template apply>, Next, Hash>::value;
             }
             return result;

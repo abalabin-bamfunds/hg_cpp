@@ -26,7 +26,8 @@ TEST_CASE("feedback replays each captured value in the next cycle",
     const auto graph = [](wp<TS<i64>> input) {
         auto loop = feedback<TS<i64>>("loop");
         loop = input;
-        return static_cast<wp<TS<i64>>>(loop);
+        wp<TS<i64>> output = loop;
+        return output;
     };
 
     const auto actual = hg::run_graph(graph, {2, 5, 7, 11});
@@ -38,7 +39,8 @@ TEST_CASE("feedback waits for its first input tick",
     const auto graph = [](wp<TS<i64>> input) {
         auto loop = feedback<TS<i64>>();
         loop = input;
-        return static_cast<wp<TS<i64>>>(loop);
+        wp<TS<i64>> output = loop;
+        return output;
     };
 
     const auto actual = hg::run_graph(graph, {literal::SKIP, 3, literal::SKIP, 8});
@@ -59,7 +61,8 @@ TEST_CASE("feedback can drive a bounded computation loop",
         auto loop = feedback<TS<i64>>("bounded");
         const auto next = advance(seed, loop);
         loop = next;
-        return static_cast<wp<TS<i64>>>(loop);
+        wp<TS<i64>> output = loop;
+        return output;
     };
 
     const auto actual = hg::run_graph(graph, {1});
@@ -101,7 +104,8 @@ TEST_CASE("feedback replays invalidation and revalidation",
     const auto replay = graph("name"_n = "replay", [&](wp<TS<i64>> input) {
         auto loop = feedback<TS<i64>>();
         loop = invalidate_on_zero(input);
-        return static_cast<wp<TS<i64>>>(loop);
+        wp<TS<i64>> output = loop;
+        return output;
     });
 
     CHECK(hg::run_graph(replay, {1, 2, 0, 3}).equals({literal::SKIP, 1, 2, literal::INVALID, 3}));
@@ -178,7 +182,8 @@ TEST_CASE("feedback can drive a bounded computation loop in a nested graph",
         auto loop = feedback<TS<i64>>("nested");
         const auto next = advance(seed, loop);
         loop = next;
-        return static_cast<wp<TS<i64>>>(loop);
+        wp<TS<i64>> output = loop;
+        return output;
     });
 
     const auto outer = [&](wp<TS<i64>> seed, wp<TS<bool>> run) {
@@ -227,7 +232,7 @@ TEST_CASE("feedback samples switched dictionary references before retaining thei
                            wp<TSD<i64, TS<i64>>> first,
                            wp<TSD<i64, TS<i64>>> second) {
         auto loop = feedback<TSD<i64, TS<i64>>>();
-        const auto output = static_cast<wp<TSD<i64, TS<i64>>>>(loop);
+        const wp<TSD<i64, TS<i64>>> output = loop;
         loop = select(use_second, first, second);
         return output;
     };
@@ -243,7 +248,8 @@ TEST_CASE("feedback wires through the normal guarantee compatibility rules",
         auto context = WiringContext{wiring};
         auto loop = feedback<TS<i64, TimeSeriesGuarantee::final>>();
         loop = operators::const_(i64{7});
-        static_cast<void>(static_cast<wp<TS<i64, TimeSeriesGuarantee::final>>>(loop));
+        const wp<TS<i64, TimeSeriesGuarantee::final>> output = loop;
+        static_cast<void>(output);
     }
 
     wiring.finalize();

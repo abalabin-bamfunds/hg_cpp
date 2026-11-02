@@ -32,7 +32,7 @@ def increment(value: int) -> int:
 def graph(value: int) -> int:
     return increment(value)
 
-assert hg.test_graph(graph, [1, 4, None, 7]) == [2, 5, None, 8]
+assert hg.run_graph(graph, [1, 4, None, 7]) == [2, 5, None, 8]
 print(f"Imported hg from {package_dir}; graph smoke passed")
 '''
 

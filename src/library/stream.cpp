@@ -23,6 +23,8 @@ inline constexpr auto DEDUPED = guarantee_variable<"DEDUPED", TimeSeriesGuarante
 inline constexpr auto G = guarantee_variable<"G">;
 using SIZE_DECLARATION = std::remove_cv_t<decltype(SIZE)>;
 
+inline constexpr auto dedup_identity_graph = [](wp<TS_T::with<DEDUPED>> value) { return value; };
+
 struct stream_overloads {
     // Validity queries.
     overload<valid> valid_impl{
@@ -256,7 +258,7 @@ struct stream_overloads {
 
     overload<sample, sample_impl> sample_impl;
 
-    overload<dedup> dedup_identity{graph([](wp<TS_T::with<DEDUPED>> value) { return value; })};
+    overload<dedup> dedup_identity{graph(dedup_identity_graph)};
 
     struct dedup_impl {
         In<TS_T> value;

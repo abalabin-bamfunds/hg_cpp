@@ -48,6 +48,13 @@ template <template <typename, auto...> typename Field>
 using SCALAR_SCHEMA = BundleSchemaVariableDeclaration<"CONVERSION_SCALAR_SCHEMA", Field>;
 template <template <typename, auto...> typename Field>
 using SERIES_SCHEMA = BundleSchemaVariableDeclaration<"CONVERSION_SERIES_SCHEMA", Field>;
+
+inline constexpr auto combine_tsl_graph =
+    [](wp<TSL<TS_T, SIZE, G>, "values"_n, var_args, optional> values) { return values.as<OUT>(); };
+
+inline constexpr auto combine_tsb_graph =
+    [](wp<TSB<COMBINE_SCHEMA, G>, "values"_n, var_kwargs, optional> values) { return values.as<OUT>(); };
+
 struct conversion_overloads {
     static const TimeSeriesType *requested_result(const WiringArguments &arguments) {
         const auto *mapping = arguments.type_map().find(::hg::details::type_parameter<CONVERT_RESULT>());
@@ -430,11 +437,11 @@ struct conversion_overloads {
 
     overload<combine> combine_tsl{graph<OUT>(
         require = require_combine_tsl,
-        [](wp<TSL<TS_T, SIZE, G>, "values"_n, var_args, optional> values) { return values.as<OUT>(); })};
+        combine_tsl_graph)};
 
     overload<combine> combine_tsb{graph<OUT>(
         require = require_combine_tsb,
-        [](wp<TSB<COMBINE_SCHEMA, G>, "values"_n, var_kwargs, optional> values) { return values.as<OUT>(); })};
+        combine_tsb_graph)};
 };
 
 } // namespace
