@@ -63,8 +63,8 @@ WiringError::WiringError(std::string message, std::exception_ptr cause)
     : WiringError{std::move(message), std::nullopt, {}, std::move(cause)} {}
 
 WiringError::WiringError(WiringDiagnostic diagnostic, std::exception_ptr cause)
-    : WiringError{render(diagnostic), std::optional<WiringDiagnostic>{std::move(diagnostic)}, {},
-                  std::move(cause)} {}
+    : std::runtime_error{render(diagnostic)}, message_{std::runtime_error::what()},
+      diagnostic_{std::move(diagnostic)}, contexts_{}, cause_{std::move(cause)} {}
 
 WiringError::WiringError(std::string message, std::optional<WiringDiagnostic> diagnostic,
                          std::vector<WiringErrorContext> contexts, std::exception_ptr cause)

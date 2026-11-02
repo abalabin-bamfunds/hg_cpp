@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <memory>
 #include <stdexcept>
+#include <string_view>
 
 using namespace hg;
 namespace shared = test_shared_declarations;
@@ -168,6 +169,8 @@ TEST_CASE("imported selection operators reject unused explicit types", "[feature
             call();
             FAIL("the unused explicit type argument was accepted");
         } catch (const WiringError &error) {
+            CHECK(std::string_view{error.what()}.find("overload does not accept the explicit type argument") !=
+                  std::string_view::npos);
             REQUIRE(error.diagnostic().has_value());
             CHECK(std::ranges::any_of(error.diagnostic()->candidates, [](const auto &candidate) {
                 return candidate.message == "overload does not accept the explicit type argument";
