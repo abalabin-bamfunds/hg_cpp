@@ -1,6 +1,7 @@
 #include "server_runtime.hpp"
 #include "http_header.hpp"
 #include "runtime_logging.hpp"
+#include "transport_stream.hpp"
 
 #include <hg/literal/time_series_literal.hpp>
 #include <hg/scalar/bundle/scalar.hpp>
@@ -44,7 +45,9 @@ namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
+namespace ssl = asio::ssl;
 using tcp = asio::ip::tcp;
+using TransportStream = details::TransportStream;
 using RequestHeaders = std::vector<std::pair<std::string, std::string>>;
 using namespace hg::literals;
 
@@ -130,7 +133,7 @@ struct ActiveResponse {
 
 class HttpSession final : public std::enable_shared_from_this<HttpSession> {
   public:
-    HttpSession(tcp::socket socket, ServerImplementation &server)
+    HttpSession(TransportStream socket, ServerImplementation &server)
         : socket_{std::move(socket)}, server_{&server}, timeout_{socket_.get_executor()} {}
 
     void run();
@@ -140,7 +143,7 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     void write_response(ScalarValue<Bundle<HttpResponse>> response);
     void await_response(i64 request_id);
     void send_error(http::status status, std::string body, bool close);
-    tcp::socket take_socket() noexcept { return std::move(socket_); }
+    TransportStream take_stream() noexcept { return std::move(socket_); }
 
   private:
     void read_request();
@@ -152,8 +155,9 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     void cancel_timeout() noexcept;
     void start_response_write_timeout();
     void finish_request();
-    void close_connection() noexcept;
-    tcp::socket socket_;
+    void close_connection(bool graceful_tls = false) noexcept;
+    void finish_transport_close() noexcept;
+    TransportStream socket_;
     ServerImplementation *server_;
     beast::flat_buffer buffer_;
     std::optional<OrderedRequestParser> parser_;
@@ -166,11 +170,13 @@ class HttpSession final : public std::enable_shared_from_this<HttpSession> {
     bool disconnect_watch_started_{};
     bool head_request_{};
     bool interim_response_pending_{};
+    bool transport_closing_{};
+    bool transport_closed_{};
 };
 
 class WebSocketSession final : public std::enable_shared_from_this<WebSocketSession> {
   public:
-    WebSocketSession(tcp::socket socket, ServerImplementation &server, service_client_id_t client_id, i64 id,
+    WebSocketSession(TransportStream socket, ServerImplementation &server, service_client_id_t client_id, i64 id,
                      http::request<http::string_body> request);
 
     service_client_id_t client_id() const noexcept { return client_id_; }
@@ -189,6 +195,7 @@ class WebSocketSession final : public std::enable_shared_from_this<WebSocketSess
     };
     using Operation = std::variant<MessageOperation, CloseOperation>;
     enum class State { awaiting_response, accepting, open, closing, rejecting, closed };
+    enum class DisconnectWatch { inactive, watching, canceling };
 
     void accept(ScalarValue<Bundle<HttpResponse>> response);
     void reject(ScalarValue<Bundle<HttpResponse>> response);
@@ -199,11 +206,13 @@ class WebSocketSession final : public std::enable_shared_from_this<WebSocketSess
     void run_next_operation();
     void watch_disconnect();
     void cancel_disconnect_watch() noexcept;
+    void on_disconnect_watch(beast::error_code error, std::size_t size);
     void start_response_write_timeout();
+    ScalarValue<Bundle<HttpResponse>> error_response(http::status status, std::string_view body) const;
     void finish() noexcept;
     void close_socket() noexcept;
 
-    websocket::stream<tcp::socket> stream_;
+    websocket::stream<TransportStream> stream_;
     ServerImplementation *server_;
     service_client_id_t client_id_;
     i64 id_;
@@ -212,9 +221,10 @@ class WebSocketSession final : public std::enable_shared_from_this<WebSocketSess
     asio::steady_timer timeout_;
     std::array<std::byte, 1> peek_buffer_{};
     std::deque<Operation> operations_;
+    std::optional<ScalarValue<Bundle<HttpResponse>>> pending_response_;
     State state_{State::awaiting_response};
     bool operation_started_{};
-    bool disconnect_watch_started_{};
+    DisconnectWatch disconnect_watch_{DisconnectWatch::inactive};
     bool closing_requested_{};
 };
 
@@ -224,6 +234,19 @@ class ServerImplementation final {
   public:
     ServerImplementation(ServerOptions options, Queue output)
         : output_{std::move(output)}, acceptor_{io_}, accept_retry_{io_} {
+        if (options.tls) {
+            tls_context_ = std::make_unique<ssl::context>(ssl::context::tls_server);
+            tls_context_->set_options(ssl::context::default_workarounds | ssl::context::no_sslv2 |
+                                      ssl::context::no_sslv3 | ssl::context::single_dh_use);
+            if (SSL_CTX_set_min_proto_version(tls_context_->native_handle(), TLS1_2_VERSION) != 1) {
+                throw std::runtime_error{"could not set the minimum server TLS version"};
+            }
+            tls_context_->use_certificate_chain_file(options.tls->certificate_chain_file);
+            tls_context_->use_private_key_file(options.tls->private_key_file, ssl::context::pem);
+            if (SSL_CTX_check_private_key(tls_context_->native_handle()) != 1) {
+                throw std::invalid_argument{"server certificate does not match the private key"};
+            }
+        }
         const auto address = asio::ip::make_address(options.host);
         const auto endpoint = tcp::endpoint{address, options.port};
         acceptor_.open(endpoint.protocol());
@@ -420,7 +443,9 @@ class ServerImplementation final {
         }
         beast::error_code ignored;
         acceptor_.close(ignored);
-        for (const auto &session : sessions_) {
+        std::vector<std::shared_ptr<HttpSession>> sessions;
+        sessions.swap(sessions_);
+        for (const auto &session : sessions) {
             session->close_for_shutdown();
         }
         while (!websocket_sessions_.empty()) {
@@ -526,7 +551,7 @@ class ServerImplementation final {
         const auto id = static_cast<i64>(next_id_++);
         const auto client_id = route->second;
         auto value = request_value(request, target, peer, request_headers);
-        auto session = std::make_shared<WebSocketSession>(http_session->take_socket(), *this, client_id, id,
+        auto session = std::make_shared<WebSocketSession>(http_session->take_stream(), *this, client_id, id,
                                                          std::move(request));
         session_finished(http_session.get());
         websocket_sessions_.emplace(id, session);
@@ -706,7 +731,9 @@ class ServerImplementation final {
 
                 auto session = std::shared_ptr<HttpSession>{};
                 try {
-                    session = std::make_shared<HttpSession>(std::move(socket), *this);
+                    auto transport = tls_context_ ? TransportStream{std::move(socket), *tls_context_}
+                                                  : TransportStream{std::move(socket)};
+                    session = std::make_shared<HttpSession>(std::move(transport), *this);
                     sessions_.push_back(session);
                     session->run();
                 } catch (...) {
@@ -735,6 +762,7 @@ class ServerImplementation final {
     Queue websocket_messages_;
     bool websocket_queue_attached_{};
     asio::io_context io_{1};
+    std::unique_ptr<ssl::context> tls_context_;
     tcp::acceptor acceptor_;
     asio::steady_timer accept_retry_;
     std::jthread thread_;
@@ -749,7 +777,26 @@ class ServerImplementation final {
 
 namespace {
 
-void HttpSession::run() { read_request(); }
+void HttpSession::run() {
+    if (!socket_.is_tls()) {
+        read_request();
+        return;
+    }
+
+    timeout_.expires_after(request_timeout);
+    auto self = shared_from_this();
+    timeout_.async_wait(guarded_callback(self, [](HttpSession &session, beast::error_code error) {
+        if (!error) session.close_connection();
+    }));
+    socket_.async_server_handshake(guarded_callback(self, [](HttpSession &session, beast::error_code error) {
+        session.cancel_timeout();
+        if (error) {
+            session.close_connection();
+            return;
+        }
+        session.read_request();
+    }));
+}
 
 void HttpSession::runtime_failure(std::exception_ptr failure) noexcept {
     server_->record_failure(failure);
@@ -904,7 +951,7 @@ void HttpSession::on_read(beast::error_code error) {
         return;
     }
     beast::error_code peer_error;
-    const auto peer = socket_.remote_endpoint(peer_error);
+    const auto peer = socket_.lowest_layer().remote_endpoint(peer_error);
     if (peer_error) {
         close_connection();
         return;
@@ -944,7 +991,7 @@ void HttpSession::watch_disconnect() {
     disconnect_watch_started_ = true;
     auto self = shared_from_this();
     const auto generation = request_generation_;
-    socket_.async_receive(asio::buffer(peek_buffer_), tcp::socket::message_peek,
+    socket_.lowest_layer().async_receive(asio::buffer(peek_buffer_), tcp::socket::message_peek,
                           guarded_callback(self, [generation](HttpSession &session, beast::error_code error,
                                                              std::size_t size) {
                               if (generation != session.request_generation_) {
@@ -966,7 +1013,7 @@ void HttpSession::cancel_disconnect_watch() noexcept {
     }
     disconnect_watch_started_ = false;
     beast::error_code ignored;
-    socket_.cancel(ignored);
+    socket_.lowest_layer().cancel(ignored);
 }
 
 void HttpSession::cancel_timeout() noexcept {
@@ -1016,7 +1063,7 @@ void HttpSession::send_error(http::status status, std::string body, bool close) 
                                                                             beast::error_code error,
                                                                             std::size_t) {
         if (error || session.close_after_response_) {
-            session.close_connection();
+            session.close_connection(!error && session.close_after_response_);
             return;
         }
         session.read_request();
@@ -1134,7 +1181,7 @@ void HttpSession::write_response(ScalarValue<Bundle<HttpResponse>> retained_resp
                                                                                  std::size_t) {
         session.finish_request();
         if (error || session.close_after_response_) {
-            session.close_connection();
+            session.close_connection(!error && session.close_after_response_);
             return;
         }
         session.read_request();
@@ -1149,24 +1196,48 @@ void HttpSession::finish_request() {
     }
 }
 
-void HttpSession::close_connection() noexcept {
+void HttpSession::close_connection(bool graceful_tls) noexcept {
+    if (transport_closing_ || transport_closed_) return;
+    transport_closing_ = true;
     finish_request();
+    if (graceful_tls && socket_.is_tls()) {
+        try {
+            timeout_.expires_after(request_timeout);
+            auto self = shared_from_this();
+            timeout_.async_wait(guarded_callback(self, [](HttpSession &session, beast::error_code error) {
+                if (!error) session.finish_transport_close();
+            }));
+            socket_.async_tls_shutdown(guarded_callback(self, [](HttpSession &session, beast::error_code) {
+                session.finish_transport_close();
+            }));
+        } catch (...) {
+            server_->record_failure(std::current_exception());
+            finish_transport_close();
+        }
+        return;
+    }
+    finish_transport_close();
+}
+
+void HttpSession::finish_transport_close() noexcept {
+    if (transport_closed_) return;
+    transport_closed_ = true;
+    cancel_timeout();
     beast::error_code ignored;
-    socket_.shutdown(tcp::socket::shutdown_both, ignored);
-    socket_.close(ignored);
+    socket_.lowest_layer().shutdown(tcp::socket::shutdown_both, ignored);
+    socket_.lowest_layer().close(ignored);
     server_->session_finished(this);
 }
 
 void HttpSession::close_for_shutdown() noexcept {
-    beast::error_code ignored;
     cancel_timeout();
-    socket_.shutdown(tcp::socket::shutdown_both, ignored);
-    socket_.close(ignored);
+    transport_closing_ = true;
+    finish_transport_close();
 }
 
 void HttpSession::cancel() noexcept { close_connection(); }
 
-WebSocketSession::WebSocketSession(tcp::socket socket, ServerImplementation &server, service_client_id_t client_id,
+WebSocketSession::WebSocketSession(TransportStream socket, ServerImplementation &server, service_client_id_t client_id,
                                    i64 id, http::request<http::string_body> request)
     : stream_{std::move(socket)}, server_{&server}, client_id_{client_id}, id_{id}, request_{std::move(request)},
       timeout_{stream_.get_executor()} {
@@ -1196,40 +1267,58 @@ void WebSocketSession::await_response() {
 }
 
 void WebSocketSession::watch_disconnect() {
-    if (disconnect_watch_started_ || state_ != State::awaiting_response) {
+    if (disconnect_watch_ != DisconnectWatch::inactive || state_ != State::awaiting_response) {
         return;
     }
-    disconnect_watch_started_ = true;
+    disconnect_watch_ = DisconnectWatch::watching;
     auto self = shared_from_this();
-    stream_.next_layer().async_receive(asio::buffer(peek_buffer_), tcp::socket::message_peek,
-                                       guarded_callback(self, [](WebSocketSession &session, beast::error_code error,
-                                                                std::size_t size) {
-                                           session.disconnect_watch_started_ = false;
-                                           if (session.state_ != State::awaiting_response) {
-                                               return;
-                                           }
-                                           if (error == asio::error::eof || (!error && size == 0)) {
-                                               session.close_socket();
-                                               return;
-                                           }
-                                           if (!error && size != 0) {
-                                               session.reject_with_error(http::status::bad_request,
-                                                                         "Unexpected WebSocket Data");
-                                               return;
-                                           }
-                                           if (error != asio::error::operation_aborted) {
-                                               session.close_socket();
-                                           }
-                                       }));
+    stream_.next_layer().async_read_some(
+        asio::buffer(peek_buffer_),
+        guarded_callback(self, [](WebSocketSession &session, beast::error_code error, std::size_t size) {
+            session.on_disconnect_watch(error, size);
+        }));
 }
 
 void WebSocketSession::cancel_disconnect_watch() noexcept {
-    if (!disconnect_watch_started_) {
+    if (disconnect_watch_ != DisconnectWatch::watching) return;
+    disconnect_watch_ = DisconnectWatch::canceling;
+    beast::error_code ignored;
+    stream_.next_layer().lowest_layer().cancel(ignored);
+}
+
+void WebSocketSession::on_disconnect_watch(beast::error_code error, std::size_t size) {
+    const auto was_canceling = disconnect_watch_ == DisconnectWatch::canceling;
+    disconnect_watch_ = DisconnectWatch::inactive;
+    if (state_ != State::awaiting_response) {
+        pending_response_.reset();
         return;
     }
-    disconnect_watch_started_ = false;
-    beast::error_code ignored;
-    stream_.next_layer().cancel(ignored);
+
+    if (size != 0) {
+        pending_response_.reset();
+        reject_with_error(http::status::bad_request, "Unexpected WebSocket Data");
+        return;
+    }
+    if (error == asio::error::eof || (!error && size == 0)) {
+        pending_response_.reset();
+        close_socket();
+        return;
+    }
+    if (error == asio::error::operation_aborted && was_canceling && pending_response_) {
+        auto response = std::move(*pending_response_);
+        pending_response_.reset();
+        const auto status = scalar_cast<i64>(response.view()[0]).value();
+        if (status == 101) {
+            accept(std::move(response));
+        } else {
+            reject(std::move(response));
+        }
+        return;
+    }
+    if (error) {
+        pending_response_.reset();
+        close_socket();
+    }
 }
 
 void WebSocketSession::start_response_write_timeout() {
@@ -1242,18 +1331,40 @@ void WebSocketSession::start_response_write_timeout() {
     }));
 }
 
+ScalarValue<Bundle<HttpResponse>> WebSocketSession::error_response(http::status status, std::string_view body) const {
+    using Header = Tuple<string, string>;
+    const auto headers = ScalarValue<List<Header>>{
+        std::vector<std::pair<std::string, std::string>>{{"Content-Type", "text/plain; charset=utf-8"}}};
+    const auto body_bytes = std::span<const std::byte>{reinterpret_cast<const std::byte *>(body.data()), body.size()};
+    const auto body_value = ScalarValue<bytes>{body_bytes};
+    auto memory = allocator{};
+    return bundle<HttpResponse>(memory, "status"_n = static_cast<i64>(status), "headers"_n = headers.view(),
+                                "body"_n = body_value.view());
+}
+
 void WebSocketSession::apply_update(WebSocketResponseUpdate update) {
     if (state_ == State::closed || state_ == State::rejecting || closing_requested_) {
         return;
     }
 
     if (update.connect_response && state_ == State::awaiting_response) {
-        const auto response = update.connect_response->view();
-        const auto status = scalar_cast<i64>(response[0]).value();
-        if (status == 101) {
-            accept(std::move(*update.connect_response));
+        if (disconnect_watch_ != DisconnectWatch::inactive) {
+            const auto incoming_status = scalar_cast<i64>(update.connect_response->view()[0]).value();
+            const auto replace_pending =
+                !pending_response_ ||
+                (scalar_cast<i64>(pending_response_->view()[0]).value() == 101 && incoming_status != 101);
+            if (replace_pending) {
+                pending_response_.emplace(std::move(*update.connect_response));
+                cancel_disconnect_watch();
+            }
         } else {
-            reject(std::move(*update.connect_response));
+            const auto response = update.connect_response->view();
+            const auto status = scalar_cast<i64>(response[0]).value();
+            if (status == 101) {
+                accept(std::move(*update.connect_response));
+            } else {
+                reject(std::move(*update.connect_response));
+            }
         }
     }
 
@@ -1266,6 +1377,10 @@ void WebSocketSession::apply_update(WebSocketResponseUpdate update) {
     if (update.close) {
         const auto close = update.close->view();
         const auto code = scalar_cast<i64>(close[0]).value();
+        if (state_ == State::awaiting_response && code == 1008) {
+            reject_with_error(http::status::forbidden, "WebSocket Authentication Rejected");
+            return;
+        }
         if ((state_ != State::awaiting_response || code != 1008) && !closing_requested_) {
             enqueue_close(std::move(*update.close));
         }
@@ -1421,20 +1536,17 @@ void WebSocketSession::reject_with_error(http::status status, std::string body) 
     if (state_ == State::closed || state_ == State::rejecting) {
         return;
     }
-    state_ = State::rejecting;
-    cancel_disconnect_watch();
-    start_response_write_timeout();
-    auto response = std::make_shared<http::response<http::string_body>>(status, request_.version());
-    response->set(http::field::content_type, "text/plain; charset=utf-8");
-    response->body() = std::move(body);
-    response->keep_alive(false);
-    response->prepare_payload();
-    auto self = shared_from_this();
-    http::async_write(stream_.next_layer(), *response, guarded_callback(self, [response](WebSocketSession &session,
-                                                                                         beast::error_code,
-                                                                                         std::size_t) {
-        session.close_socket();
-    }));
+    if (disconnect_watch_ != DisconnectWatch::inactive && pending_response_ &&
+        scalar_cast<i64>(pending_response_->view()[0]).value() != 101) {
+        return;
+    }
+    auto response = error_response(status, body);
+    if (disconnect_watch_ != DisconnectWatch::inactive) {
+        pending_response_.emplace(std::move(response));
+        cancel_disconnect_watch();
+        return;
+    }
+    reject(std::move(response));
 }
 
 void WebSocketSession::read_message() {
@@ -1573,10 +1685,9 @@ void WebSocketSession::close_for_route_removal() {
 void WebSocketSession::close_for_shutdown() noexcept { close_socket(); }
 
 void WebSocketSession::finish() noexcept {
-    if (state_ == State::closed) {
-        return;
-    }
+    if (state_ == State::closed) return;
     state_ = State::closed;
+    pending_response_.reset();
     try {
         timeout_.cancel();
     } catch (...) {
@@ -1588,8 +1699,8 @@ void WebSocketSession::finish() noexcept {
 void WebSocketSession::close_socket() noexcept {
     finish();
     beast::error_code ignored;
-    stream_.next_layer().shutdown(tcp::socket::shutdown_both, ignored);
-    stream_.next_layer().close(ignored);
+    stream_.next_layer().lowest_layer().shutdown(tcp::socket::shutdown_both, ignored);
+    stream_.next_layer().lowest_layer().close(ignored);
 }
 
 } // namespace

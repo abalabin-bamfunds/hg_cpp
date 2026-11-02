@@ -4,6 +4,7 @@
 #include "http_header.hpp"
 #include "websocket_client_output.hpp"
 #include "runtime_logging.hpp"
+#include "transport_stream.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
@@ -46,7 +47,9 @@ namespace asio = boost::asio;
 namespace beast = boost::beast;
 namespace http = beast::http;
 namespace websocket = beast::websocket;
+namespace ssl = asio::ssl;
 using tcp = asio::ip::tcp;
+using TransportStream = details::TransportStream;
 using namespace hg::literals;
 
 using Header = Tuple<string, string>;
@@ -68,6 +71,7 @@ struct ParsedUrl {
     std::string service;
     std::string host_header;
     std::string target;
+    bool secure{};
 };
 
 std::optional<std::string> parse_url(std::string_view value, ParsedUrl &parsed) {
@@ -75,7 +79,10 @@ std::optional<std::string> parse_url(std::string_view value, ParsedUrl &parsed) 
     const auto result = boost::urls::parse_uri(value);
     if (!result) return std::string{"invalid WebSocket URL"};
     const auto url = *result;
-    if (!beast::iequals(url.scheme(), "ws")) return std::string{"WebSocket URL scheme must be ws"};
+    if (!beast::iequals(url.scheme(), "ws") && !beast::iequals(url.scheme(), "wss")) {
+        return std::string{"WebSocket URL scheme must be ws or wss"};
+    }
+    parsed.secure = beast::iequals(url.scheme(), "wss");
     if (url.has_userinfo()) return std::string{"WebSocket URL cannot contain user information"};
     if (url.has_fragment()) return std::string{"WebSocket URL fragments are not supported"};
     if (url.host().empty()) return std::string{"WebSocket URL has no host"};
@@ -91,7 +98,7 @@ std::optional<std::string> parse_url(std::string_view value, ParsedUrl &parsed) 
     }
     parsed.host = url.host_type() == boost::urls::host_type::ipv6 ? std::string{url.host_address()} : host;
     parsed.host_header = std::string{url.encoded_authority()};
-    parsed.service = "80";
+    parsed.service = parsed.secure ? "443" : "80";
     if (url.has_port()) {
         const auto port = url.port();
         auto port_value = std::uint32_t{};
@@ -168,6 +175,15 @@ class WebSocketClientImplementation final {
         if (options_.max_message_size == 0) {
             throw std::invalid_argument{"WebSocket maximum message size must be positive"};
         }
+        ssl_context_.set_options(ssl::context::default_workarounds | ssl::context::no_sslv2 |
+                                 ssl::context::no_sslv3);
+        if (SSL_CTX_set_min_proto_version(ssl_context_.native_handle(), TLS1_2_VERSION) != 1) {
+            throw std::runtime_error{"could not set the minimum client TLS version"};
+        }
+        auto trust_error = boost::system::error_code{};
+        ssl_context_.set_default_verify_paths(trust_error);
+        if (options_.ca_file) ssl_context_.load_verify_file(*options_.ca_file);
+        ssl_context_.set_verify_mode(ssl::verify_peer);
         thread_ = std::jthread{[this] {
             while (!stopped_.load(std::memory_order_acquire)) {
                 try {
@@ -306,7 +322,7 @@ class WebSocketClientImplementation final {
       public:
         Connection(WebSocketClientImplementation &client, i64 client_id, i64 sequence)
             : client_{client}, client_id_{client_id}, sequence_{sequence}, resolver_{client.io_},
-              timeout_{client.io_}, stream_{client.io_} {}
+              timeout_{client.io_}, stream_{TransportStream{tcp::socket{client.io_}}} {}
 
         i64 sequence() const noexcept { return sequence_; }
 
@@ -319,6 +335,19 @@ class WebSocketClientImplementation final {
                 if (const auto error = parse_url(url, parsed_url_)) {
                     fail_before_handshake(*error);
                     return;
+                }
+                if (parsed_url_.secure) {
+                    auto &transport = stream_.next_layer();
+                    transport.enable_tls(client_.ssl_context_);
+                    auto *tls = transport.tls_stream();
+                    tls->set_verify_callback(ssl::host_name_verification(parsed_url_.host));
+                    auto address_error = boost::system::error_code{};
+                    (void)asio::ip::make_address(parsed_url_.host, address_error);
+                    if (address_error &&
+                        SSL_set_tlsext_host_name(tls->native_handle(), parsed_url_.host.c_str()) != 1) {
+                        fail_before_handshake("could not set the WebSocket TLS server name");
+                        return;
+                    }
                 }
 
                 const auto headers = scalar_cast<List<Header>>(value[1]);
@@ -446,8 +475,8 @@ class WebSocketClientImplementation final {
             } catch (...) {
             }
             beast::error_code ignored;
-            stream_.next_layer().cancel(ignored);
-            stream_.next_layer().close(ignored);
+            stream_.next_layer().lowest_layer().cancel(ignored);
+            stream_.next_layer().lowest_layer().close(ignored);
         }
 
       private:
@@ -571,7 +600,7 @@ class WebSocketClientImplementation final {
             }
             state_ = State::connecting;
             auto self = shared_from_this();
-            asio::async_connect(stream_.next_layer(), results,
+            asio::async_connect(stream_.next_layer().lowest_layer(), results,
                                 [self](beast::error_code connect_error, const tcp::endpoint &) {
                                     try {
                                         self->on_connect(connect_error);
@@ -588,6 +617,24 @@ class WebSocketClientImplementation final {
                 return;
             }
             state_ = State::handshaking;
+            auto self = shared_from_this();
+            if (parsed_url_.secure) {
+                stream_.next_layer().async_client_handshake(guarded_callback(
+                    self, [](Connection &connection, beast::error_code handshake_error) {
+                        if (!connection.current() || connection.state_ != State::handshaking) return;
+                        if (handshake_error) {
+                            connection.fail_before_handshake("WebSocket TLS handshake failed: " +
+                                                             handshake_error.message());
+                            return;
+                        }
+                        connection.begin_websocket_handshake();
+                    }));
+                return;
+            }
+            begin_websocket_handshake();
+        }
+
+        void begin_websocket_handshake() {
             auto self = shared_from_this();
             stream_.async_handshake(response_, parsed_url_.host_header, parsed_url_.target,
                                     guarded_callback(self, [](Connection &connection, beast::error_code handshake_error) {
@@ -751,9 +798,9 @@ class WebSocketClientImplementation final {
 
         void close_socket() noexcept {
             beast::error_code ignored;
-            stream_.next_layer().cancel(ignored);
-            stream_.next_layer().shutdown(tcp::socket::shutdown_both, ignored);
-            stream_.next_layer().close(ignored);
+            stream_.next_layer().lowest_layer().cancel(ignored);
+            stream_.next_layer().lowest_layer().shutdown(tcp::socket::shutdown_both, ignored);
+            stream_.next_layer().lowest_layer().close(ignored);
         }
 
         bool current() const noexcept { return client_.is_current(client_id_, sequence_, this); }
@@ -763,7 +810,7 @@ class WebSocketClientImplementation final {
         i64 sequence_;
         tcp::resolver resolver_;
         asio::steady_timer timeout_;
-        websocket::stream<tcp::socket> stream_;
+        websocket::stream<TransportStream> stream_;
         beast::flat_buffer read_buffer_;
         websocket::response_type response_;
         ParsedUrl parsed_url_;
@@ -917,6 +964,7 @@ class WebSocketClientImplementation final {
     Queue output_;
     Queue messages_;
     asio::io_context io_{1};
+    ssl::context ssl_context_{ssl::context::tls_client};
     asio::executor_work_guard<asio::io_context::executor_type> work_;
     std::jthread thread_;
     struct ActiveConnection {

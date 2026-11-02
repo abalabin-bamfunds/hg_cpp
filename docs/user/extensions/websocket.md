@@ -72,7 +72,8 @@ The output is `TSB<BinaryWebSocketClientReply>` with `connect_response`, `messag
 and `close`. A successful handshake reports 101. A transport failure before the
 handshake reports 599; abnormal closure after admission reports close code 1006.
 `WebSocketClientOptions` configures connection/handshake timeout and message size.
-The current client supports `ws://`.
+The client supports `ws://` and `wss://`. For WSS, certificate and hostname verification
+are enabled. `ca_file` adds a PEM CA file to OpenSSL's configured default trust paths.
 
 ## Messages, closing, and authentication
 

@@ -10,6 +10,7 @@
 
 #include <concepts>
 #include <cstdint>
+#include <optional>
 #include <span>
 #include <string>
 #include <string_view>
@@ -18,9 +19,15 @@
 
 namespace hg::web {
 
+struct ServerTlsOptions {
+    std::string certificate_chain_file;
+    std::string private_key_file;
+};
+
 struct ServerOptions {
     std::string host{"127.0.0.1"};
     std::uint16_t port{};
+    std::optional<ServerTlsOptions> tls;
 };
 
 inline const auto http_handler_service =

@@ -14,6 +14,7 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/string_view.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/vector.h>
 
 #include <string>
@@ -21,6 +22,8 @@
 #include <vector>
 #include <chrono>
 #include <cstdint>
+#include <optional>
+#include <stdexcept>
 
 #include "http_server_internal.hpp"
 
@@ -38,10 +41,18 @@ void export_native_schema(nb::handle python_type) {
 
 python::PythonWiringPoint make_http_server_implementation(const python::PythonWiringPoint &routes,
                                                            const python::PythonWiringPoint &responses,
-                                                           std::string host, std::uint16_t port) {
+                                                           std::string host, std::uint16_t port,
+                                                           std::optional<std::string> certificate_chain_file,
+                                                           std::optional<std::string> private_key_file) {
+    if (certificate_chain_file.has_value() != private_key_file.has_value()) {
+        throw std::invalid_argument{"HTTPS requires both certificate_chain_file and private_key_file"};
+    }
     auto &wiring = WiringContext::current().wiring();
-    const auto output = details::wire_http_server(ServerOptions{.host = std::move(host), .port = port},
-                                                  routes.get(wiring), responses.get(wiring));
+    auto options = ServerOptions{.host = std::move(host), .port = port};
+    if (certificate_chain_file) {
+        options.tls = ServerTlsOptions{std::move(*certificate_chain_file), std::move(*private_key_file)};
+    }
+    const auto output = details::wire_http_server(std::move(options), routes.get(wiring), responses.get(wiring));
     return python::PythonWiringPoint{output, python::PythonWiringScope::current()};
 }
 
@@ -106,7 +117,8 @@ NB_MODULE(_hg_web, module) {
         hg::python::export_service(credential_submission, hg::web::details::client_credential_submission_service);
     });
     module.def("_http_server_impl", &hg::web::make_http_server_implementation, nb::arg("routes"),
-               nb::arg("responses"), nb::arg("host") = "127.0.0.1", nb::arg("port") = 0);
+               nb::arg("responses"), nb::arg("host") = "127.0.0.1", nb::arg("port") = 0,
+               nb::arg("certificate_chain_file") = nb::none(), nb::arg("private_key_file") = nb::none());
     module.def("_http_response_field", &hg::web::make_http_response_field, nb::arg("result"));
     module.def("_http_authenticate_requests", &hg::web::make_http_authenticate_requests, nb::arg("requests"),
                nb::arg("decisions"));
