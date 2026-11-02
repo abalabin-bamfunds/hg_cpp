@@ -816,6 +816,27 @@ The wrapper observes overloads registered on that operator later. It uses the
 same resolution cache, requirements, resolvers, adaptations, and diagnostics
 as a C++ call.
 
+Register a wiring-point convenience method with the same header:
+
+```cpp
+#include <hg/library/operators.hpp>
+
+hg::python::register_wiring_method(hg::TS<hg::SCALAR>::type(), "plus", hg::operators::add);
+```
+
+Call registration while holding the GIL. The receiver constraint and operator
+must remain alive for the process lifetime. Each method name identifies one
+operator. Additional receiver constraints can register the same operator,
+including overlapping constraints. Repeating an identical registration is
+allowed; registering a different operator for the name raises an error.
+
+Method lookup matches the receiver's semantic type with `Type::match` and
+leaves its materialisation options open. Existing Python attributes take
+precedence. An unknown name or unmatched receiver raises `AttributeError`.
+`point.plus(rhs=5)` prepends `point` to the normal operator call, which selects
+the overload and validates its arguments. A saved callable retains the receiver.
+Calling it outside the receiver's graph construction raises a lifetime error.
+
 Expose a native schema on a Python class with `<hg/python/schema.hpp>`:
 
 ```cpp

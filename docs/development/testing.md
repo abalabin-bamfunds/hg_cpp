@@ -356,6 +356,8 @@ graph compilation or evaluation.
 
 - wiring-context nesting and thread isolation
 - compile-time and runtime wiring-template invocation
+- C++ wiring-point method extensions, operator forwarding, optional receivers,
+  and pointer-sized, trivially copyable generic, TSB, and variadic representations
 - scalar and time series argument resolution
 - optional scalar arguments and scalar ownership
 - omitted wiring arguments with owned defaults, explicit overrides and absence,
@@ -739,6 +741,9 @@ For each reusable node and graph, test:
 
 ### Python integration
 
+- native wiring-point method registration, overlapping receiver constraints,
+  conflicting operators, normal argument forwarding, graph-return discovery,
+  existing-attribute precedence, missing attributes, and saved-callable lifetime
 - native schema export preserving declaration identity for TSB annotations and
   scalar Bundle conversion, including time-series-only schemas
 - homogeneous scalar tuple annotations, nested and generic items, immutable

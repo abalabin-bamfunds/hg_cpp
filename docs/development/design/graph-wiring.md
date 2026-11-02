@@ -39,6 +39,19 @@ declared inputs.
 size as `WiringPoint` and converts to `WiringPoint`. Graph definitions use it to
 declare time series parameter and output types.
 
+Extensions add C++ convenience methods by specializing
+`wiring_point_methods<SERIES, POINT>` from `<hg/graph/wiring_point.hpp>`.
+Every typed `wp` inherits this specialization. `SERIES` is its time series
+declaration; `POINT` is the exact `wp<SERIES, Properties...>` class, including
+its wiring properties. Methods cast `*this` to `const POINT&` and forward to
+an operator.
+
+The specialization must be visible before the corresponding `wp` is
+instantiated in every translation unit. It must be empty and trivially
+copyable. This preserves the wiring point's representation and copying.
+Python extensions register methods through the
+[Python binding API](python.md#c-extensions).
+
 `wp<TS_T, optional>` declares an optional graph input. Forwarding this input
 requires an optional parameter on the receiving node, graph, or operator
 overload. `opt(point)` supplies this annotation at a call site. It keeps the
