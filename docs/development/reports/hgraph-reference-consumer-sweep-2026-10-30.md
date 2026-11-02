@@ -3,10 +3,10 @@
 This follow-up checks source switching and consumers of mapped references.
 It uses BG `61574125` with the six tests from `b25ff057`, and the
 upstream revisions pinned in the [preceding sweep](hgraph-pattern-sweep-2026-10-30.md).
-The initial sweep changed only tests and this report. The sampling correction
-below is a subsequent implementation change in the same lane.
+The initial sweep changed only tests and this report. The sampling and mesh
+corrections below are subsequent implementation changes in the same lane.
 
-The batch adds ten passing cases and four hidden reproductions of two findings:
+The initial batch added ten passing cases and four hidden reproductions of two findings:
 mesh branch output inference fails during wiring, and dictionary selection
 retains a valid item after its selected source removes that item.
 Both findings were reproduced and traced on 2026-11-02 against the unchanged
@@ -89,7 +89,7 @@ annotation here.
 Two cases must remain distinct:
 
 - A branch without a selection from the same mesh can infer its output from
-  the returned wiring point. The wrapper currently prevents this ordinary
+  the returned wiring point. The wrapper prevented this ordinary
   graph behavior.
 - A branch selecting from the same mesh needs its output type when the
   selection is wired. An input type mapping, graph signature, annotated lambda
@@ -107,7 +107,19 @@ type can influence the graph result, so inferring it from that result would
 create a recursive type dependency.
 If the dependency-selection API is extended to accept an explicit result type,
 that type must equal the branch output type once the graph result is resolved.
-No mesh correction is implemented in this follow-up.
+
+### Mesh correction, 2026-11-02
+
+`ScopedWiringTemplate` now forwards its target's output-inference policy.
+The inferred-reduction reproduction runs as an ordinary test. A dependency
+selection still fails immediately when the selected mesh's branch output type
+is unresolved; the diagnostic states that the output type must be resolved.
+The correction changes wiring only and adds no runtime nodes or storage.
+
+The first mesh evaluation test now checks scalar updates from an inferred-output
+increment graph and verifies that its branch graph is wired once. A wiring test
+checks that returning only `mesh()[key]` fails with the unresolved-output
+diagnostic. Existing dependency tests cover selection with resolved outputs.
 
 ### Selected-key invalidation after source switching
 
@@ -203,57 +215,33 @@ field from the entire mapped dictionary. BG's
 or scalar Bundle, not `TSD<K, TSB<...>>`. This convenience form was skipped.
 The explicit map projection is covered by the preceding sweep.
 
-## Verification of the initial sweep
+## Verification
 
-The focused runners use GCC Release flags (`-O3 -DNDEBUG`) and the matching BG
-runtime. The library runner covers `stream`, `collection`, `merge`,
-`tsd_transform`, and `tick_selection`. The engine runner covers context time
-series, map, mesh, reduce, switch, TSB, fixed TSL, and nested graphs.
-The complete BG suite was not run for this tests-and-report change.
+The focused runners use GCC Release flags (`-O3 -DNDEBUG`) and the matching
+runtime with the sampling and mesh corrections. The library runner covers
+`stream`, `collection`, `merge`, `tsd_transform`, and `tick_selection`.
+The engine runner covers context time series, map, mesh evaluation and wiring,
+reduce, switch, TSB, fixed TSL, dictionaries, dictionary getitem, references,
+`valid_items`, and nested graphs.
 
-Independent final runs passed **501 cases and 886 assertions**:
-
-| Runner | Passing cases | Passing assertions |
-| --- | ---: | ---: |
-| Library | 229 | 477 |
-| Engine | 272 | 409 |
-
-Explicit `[repro]` runs confirmed the three collection failures and the mesh
-wiring failure above. At that revision, the hidden tag excluded all four from
-ordinary runs. All fourteen new cases had valid
-coverage tags. Library coverage-tag validation passes.
-
-Engine coverage-tag validation reports four existing diagnostics in unrelated
-switch and TSB tests: an undocumented `definition:graph` value, two uses of an
-unknown `lifetime` dimension, and one test missing a `feature` tag. These tags
-are present in the baseline. The existing invalid `error:operator-resolution`
-tag in the touched stream file was changed to a plain `operator-resolution`
-marker.
-
-## Verification of the sampling correction
-
-The GCC Release runtime and changed collection tests were rebuilt. The engine
-runner also freshly compiled the reference, dictionary, dictionary-getitem,
-and `valid_items` test files. Independent runs passed **673 cases and 1,672
-assertions**:
+Independent final runs passed **688 cases and 1,692 assertions**:
 
 | Runner | Passing cases | Passing assertions |
 | --- | ---: | ---: |
 | Library | 233 | 482 |
-| Expanded engine | 440 | 1,190 |
+| Engine | 455 | 1,210 |
 
-The three collection reproductions are included in these ordinary runs.
-The remaining hidden mesh reproduction still fails during output-type
-resolution. Run the current checks from the lane:
+All four original reproductions now pass as ordinary tests. The added sampling
+classification, inferred-output mesh, and unresolved dependency-selection
+regressions also pass. Run both groups from the lane:
 
 ```sh
 build/integration/hgraph-pattern-library-tests
 build/integration/hgraph-pattern-engine-tests
-build/integration/hgraph-pattern-engine-tests '[repro]'
 ```
 
-The complete current BG suite was not run. Historical full-suite binaries
-predate runtime API changes and were not used as verification.
-Library coverage-tag validation passes. Expanded engine validation reports the
-four baseline diagnostics above and an existing `invalidation:preserve-output`
-tag in the dictionary tests; the new sampling test's tags are valid.
+The complete current BG suite was not run. Library coverage-tag validation
+passes. Engine validation reports five existing diagnostics: an undocumented
+`definition:graph` value, two uses of an unknown `lifetime` dimension, one test
+missing a `feature` tag, and an unknown `invalidation` dimension. All added cases
+have valid coverage tags.

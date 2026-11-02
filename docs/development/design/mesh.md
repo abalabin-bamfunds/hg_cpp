@@ -4,7 +4,8 @@
 
 `mesh(graph, arguments...)` runs one inner runtime graph for each selected key.
 It uses the same argument, key-set, key-argument, output, and overload rules as
-[`map`](map.md). A branch can also read another branch output by key:
+[`map`](map.md) and preserves [graph output inference](graph-wiring.md#graph-templates).
+A branch can also read another branch output by key:
 
 ```cpp
 auto result = mesh(
