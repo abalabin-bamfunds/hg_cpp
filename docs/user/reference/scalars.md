@@ -17,11 +17,17 @@ scalar types inside `TS` when the complete value should update together.
 | `tuple[T, ...]` | `List<T>` | Homogeneous immutable scalar sequence |
 | `tuple[A, B]` | `Tuple<A, B>` | Fixed heterogeneous scalar sequence |
 | `dict[K, V]` | `Dict<K, V>` | Scalar key/value dictionary |
+| `frozenset[T]` | `Set<T>` | Immutable scalar set |
 
 Python mutable `list[T]` annotations are unsupported. Use `tuple[T, ...]`; conversion
 accepts tuples and lists when the expected type is known, owns the stored value, and
-returns immutable tuples. Optional tuple items are unsupported. Python scalar set
-annotations are unsupported. C++ supports scalar sets and timestamp arithmetic.
+returns immutable tuples. Optional tuple items are unsupported.
+
+`frozenset[T]` and `typing.FrozenSet[T]` declare native scalar sets. Conversion
+accepts Python sets and frozensets when the expected type is known, owns a snapshot,
+and returns an immutable frozenset. Items must be hashable scalar types; optional
+items and mutable `set[T]` annotations are unsupported. `TS[frozenset[T]]` publishes
+a complete scalar set per tick; `TSS[T]` publishes [set changes](input-views.md#collection-views).
 
 Timestamp conversion interprets a timezone-naive `datetime` as UTC:
 `datetime(1970, 1, 1)` maps to the Unix epoch. Values before and after the epoch

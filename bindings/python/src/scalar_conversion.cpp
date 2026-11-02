@@ -13,6 +13,7 @@
 #include <hg/scalar/dict/runtime_type.hpp>
 #include <hg/scalar/list/runtime_type.hpp>
 #include <hg/scalar/list/scalar_type.hpp>
+#include <hg/scalar/set/runtime_type.hpp>
 #include <hg/scalar/set/scalar_type.hpp>
 #include <hg/scalar/struct/scalar_type.hpp>
 #include <hg/scalar/tuple/runtime_type.hpp>
@@ -683,6 +684,41 @@ ScalarValue<> from_python_list(const ListScalarType &type, nanobind::handle valu
     return ScalarValue<>::from_construction(runtime_type, {&construction, construct}, memory);
 }
 
+ScalarValue<> from_python_set(const SetScalarType &type, nanobind::handle value, allocator &memory,
+                              const PythonScalarConversions &conversions) {
+    if (PySet_Check(value.ptr()) == 0 && PyFrozenSet_Check(value.ptr()) == 0) {
+        PyErr_SetString(PyExc_TypeError, "expected a set or frozenset for a scalar set");
+        nanobind::raise_python_error();
+    }
+
+    const auto &runtime_type = static_cast<const ScalarSetRuntimeType &>(resolve_default_scalar_runtime_type(type));
+    struct Construction {
+        nanobind::handle value;
+        const PythonScalarConversions *conversions;
+    } construction{value, &conversions};
+    const auto construct = [](void *context, const ScalarRuntimeType &runtime_type, void *destination,
+                              allocator &memory) {
+        const auto &input = *static_cast<const Construction *>(context);
+        const auto &set_runtime = static_cast<const ScalarSetRuntimeType &>(runtime_type);
+        set_runtime.construct_runtime_value(destination, memory);
+        auto rollback = util::scope_exit{[&]() noexcept { set_runtime.destroy(destination, memory); }};
+
+        const auto construct_item = [](void *item_context, const ScalarRuntimeType &item_runtime,
+                                       void *item_destination, allocator &item_memory) {
+            const auto &item_input = *static_cast<const Construction *>(item_context);
+            auto converted = item_input.conversions->from_python(item_runtime.type(), item_input.value, item_memory);
+            details::scalar_data(converted).copy_construct(item_destination, item_runtime, item_memory);
+        };
+
+        for (const auto item : nanobind::borrow<nanobind::iterable>(input.value)) {
+            auto item_construction = Construction{item, input.conversions};
+            (void)set_runtime.insert_with(destination, memory, {&item_construction, +construct_item});
+        }
+        rollback.release();
+    };
+    return ScalarValue<>::from_construction(runtime_type, {&construction, construct}, memory);
+}
+
 ScalarValue<> from_python_tuple(const TupleScalarType &type, nanobind::handle value, allocator &,
                                const PythonScalarConversions &conversions) {
     if (PyTuple_Check(value.ptr()) == 0 && PyList_Check(value.ptr()) == 0) {
@@ -742,7 +778,7 @@ nanobind::object to_python_tuple(const Scalar<TUPLE> &value, const PythonScalarC
 }
 
 nanobind::object to_python_set(const Scalar<Set<SCALAR>> &value, const PythonScalarConversions &conversions) {
-    auto result = nanobind::steal<nanobind::object>(PySet_New(nullptr));
+    auto result = nanobind::steal<nanobind::object>(PyFrozenSet_New(nullptr));
     if (!result) {
         nanobind::raise_python_error();
     }
@@ -1303,6 +1339,9 @@ ScalarValue<> PythonScalarConversions::from_python(const ScalarType &type, nanob
     if (const auto *list = type_cast<ListScalarType>(&type)) {
         return from_python_list(*list, value, memory, *this);
     }
+    if (const auto *set = type_cast<SetScalarType>(&type)) {
+        return from_python_set(*set, value, memory, *this);
+    }
     if (const auto *tuple = type_cast<TupleScalarType>(&type)) {
         return from_python_tuple(*tuple, value, memory, *this);
     }
@@ -1325,6 +1364,9 @@ bool PythonScalarConversions::can_from_python(const ScalarType &type) const noex
     }
     if (const auto *list = type_cast<ListScalarType>(&type)) {
         return can_from_python(list->item_type());
+    }
+    if (const auto *set = type_cast<SetScalarType>(&type)) {
+        return can_from_python(set->item_type());
     }
     if (const auto *tuple = type_cast<TupleScalarType>(&type)) {
         return std::ranges::all_of(tuple->item_types(), [&](const auto *item) { return can_from_python(*item); });

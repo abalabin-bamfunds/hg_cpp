@@ -134,8 +134,8 @@ The collection overloads support these conversions:
 | `TS<Bundle<SCHEMA>>` | Named TSB with matching scalar-valued fields |
 | Named TSB with scalar-valued fields | `TS<Bundle<SCHEMA>>` |
 
-Python uses `tuple[T, ...]` for scalar List annotations. Scalar Set annotations
-are not yet exposed; `hgraph.TSS[T]` is available. See the
+Python uses `tuple[T, ...]` for scalar List annotations and `frozenset[T]` for
+scalar Set annotations. See the
 [Python type mappings](python.md).
 
 Set items and dictionary keys must support hashing. List-to-TSL conversion
@@ -608,8 +608,7 @@ Ordinary inputs can publish equal query results on successive changes;
 deduplicated outputs suppress equal results.
 
 Use named calls in Python. Its `len()` and `in` syntax cannot return wiring
-points. Annotate an engine scalar list as `tuple[T, ...]`; scalar set
-annotations are not yet supplied.
+points. See the [scalar annotation mappings](../../user/reference/scalars.md#built-in-mappings).
 
 ## Collection selection
 

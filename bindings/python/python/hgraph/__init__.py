@@ -35,6 +35,7 @@ from ._hg import (
     _dict_scalar_type,
     _dispatch,
     _list_scalar_type,
+    _set_scalar_type,
     _tuple_scalar_type,
     _map,
     _mesh,
@@ -1357,6 +1358,16 @@ def _native_type(annotation: Any) -> Any:
     origin = get_origin(annotation)
     if annotation is list or origin is list:
         raise TypeError("list annotations are mutable; use tuple[T, ...] for an engine list scalar")
+    if annotation is set or origin is set:
+        raise TypeError("set annotations are mutable; use frozenset[T] for an engine set scalar")
+    if annotation is frozenset or origin is frozenset:
+        arguments = get_args(annotation)
+        if len(arguments) != 1:
+            raise TypeError("frozenset annotations must specify an item type")
+        try:
+            return _set_scalar_type(_native_type(arguments[0]))
+        except ValueError as error:
+            raise TypeError(str(error)) from error
     if annotation is tuple or annotation is Tuple or origin is tuple:
         arguments = get_args(annotation)
         if len(arguments) == 2 and arguments[1] is Ellipsis:
