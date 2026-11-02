@@ -11,6 +11,7 @@
 #include <hg/python/service.hpp>
 #include <hg/python/wiring_point.hpp>
 #include <hg/graph/runtime_graph.hpp>
+#include <hg/library/operators.hpp>
 #include <hg/scalar/builtins.hpp>
 #include <hg/scalar/bundle/scalar_type.hpp>
 #include <hg/scalar/declaration.hpp>
@@ -397,6 +398,13 @@ NB_MODULE(_hg_test_extension, module) {
     hg::python::export_operator(module, "native_continuous_timer", native_continuous_timer_operator());
     hg::python::export_operator(module, "native_python_object_property", native_python_object_property_operator());
     hg::python::export_operator(module, "native_concrete_type_name", native_concrete_type_name_operator());
+    hg::python::register_wiring_method(hg::TS<hg::SCALAR>::type(), "plus", hg::operators::add);
+    hg::python::register_wiring_method(hg::TS<hg::i64>::type(), "plus", hg::operators::add);
+    hg::python::register_wiring_method(hg::TS<hg::SCALAR>::type(), "plus", hg::operators::add);
+    hg::python::register_wiring_method(hg::TS<hg::SCALAR>::type(), "type_name", hg::operators::add);
+    module.def("register_conflicting_wiring_method", [] {
+        hg::python::register_wiring_method(hg::TS<hg::i64>::type(), "plus", hg::operators::sub);
+    });
     module.def("native_node_lifecycle", [] {
         return nanobind::make_tuple(native_node_lifecycle[0].load(), native_node_lifecycle[1].load(),
                                     native_node_lifecycle[2].load(), native_node_lifecycle[3].load());

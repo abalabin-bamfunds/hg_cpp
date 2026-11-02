@@ -19,9 +19,14 @@ namespace hg {
 
 template <typename Item, auto Size, auto... TimeSeriesProperties, auto... WiringProperties>
     requires(details::variadic_mode<WiringProperties...>() != details::VariadicMode::none)
-class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...> {
+class wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...>
+    : public wiring_point_methods<TSL<Item, Size, TimeSeriesProperties...>,
+                                  wp<TSL<Item, Size, TimeSeriesProperties...>, WiringProperties...>> {
     using TimeSeries = TSL<Item, Size, TimeSeriesProperties...>;
+    using WiringPointMethods = wiring_point_methods<TimeSeries, wp<TimeSeries, WiringProperties...>>;
     using ParsedProperties = details::wiring_point_properties<WiringProperties...>;
+    static_assert(std::is_empty_v<WiringPointMethods> && std::is_trivially_copyable_v<WiringPointMethods>,
+                  "wiring point methods must not add state");
     static_assert((std::size_t{} + ... + static_cast<std::size_t>(details::is_variadic_mode<
                       decltype(WiringProperties)>)) == 1,
                   "a variadic TSL wiring point requires exactly one variadic property");

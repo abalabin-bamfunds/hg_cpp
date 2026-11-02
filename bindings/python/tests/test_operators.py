@@ -88,6 +88,78 @@ def test_extension_can_export_existing_and_sink_operators():
     hg.run_graph(sink)
 
 
+def test_wiring_point_methods_call_registered_operators_with_normal_arguments():
+    @hg.graph
+    def bound(value: hg.TS[int]) -> hg.TS[int]:
+        return value.plus(rhs=5)
+
+    @hg.graph
+    def exported(value: hg.TS[int]) -> hg.TS[int]:
+        return hg.operators.add(lhs=value, rhs=5)
+
+    @hg.graph
+    def generic_receiver(value: hg.TS[float]) -> hg.TS[float]:
+        assert isinstance(value.type_name, str)
+        return value.plus(0.5)
+
+    assert hg.run_graph(bound, [1, 2]) == [6, 7]
+    assert hg.run_graph(exported, [1, 2]) == [6, 7]
+    assert hg.run_graph(generic_receiver, [1.0, 2.0]) == [1.5, 2.5]
+
+
+def test_wiring_point_methods_are_discovered_on_graph_returns():
+    @hg.graph
+    def increment(value: hg.TS[int]) -> hg.TS[int]:
+        return value.plus(1)
+
+    @hg.graph
+    def use_returned_point(value: hg.TS[int]) -> hg.TS[int]:
+        return increment(value).plus(rhs=1)
+
+    assert hg.run_graph(use_returned_point, [3]) == [5]
+
+
+def test_wiring_point_method_lookup_reports_unsupported_and_missing_attributes():
+    @hg.graph
+    def scalar_point(value: hg.TS[int]) -> hg.TS[int]:
+        with pytest.raises(AttributeError, match="missing_method"):
+            _ = value.missing_method
+        return value
+
+    @hg.graph
+    def list_point() -> hg.TS[int]:
+        values = extension.make_list()
+        with pytest.raises(AttributeError, match="plus"):
+            _ = values.plus
+        return values[0]
+
+    assert hg.run_graph(scalar_point, [7]) == [7]
+    assert hg.run_graph(list_point) == [10]
+
+
+def test_wiring_point_method_registration_rejects_a_second_operator():
+    with pytest.raises(RuntimeError, match="WiringPoint method 'plus' cannot refer to different operators"):
+        extension.register_conflicting_wiring_method()
+
+
+def test_saved_wiring_point_method_keeps_the_receiver_lifetime():
+    methods = []
+
+    @hg.graph
+    def save_method(value: hg.TS[int]) -> hg.TS[int]:
+        methods.append(value.plus)
+        return value
+
+    assert hg.run_graph(save_method, [3]) == [3]
+
+    @hg.graph
+    def use_saved_method(value: hg.TS[int]) -> hg.TS[int]:
+        return methods[0](1)
+
+    with pytest.raises(RuntimeError, match="outside its graph construction"):
+        hg.run_graph(use_saved_method, [4])
+
+
 def test_opt_requires_an_optional_python_node_receiver():
     received = []
 

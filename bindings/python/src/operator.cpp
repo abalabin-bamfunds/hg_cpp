@@ -13,11 +13,13 @@
 
 #include <nanobind/stl/string.h>
 
+#include <algorithm>
 #include <array>
 #include <memory_resource>
 #include <span>
 #include <stdexcept>
 #include <string>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -25,6 +27,19 @@ namespace nb = nanobind;
 
 namespace hg::python {
 namespace details {
+namespace {
+
+struct RegisteredWiringMethod {
+    const Operator *operation;
+    std::vector<const Type *> receiver_types;
+};
+
+auto &registered_wiring_methods() {
+    static auto methods = std::unordered_map<std::string, RegisteredWiringMethod>{};
+    return methods;
+}
+
+} // namespace
 
 PythonOperator::PythonOperator(const Operator &operation) : operation_{&operation} {}
 
@@ -45,11 +60,25 @@ PythonOperator &PythonOperator::operator=(const PythonOperator &other) {
 }
 
 nb::object PythonOperator::call(nb::args positional, nb::kwargs named) const {
+    return call(std::span<const nb::handle>{}, positional, named);
+}
+
+nb::object PythonOperator::call_with_receiver(nb::handle receiver, nb::args positional, nb::kwargs named) const {
+    const auto leading_arguments = std::array{receiver};
+    return call(std::span<const nb::handle>{leading_arguments}, positional, named);
+}
+
+nb::object PythonOperator::call(std::span<const nb::handle> leading_arguments, nb::args positional,
+                                nb::kwargs named) const {
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
     auto arguments = std::vector<WiringArgument>{};
-    arguments.reserve(positional.size() + named.size());
+    arguments.reserve(leading_arguments.size() + positional.size() + named.size());
+
+    for (const auto value : leading_arguments) {
+        arguments.push_back(wiring_argument(value, memory, wiring));
+    }
 
     for (const auto value : positional) {
         arguments.push_back(wiring_argument(value, memory, wiring));
@@ -139,6 +168,22 @@ PythonOperator PythonOperator::map_type_arguments(nb::handle arguments) const {
 
 std::string PythonOperator::name() const { return std::string{operation_->signature().name().text()}; }
 
+const Operator *find_wiring_method(std::string_view name, const Type &receiver_type) {
+    const auto &methods = registered_wiring_methods();
+    const auto method = methods.find(std::string{name});
+    if (method == methods.end()) {
+        return nullptr;
+    }
+
+    for (const auto *receiver_constraint : method->second.receiver_types) {
+        auto type_map = TypeMap{};
+        if (receiver_constraint->match(receiver_type, type_map)) {
+            return method->second.operation;
+        }
+    }
+    return nullptr;
+}
+
 } // namespace details
 
 void export_operator(nb::module_ &module, std::string_view python_name, const Operator &operation) {
@@ -150,6 +195,25 @@ void export_operator(nb::module_ &module, std::string_view python_name, const Op
                      std::span<const Type *const> type_parameters) {
     const auto name = std::string{python_name};
     module.attr(name.c_str()) = nb::cast(details::PythonOperator{operation, type_parameters});
+}
+
+void register_wiring_method(const Type &receiver_type, std::string_view name, const Operator &operation) {
+    if (name.empty()) {
+        throw std::invalid_argument{"a WiringPoint method name cannot be empty"};
+    }
+
+    auto &methods = details::registered_wiring_methods();
+    const auto [method, inserted] =
+        methods.try_emplace(std::string{name}, details::RegisteredWiringMethod{&operation, {}});
+    if (!inserted && method->second.operation != &operation) {
+        throw std::logic_error{"WiringPoint method '" + std::string{name} +
+                               "' cannot refer to different operators"};
+    }
+
+    auto &receiver_types = method->second.receiver_types;
+    if (std::find(receiver_types.begin(), receiver_types.end(), &receiver_type) == receiver_types.end()) {
+        receiver_types.push_back(&receiver_type);
+    }
 }
 
 namespace details {

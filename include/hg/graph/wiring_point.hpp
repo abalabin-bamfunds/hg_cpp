@@ -36,6 +36,9 @@ using WiringMaterialisationBuilder = std::function<WiringPoint(std::span<const W
 
 template <typename TimeSeries = TS_T, auto... Properties> class wp;
 
+// Specialize before instantiating wp for a series declaration family. Method extensions add behavior without state.
+template <typename SERIES, typename POINT> struct wiring_point_methods {};
+
 namespace details {
 
 struct WiringAnnotations {
@@ -159,10 +162,14 @@ template <typename Target> struct annotated_wiring_point<Target, true, true> {
 
 } // namespace details
 
-template <typename TimeSeries, auto... Properties> class wp {
+template <typename TimeSeries, auto... Properties>
+class wp : public wiring_point_methods<TimeSeries, wp<TimeSeries, Properties...>> {
     using ParsedProperties = details::wiring_point_properties<Properties...>;
+    using WiringPointMethods = wiring_point_methods<TimeSeries, wp<TimeSeries, Properties...>>;
     static_assert(ParsedProperties::variadic_mode == details::VariadicMode::none,
                   "this wiring point type does not accept variadic properties");
+    static_assert(std::is_empty_v<WiringPointMethods> && std::is_trivially_copyable_v<WiringPointMethods>,
+                  "wiring point methods must not add state");
 
   public:
     wp() noexcept
