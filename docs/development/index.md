@@ -53,3 +53,4 @@ history and are marked `superseded`.
 - [hgraph pattern sweep, 2026-10-30](reports/hgraph-pattern-sweep-2026-10-30.md): additional collection and graph-composition cases with current classifications.
 - [hgraph reference-consumer sweep, 2026-10-30](reports/hgraph-reference-consumer-sweep-2026-10-30.md): source switching, mapped references, and higher-order consumers.
 - [hgraph reference-consumer sweep, 2026-11-02](reports/hgraph-reference-consumer-sweep-2026-11-02.md): metadata, stateful consumers, free collections, and branch lifetime.
+- [hgraph services and feedback sweep, 2026-11-02](reports/hgraph-service-feedback-sweep-2026-11-02.md): nested service clients, delayed collections, and inferred graph outputs.
