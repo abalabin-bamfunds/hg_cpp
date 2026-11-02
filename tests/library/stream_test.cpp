@@ -53,6 +53,11 @@ template <template <typename, auto...> typename Field> struct mixed_guarantee_bu
     Field<TS<i64, TimeSeriesGuarantee::const_>> constant;
 };
 
+template <template <typename, auto...> typename Field> struct nested_dictionary_bundle {
+    Field<TSD<i64, TS<i64>>> items;
+    Field<TS<i64>> marker;
+};
+
 } // namespace stream_test
 
 TEST_CASE("type_ reports scalar type and deduplicates repeated values",
@@ -618,6 +623,111 @@ TEST_CASE("if_ follows a retargeted input reference and selects a whole list",
     CHECK(hg::run_graph(collection, {true, false, true}, {10, 20, 30}).equals<i64>({11, std::nullopt, 31}));
 }
 
+TEST_CASE("switching REF-forwarding branches that target the same scalar preserves value ticks",
+          "[feature:switch][feature:reference][series:value][binding:reference-to-value]"
+          "[transition:update]") {
+    const auto forward = node([](In<REF<TS<i64>>> input, Out<REF<TS<i64>>> output) { output.copy(input); });
+
+    const auto tested = [&](wp<TS<i64>> branch, wp<TS<i64>> value) {
+        const auto selected = switch_(branch,
+                                      cases{case_(i64{0}, [&](auto input) { return forward(input); }),
+                                            case_(i64{1}, [&](auto input) { return forward(input); })},
+                                      value);
+        return selected + i64{10};
+    };
+
+    CHECK(hg::run_graph(tested,
+                        {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
+                        {1, literal::SKIP, literal::SKIP, 2, 3, literal::SKIP, 4})
+              .equals<i64>({11, std::nullopt, std::nullopt, 12, 13, std::nullopt, 14}));
+}
+
+TEST_CASE("switching REF-forwarding branches that target the same TSS preserves membership ticks",
+          "[feature:switch][feature:reference][series:tss][binding:reference-to-value]"
+          "[transition:addition][transition:removal]") {
+    const auto forward = node([](In<REF<TSS<i64>>> input, Out<REF<TSS<i64>>> output) { output.copy(input); });
+
+    const auto tested = [&](wp<TS<i64>> branch, wp<TSS<i64>> values) {
+        const auto selected = switch_(branch,
+                                      cases{case_(i64{0}, [&](auto input) { return forward(input); }),
+                                            case_(i64{1}, [&](auto input) { return forward(input); })},
+                                      values);
+        return operators::len_(selected);
+    };
+
+    CHECK(hg::run_graph(tested,
+                        {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP, literal::SKIP},
+                        {{1}, literal::SKIP, literal::SKIP, {2}, {3}, literal::SKIP,
+                         {literal::REMOVED(2)}, {4}})
+              .equals<i64>({1, std::nullopt, std::nullopt, 2, 3, std::nullopt, 2, 3}));
+}
+
+TEST_CASE("switching REF-forwarding branches that target the same TSD preserves item ticks",
+          "[feature:switch][feature:reference][series:tsd][binding:reference-to-value]"
+          "[transition:update][transition:addition][transition:removal]") {
+    const auto forward = node([](In<REF<TSD<i64, TS<i64>>>> input, Out<REF<TSD<i64, TS<i64>>>> output) {
+        output.copy(input);
+    });
+
+    const auto tested = [&](wp<TS<i64>> branch, wp<TSD<i64, TS<i64>>> values) {
+        const auto selected = switch_(branch,
+                                      cases{case_(i64{0}, [&](auto input) { return forward(input); }),
+                                            case_(i64{1}, [&](auto input) { return forward(input); })},
+                                      values);
+        return operators::sum_("values"_n = opt(selected));
+    };
+
+    CHECK(hg::run_graph(tested,
+                        {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
+                        {{{1, 10}, {2, 20}}, literal::SKIP, literal::SKIP, {{1, 11}},
+                         {{2, literal::REMOVE}}, literal::SKIP, {{2, 20}}})
+              .equals<i64>({30, std::nullopt, std::nullopt, 31, 11, std::nullopt, 31}));
+}
+
+TEST_CASE("switching REF-forwarding branches that target the same fixed TSL preserves item ticks",
+          "[feature:switch][feature:reference][series:fixed-tsl][binding:reference-to-value]"
+          "[transition:update]") {
+    const auto forward = node([](In<REF<TSL<TS<i64>, 2>>> input, Out<REF<TSL<TS<i64>, 2>>> output) {
+        output.copy(input);
+    });
+
+    const auto sum = node([](In<TSL<TS<i64>, 2>> values) { return *values[0] + *values[1]; });
+
+    const auto tested = [&](wp<TS<i64>> branch, wp<TSL<TS<i64>, 2>> values) {
+        return sum(switch_(branch,
+                           cases{case_(i64{0}, [&](auto input) { return forward(input); }),
+                                 case_(i64{1}, [&](auto input) { return forward(input); })},
+                           values));
+    };
+
+    CHECK(hg::run_graph(tested, {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
+                        {{{0, 1}, {1, 10}}, literal::SKIP, literal::SKIP, {{0, 2}}, {{1, 20}},
+                         literal::SKIP, {{0, 3}}})
+              .equals<i64>({11, std::nullopt, std::nullopt, 12, 22, std::nullopt, 23}));
+}
+
+TEST_CASE("switching REF-forwarding branches that target the same TSB preserves field ticks",
+          "[feature:switch][feature:reference][series:tsb][schema:named][binding:reference-to-value]"
+          "[transition:update]") {
+    const auto forward =
+        node([](In<REF<TSB<stream_test::stream_operator_bundle>>> input,
+                Out<REF<TSB<stream_test::stream_operator_bundle>>> output) { output.copy(input); });
+
+    const auto tested = [&](wp<TS<i64>> branch, wp<TSB<stream_test::stream_operator_bundle>> values) {
+        const auto selected = switch_(branch,
+                                      cases{case_(i64{0}, [&](auto input) { return forward(input); }),
+                                            case_(i64{1}, [&](auto input) { return forward(input); })},
+                                      values);
+        return operators::getattr(selected, "left"_sym) + operators::getattr(selected, "right"_sym);
+    };
+
+    CHECK(hg::run_graph(tested,
+                        {0, 1, 0, literal::SKIP, literal::SKIP, 1, literal::SKIP},
+                        {{{"left", 1}, {"right", 10}}, literal::SKIP, literal::SKIP, {{"left", 2}},
+                         {{"right", 20}}, literal::SKIP, {{"left", 3}}})
+              .equals<i64>({11, std::nullopt, std::nullopt, 12, 22, std::nullopt, 23}));
+}
+
 TEST_CASE("if_true emits ordinary true ticks and supports one-shot activity",
           "[feature:operator][series:value][guarantee:ordinary]") {
     const auto graph = [](wp<TS<bool>> condition) { return operators::if_true(condition); };
@@ -737,7 +847,7 @@ TEST_CASE("route_by_index updates one slot and leaves all slots invalid for an i
 }
 
 TEST_CASE("route_by_index requires an explicit fixed list result",
-          "[feature:operator][series:fixed-tsl][error:operator-resolution]") {
+          "[feature:operator][series:fixed-tsl][operator-resolution]") {
     const auto index = node([](Out<TS<i64>>) {});
     const auto value = node([](Out<TS<i64>>) {});
 
@@ -1014,6 +1124,29 @@ TEST_CASE("dedup suppresses consecutive equal values",
 
     CHECK(hg::run_graph(deduplicate, {1, 1, 2, 2})
               .equals<i64>({1, std::nullopt, 2, std::nullopt}));
+}
+
+TEST_CASE("dedup publishes an initially empty dictionary before its first item",
+          "[feature:operator][series:tsd][guarantee:deduplicated][transition:first-tick]"
+          "[transition:addition][transition:removal][transition:resurrection]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> values) {
+        return operators::len_(operators::dedup(values));
+    };
+
+    CHECK(hg::run_graph(graph, {{}, {{1, 10}}, {{1, literal::REMOVE}}, {{1, 10}}})
+              .equals<i64>({0, 1, 0, 1}));
+}
+
+TEST_CASE("dedup publishes an empty dictionary child in a bundle",
+          "[feature:operator][series:tsb][series:tsd][schema:named][guarantee:deduplicated]"
+          "[transition:first-tick][transition:addition][transition:removal]") {
+    const auto graph = [](wp<TSD<i64, TS<i64>>> items) {
+        const auto values = bundle<stream_test::nested_dictionary_bundle>(items, operators::const_(i64{1}));
+        return operators::len_(operators::getattr(operators::dedup(values), "items"_sym));
+    };
+
+    CHECK(hg::run_graph(graph, {{}, {{1, 10}}, {{1, literal::REMOVE}}})
+              .equals<i64>({0, 1, 0}));
 }
 
 TEST_CASE("dedup publishes the same value after invalidation",

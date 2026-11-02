@@ -519,6 +519,23 @@ TEST_CASE("merge combines TSD values over the union of keys",
                                                        {{1, 11}, {4, 400}}});
 }
 
+TEST_CASE("merge combines nested dictionaries and forwards inner changes",
+          "[feature:operator][feature:merge][feature:reference][series:tsd][shape:nested]"
+          "[transition:update][transition:removal]") {
+    const auto materialize = node([](In<TSD<i64, TSD<i64, TS<i64>>>> input,
+                                     Out<TSD<i64, TSD<i64, TS<i64>>>> output) { output.copy_tick(input); });
+    const auto graph = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> left,
+                           wp<TSD<i64, TSD<i64, TS<i64>>>> right) {
+        return materialize(operators::merge(left, right));
+    };
+
+    CHECK(hg::run_graph(graph,
+                        {{{1, {{10, 10}, {11, 11}}}}, {{1, {{10, literal::REMOVE}}}}},
+                        {{{1, {{11, 110}, {12, 12}}}, {2, {{20, 20}}}}, {{1, {{12, 22}}}}})
+              .equals({{{1, {{10, 10}, {11, 11}, {12, 12}}}, {2, {{20, 20}}}},
+                       {{1, {{10, literal::REMOVE}, {12, 22}}}}}));
+}
+
 TEST_CASE("merge publishes a valid dictionary when another input is initially invalid",
           "[feature:operator][feature:merge][series:tsd][validity:optional][transition:update]") {
     const auto make_values = node([](In<TS<i64>> trigger, Out<TSD<i64, TS<i64>>> output) {

@@ -55,7 +55,8 @@ class MeshSelectionWiringScope {
 
     const TimeSeriesType &item_type() const {
         if (item_type_ == nullptr) {
-            throw WiringError{"mesh()[key] requires a mesh branch graph output"};
+            throw WiringError{"mesh()[key] requires the mesh branch output type to be resolved before dependency "
+                              "selection"};
         }
         return *item_type_;
     }

@@ -2,6 +2,7 @@
 #include <hg/graph/graph_argument.hpp>
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/wiring_context.hpp>
+#include <hg/graph/wiring_error.hpp>
 #include <hg/mesh.hpp>
 #include <hg/node.hpp>
 #include <hg/operators.hpp>
@@ -59,6 +60,17 @@ class MeshOverload final : public WiringTemplate {
 TEST_CASE("mesh dependencies require mesh branch wiring",
           "[feature:mesh][feature:wiring][feature:operator][shape:nested]") {
     testing::test_wiring([] { CHECK_THROWS_AS(mesh()[1], WiringError); });
+}
+
+TEST_CASE("mesh dependency selection requires a resolved branch output type",
+          "[feature:mesh][feature:wiring][shape:nested][series:tsd][series:reference]") {
+    const auto branch = graph("name"_n = "mesh_with_unresolved_dependency_output",
+                              [](wp<TS<i64>>) { return mesh()[i64{1}]; });
+
+    const auto values = node([](Out<TSD<i64, TS<i64>>>) {});
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { (void)mesh(branch, values()); }),
+                      Catch::Matchers::ContainsSubstring("output type to be resolved before dependency selection"));
 }
 
 TEST_CASE("mesh runtime declarations preserve valid_items inputs",
