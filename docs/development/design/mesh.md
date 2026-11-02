@@ -19,6 +19,9 @@ mesh graph output type determines its type: a graph output `B` makes
 `mesh()[key]` a `REF<B>`. Wiring must therefore know `B` before it wires the
 selection. A graph signature, an annotated lambda result, or an explicit type
 argument can provide it.
+If `B` is unresolved when the selection is wired, wiring reports an error.
+The graph result can depend on the selection's type, so resolving the selection
+from that result would create a recursive type dependency.
 
 A mesh can have a name:
 

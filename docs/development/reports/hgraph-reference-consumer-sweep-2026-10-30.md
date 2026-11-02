@@ -102,9 +102,11 @@ even when the operator's returned wiring point will have a concrete type.
 Returning only `mesh()[key]` provides no independent output-type constraint.
 
 Forwarding the wrapper's output-inference policy fixes the reproduced case.
-It does not infer types through an unresolved same-mesh selection. That would
-require separate type-inference work. Existing deferred wiring points require
-a resolved semantic type and do not provide unresolved-type inference.
+An unresolved same-mesh selection must remain a wiring error: the selection's
+type can influence the graph result, so inferring it from that result would
+create a recursive type dependency.
+If the dependency-selection API is extended to accept an explicit result type,
+that type must equal the branch output type once the graph result is resolved.
 No mesh correction is implemented in this follow-up.
 
 ### Selected-key invalidation after source switching
