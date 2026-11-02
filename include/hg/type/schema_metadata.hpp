@@ -38,7 +38,7 @@ class HG_EXPORT SchemaMetadata {
 
     std::shared_ptr<const Impl> impl_;
 
-    friend SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries);
+    friend HG_EXPORT SchemaMetadata make_schema_metadata(std::span<const SchemaMetadataEntry> entries);
 };
 
 namespace details {

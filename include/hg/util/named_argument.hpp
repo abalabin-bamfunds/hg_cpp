@@ -31,6 +31,9 @@ using argument_value_t = typename argument_value<std::remove_cvref_t<Argument>>:
 template <util::compile_time_string Name> struct compile_time_name {
     static constexpr auto text = Name;
 
+    // MSVC requires an initialized member when this value is a template argument.
+    char marker{};
+
     template <typename Value> [[nodiscard]] constexpr auto operator=(Value &&value) const {
         if constexpr (std::is_array_v<std::remove_reference_t<Value>> &&
                       std::is_same_v<std::remove_cv_t<std::remove_extent_t<std::remove_reference_t<Value>>>, char>) {
