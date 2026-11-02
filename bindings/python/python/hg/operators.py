@@ -142,6 +142,7 @@ __all__ = [
     "eq",
     "ewma",
     "floordiv",
+    "feedback",
     "filter_",
     "if_",
     "invert",

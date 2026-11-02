@@ -1,9 +1,11 @@
 #include "higher_order.hpp"
 
+#include "operator_binding.hpp"
 #include "python_wiring_error.hpp"
 #include "wiring_argument.hpp"
 
 #include <hg/dispatch.hpp>
+#include <hg/feedback.hpp>
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/wiring_error.hpp>
 #include <hg/graph/wiring_context.hpp>
@@ -37,6 +39,48 @@ namespace nb = nanobind;
 
 namespace hg::python::details {
 namespace {
+
+class PythonFeedback {
+  public:
+    PythonFeedback(const TimeSeriesType &output_type, std::string name)
+        : lifetime_{PythonWiringScope::current()}, feedback_{output_type, name} {}
+
+    PythonWiringPoint output() const {
+        lifetime_->check();
+        auto &wiring = WiringContext::current().wiring();
+        lifetime_->check(wiring);
+        return PythonWiringPoint{static_cast<WiringPoint>(feedback_), lifetime_};
+    }
+
+    void bind(const PythonWiringPoint &source) {
+        lifetime_->check();
+        auto &wiring = WiringContext::current().wiring();
+        lifetime_->check(wiring);
+        feedback_ = source.get(wiring);
+    }
+
+  private:
+    std::shared_ptr<PythonWiringLifetime> lifetime_;
+    hg::Feedback<TS_T> feedback_;
+};
+
+PythonFeedback *make_feedback(nb::handle type, std::string name) {
+    const auto native_type = nb::module_::import_("hg").attr("_native_type")(type);
+    const auto &type_argument = python_type_argument(native_type);
+    const auto *output_type = type_cast<TimeSeriesType>(&type_argument);
+    if (output_type == nullptr) {
+        throw std::invalid_argument{"Feedback requires a time-series type"};
+    }
+    return new PythonFeedback{*output_type, std::move(name)};
+}
+
+nb::object wire_feedback(const PythonWiringPoint &point, std::string name) {
+    auto &wiring = WiringContext::current().wiring();
+    const auto lifetime = PythonWiringScope::current();
+    lifetime->check(wiring);
+    const auto result = hg::feedback(point.get(wiring), name);
+    return nb::cast(PythonWiringPoint{result, lifetime});
+}
 
 class PythonArguments {
   public:
@@ -307,6 +351,11 @@ nb::object wire_dispatch(const PythonGraphDefinition &contract, nb::sequence imp
 } // namespace
 
 void bind_higher_order(nb::module_ &module) {
+    nb::class_<PythonFeedback>(module, "Feedback")
+        .def(nb::new_(&make_feedback), nb::arg("output_type"), nb::arg("name") = "")
+        .def_prop_ro("output", &PythonFeedback::output)
+        .def("bind", &PythonFeedback::bind, nb::arg("value"));
+    module.def("feedback", &wire_feedback, nb::arg("value"), nb::arg("name") = "");
     module.def("_map", &wire_map);
     module.def("_reduce", &wire_reduce);
     module.def("_mesh", &wire_mesh);

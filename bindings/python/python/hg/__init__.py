@@ -13,6 +13,7 @@ from weakref import WeakKeyDictionary
 
 from . import operators
 from ._hg import (
+    Feedback,
     EvaluationEngine,
     EvaluationClock,
     Queue,
@@ -52,6 +53,7 @@ from ._hg import (
     _make_service,
     _make_service_catalogue,
     _feedback_service_implementation,
+    feedback,
     _register_multiservice,
     _register_multiservice_impl,
     _register_service_impl,
@@ -1600,6 +1602,7 @@ def run_graph(
 
 operators.map = map
 operators.reduce = reduce
+operators.feedback = feedback
 operators.mesh = mesh
 operators.switch_ = switch_
 operators.dispatch = dispatch
@@ -1609,6 +1612,7 @@ __all__ = [
     "EvaluationEngine",
     "EvaluationClock",
     "EvaluationProfiler",
+    "Feedback",
     "Queue",
     "QueueMode",
     "StopSource",
@@ -1624,6 +1628,7 @@ __all__ = [
     "DispatchDefinition",
     "final",
     "feedback_service_implementation",
+    "feedback",
     "GraphDefinition",
     "GraphRunResult",
     "DEFAULT",
