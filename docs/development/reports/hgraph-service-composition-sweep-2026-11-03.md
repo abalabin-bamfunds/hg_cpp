@@ -131,8 +131,8 @@ request/reply implementations select that transport, as specified in
 `docs/source/developer_guide/services.rst`.
 
 The HG adaptation supplies request feedback only. It omits the reply feedback
-needed to break the observed cycle. Classification: incomplete adaptation of
-upstream service transport; this rejection does not establish a defect in HG.
+needed to break the observed cycle. Classification: parity corner case in
+recursive service transport, not an HG bug.
 Recursive behavior with explicit reply feedback remains unverified. The hidden
 `[.][repro]` case currently records this incomplete adaptation; its expected
 five-position output trace must be revised for the additional feedback delay.
