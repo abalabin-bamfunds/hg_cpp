@@ -223,6 +223,7 @@ add_executable(
     library/boolean_reduction_test.cpp
     library/collection_test.cpp
     library/collection_reduction_test.cpp
+    library/collection_composition_patterns_test.cpp
     library/collect_test.cpp
     library/conversion_test.cpp
     library/emit_test.cpp
@@ -246,7 +247,8 @@ add_executable(
     library/timed_test.cpp
     library/tsd_transform_test.cpp
     library/service_patterns_test.cpp
-    library/service_composition_test.cpp)
+    library/service_composition_test.cpp
+    library/service_specialization_patterns_test.cpp)
 target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
 target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 catch_discover_tests(hg_library_tests DISCOVERY_MODE PRE_TEST)
