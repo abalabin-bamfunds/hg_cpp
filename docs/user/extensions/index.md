@@ -5,7 +5,7 @@ Each extension has its own build requirements.
 
 | Extension | Use | Python | C++ |
 | --- | --- | --- | --- |
-| [Web](web.md) | HTTP services, requests, authentication, and binary WebSocket connections | HTTP | HTTP and WebSocket |
+| [Web](web.md) | HTTP services, requests, authentication, and binary WebSocket connections | [HTTP](web.md) and [WebSocket](websocket.md) | HTTP and WebSocket |
 | [Frame](frame.md) | Nullable columns, keyed tables, row updates, and column expressions | — | Supported |
 
 The web extension uses [services](../reference/services.md) to connect transport
