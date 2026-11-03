@@ -65,6 +65,9 @@ struct Options {
     std::size_t samples{5};
     std::size_t warmup_messages{128};
     std::optional<std::filesystem::path> output;
+    std::vector<std::string> protocols;
+    std::vector<std::size_t> windows;
+    std::vector<std::size_t> payload_sizes;
 };
 
 struct Sample {
@@ -164,6 +167,10 @@ void write_sample(std::ostream &output, const Result &result, std::size_t index)
            << ",\"elapsed_ns\":" << sample.elapsed_ns << ",\"throughput_per_second\":" << std::fixed
            << std::setprecision(2)
            << (elapsed_seconds > 0 ? static_cast<double>(sample.latency_ns.size()) / elapsed_seconds : 0)
+           << ",\"payload_mib_per_second\":"
+           << (elapsed_seconds > 0 ? static_cast<double>(sample.latency_ns.size()) * result.payload_bytes /
+                                         (elapsed_seconds * 1024.0 * 1024.0)
+                                   : 0)
            << ",\"p50_ns\":" << percentile(sample.latency_ns, 0.50) << ",\"p95_ns\":"
            << percentile(sample.latency_ns, 0.95) << ",\"p99_ns\":" << percentile(sample.latency_ns, 0.99)
            << ",\"peer_ports\":" << sample.peer_ports << ",\"ingress_batches\":" << sample.batches
@@ -179,7 +186,22 @@ void write_metadata(std::ostream &output, const Options &options) {
     output << "{\"kind\":\"metadata\",\"benchmark\":\"web_extension\",\"build\":\"Release\",\"compiler\":\""
            << compiler_name() << "\",\"hardware_threads\":" << std::thread::hardware_concurrency()
            << ",\"messages_per_sample\":" << options.messages_per_sample << ",\"samples\":" << options.samples
-           << ",\"warmup_messages\":" << options.warmup_messages << "}\n";
+           << ",\"warmup_messages\":" << options.warmup_messages << ",\"protocols\":[";
+    for (auto index = std::size_t{}; index < options.protocols.size(); ++index) {
+        if (index != 0) output << ',';
+        output << '"' << options.protocols[index] << '"';
+    }
+    output << "],\"windows\":[";
+    for (auto index = std::size_t{}; index < options.windows.size(); ++index) {
+        if (index != 0) output << ',';
+        output << options.windows[index];
+    }
+    output << "],\"payload_sizes\":[";
+    for (auto index = std::size_t{}; index < options.payload_sizes.size(); ++index) {
+        if (index != 0) output << ',';
+        output << options.payload_sizes[index];
+    }
+    output << "]}\n";
 }
 
 [[nodiscard]] Options parse_options(int argc, char **argv) {
@@ -199,6 +221,29 @@ void write_metadata(std::ostream &output, const Options &options) {
             options.samples = static_cast<std::size_t>(std::stoull(std::string{value}));
         } else if (argument == "--output") {
             options.output = std::filesystem::path{value};
+        } else if (argument == "--protocol") {
+            const auto protocol = std::string{value};
+            if (protocol != "http" && protocol != "https" && protocol != "ws" && protocol != "wss") {
+                throw std::invalid_argument{"protocol must be http, https, ws, or wss"};
+            }
+            if (std::ranges::find(options.protocols, protocol) != options.protocols.end()) {
+                throw std::invalid_argument{"protocol was selected more than once"};
+            }
+            options.protocols.push_back(protocol);
+        } else if (argument == "--window") {
+            const auto window = static_cast<std::size_t>(std::stoull(std::string{value}));
+            if (window == 0) throw std::invalid_argument{"window must be positive"};
+            if (std::ranges::find(options.windows, window) != options.windows.end()) {
+                throw std::invalid_argument{"window was selected more than once"};
+            }
+            options.windows.push_back(window);
+        } else if (argument == "--payload") {
+            const auto payload_size = static_cast<std::size_t>(std::stoull(std::string{value}));
+            if (payload_size < 12) throw std::invalid_argument{"payload size must be at least 12 bytes"};
+            if (std::ranges::find(options.payload_sizes, payload_size) != options.payload_sizes.end()) {
+                throw std::invalid_argument{"payload size was selected more than once"};
+            }
+            options.payload_sizes.push_back(payload_size);
         } else {
             throw std::invalid_argument{"unknown option " + std::string{argument}};
         }
@@ -703,6 +748,9 @@ void write_result(std::ostream &output, const Result &result) {
 int main(int argc, char **argv) {
     try {
         const auto options = parse_options(argc, argv);
+        const auto selected_protocols = options.protocols.empty()
+                                            ? std::vector<std::string>{"http", "https", "ws", "wss"}
+                                            : options.protocols;
         auto file = std::ofstream{};
         auto *output = &std::cout;
         if (options.output) {
@@ -712,24 +760,32 @@ int main(int argc, char **argv) {
         }
         write_metadata(*output, options);
         output->flush();
-        for (const auto payload_bytes : {std::size_t{64}, std::size_t{4096}}) {
-            for (const auto window : {std::size_t{1}, ClientCount}) {
-                std::cerr << "HTTP payload=" << payload_bytes << " window=" << window << '\n';
-                write_result(*output, run_http(options, "http", payload_bytes, window));
-                std::cerr << "HTTPS payload=" << payload_bytes << " window=" << window << '\n';
-                write_result(*output, run_http(options, "https", payload_bytes, window));
-            }
-            for (const auto window : {std::size_t{1}, std::size_t{64}}) {
-                std::cerr << "WS payload=" << payload_bytes << " window=" << window << '\n';
-                write_result(*output, run_websocket(options, payload_bytes, window, false));
-                std::cerr << "WSS payload=" << payload_bytes << " window=" << window << '\n';
-                write_result(*output, run_websocket(options, payload_bytes, window, true));
+        auto run_raw_beast = options.protocols.empty() && options.windows.empty() && options.payload_sizes.empty();
+        const auto default_payload_sizes = std::vector<std::size_t>{64, 4096};
+        const auto &payload_sizes = options.payload_sizes.empty() ? default_payload_sizes : options.payload_sizes;
+        for (const auto payload_bytes : payload_sizes) {
+            for (const auto &protocol : selected_protocols) {
+                const auto http_protocol = protocol == "http" || protocol == "https";
+                const auto default_windows = http_protocol ? std::vector<std::size_t>{1, ClientCount}
+                                                           : std::vector<std::size_t>{1, 64};
+                const auto &windows = options.windows.empty() ? default_windows : options.windows;
+                for (const auto window : windows) {
+                    std::cerr << protocol << " payload=" << payload_bytes << " window=" << window << '\n';
+                    if (http_protocol) {
+                        write_result(*output, run_http(options, protocol, payload_bytes, window));
+                    } else {
+                        write_result(*output,
+                                     run_websocket(options, payload_bytes, window, protocol == "wss"));
+                    }
+                }
             }
         }
-        std::cerr << "raw Beast client persistent\n";
-        write_result(*output, run_beast_client(options, true));
-        std::cerr << "raw Beast client connection-close\n";
-        write_result(*output, run_beast_client(options, false));
+        if (run_raw_beast) {
+            std::cerr << "raw Beast client persistent\n";
+            write_result(*output, run_beast_client(options, true));
+            std::cerr << "raw Beast client connection-close\n";
+            write_result(*output, run_beast_client(options, false));
+        }
         output->flush();
         return 0;
     } catch (const std::exception &error) {

@@ -1,0 +1,8 @@
+ws payload=64 window=1
+ws payload=64 window=64
+wss payload=64 window=1
+wss payload=64 window=64
+ws payload=4096 window=1
+ws payload=4096 window=64
+wss payload=4096 window=1
+wss payload=4096 window=64
