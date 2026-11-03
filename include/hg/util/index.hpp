@@ -12,6 +12,7 @@
 #include <limits>
 #include <memory_resource>
 #include <new>
+#include <span>
 #include <stdexcept>
 #include <utility>
 
@@ -377,6 +378,29 @@ template <> class index<dynamic_index_extent> {
             }
             bits = (word_index < this_words ? word(word_index) : 0) |
                    (word_index < other_words ? other.word(word_index) : 0);
+        }
+    }
+
+    // Visits each set position in the union once, in increasing order, without allocating storage.
+    // Inputs must remain unchanged during traversal. Callback exceptions propagate to the caller.
+    template <typename Function>
+    static void for_each_set_union(std::span<const index *const> bitmaps, Function &&visit) {
+        auto words = size_type{};
+        for (const auto *bitmap : bitmaps) {
+            words = std::max(words, bitmap->word_count());
+        }
+
+        for (auto word_index = size_type{}; word_index != words; ++word_index) {
+            auto bits = std::uint64_t{};
+            for (const auto *bitmap : bitmaps) {
+                if (word_index < bitmap->word_count()) {
+                    bits |= bitmap->word(word_index);
+                }
+            }
+            while (bits != 0) {
+                visit(word_index * bits_per_word + static_cast<size_type>(std::countr_zero(bits)));
+                bits &= bits - 1;
+            }
         }
     }
 

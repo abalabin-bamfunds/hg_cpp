@@ -148,6 +148,87 @@ TEST_CASE("an index finds the first set position in either index", "[index][cove
     CHECK(memory.allocations() == 0);
 }
 
+TEST_CASE("an index union traversal handles empty and repeated inline inputs", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto empty = util::index<>{};
+    auto left = util::index<>{};
+    auto right = util::index<>{};
+    auto positions = std::vector<std::uint32_t>{};
+    const auto collect = [&](std::uint32_t position) { positions.push_back(position); };
+
+    util::index<>::for_each_set_union({}, collect);
+    CHECK(positions.empty());
+    const auto empty_inputs = std::array<const util::index<> *, 2>{&empty, &left};
+    util::index<>::for_each_set_union(empty_inputs, collect);
+    CHECK(positions.empty());
+
+    left.set(0, memory);
+    left.set(55, memory);
+    right.set(3, memory);
+    right.set(55, memory);
+    const auto inputs = std::array<const util::index<> *, 4>{&left, &empty, &right, &left};
+    util::index<>::for_each_set_union(inputs, collect);
+    CHECK(positions == std::vector<std::uint32_t>{0, 3, 55});
+    CHECK(left.count() == 2);
+    CHECK(right.count() == 2);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("an index union traversal combines mixed storage and unequal extents", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto inline_bits = util::index<>{};
+    auto allocated = util::index<>{};
+    auto longer = util::index<>{};
+    auto cleared = util::index<>{};
+    inline_bits.set(55, memory);
+    for (const auto position : {0u, 55u, 56u, 63u, 64u, 127u, 128u}) {
+        allocated.set(position, memory);
+    }
+    for (const auto position : {55u, 64u, 511u, 4096u}) {
+        longer.set(position, memory);
+    }
+    cleared.set(8191, memory);
+    cleared.clear();
+    const auto inputs = std::array<const util::index<> *, 4>{&inline_bits, &allocated, &longer, &cleared};
+    auto positions = std::vector<std::uint32_t>{};
+    util::index<>::for_each_set_union(inputs, [&](std::uint32_t position) { positions.push_back(position); });
+    CHECK(positions == std::vector<std::uint32_t>{0, 55, 56, 63, 64, 127, 128, 511, 4096});
+    CHECK(allocated.count() == 7);
+    CHECK(longer.count() == 4);
+    CHECK(cleared.empty());
+    CHECK_THROWS_AS(util::index<>::for_each_set_union(inputs, [](std::uint32_t) {
+        throw std::runtime_error{"callback failed"};
+    }), std::runtime_error);
+
+    allocated.release(memory);
+    longer.release(memory);
+    cleared.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
+TEST_CASE("an index union traversal visits overlapping dense words once", "[index][coverage-exempt]") {
+    auto memory = counting_memory_resource{};
+    auto even = util::index<>{};
+    auto odd = util::index<>{};
+    auto overlap = util::index<>{};
+    for (auto position = std::uint32_t{}; position != 257; ++position) {
+        (position % 2 == 0 ? even : odd).set(position, memory);
+        if (position % 3 == 0) {
+            overlap.set(position, memory);
+        }
+    }
+
+    const auto inputs = std::array<const util::index<> *, 3>{&odd, &overlap, &even};
+    auto next = std::uint32_t{};
+    util::index<>::for_each_set_union(inputs, [&](std::uint32_t position) { CHECK(position == next++); });
+    CHECK(next == 257);
+
+    even.release(memory);
+    odd.release(memory);
+    overlap.release(memory);
+    CHECK(memory.allocations() == 0);
+}
+
 TEST_CASE("a bounded unset search clips the range and treats missing bits as unset", "[index][coverage-exempt]") {
     auto memory = counting_memory_resource{};
     auto dynamic = util::index<>{};
