@@ -171,7 +171,7 @@ struct numeric_overloads {
         [](double lhs, double rhs) { return lhs + rhs; }
     };
 
-    hg::overload<hg::operators::add> add_optional_double{
+    hg::overload<hg::operators::add> add_double_optional{
         [](std::optional<double> lhs, std::optional<double> rhs) {
             return lhs.value_or(0.0) + rhs.value_or(0.0);
         }
@@ -189,10 +189,11 @@ member name to its registered node or graph template. Every member must be an
 the member name for each specialization; their signatures distinguish them.
 
 Name a default overload `<operator>_impl` and other overloads
-`<operator>_<what>`, for example `sample_impl`, `add_double`, and `len_tss`.
-Remove a trailing underscore from the operator name before adding the suffix:
-`filter_impl`, not `filter__impl`. Use the same rule for implementation aggregate
-names.
+`<operator>_<type>_<extra>`, with involved types before additional qualifiers.
+Examples include `sample_impl`, `add_double_optional`, `len_tss`, and
+`div_double_by_int`. Remove a trailing underscore from the operator name before
+adding the suffix: `filter_impl`, not `filter__impl`. Use the same rule for
+implementation aggregate names.
 
 Library initialization calls the file's registration function after constructing
 the operator objects. Members register in declaration order. Split groups larger
