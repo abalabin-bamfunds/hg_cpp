@@ -6,6 +6,7 @@
 #include <hg/run_graph.hpp>
 #include <hg/testing/test_wiring.hpp>
 #include <hg/time_series/tsb/tsb.hpp>
+#include <hg/type/time_series_dict_type.hpp>
 #include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -284,6 +285,78 @@ TEST_CASE("convert reconciles scalar dictionaries into TSD snapshots",
     CHECK(hg::run_graph(dict_to_tsd_sum,
                               {{{1, 10}, {2, 20}}, {{2, 7}}, {}})
               .equals<i64>({30, 7, 0}));
+}
+
+TEST_CASE("convert deduplicates TSD items from an ordinary dictionary input",
+          "[feature:operator][feature:collection-change][series:tsd][scalar:dict][guarantee:deduplicated]"
+          "[transition:update]") {
+    const auto convert_dictionary = [](wp<TS<Dict<i64, i64>>> values) {
+        return operators::convert[type<TSD<i64, TS<i64, TimeSeriesGuarantee::deduplicated>>>](values);
+    };
+
+    CHECK(hg::run_graph(convert_dictionary, {{{1, 10}, {2, 20}}, {{1, 11}, {2, 20}}})
+              .equals({{{1, 10}, {2, 20}}, {{1, 11}}}));
+}
+
+TEST_CASE("convert does not publish an unchanged dictionary into a deduplicated TSD",
+          "[feature:operator][feature:collection-change][series:tsd][scalar:dict][guarantee:deduplicated]"
+          "[transition:update]") {
+    const auto convert_dictionary = [](wp<TS<Dict<i64, i64>>> values) {
+        return operators::convert[type<TSD<i64, TS<i64>, TimeSeriesGuarantee::deduplicated>>](values);
+    };
+
+    CHECK(hg::run_graph(convert_dictionary, {{{1, 10}, {2, 20}}, {{1, 10}, {2, 20}}})
+              .equals({{{1, 10}, {2, 20}}, literal::SKIP}));
+}
+
+TEST_CASE("convert defaults TSD guarantees to the source and preserves stronger guarantees",
+          "[feature:operator][feature:wiring][series:tsd][scalar:dict]"
+          "[guarantee:ordinary][guarantee:deduplicated]") {
+    testing::test_wiring([] {
+        auto &wiring = WiringContext::current().wiring();
+        const auto &ordinary_source = wiring.borrowed_input(TS<Dict<i64, i64>>::type());
+        const auto ordinary_result = operators::convert[type<TSD<i64, TS<i64>>>](ordinary_source);
+        const auto &ordinary_dictionary = type_cast<TimeSeriesDictionaryType>(ordinary_result.type());
+        CHECK(ordinary_dictionary.guarantee().value() == TimeSeriesGuarantee::ordinary);
+        CHECK(ordinary_dictionary.value_type().guarantee().value() == TimeSeriesGuarantee::ordinary);
+
+        const auto &deduplicated_source =
+            wiring.borrowed_input(TS<Dict<i64, i64>, TimeSeriesGuarantee::deduplicated>::type());
+        const auto deduplicated_result = operators::convert[type<TSD<i64, TS<i64>>>](deduplicated_source);
+        const auto &deduplicated_dictionary = type_cast<TimeSeriesDictionaryType>(deduplicated_result.type());
+        CHECK(deduplicated_dictionary.guarantee().value() == TimeSeriesGuarantee::deduplicated);
+        CHECK(deduplicated_dictionary.value_type().guarantee().value() == TimeSeriesGuarantee::deduplicated);
+
+        const auto root_deduplicated = operators::convert[
+            type<TSD<i64, TS<i64>, TimeSeriesGuarantee::deduplicated>>](ordinary_source);
+        const auto &root_deduplicated_dictionary = type_cast<TimeSeriesDictionaryType>(root_deduplicated.type());
+        CHECK(root_deduplicated_dictionary.guarantee().value() == TimeSeriesGuarantee::deduplicated);
+        CHECK(root_deduplicated_dictionary.value_type().guarantee().value() == TimeSeriesGuarantee::deduplicated);
+
+        const auto item_deduplicated =
+            operators::convert[type<TSD<i64, TS<i64, TimeSeriesGuarantee::deduplicated>>>](ordinary_source);
+        const auto &item_deduplicated_dictionary = type_cast<TimeSeriesDictionaryType>(item_deduplicated.type());
+        CHECK(item_deduplicated_dictionary.guarantee().value() == TimeSeriesGuarantee::ordinary);
+        CHECK(item_deduplicated_dictionary.value_type().guarantee().value() == TimeSeriesGuarantee::deduplicated);
+    });
+}
+
+TEST_CASE("convert rejects final and const TSD guarantees unsupported by the dictionary input",
+          "[feature:operator][feature:wiring][series:tsd][scalar:dict]"
+          "[guarantee:final][guarantee:const]") {
+    testing::test_wiring([] {
+        auto &wiring = WiringContext::current().wiring();
+        const auto &source = wiring.borrowed_input(TS<Dict<i64, i64>>::type());
+
+        CHECK_THROWS_AS((operators::convert[type<TSD<i64, TS<i64>, TimeSeriesGuarantee::final>>](source)),
+                        WiringError);
+        CHECK_THROWS_AS((operators::convert[type<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>>](source)),
+                        WiringError);
+        CHECK_THROWS_AS((operators::convert[type<TSD<i64, TS<i64>, TimeSeriesGuarantee::const_>>](source)),
+                        WiringError);
+        CHECK_THROWS_AS((operators::convert[type<TSD<i64, TS<i64, TimeSeriesGuarantee::const_>>>](source)),
+                        WiringError);
+    });
 }
 
 TEST_CASE("convert reconciles repeated set snapshots without publishing false changes",

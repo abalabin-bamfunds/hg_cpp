@@ -17,6 +17,7 @@
 #include <hg/time_series/tsd/tsd_input.hpp>
 #include <hg/time_series/tsl/tsl.hpp>
 #include <hg/time_series/tsl/tsl_type.hpp>
+#include <hg/type/time_series_dict_type.hpp>
 #include <hg/type/time_series_reference_type.hpp>
 #include <hg/util/hash_set.hpp>
 #include <hg/util/scope_exit.hpp>
@@ -38,6 +39,9 @@ namespace {
 using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"CONVERSION_G">;
+inline constexpr auto DICT_INPUT_G = guarantee_variable<"CONVERSION_DICT_INPUT_G">;
+inline constexpr auto DICT_OUTPUT_G = guarantee_variable<"CONVERSION_DICT_OUTPUT_G">;
+inline constexpr auto DICT_ITEM_G = guarantee_variable<"CONVERSION_DICT_ITEM_G">;
 using KEY = ScalarVariable<"CONVERSION_KEY", Hashable>;
 using SIZE_DECLARATION = std::remove_cv_t<decltype(SIZE)>;
 template <template <typename, auto...> typename Field>
@@ -86,6 +90,56 @@ struct conversion_overloads {
         const auto *requested = requested_result(arguments);
         if (requested == nullptr || !requested->accepts(*arguments.resolved_output_type())) {
             return reject("convert requires a compatible explicit time-series result type");
+        }
+        return accept;
+    }
+
+    static TimeSeriesGuarantee dict_input_guarantee(const WiringArguments &arguments) {
+        const auto &input = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
+        return *input.guarantee().value();
+    }
+
+    static const TimeSeriesDictionaryType *requested_dict_result(const WiringArguments &arguments) {
+        const auto *requested = requested_result(arguments);
+        return requested == nullptr ? nullptr : type_cast<TimeSeriesDictionaryType>(requested);
+    }
+
+    static TimeSeriesGuarantee dict_output_guarantee(const WiringArguments &arguments) {
+        const auto *requested = requested_dict_result(arguments);
+        const auto requested_guarantee = requested == nullptr ? TimeSeriesGuarantee::ordinary
+                                                               : requested->guarantee().value().value_or(
+                                                                     TimeSeriesGuarantee::ordinary);
+        return strongest(dict_input_guarantee(arguments), requested_guarantee);
+    }
+
+    static TimeSeriesGuarantee dict_item_guarantee(const WiringArguments &arguments) {
+        const auto *requested = requested_dict_result(arguments);
+        const auto requested_guarantee = requested == nullptr
+                                             ? TimeSeriesGuarantee::ordinary
+                                             : requested->value_type().guarantee().value().value_or(
+                                                   TimeSeriesGuarantee::ordinary);
+        return strongest(dict_input_guarantee(arguments), requested_guarantee);
+    }
+
+    static RequirementResult require_convert_dict_result(const WiringArguments &arguments) {
+        const auto result = require_convert_result(arguments);
+        if (!result.accepted()) {
+            return result;
+        }
+
+        const auto *requested = requested_dict_result(arguments);
+        if (requested == nullptr) {
+            return reject("convert requires a compatible explicit TSD result type");
+        }
+        const auto input_guarantee = dict_input_guarantee(arguments);
+        const auto output_guarantee = requested->guarantee().value().value_or(TimeSeriesGuarantee::ordinary);
+        const auto item_guarantee = requested->value_type().guarantee().value().value_or(
+            TimeSeriesGuarantee::ordinary);
+        constexpr auto strongest_guarantee_provided_by_input = TimeSeriesGuarantee::deduplicated;
+        if ((output_guarantee > strongest_guarantee_provided_by_input &&
+             !satisfies(input_guarantee, output_guarantee)) ||
+            (item_guarantee > strongest_guarantee_provided_by_input && !satisfies(input_guarantee, item_guarantee))) {
+            return reject("convert requires a source guarantee for final or const dictionary outputs");
         }
         return accept;
     }
@@ -273,11 +327,19 @@ struct conversion_overloads {
 
     // Copy scalar dictionary members into a TSD snapshot.
     struct convert_dict_to_tsd_impl {
-        In<TS<Dict<KEY, SCALAR>, G>> value;
-        Out<TSD<KEY, TS<SCALAR, G>, G>> output;
+        In<TS<Dict<KEY, SCALAR>, DICT_INPUT_G>> value;
+        Out<TSD<KEY, TS<SCALAR, DICT_ITEM_G>, DICT_OUTPUT_G>> output;
 
         static RequirementResult require(const WiringArguments &arguments) {
-            return require_convert_result(arguments);
+            return require_convert_dict_result(arguments);
+        }
+
+        static TimeSeriesGuarantee resolve(decltype(DICT_OUTPUT_G), const WiringArguments &arguments) {
+            return dict_output_guarantee(arguments);
+        }
+
+        static TimeSeriesGuarantee resolve(decltype(DICT_ITEM_G), const WiringArguments &arguments) {
+            return dict_item_guarantee(arguments);
         }
 
         void evaluate() const {
