@@ -62,7 +62,7 @@ PythonOperator::PythonOperator(std::shared_ptr<Operator> operation,
 
 PythonOperator::PythonOperator(const PythonOperator &other)
     : operation_{other.operation_}, owned_operation_{other.owned_operation_}, type_parameters_{other.type_parameters_},
-      type_map_{other.type_map_.copy()}, overload_owners_{other.overload_owners_} {}
+      type_map_{other.type_map_.copy()}, owner_{other.owner_} {}
 
 PythonOperator &PythonOperator::operator=(const PythonOperator &other) {
     if (this != &other) {
@@ -70,7 +70,7 @@ PythonOperator &PythonOperator::operator=(const PythonOperator &other) {
         owned_operation_ = other.owned_operation_;
         type_parameters_ = other.type_parameters_;
         type_map_ = other.type_map_.copy();
-        overload_owners_ = other.overload_owners_;
+        owner_ = other.owner_;
     }
     return *this;
 }
@@ -136,8 +136,8 @@ nb::object PythonOperator::call(nb::handle value) const {
 nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) const {
     activate_contexts();
     try {
-        if (owned_operation_ != nullptr) {
-            WiringContext::current().wiring().retain_wiring_template(owned_operation_);
+        if (owner_) {
+            WiringContext::current().wiring().retain_wiring_owner(owner_->lock().share_owner());
         }
         const auto result = static_cast<const WiringTemplate &>(*operation_)(type_map_, arguments);
         if (!result) {
@@ -186,7 +186,9 @@ PythonOperator PythonOperator::map_type_arguments(nb::handle arguments) const {
     return result;
 }
 
-void PythonOperator::register_overload(nb::handle definition, nb::handle owner) {
+void PythonOperator::set_owner(nb::handle owner) { owner_ = WeakObject{owner}; }
+
+void PythonOperator::register_overload(nb::handle owner) {
     if (owned_operation_ == nullptr) {
         throw std::logic_error{"Python overloads can only be registered on a Python-declared operator"};
     }
@@ -197,14 +199,12 @@ void PythonOperator::register_overload(nb::handle definition, nb::handle owner) 
     const auto native = nb::getattr(owner, "_native_definition");
     if (nb::isinstance<PythonNodeDefinition>(native)) {
         const auto &node = nb::cast<const PythonNodeDefinition &>(native);
-        owned_operation_->overload(
-            RuntimeSignatureNodeTemplate<PythonNodeDefinition>{node.retain_function()});
+        owned_operation_->overload(RuntimeSignatureNodeTemplate<PythonNodeDefinition>{node});
     } else if (nb::isinstance<PythonGraphDefinition>(native)) {
         owned_operation_->overload(nb::cast<const PythonGraphDefinition &>(native));
     } else {
         throw std::invalid_argument{"operator overloads must be decorated Python node or graph definitions"};
     }
-    overload_owners_.emplace_back(owner);
 }
 
 std::string PythonOperator::name() const { return std::string{operation_->signature().name().text()}; }
@@ -264,6 +264,7 @@ void bind_operators(nb::module_ &module) {
         .def("__call__", static_cast<nb::object (PythonOperator::*)(nb::args, nb::kwargs) const>(
                              &PythonOperator::call))
         .def("__getitem__", &PythonOperator::map_type_arguments)
+        .def("_set_owner", &PythonOperator::set_owner)
         .def("_register_overload", &PythonOperator::register_overload)
         .def_prop_ro("name", &PythonOperator::name)
         .def("__repr__", [](const PythonOperator &operation) { return "operator_(" + operation.name() + ")"; });

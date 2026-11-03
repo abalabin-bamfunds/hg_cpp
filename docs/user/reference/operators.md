@@ -44,6 +44,9 @@ overload diagnostics. Declare type parameters explicitly when calls need bracket
 specialization:
 
 ```python
+from typing import TypeVar
+from hgraph import TS, operator
+
 VALUE = TypeVar("VALUE")
 
 @operator(type_params=(VALUE,))

@@ -19,6 +19,7 @@ class HG_PYTHON_API Object {
     explicit Object(nanobind::handle value);
     explicit operator bool() const noexcept { return value_ != nullptr; }
     nanobind::handle get() const noexcept;
+    std::shared_ptr<const void> share_owner() const noexcept;
 
     // Drain deferred releases at Python execution boundaries while the GIL is held.
     static void drain_deferred_releases();

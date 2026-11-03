@@ -22,6 +22,10 @@ nanobind::handle Object::get() const noexcept {
     return nanobind::handle{value_.get()};
 }
 
+std::shared_ptr<const void> Object::share_owner() const noexcept {
+    return std::shared_ptr<const void>{value_, static_cast<const void *>(value_.get())};
+}
+
 WeakObject::WeakObject(nanobind::handle value) : reference_{nanobind::weakref{value}} {}
 
 Object WeakObject::lock() const {

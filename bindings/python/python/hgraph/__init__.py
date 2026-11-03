@@ -859,21 +859,39 @@ class OperatorDefinition:
     def __init__(self, function: Any, native_operator: Any):
         self.function = function
         self._native_operator = native_operator
+        self._implementations: list[GraphDefinition | NodeDefinition] = []
         update_wrapper(self, function)
         self.signature = inspect.signature(function)
         self.__signature__ = self.signature
+        self._native_operator._set_owner(self)
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         return self._native_operator(*args, **kwargs)
 
     def __getitem__(self, type_arguments: Any) -> Any:
-        return self._native_operator[type_arguments]
+        return _OperatorSpecialization(self, self._native_operator[type_arguments])
 
     def overload(self, implementation: GraphDefinition | NodeDefinition) -> GraphDefinition | NodeDefinition:
         if not isinstance(implementation, (GraphDefinition, NodeDefinition)):
             raise TypeError("operator overloads must be decorated @graph or Python node definitions")
-        self._native_operator._register_overload(implementation._native_definition, implementation)
+        self._native_operator._register_overload(implementation)
+        self._implementations.append(implementation)
         return implementation
+
+
+class _OperatorSpecialization:
+    def __init__(self, owner: OperatorDefinition, native_operator: Any):
+        self._owner = owner
+        self._native_operator = native_operator
+        self.signature = owner.signature
+        self.__signature__ = owner.__signature__
+        update_wrapper(self, owner.function)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._native_operator(*args, **kwargs)
+
+    def __getitem__(self, type_arguments: Any) -> _OperatorSpecialization:
+        return _OperatorSpecialization(self._owner, self._native_operator[type_arguments])
 
 
 class _FeedbackServiceImplementation:
