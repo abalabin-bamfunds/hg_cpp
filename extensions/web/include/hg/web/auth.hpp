@@ -23,25 +23,27 @@ using AuthDecision = Bundle<details::AuthDecisionSchema<IDENTITY>::template sche
 
 namespace auth {
 
-using hg::literals::operator""_n;
-
 template <typename IDENTITY>
 [[nodiscard]] ScalarValue<AuthDecision<IDENTITY>> accept(Scalar<IDENTITY> identity) {
+    using namespace hg::literals;
     return bundle<details::AuthDecisionSchema<IDENTITY>::template schema>("identity"_n = identity);
 }
 
 template <typename IDENTITY>
 [[nodiscard]] ScalarValue<AuthDecision<IDENTITY>> accept(allocator &memory, Scalar<IDENTITY> identity) {
+    using namespace hg::literals;
     return bundle<details::AuthDecisionSchema<IDENTITY>::template schema>(memory, "identity"_n = identity);
 }
 
 template <typename IDENTITY>
 [[nodiscard]] ScalarValue<AuthDecision<IDENTITY>> reject(Scalar<Bundle<HttpResponse>> response) {
+    using namespace hg::literals;
     return bundle<details::AuthDecisionSchema<IDENTITY>::template schema>("rejection"_n = response);
 }
 
 template <typename IDENTITY>
 [[nodiscard]] ScalarValue<AuthDecision<IDENTITY>> reject(allocator &memory, Scalar<Bundle<HttpResponse>> response) {
+    using namespace hg::literals;
     return bundle<details::AuthDecisionSchema<IDENTITY>::template schema>(memory, "rejection"_n = response);
 }
 
