@@ -15,11 +15,10 @@ python -m venv .venv
 Activate it with `source .venv/bin/activate` on Linux or macOS, or
 `.venv\Scripts\Activate.ps1` in Windows PowerShell.
 
-Set `USER` to the **Nexus user token** and `PASS` to its **token pass**. In the active
-environment:
+Install the package in the active environment:
 
 ```sh
-pip install hg-cpp --index-url http://${USER}:${PASS}@artifacts.bamfunds.net/repository/bam-private-pypi-project-commodities-ac-enhanced/simple --trusted-host artifacts.bamfunds.net --trusted-host artifacts.cloud.bamfunds.net
+python -m pip install hg-cpp
 ```
 
 ::::{tab-set}
