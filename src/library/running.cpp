@@ -68,8 +68,8 @@ struct running_overloads {
 
     overload<sums, sums_impl<i64>> sums_i64;
     overload<sums, sums_impl<double>> sums_double;
-    overload<sums, sums_reset_impl<i64>> sums_reset_i64;
-    overload<sums, sums_reset_impl<double>> sums_reset_double;
+    overload<sums, sums_reset_impl<i64>> sums_i64_reset;
+    overload<sums, sums_reset_impl<double>> sums_double_reset;
 
     // Running minimum.
     template <typename T> struct mins_impl {
@@ -105,8 +105,8 @@ struct running_overloads {
 
     overload<mins, mins_impl<i64>> mins_i64;
     overload<mins, mins_impl<double>> mins_double;
-    overload<mins, mins_reset_impl<i64>> mins_reset_i64;
-    overload<mins, mins_reset_impl<double>> mins_reset_double;
+    overload<mins, mins_reset_impl<i64>> mins_i64_reset;
+    overload<mins, mins_reset_impl<double>> mins_double_reset;
 
     // Running maximum.
     template <typename T> struct maxs_impl {
@@ -142,8 +142,8 @@ struct running_overloads {
 
     overload<maxs, maxs_impl<i64>> maxs_i64;
     overload<maxs, maxs_impl<double>> maxs_double;
-    overload<maxs, maxs_reset_impl<i64>> maxs_reset_i64;
-    overload<maxs, maxs_reset_impl<double>> maxs_reset_double;
+    overload<maxs, maxs_reset_impl<i64>> maxs_i64_reset;
+    overload<maxs, maxs_reset_impl<double>> maxs_double_reset;
 
     // Running mean.
     template <typename T> struct means_impl {
@@ -190,8 +190,8 @@ struct running_overloads {
 
     overload<means, means_impl<i64>> means_i64;
     overload<means, means_impl<double>> means_double;
-    overload<means, means_reset_impl<i64>> means_reset_i64;
-    overload<means, means_reset_impl<double>> means_reset_double;
+    overload<means, means_reset_impl<i64>> means_i64_reset;
+    overload<means, means_reset_impl<double>> means_double_reset;
 };
 
 } // namespace

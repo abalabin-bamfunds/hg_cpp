@@ -106,7 +106,7 @@ struct string_overloads {
 
     overload<add, add_strings> add_strings;
 
-    struct add_optional_strings {
+    struct add_strings_optional {
         std::optional<std::string_view> lhs;
         std::optional<std::string_view> rhs;
         Out<TS<string>> output;
@@ -126,7 +126,7 @@ struct string_overloads {
         }
     };
 
-    overload<add, add_optional_strings> add_optional_strings;
+    overload<add, add_strings_optional> add_strings_optional;
     overload<add> add_string_scalars{graph([](std::string_view lhs, std::string_view rhs) {
         auto builder = StringBuilder{};
         builder.reserve(lhs.size() + rhs.size());
@@ -151,10 +151,10 @@ struct string_overloads {
         resolve<decltype(G)> = resolve_output)};
 
     // Substring selection.
-    overload<substr> substr_with_end{node([](std::string_view text, i64 start, i64 end) {
+    overload<substr> substr_string_with_end{node([](std::string_view text, i64 start, i64 end) {
         return Utf8View{text}.slice(start, end);
     })};
-    overload<substr> substr_to_end{node([](std::string_view text, i64 start) {
+    overload<substr> substr_string_to_end{node([](std::string_view text, i64 start) {
         return Utf8View{text}.slice(start, std::numeric_limits<i64>::max());
     })};
     overload<substr> substr_symbol_with_end{node([](symbol text, i64 start, i64 end) {

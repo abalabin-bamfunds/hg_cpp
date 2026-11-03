@@ -41,13 +41,13 @@ struct arithmetic_overloads {
     overload<add> add_timedelta{[](timedelta_t lhs, timedelta_t rhs) {
         return timedelta_t{wrapping_add(lhs.count(), rhs.count())};
     }};
-    overload<add> add_optional_double{[](std::optional<double> lhs, std::optional<double> rhs) {
+    overload<add> add_double_optional{[](std::optional<double> lhs, std::optional<double> rhs) {
         return lhs.value_or(0.0) + rhs.value_or(0.0);
     }};
-    overload<add> add_optional_i64{[](std::optional<i64> lhs, std::optional<i64> rhs) {
+    overload<add> add_i64_optional{[](std::optional<i64> lhs, std::optional<i64> rhs) {
         return wrapping_add(lhs.value_or(0), rhs.value_or(0));
     }};
-    overload<add> add_optional_timedelta{[](std::optional<timedelta_t> lhs, std::optional<timedelta_t> rhs) {
+    overload<add> add_timedelta_optional{[](std::optional<timedelta_t> lhs, std::optional<timedelta_t> rhs) {
         return timedelta_t{wrapping_add(lhs.value_or(timedelta_t{}).count(), rhs.value_or(timedelta_t{}).count())};
     }};
     overload<add> add_date_time_timedelta{[](date_time_t timestamp, timedelta_t duration) {
@@ -73,10 +73,10 @@ struct arithmetic_overloads {
     // Multiplication.
     overload<mul> mul_i64{[](i64 lhs, i64 rhs) { return wrapping_multiply(lhs, rhs); }};
     overload<mul> mul_double{[](double lhs, double rhs) { return lhs * rhs; }};
-    overload<mul> mul_optional_i64{[](std::optional<i64> lhs, std::optional<i64> rhs) {
+    overload<mul> mul_i64_optional{[](std::optional<i64> lhs, std::optional<i64> rhs) {
         return wrapping_multiply(lhs.value_or(1), rhs.value_or(1));
     }};
-    overload<mul> mul_optional_double{[](std::optional<double> lhs, std::optional<double> rhs) {
+    overload<mul> mul_double_optional{[](std::optional<double> lhs, std::optional<double> rhs) {
         return lhs.value_or(1.0) * rhs.value_or(1.0);
     }};
 
