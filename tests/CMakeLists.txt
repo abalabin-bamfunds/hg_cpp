@@ -24,15 +24,6 @@ set_target_properties(test_shared_declarations_provider PROPERTIES WINDOWS_EXPOR
 add_executable(hg_declaration_identity_tests type/declaration_identity_test.cpp)
 target_link_libraries(hg_declaration_identity_tests PRIVATE hg::library Catch2::Catch2WithMain
                                                           test_shared_declarations_provider)
-if(WIN32)
-    add_custom_command(
-        TARGET hg_declaration_identity_tests POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:hg_declaration_identity_tests>
-                $<TARGET_FILE_DIR:hg_declaration_identity_tests>
-        COMMAND_EXPAND_LISTS
-    )
-endif()
 add_test(NAME hg_declaration_identity_tests COMMAND hg_declaration_identity_tests)
 
 add_library(test_shared_literal_sentinel SHARED type/test_shared_literal_sentinel.cpp)
@@ -212,16 +203,6 @@ add_executable(
 target_link_libraries(hg_tests PRIVATE hg::hg Catch2::Catch2WithMain test_shared_schema_provider
                                       test_shared_literal_sentinel)
 target_compile_options(hg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
-if(WIN32)
-    add_custom_command(
-        TARGET hg_tests POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:hg_tests>
-                $<TARGET_FILE_DIR:hg_tests>
-        COMMAND_EXPAND_LISTS
-    )
-endif()
-
 include(Catch)
 
 # Keep Catch2 discovery files in the build tree because XDG_RUNTIME_DIR may be unavailable to sandboxed builds.
@@ -261,34 +242,15 @@ add_executable(
     library/tsd_transform_test.cpp)
 target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
 target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
-if(WIN32)
-    add_custom_command(
-        TARGET hg_library_tests POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:hg_library_tests>
-                $<TARGET_FILE_DIR:hg_library_tests>
-        COMMAND_EXPAND_LISTS
-    )
-endif()
-
 catch_discover_tests(hg_library_tests DISCOVERY_MODE PRE_TEST)
 
 # Each test case runs in a separate process because HG logging initialization is process-wide.
 add_executable(hg_logging_initialization_tests library/logging_initialization_test.cpp library/logging_api_test.cpp)
 target_link_libraries(hg_logging_initialization_tests PRIVATE hg::hg Catch2::Catch2WithMain)
-if(WIN32)
-    add_custom_command(
-        TARGET hg_logging_initialization_tests POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-                $<TARGET_RUNTIME_DLLS:hg_logging_initialization_tests>
-                $<TARGET_FILE_DIR:hg_logging_initialization_tests>
-        COMMAND_EXPAND_LISTS
-    )
-endif()
 catch_discover_tests(hg_logging_initialization_tests DISCOVERY_MODE PRE_TEST)
 
-if(MSVC)
-    foreach(test_target hg_tests hg_library_tests hg_declaration_identity_tests hg_logging_initialization_tests)
+foreach(test_target hg_tests hg_library_tests hg_declaration_identity_tests hg_logging_initialization_tests)
+    if(MSVC)
         target_compile_definitions(${test_target} PRIVATE CATCH_CONFIG_NO_CPP17_STRING_VIEW)
         target_compile_options(${test_target} PRIVATE "/FI${CMAKE_CURRENT_SOURCE_DIR}/utils/msvc_catch_unique_name.hpp")
         get_target_property(test_sources ${test_target} SOURCES)
@@ -297,8 +259,19 @@ if(MSVC)
             set_property(SOURCE "${test_source}" APPEND PROPERTY COMPILE_DEFINITIONS
                          "HG_TEST_SOURCE_ID=${test_source_id}")
         endforeach()
-    endforeach()
-endif()
+    endif()
+    if(WIN32)
+        # Ninja needs DLL dependencies to refresh staged copies when import libraries are unchanged.
+        set_property(TARGET ${test_target} APPEND PROPERTY LINK_DEPENDS "$<TARGET_RUNTIME_DLLS:${test_target}>")
+        add_custom_command(
+            TARGET ${test_target} POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                    $<TARGET_RUNTIME_DLLS:${test_target}>
+                    $<TARGET_FILE_DIR:${test_target}>
+            COMMAND_EXPAND_LISTS
+        )
+    endif()
+endforeach()
 
 find_package(Python3 3.13 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
