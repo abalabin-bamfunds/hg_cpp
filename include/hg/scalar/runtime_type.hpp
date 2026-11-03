@@ -1,6 +1,7 @@
 #pragma once
 
 #include <hg/allocator.hpp>
+#include <hg/export.hpp>
 #include <hg/scalar/construction.hpp>
 #include <hg/runtime_type.hpp>
 #include <hg/type/scalar_type.hpp>
@@ -10,6 +11,7 @@
 #include <exception>
 #include <optional>
 #include <span>
+#include <typeinfo>
 
 namespace hg {
 
@@ -137,6 +139,12 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type();
 extern template const ScalarRuntimeType &cpp_scalar_runtime_type<const Type *>();
 
 namespace details {
+
+// Key engine-owned descriptors by declaration and descriptor RTTI. Registration runs on one thread.
+// Publish the module-owned shell before initializing recursive components.
+HG_EXPORT const ScalarRuntimeType &get_or_create_cpp_scalar_runtime_type(
+    const std::type_info &declaration, const std::type_info &descriptor, ScalarRuntimeType &(*create)(),
+    void (*initialize)(ScalarRuntimeType &));
 
 template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type_for_type(const ScalarType &) {
     return cpp_scalar_runtime_type<T>();

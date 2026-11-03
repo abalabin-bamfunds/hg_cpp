@@ -19,6 +19,39 @@ namespace shared = test_shared_declarations;
 static_assert(noexcept(cpp_scalar_type<Opaque<shared::OpaquePayload>>()));
 static_assert(noexcept(TypeRegistry::register_static(int_type())));
 
+namespace {
+
+template <int Index> void check_runtime_descriptors(bool provider_first) {
+    const auto first = provider_first ? shared::provider_scalar_runtime_types(Index)
+                                      : shared::scalar_runtime_types<Index>();
+    const auto second = provider_first ? shared::scalar_runtime_types<Index>()
+                                       : shared::provider_scalar_runtime_types(Index);
+    for (auto index = std::size_t{}; index < first.size(); ++index) {
+        CAPTURE(index);
+        CHECK(first[index] == second[index]);
+    }
+
+    const auto first_series = provider_first ? shared::provider_series_runtime_types(Index)
+                                            : shared::series_runtime_types<Index>();
+    auto second_series = std::array<const TimeSeriesRuntimeType *, 4>{};
+    REQUIRE_NOTHROW(second_series = provider_first ? shared::series_runtime_types<Index>()
+                                                  : shared::provider_series_runtime_types(Index));
+    for (auto index = std::size_t{}; index < first_series.size(); ++index) {
+        CAPTURE(index);
+        CHECK(first_series[index] == second_series[index]);
+    }
+}
+
+} // namespace
+
+TEST_CASE("C++ runtime descriptors created by a shared library are canonical", "[feature:type-system]") {
+    check_runtime_descriptors<0>(true);
+}
+
+TEST_CASE("C++ runtime descriptors created by a consumer are canonical", "[feature:type-system]") {
+    check_runtime_descriptors<1>(false);
+}
+
 TEST_CASE("declaration descriptors are shared across dynamic libraries", "[feature:type-system]") {
     const auto provider = shared::provider_types();
     const auto local = shared::declaration_types();

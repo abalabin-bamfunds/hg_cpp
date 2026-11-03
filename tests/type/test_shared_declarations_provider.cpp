@@ -29,4 +29,12 @@ const LazyType &provider_lazy_type(int index) {
 
 int provider_factory_calls(int index) { return factory_calls[index]; }
 
+std::array<const hg::ScalarRuntimeType *, 4> provider_scalar_runtime_types(int index) {
+    return index == 0 ? scalar_runtime_types<0>() : scalar_runtime_types<1>();
+}
+
+std::array<const hg::TimeSeriesRuntimeType *, 4> provider_series_runtime_types(int index) {
+    return index == 0 ? series_runtime_types<0>() : series_runtime_types<1>();
+}
+
 } // namespace test_shared_declarations

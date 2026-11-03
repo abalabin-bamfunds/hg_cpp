@@ -378,26 +378,25 @@ template <typename T> const ScalarRuntimeType &cpp_scalar_runtime_type() {
         return details::CppTupleRuntimeType<T>::get();
     } else if constexpr (details::hierarchical_scalar_declaration<T>) {
         return resolve_default_scalar_runtime_type(cpp_scalar_type<T>());
-    } else if constexpr (requires(details::CppScalarRuntimeType<T> &runtime_type) {
-                             runtime_type.initialize_runtime_type();
-                         }) {
-        static auto storage = util::static_storage<details::CppScalarRuntimeType<T>>{};
+    } else {
+        using Descriptor = details::CppScalarRuntimeType<T>;
         static const ScalarRuntimeType *runtime_type{};
         if (runtime_type != nullptr) {
             return *runtime_type;
         }
 
-        auto &shell = storage.get();
-        runtime_type = &shell;
-        register_scalar_runtime_type(shell);
-        shell.initialize_runtime_type();
-        return shell;
-    } else {
-        static const auto runtime_type = util::static_storage<details::CppScalarRuntimeType<T>>{};
-        static const auto registered = (register_scalar_runtime_type(runtime_type.get()), true);
-        (void)registered;
-
-        return runtime_type.get();
+        runtime_type = &details::get_or_create_cpp_scalar_runtime_type(
+            typeid(T), typeid(Descriptor),
+            []() -> ScalarRuntimeType & {
+                static auto storage = util::static_storage<Descriptor>{};
+                return storage.get();
+            },
+            [](ScalarRuntimeType &value) {
+                if constexpr (requires(Descriptor &descriptor) { descriptor.initialize_runtime_type(); }) {
+                    static_cast<Descriptor &>(value).initialize_runtime_type();
+                }
+            });
+        return *runtime_type;
     }
 }
 

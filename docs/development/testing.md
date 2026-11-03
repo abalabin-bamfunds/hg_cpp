@@ -312,6 +312,8 @@ graph compilation or evaluation.
   from process shutdown callbacks
 - canonical factory cache identity, nested construction, registration failure propagation,
   and concurrent reads of completed descriptors
+- C++ scalar runtime identity and composed time series runtime identity across shared libraries,
+  including recursive descriptors and distinct physical representations
 - formal type-name formatting through `Type`, including nested extension types
 - registration of primitive, generic, extension, and graph types; allocation-free primitive registration;
   independent variable identities and process-lifetime ownership

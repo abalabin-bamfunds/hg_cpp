@@ -24,6 +24,8 @@
 #include <memory_resource>
 #include <optional>
 #include <stdexcept>
+#include <typeindex>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -961,6 +963,19 @@ class ComposedDictRuntimeType final : public ScalarDictRuntimeType {
 };
 
 struct ScalarRuntimeTypes {
+    struct CppKey {
+        std::type_index declaration;
+        std::type_index descriptor;
+
+        bool operator==(const CppKey &) const = default;
+    };
+
+    struct CppKeyHash {
+        std::size_t operator()(const CppKey &key) const noexcept {
+            return key.declaration.hash_code() ^ (key.descriptor.hash_code() << 1);
+        }
+    };
+
     struct Override {
         const ScalarType *type;
         const ScalarRuntimeType *runtime_type;
@@ -977,6 +992,7 @@ struct ScalarRuntimeTypes {
 
     std::vector<const ScalarRuntimeType *> native;
     std::vector<ComposedRuntimeType> composed;
+    std::unordered_map<CppKey, const ScalarRuntimeType *, CppKeyHash> cpp;
 };
 
 ScalarRuntimeTypes &scalar_runtime_types() {
@@ -1014,6 +1030,22 @@ const ScalarRuntimeType *registered_native_runtime_type(ScalarRuntimeTypes &runt
 } // namespace
 
 namespace details {
+
+const ScalarRuntimeType &get_or_create_cpp_scalar_runtime_type(
+    const std::type_info &declaration, const std::type_info &descriptor, ScalarRuntimeType &(*create)(),
+    void (*initialize)(ScalarRuntimeType &)) {
+    auto &cache = scalar_runtime_types().cpp;
+    const auto key = ScalarRuntimeTypes::CppKey{declaration, descriptor};
+    if (const auto found = cache.find(key); found != cache.end()) {
+        return *found->second;
+    }
+
+    auto &runtime_type = create();
+    cache.emplace(key, &runtime_type);
+    register_scalar_runtime_type(runtime_type);
+    initialize(runtime_type);
+    return runtime_type;
+}
 
 class ScalarRuntimeTypeResolver {
   public:

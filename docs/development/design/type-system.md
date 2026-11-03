@@ -137,6 +137,13 @@ that supports byte-copy initialization.
 The process owns registered and composed runtime types. Graph compilation
 reuses them across graphs.
 
+Engine-created C++ scalar runtime descriptors are canonical across shared
+libraries, keyed by C++ declaration and runtime descriptor type. Distinct
+physical representations of one semantic type retain separate descriptors.
+Recursive construction publishes a stable shell before resolving its fields;
+only its creator completes the descriptor. Static runtime descriptors follow
+the [static descriptor lifetime requirements](#type-model).
+
 When a default runtime requires C++ type information, the canonical semantic
 factory records a lazy callback. Registration stores this callback without
 constructing the runtime type. C++ scalar defaults use `scalar_storage_traits<T>`;

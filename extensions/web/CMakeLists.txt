@@ -154,16 +154,6 @@ if(BUILD_TESTING)
         hg_web_tests PRIVATE hg::web hg::library Catch2::Catch2WithMain OpenSSL::SSL OpenSSL::Crypto
                              ${HG_WEB_BOOST_TARGETS}
     )
-    if(MSVC)
-        target_compile_definitions(hg_web_tests PRIVATE CATCH_CONFIG_NO_CPP17_STRING_VIEW)
-        target_compile_options(hg_web_tests PRIVATE "/FI${PROJECT_SOURCE_DIR}/tests/utils/msvc_catch_unique_name.hpp")
-        get_target_property(test_sources hg_web_tests SOURCES)
-        foreach(test_source IN LISTS test_sources)
-            string(MAKE_C_IDENTIFIER "hg_web_${test_source}_" test_source_id)
-            set_property(SOURCE "${test_source}" APPEND PROPERTY COMPILE_DEFINITIONS
-                         "HG_TEST_SOURCE_ID=${test_source_id}")
-        endforeach()
-    endif()
     if(WIN32)
         set_property(TARGET hg_web_tests APPEND PROPERTY LINK_DEPENDS "$<TARGET_RUNTIME_DLLS:hg_web_tests>")
         add_custom_command(
