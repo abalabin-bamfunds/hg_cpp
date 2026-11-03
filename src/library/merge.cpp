@@ -77,7 +77,7 @@ struct merge_overloads {
         })};
 
     // Fixed lists merge corresponding items independently.
-    struct merge_lists_graph {
+    struct merge_tsl_graph {
         wp<TSL<TSL<TS_T, N>, SIZE>, "values"_n, var_args, optional> values;
 
         static RequirementResult require(const WiringArguments &arguments) {
@@ -124,10 +124,10 @@ struct merge_overloads {
         }
     };
 
-    overload<merge> merge_lists{graph<merge_lists_graph>()};
+    overload<merge> merge_tsl{graph<merge_tsl_graph>()};
 
     // Fixed bundles merge corresponding fields independently.
-    struct merge_bundles_graph {
+    struct merge_tsb_graph {
         wp<TSL<TSB<SCHEMA>, SIZE>, "values"_n, var_args, optional> values;
 
         static RequirementResult require(const WiringArguments &arguments) {
@@ -161,10 +161,10 @@ struct merge_overloads {
         }
     };
 
-    overload<merge> merge_bundles{graph<merge_bundles_graph>()};
+    overload<merge> merge_tsb{graph<merge_tsb_graph>()};
 
     // Dictionaries merge values for the union of their keys.
-    struct merge_dictionary_items_graph {
+    struct merge_tsd_items_graph {
         wp<TSL<TS_T, N>, "values"_n, var_args, optional> values;
 
         wp<OUT> wire() const { return wp<OUT>{operators::merge(values)}; }
@@ -174,7 +174,7 @@ struct merge_overloads {
         }
     };
 
-    struct merge_dictionaries_graph {
+    struct merge_tsd_graph {
         wp<TSL<TSD<SCALAR, TS_T>, SIZE>, "values"_n, var_args, optional> values;
 
         static RequirementResult require(const WiringArguments &arguments) {
@@ -193,7 +193,7 @@ struct merge_overloads {
                 value.clear_name();
                 arguments.push_back({std::move(value), false});
             }
-            static const auto merge_items = graph<merge_dictionary_items_graph>();
+            static const auto merge_items = graph<merge_tsd_items_graph>();
             return wp<OUT>{hg::map(merge_items, std::span<const MapArgument>{arguments})};
         }
 
@@ -202,9 +202,9 @@ struct merge_overloads {
         }
     };
 
-    overload<merge> merge_dictionaries{graph<merge_dictionaries_graph>()};
+    overload<merge> merge_tsd{graph<merge_tsd_graph>()};
 
-    struct merge_set_impl {
+    struct merge_tss_impl {
         In<TSL<TSS<SCALAR>, SIZE>, var_args, optional> values;
         Out<TSS<SCALAR>> output;
 
@@ -247,7 +247,7 @@ struct merge_overloads {
     };
 
     // Sets merge membership changes without publishing keys that remain in another input.
-    overload<merge> merge_sets{graph(
+    overload<merge> merge_tss{graph(
         require = [](const WiringArguments &arguments) {
             return arguments.size() == 0 ? reject("merge requires at least one input") : accept;
         },
@@ -255,7 +255,7 @@ struct merge_overloads {
             if (values.size() == 1) {
                 return wp<TSS<SCALAR>>::from_validated(values[0].time_series());
             }
-            static const auto impl = node<merge_set_impl>();
+            static const auto impl = node<merge_tss_impl>();
             return wp<TSS<SCALAR>>::from_validated(impl(values));
         })};
 };

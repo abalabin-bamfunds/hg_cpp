@@ -4,6 +4,8 @@
 #include <hg/library/operators.hpp>
 #include <hg/node.hpp>
 #include <hg/overload.hpp>
+#include <hg/scalar/list/type.hpp>
+#include <hg/scalar/set/type.hpp>
 #include <hg/time_series/tsl/tsl_type.hpp>
 #include <hg/type/time_series_type.hpp>
 
@@ -43,6 +45,8 @@ TimeSeriesGuarantee sum_result_guarantee(const WiringArguments &arguments) {
 }
 
 template <typename T> struct sum_reducer {
+    using output_type = T;
+
     void add(T value) {
         if constexpr (std::same_as<T, i64>) {
             total = static_cast<i64>(static_cast<std::uint64_t>(total) + static_cast<std::uint64_t>(value));
@@ -57,6 +61,8 @@ template <typename T> struct sum_reducer {
 };
 
 template <typename T> struct minimum_reducer {
+    using output_type = T;
+
     void add(T value) {
         if (!minimum || value < *minimum) {
             minimum = value;
@@ -69,6 +75,8 @@ template <typename T> struct minimum_reducer {
 };
 
 template <typename T> struct maximum_reducer {
+    using output_type = T;
+
     void add(T value) {
         if (!maximum || value > *maximum) {
             maximum = value;
@@ -81,6 +89,8 @@ template <typename T> struct maximum_reducer {
 };
 
 template <typename T> struct mean_reducer {
+    using output_type = double;
+
     void add(T value) {
         total += static_cast<double>(value);
         ++count;
@@ -140,6 +150,24 @@ void visit_collection_values(const In<TSS<T, G>, Validity> &values, Function &&f
     values.for_each([&](Scalar<T> item) { function(item.value()); });
 }
 
+template <InputValidity Validity, template <typename> typename COLLECTION, typename T, typename Function>
+void visit_collection_values(const In<TS<COLLECTION<T>, G>, Validity> &values, Function &&function) {
+    if constexpr (Validity == InputValidity::optional) {
+        if (!values.valid()) {
+            return;
+        }
+    }
+
+    const auto items = values.value_view();
+    if constexpr (is_list_v<COLLECTION<T>>) {
+        for (auto index = std::size_t{}; index < items.size(); ++index) {
+            function(items[index].value());
+        }
+    } else {
+        items.for_each([&](Scalar<T> item) { function(item.value()); });
+    }
+}
+
 template <typename Reducer, InputValidity Validity, typename Collection>
 auto calculate_collection_value(const Collection &values) {
     auto reducer = Reducer{};
@@ -147,7 +175,34 @@ auto calculate_collection_value(const Collection &values) {
     return reducer.result();
 }
 
-struct collection_reduction_overloads {
+template <template <typename> typename COLLECTION, typename T, typename REDUCER, InputValidity VALIDITY>
+struct scalar_collection_reduction_impl {
+    In<TS<COLLECTION<T>, G>, VALIDITY> values;
+    Out<TS<typename REDUCER::output_type, RESULT_G>> output;
+
+    static TimeSeriesGuarantee resolve(decltype(RESULT_G), const WiringArguments &arguments) {
+        if constexpr (std::same_as<REDUCER, sum_reducer<T>>) {
+            return sum_result_guarantee<VALIDITY>(arguments);
+        } else {
+            return result_guarantee(arguments);
+        }
+    }
+
+    void evaluate() const {
+        const auto result = calculate_collection_value<REDUCER, VALIDITY>(values);
+        if constexpr (requires { result.has_value(); }) {
+            if (result) {
+                output.set(*result);
+            } else {
+                output.invalidate();
+            }
+        } else {
+            output.set(result);
+        }
+    }
+};
+
+struct sum_reduction_overloads {
     // Collection sum.
     template <typename T, InputValidity Validity> struct sum_tsl_impl {
         In<TSL<TS<T, G>, SIZE, G>, Validity> values;
@@ -203,6 +258,26 @@ struct collection_reduction_overloads {
     instantiate_overloads<sum_, sum_tss_all_valid_family, i64, double> sum_tss_all_valid;
     instantiate_overloads<sum_, sum_tss_optional_family, i64, double> sum_tss_optional;
 
+    template <typename T>
+    using sum_scalar_list_required_family =
+        scalar_collection_reduction_impl<List, T, sum_reducer<T>, required>;
+    template <typename T>
+    using sum_scalar_list_optional_family =
+        scalar_collection_reduction_impl<List, T, sum_reducer<T>, optional>;
+    template <typename T>
+    using sum_scalar_set_required_family =
+        scalar_collection_reduction_impl<Set, T, sum_reducer<T>, required>;
+    template <typename T>
+    using sum_scalar_set_optional_family =
+        scalar_collection_reduction_impl<Set, T, sum_reducer<T>, optional>;
+
+    instantiate_overloads<sum_, sum_scalar_list_required_family, i64, double> sum_scalar_list_required;
+    instantiate_overloads<sum_, sum_scalar_list_optional_family, i64, double> sum_scalar_list_optional;
+    instantiate_overloads<sum_, sum_scalar_set_required_family, i64, double> sum_scalar_set_required;
+    instantiate_overloads<sum_, sum_scalar_set_optional_family, i64, double> sum_scalar_set_optional;
+};
+
+struct min_reduction_overloads {
     // Collection minimum.
     template <typename T, InputValidity Validity> struct min_tsl_impl {
         In<TSL<TS<T, G>, SIZE, G>, Validity> values;
@@ -273,6 +348,26 @@ struct collection_reduction_overloads {
     instantiate_overloads<min_, min_tss_all_valid_family, i64, double> min_tss_all_valid;
     instantiate_overloads<min_, min_tss_optional_family, i64, double> min_tss_optional;
 
+    template <typename T>
+    using min_scalar_list_required_family =
+        scalar_collection_reduction_impl<List, T, minimum_reducer<T>, required>;
+    template <typename T>
+    using min_scalar_list_optional_family =
+        scalar_collection_reduction_impl<List, T, minimum_reducer<T>, optional>;
+    template <typename T>
+    using min_scalar_set_required_family =
+        scalar_collection_reduction_impl<Set, T, minimum_reducer<T>, required>;
+    template <typename T>
+    using min_scalar_set_optional_family =
+        scalar_collection_reduction_impl<Set, T, minimum_reducer<T>, optional>;
+
+    instantiate_overloads<min_, min_scalar_list_required_family, i64, double> min_scalar_list_required;
+    instantiate_overloads<min_, min_scalar_list_optional_family, i64, double> min_scalar_list_optional;
+    instantiate_overloads<min_, min_scalar_set_required_family, i64, double> min_scalar_set_required;
+    instantiate_overloads<min_, min_scalar_set_optional_family, i64, double> min_scalar_set_optional;
+};
+
+struct max_reduction_overloads {
     // Collection maximum.
     template <typename T, InputValidity Validity> struct max_tsl_impl {
         In<TSL<TS<T, G>, SIZE, G>, Validity> values;
@@ -343,6 +438,26 @@ struct collection_reduction_overloads {
     instantiate_overloads<max_, max_tss_all_valid_family, i64, double> max_tss_all_valid;
     instantiate_overloads<max_, max_tss_optional_family, i64, double> max_tss_optional;
 
+    template <typename T>
+    using max_scalar_list_required_family =
+        scalar_collection_reduction_impl<List, T, maximum_reducer<T>, required>;
+    template <typename T>
+    using max_scalar_list_optional_family =
+        scalar_collection_reduction_impl<List, T, maximum_reducer<T>, optional>;
+    template <typename T>
+    using max_scalar_set_required_family =
+        scalar_collection_reduction_impl<Set, T, maximum_reducer<T>, required>;
+    template <typename T>
+    using max_scalar_set_optional_family =
+        scalar_collection_reduction_impl<Set, T, maximum_reducer<T>, optional>;
+
+    instantiate_overloads<max_, max_scalar_list_required_family, i64, double> max_scalar_list_required;
+    instantiate_overloads<max_, max_scalar_list_optional_family, i64, double> max_scalar_list_optional;
+    instantiate_overloads<max_, max_scalar_set_required_family, i64, double> max_scalar_set_required;
+    instantiate_overloads<max_, max_scalar_set_optional_family, i64, double> max_scalar_set_optional;
+};
+
+struct mean_reduction_overloads {
     // Collection mean.
     template <typename T, InputValidity Validity> struct mean_tsl_impl {
         In<TSL<TS<T, G>, SIZE, G>, Validity> values;
@@ -412,10 +527,33 @@ struct collection_reduction_overloads {
     instantiate_overloads<mean, mean_tsd_optional_family, i64, double> mean_tsd_optional;
     instantiate_overloads<mean, mean_tss_all_valid_family, i64, double> mean_tss_all_valid;
     instantiate_overloads<mean, mean_tss_optional_family, i64, double> mean_tss_optional;
+
+    template <typename T>
+    using mean_scalar_list_required_family =
+        scalar_collection_reduction_impl<List, T, mean_reducer<T>, required>;
+    template <typename T>
+    using mean_scalar_list_optional_family =
+        scalar_collection_reduction_impl<List, T, mean_reducer<T>, optional>;
+    template <typename T>
+    using mean_scalar_set_required_family =
+        scalar_collection_reduction_impl<Set, T, mean_reducer<T>, required>;
+    template <typename T>
+    using mean_scalar_set_optional_family =
+        scalar_collection_reduction_impl<Set, T, mean_reducer<T>, optional>;
+
+    instantiate_overloads<mean, mean_scalar_list_required_family, i64, double> mean_scalar_list_required;
+    instantiate_overloads<mean, mean_scalar_list_optional_family, i64, double> mean_scalar_list_optional;
+    instantiate_overloads<mean, mean_scalar_set_required_family, i64, double> mean_scalar_set_required;
+    instantiate_overloads<mean, mean_scalar_set_optional_family, i64, double> mean_scalar_set_optional;
 };
 
 } // namespace
 
-void register_collection_reduction_operators() { register_overloads<collection_reduction_overloads>(); }
+void register_collection_reduction_operators() {
+    register_overloads<sum_reduction_overloads>();
+    register_overloads<min_reduction_overloads>();
+    register_overloads<max_reduction_overloads>();
+    register_overloads<mean_reduction_overloads>();
+}
 
 } // namespace hg::operators::details

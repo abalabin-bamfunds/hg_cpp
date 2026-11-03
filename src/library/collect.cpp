@@ -163,7 +163,7 @@ struct collect_overloads {
         output.set(entries);
     }
 
-    struct list_without_reset {
+    struct collect_list_impl {
         In<TS<VALUE, INPUT_G>, optional> value;
         Out<TS<List<VALUE>, OUTPUT_G>> output;
 
@@ -175,7 +175,7 @@ struct collect_overloads {
         void evaluate() const { collect_overloads::collect_list(value, nullptr, output); }
     };
 
-    struct list_with_reset {
+    struct collect_list_reset_impl {
         In<TS<VALUE, INPUT_G>, optional> value;
         In<SIGNAL, optional> reset;
         Out<TS<List<VALUE>, OUTPUT_G>> output;
@@ -188,10 +188,10 @@ struct collect_overloads {
         void evaluate() const { collect_overloads::collect_list(value, &reset, output); }
     };
 
-    overload<collect, list_without_reset> collect_list_without_reset;
-    overload<collect, list_with_reset> collect_list_with_reset;
+    overload<collect, collect_list_impl> collect_list_without_reset;
+    overload<collect, collect_list_reset_impl> collect_list_with_reset;
 
-    struct set_without_reset {
+    struct collect_set_impl {
         In<TS<VALUE, INPUT_G>, optional> value;
         Out<TS<Set<VALUE>, OUTPUT_G>> output;
 
@@ -205,7 +205,7 @@ struct collect_overloads {
         void evaluate() const { collect_overloads::collect_set(value, nullptr, output); }
     };
 
-    struct set_with_reset {
+    struct collect_set_reset_impl {
         In<TS<VALUE, INPUT_G>, optional> value;
         In<SIGNAL, optional> reset;
         Out<TS<Set<VALUE>, OUTPUT_G>> output;
@@ -220,10 +220,10 @@ struct collect_overloads {
         void evaluate() const { collect_overloads::collect_set(value, &reset, output); }
     };
 
-    overload<collect, set_without_reset> collect_set_without_reset;
-    overload<collect, set_with_reset> collect_set_with_reset;
+    overload<collect, collect_set_impl> collect_set_without_reset;
+    overload<collect, collect_set_reset_impl> collect_set_with_reset;
 
-    struct tss_without_reset {
+    struct collect_tss_impl {
         In<TS<VALUE, INPUT_G>, optional> value;
         Out<TSS<VALUE, OUTPUT_G>> output;
 
@@ -239,7 +239,7 @@ struct collect_overloads {
         }
     };
 
-    struct tss_with_reset {
+    struct collect_tss_reset_impl {
         In<TS<VALUE, INPUT_G>, optional> value;
         In<SIGNAL, optional> reset;
         Out<TSS<VALUE, OUTPUT_G>> output;
@@ -259,10 +259,10 @@ struct collect_overloads {
         }
     };
 
-    overload<collect, tss_without_reset> collect_tss_without_reset;
-    overload<collect, tss_with_reset> collect_tss_with_reset;
+    overload<collect, collect_tss_impl> collect_tss_without_reset;
+    overload<collect, collect_tss_reset_impl> collect_tss_with_reset;
 
-    struct dict_without_reset {
+    struct collect_dict_impl {
         In<TS<KEY, INPUT_G>, optional, passive> key;
         In<TS<VALUE, INPUT_G>, optional> value;
         Out<TS<Dict<KEY, VALUE>, OUTPUT_G>> output;
@@ -275,7 +275,7 @@ struct collect_overloads {
         void evaluate() const { collect_overloads::collect_dict(key, value, nullptr, output); }
     };
 
-    struct dict_with_reset {
+    struct collect_dict_reset_impl {
         In<TS<KEY, INPUT_G>, optional, passive> key;
         In<TS<VALUE, INPUT_G>, optional> value;
         In<SIGNAL, optional> reset;
@@ -289,10 +289,10 @@ struct collect_overloads {
         void evaluate() const { collect_overloads::collect_dict(key, value, &reset, output); }
     };
 
-    overload<collect, dict_without_reset> collect_dict_without_reset;
-    overload<collect, dict_with_reset> collect_dict_with_reset;
+    overload<collect, collect_dict_impl> collect_dict_without_reset;
+    overload<collect, collect_dict_reset_impl> collect_dict_with_reset;
 
-    struct tsd_without_reset {
+    struct collect_tsd_impl {
         In<TS<KEY, INPUT_G>, optional, passive> key;
         In<TS<VALUE, INPUT_G>, optional> value;
         Out<TSD<KEY, TS<VALUE, ITEM_G>, OUTPUT_G>> output;
@@ -312,7 +312,7 @@ struct collect_overloads {
         }
     };
 
-    struct tsd_with_reset {
+    struct collect_tsd_reset_impl {
         In<TS<KEY, INPUT_G>, optional, passive> key;
         In<TS<VALUE, INPUT_G>, optional> value;
         In<SIGNAL, optional> reset;
@@ -336,8 +336,8 @@ struct collect_overloads {
         }
     };
 
-    overload<collect, tsd_without_reset> collect_tsd_without_reset;
-    overload<collect, tsd_with_reset> collect_tsd_with_reset;
+    overload<collect, collect_tsd_impl> collect_tsd_without_reset;
+    overload<collect, collect_tsd_reset_impl> collect_tsd_with_reset;
 };
 
 } // namespace

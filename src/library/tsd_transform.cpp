@@ -214,7 +214,7 @@ struct tsd_transform_overloads {
 
     overload<unpartition, unpartition_tsd_impl> unpartition_tsd;
 
-    struct flip_unique_impl {
+    struct flip_tsd_unique_impl {
         In<TSD<KEY, TS<FLIP_VALUE>>, optional, valid_items> ts;
         Scalar<bool> unique;
         State<Dict<KEY, FLIP_VALUE>> previous_value;
@@ -262,9 +262,9 @@ struct tsd_transform_overloads {
         }
     };
 
-    overload<flip, flip_unique_impl> flip_unique;
+    overload<flip, flip_tsd_unique_impl> flip_tsd_unique;
 
-    struct flip_grouped_impl {
+    struct flip_tsd_grouped_impl {
         In<TSD<KEY, TS<FLIP_VALUE>>, optional, valid_items> ts;
         Scalar<bool> unique;
         State<Dict<KEY, FLIP_VALUE>> previous_value;
@@ -318,7 +318,7 @@ struct tsd_transform_overloads {
         }
     };
 
-    overload<flip, flip_grouped_impl> flip_grouped;
+    overload<flip, flip_tsd_grouped_impl> flip_tsd_grouped;
 
     struct flip_keys_tsd_impl {
         In<TSD<KEY, TSD<INNER_KEY, REF<TS_T>>>, optional> ts;

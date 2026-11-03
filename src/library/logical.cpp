@@ -3,6 +3,8 @@
 #include <hg/graph.hpp>
 #include <hg/library/operators.hpp>
 #include <hg/node.hpp>
+#include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/set/scalar.hpp>
 #include <hg/overload.hpp>
 #include <hg/time_series/tsl/tsl_type.hpp>
 
@@ -33,6 +35,9 @@ struct logical_overloads {
     overload<or_> or_impl{[](bool lhs, bool rhs) { return lhs || rhs; }};
     overload<not_> not_impl{[](bool value) { return !value; }};
 
+};
+
+struct boolean_reduction_overloads {
     // all_
     template <InputValidity Validity, auto OUTPUT_G> struct all_tsl_impl {
         In<TSL<TS<bool, G>, SIZE, G>, Validity> values;
@@ -98,6 +103,40 @@ struct logical_overloads {
     overload<all_, all_tss_impl<InputValidity::all_valid, G>> all_tss_required;
     overload<all_, all_tss_impl<optional, TimeSeriesGuarantee::ordinary>> all_tss_optional;
 
+    template <InputValidity Validity, auto OUTPUT_G, template <typename> typename COLLECTION>
+    struct all_scalar_collection_impl {
+        In<TS<COLLECTION<bool>, G>, Validity> values;
+        Out<TS<bool, OUTPUT_G>> output;
+
+        void evaluate() const {
+            if constexpr (Validity == optional) {
+                if (!values.valid()) {
+                    output.set(true);
+                    return;
+                }
+            }
+
+            const auto items = values.value_view();
+            if constexpr (is_list_v<COLLECTION<bool>>) {
+                for (auto index = std::size_t{}; index < items.size(); ++index) {
+                    if (!items[index].value()) {
+                        output.set(false);
+                        return;
+                    }
+                }
+                output.set(true);
+            } else {
+                output.set(!items.contains(false));
+            }
+        }
+    };
+
+    overload<all_, all_scalar_collection_impl<required, G, List>> all_scalar_list_required;
+    overload<all_, all_scalar_collection_impl<optional, TimeSeriesGuarantee::ordinary, List>>
+        all_scalar_list_optional;
+    overload<all_, all_scalar_collection_impl<required, G, Set>> all_scalar_set_required;
+    overload<all_, all_scalar_collection_impl<optional, TimeSeriesGuarantee::ordinary, Set>> all_scalar_set_optional;
+
     // any_
     template <InputValidity Validity, auto OUTPUT_G> struct any_tsl_impl {
         In<TSL<TS<bool, G>, SIZE, G>, Validity> values;
@@ -162,12 +201,47 @@ struct logical_overloads {
 
     overload<any_, any_tss_impl<InputValidity::all_valid, G>> any_tss_required;
     overload<any_, any_tss_impl<optional, TimeSeriesGuarantee::ordinary>> any_tss_optional;
+
+    template <InputValidity Validity, auto OUTPUT_G, template <typename> typename COLLECTION>
+    struct any_scalar_collection_impl {
+        In<TS<COLLECTION<bool>, G>, Validity> values;
+        Out<TS<bool, OUTPUT_G>> output;
+
+        void evaluate() const {
+            if constexpr (Validity == optional) {
+                if (!values.valid()) {
+                    output.set(false);
+                    return;
+                }
+            }
+
+            const auto items = values.value_view();
+            if constexpr (is_list_v<COLLECTION<bool>>) {
+                for (auto index = std::size_t{}; index < items.size(); ++index) {
+                    if (items[index].value()) {
+                        output.set(true);
+                        return;
+                    }
+                }
+                output.set(false);
+            } else {
+                output.set(items.contains(true));
+            }
+        }
+    };
+
+    overload<any_, any_scalar_collection_impl<required, G, List>> any_scalar_list_required;
+    overload<any_, any_scalar_collection_impl<optional, TimeSeriesGuarantee::ordinary, List>>
+        any_scalar_list_optional;
+    overload<any_, any_scalar_collection_impl<required, G, Set>> any_scalar_set_required;
+    overload<any_, any_scalar_collection_impl<optional, TimeSeriesGuarantee::ordinary, Set>> any_scalar_set_optional;
 };
 
 } // namespace
 
 void register_logical_operators() {
     register_overloads<logical_overloads>();
+    register_overloads<boolean_reduction_overloads>();
 }
 
 } // namespace hg::operators::details

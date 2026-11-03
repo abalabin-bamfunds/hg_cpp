@@ -6,11 +6,15 @@
 #include <hg/node.hpp>
 #include <hg/overload.hpp>
 #include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/set/scalar.hpp>
 #include <hg/time_series/item_id.hpp>
 #include <hg/time_series/ref/ref_input.hpp>
 #include <hg/type/time_series_dict_type.hpp>
+#include <hg/util/symbol.hpp>
 
+#include <algorithm>
 #include <cstddef>
+#include <vector>
 
 namespace hg::operators::details {
 namespace {
@@ -378,6 +382,130 @@ struct tss_overloads {
         bit_xor_tss_optional;
 };
 
+struct scalar_set_overloads {
+    struct set_union_operation {
+        static std::size_t capacity(std::size_t lhs, std::size_t rhs) { return lhs + rhs; }
+
+        static void append(const Scalar<Set<K>> &values, std::vector<Scalar<K>> &result) {
+            values.for_each([&](Scalar<K> item) { result.push_back(item); });
+        }
+
+        static void both(const Scalar<Set<K>> &lhs, const Scalar<Set<K>> &rhs, std::vector<Scalar<K>> &result) {
+            append(lhs, result);
+            append(rhs, result);
+        }
+        static void left(const Scalar<Set<K>> &lhs, std::vector<Scalar<K>> &result) { append(lhs, result); }
+        static void right(const Scalar<Set<K>> &rhs, std::vector<Scalar<K>> &result) { append(rhs, result); }
+    };
+
+    struct set_intersection_operation {
+        static std::size_t capacity(std::size_t lhs, std::size_t rhs) { return std::min(lhs, rhs); }
+
+        static void both(const Scalar<Set<K>> &lhs, const Scalar<Set<K>> &rhs, std::vector<Scalar<K>> &result) {
+            const auto lhs_is_smaller = lhs.size() <= rhs.size();
+            const auto &smaller = lhs_is_smaller ? lhs : rhs;
+            const auto &larger = lhs_is_smaller ? rhs : lhs;
+            smaller.for_each([&](Scalar<K> item) {
+                if (larger.contains(item)) {
+                    result.push_back(item);
+                }
+            });
+        }
+
+        static void left(const Scalar<Set<K>> &, std::vector<Scalar<K>> &) {}
+        static void right(const Scalar<Set<K>> &, std::vector<Scalar<K>> &) {}
+    };
+
+    struct set_difference_operation {
+        static std::size_t capacity(std::size_t lhs, std::size_t) { return lhs; }
+
+        static void both(const Scalar<Set<K>> &lhs, const Scalar<Set<K>> &rhs, std::vector<Scalar<K>> &result) {
+            lhs.for_each([&](Scalar<K> item) {
+                if (!rhs.contains(item)) {
+                    result.push_back(item);
+                }
+            });
+        }
+
+        static void left(const Scalar<Set<K>> &lhs, std::vector<Scalar<K>> &result) {
+            set_union_operation::append(lhs, result);
+        }
+        static void right(const Scalar<Set<K>> &, std::vector<Scalar<K>> &) {}
+    };
+
+    struct set_symmetric_difference_operation {
+        static std::size_t capacity(std::size_t lhs, std::size_t rhs) { return lhs + rhs; }
+
+        static void both(const Scalar<Set<K>> &lhs, const Scalar<Set<K>> &rhs, std::vector<Scalar<K>> &result) {
+            lhs.for_each([&](Scalar<K> item) {
+                if (!rhs.contains(item)) {
+                    result.push_back(item);
+                }
+            });
+            rhs.for_each([&](Scalar<K> item) {
+                if (!lhs.contains(item)) {
+                    result.push_back(item);
+                }
+            });
+        }
+
+        static void left(const Scalar<Set<K>> &lhs, std::vector<Scalar<K>> &result) {
+            set_union_operation::append(lhs, result);
+        }
+        static void right(const Scalar<Set<K>> &rhs, std::vector<Scalar<K>> &result) {
+            set_union_operation::append(rhs, result);
+        }
+    };
+
+    template <typename OPERATION, InputValidity VALIDITY, auto OUTPUT_GUARANTEE>
+    struct scalar_set_operation_impl {
+        In<TS<Set<K>, G>, VALIDITY> lhs;
+        In<TS<Set<K>, G>, VALIDITY> rhs;
+        Out<TS<Set<K>, OUTPUT_GUARANTEE>> output;
+
+        void evaluate() const {
+            auto result = std::vector<Scalar<K>>{};
+            if constexpr (VALIDITY == optional) {
+                if (lhs.valid()) {
+                    const auto lhs_values = lhs.value_view();
+                    if (rhs.valid()) {
+                        const auto rhs_values = rhs.value_view();
+                        result.reserve(OPERATION::capacity(lhs_values.size(), rhs_values.size()));
+                        OPERATION::both(lhs_values, rhs_values, result);
+                    } else {
+                        result.reserve(OPERATION::capacity(lhs_values.size(), 0));
+                        OPERATION::left(lhs_values, result);
+                    }
+                } else if (rhs.valid()) {
+                    const auto rhs_values = rhs.value_view();
+                    result.reserve(OPERATION::capacity(0, rhs_values.size()));
+                    OPERATION::right(rhs_values, result);
+                }
+            } else {
+                const auto lhs_values = lhs.value_view();
+                const auto rhs_values = rhs.value_view();
+                result.reserve(OPERATION::capacity(lhs_values.size(), rhs_values.size()));
+                OPERATION::both(lhs_values, rhs_values, result);
+            }
+            output.set(result);
+        }
+    };
+
+    overload<bit_or, scalar_set_operation_impl<set_union_operation, required, G>> bit_or_set;
+    overload<bit_or, scalar_set_operation_impl<set_union_operation, optional, TimeSeriesGuarantee::ordinary>>
+        bit_or_set_optional;
+    overload<bit_and, scalar_set_operation_impl<set_intersection_operation, required, G>> bit_and_set;
+    overload<bit_and, scalar_set_operation_impl<set_intersection_operation, optional, TimeSeriesGuarantee::ordinary>>
+        bit_and_set_optional;
+    overload<sub, scalar_set_operation_impl<set_difference_operation, required, G>> sub_set;
+    overload<sub, scalar_set_operation_impl<set_difference_operation, optional, TimeSeriesGuarantee::ordinary>>
+        sub_set_optional;
+    overload<bit_xor, scalar_set_operation_impl<set_symmetric_difference_operation, required, G>> bit_xor_set;
+    overload<bit_xor,
+             scalar_set_operation_impl<set_symmetric_difference_operation, optional, TimeSeriesGuarantee::ordinary>>
+        bit_xor_set_optional;
+};
+
 struct tsd_set_overloads {
     template <typename KEY_OPERATION>
     static wp<TSD<K, REF<TS_T>>> select_keys(auto lhs, auto rhs, KEY_OPERATION key_operation) {
@@ -386,7 +514,7 @@ struct tsd_set_overloads {
         return raw_lhs[keys].template as<TSD<K, REF<TS_T>>>();
     }
 
-    template <bool SYMMETRIC> struct reference_routing_node {
+    template <bool SYMMETRIC> struct tsd_set_operation_impl {
         In<TSD<K, REF<TS_T>, G>> lhs;
         In<TSD<K, REF<TS_T>, G>> rhs;
         In<TSS<K, G>> lhs_keys;
@@ -466,8 +594,22 @@ struct tsd_set_overloads {
         const auto rhs_keys = operators::keys_(rhs);
         const auto lhs_references = static_cast<WiringPoint>(lhs).template as<TSD<K, REF<TS_T>, G>>();
         const auto rhs_references = static_cast<WiringPoint>(rhs).template as<TSD<K, REF<TS_T>, G>>();
-        static const auto route_node = hg::node<reference_routing_node<SYMMETRIC>>();
-        return route_node(lhs_references, rhs_references, lhs_keys, rhs_keys);
+
+        if constexpr (SYMMETRIC) {
+            static const auto bit_xor_tsd = [] {
+                auto implementation = hg::node<tsd_set_operation_impl<true>>();
+                implementation.set_name(util::symbol{"bit_xor_tsd"});
+                return implementation;
+            }();
+            return bit_xor_tsd(lhs_references, rhs_references, lhs_keys, rhs_keys);
+        } else {
+            static const auto bit_or_tsd = [] {
+                auto implementation = hg::node<tsd_set_operation_impl<false>>();
+                implementation.set_name(util::symbol{"bit_or_tsd"});
+                return implementation;
+            }();
+            return bit_or_tsd(lhs_references, rhs_references, lhs_keys, rhs_keys);
+        }
     }
 
     overload<bit_and> bit_and_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {
@@ -555,6 +697,7 @@ struct tsd_set_overloads {
 
 void register_tss_operators() {
     register_overloads<tss_overloads>();
+    register_overloads<scalar_set_overloads>();
     register_overloads<tsd_set_overloads>();
 }
 
