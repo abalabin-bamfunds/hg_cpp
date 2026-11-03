@@ -245,7 +245,8 @@ add_executable(
     library/tick_selection_test.cpp
     library/timed_test.cpp
     library/tsd_transform_test.cpp
-    library/service_patterns_test.cpp)
+    library/service_patterns_test.cpp
+    library/service_composition_test.cpp)
 target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
 target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 catch_discover_tests(hg_library_tests DISCOVERY_MODE PRE_TEST)
