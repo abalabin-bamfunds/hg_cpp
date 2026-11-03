@@ -1,10 +1,9 @@
 # HTTP clients and servers
 
 If a graph needs to answer HTTP requests or call an external HTTP service, use the
-web extension to connect requests and responses to graph calculations. Both Python
-and C++ APIs are available: build the [web extension](index.md#web), then import
-`hg_web` in Python or include `<hg/web/http_server.hpp>` and
-`<hg/web/http_client.hpp>` in C++.
+web extension to connect requests and responses to graph calculations. The
+[`hg-cpp` installation](../guide/installation.md) includes both APIs: import `hg_web`
+in Python or include `<hg/web/http_server.hpp>` and `<hg/web/http_client.hpp>` in C++.
 
 ## Serving a request
 
@@ -88,7 +87,7 @@ int main() {
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -279,7 +278,7 @@ int main() {
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -383,7 +382,7 @@ Output:
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -567,7 +566,7 @@ Response:
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

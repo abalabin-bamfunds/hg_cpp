@@ -58,7 +58,7 @@ source and expected output; the second links to the example project and gives bu
 commands. Existing chapters provide the full directive structure.
 
 Both languages use the `hg-cpp` installation documented on the installation page.
-Core C++ examples use its site-packages directory as the CMake prefix. Keep the project
+Core and web C++ examples use its site-packages directory as the CMake prefix. Keep the project
 setup inside the installation page's C++ tab; link to it from individual examples.
 Extension examples state their additional source or installed-target requirements.
 
