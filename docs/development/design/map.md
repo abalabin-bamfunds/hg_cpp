@@ -71,8 +71,11 @@ a union. An item that is absent from one TSD produces an invalid input for that
 inner graph.
 
 A `TS<Dict<K, V>>` argument is also mapped by default. The selected default map
-implementation wires a Dict-to-TSD conversion in the outer graph and uses the
-result as a mapped TSD. The conversion reconciles each complete Dict snapshot.
+implementation wires `convert` with `TSD<K, TS<V>>` as its explicit result in the
+outer graph and uses that result as a mapped TSD. The conversion reconciles each
+complete Dict snapshot through the standard-library overload; C++ programs using
+scalar Dict mapping must link `hg::library`. The conversion is described in the
+[library operator design](library.md#collection-conversion-and-construction).
 When `V` supports equality, its TSD items are deduplicated so equal values do
 not schedule their branches. Otherwise its items retain the input guarantee.
 `pass_through()` keeps a `TS<Dict<K, V>>` as one complete input. Multiple mapped

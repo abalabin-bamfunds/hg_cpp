@@ -83,7 +83,9 @@ The built-in overloads convert between `i64` and `double`. Converting `double`
 to `i64` truncates toward zero; NaN raises `domain_error`, and infinities or
 values outside the `i64` range raise `overflow_error`. The public operator
 accepts overloads for other source time-series types, including collections;
-each overload's output must be compatible with the requested result type.
+each overload's output must be compatible with the requested result type. The
+engine declares the operator identity; `hg::library` supplies the conversion
+overloads.
 Usually the requested type only checks compatibility; scalar Dict to TSD
 conversion also uses its requested root and item guarantees. See
 [collection conversion](#collection-conversion-and-construction) for the

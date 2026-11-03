@@ -6,7 +6,6 @@
 #include <hg/graph/wiring_template.hpp>
 #include <hg/scalar/dict/scalar_type.hpp>
 #include <hg/time_series/time_series_type.hpp>
-#include <hg/time_series/tsd/details/dict_conversion.hpp>
 #include <hg/type/time_series_dict_type.hpp>
 #include <hg/type/time_series_reference_type.hpp>
 #include <hg/type/time_series_value_type.hpp>

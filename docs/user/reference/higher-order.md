@@ -16,8 +16,9 @@ If you need the same computation for every item in a collection, use
 or a `TS<Dict<K, V>>` whose item feeds that branch parameter. A scalar Dict tick supplies
 a complete snapshot; map scans it and updates only branches whose values changed when
 the item type supports equality. `pass_through(point)` supplies the whole time
-series to each branch. Scalars remain fixed arguments. A TSS can supply keys for a
-source-like graph.
+series to each branch. C++ programs that map a scalar Dict must link `hg::library`, which
+provides the Dict-to-TSD conversion overload. Scalars remain fixed arguments. A TSS can
+supply keys for a source-like graph.
 
 If branch membership should follow one input rather than the union of mapped
 dictionaries, set `__key_set_arg__` to that argument's index or name. To let the branch

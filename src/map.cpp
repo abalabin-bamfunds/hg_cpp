@@ -3,11 +3,13 @@
 #include <hg/graph/details/nested.hpp>
 #include <hg/graph/details/variadic_wiring_operations.hpp>
 #include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/type_mapping.hpp>
 #include <hg/graph/wiring_arguments.hpp>
 #include <hg/graph/wiring_context.hpp>
 #include <hg/map/details/default_map_wiring.hpp>
 #include <hg/map/details/map_node.hpp>
 #include <hg/node/node_template.hpp>
+#include <hg/operators.hpp>
 #include <hg/scalar/type.hpp>
 #include <hg/scalar/value.hpp>
 #include <hg/scalar/dict/scalar_type.hpp>
@@ -15,7 +17,6 @@
 #include <hg/type/time_series_value_type.hpp>
 #include <hg/time_series/tsb/details/wiring.hpp>
 #include <hg/time_series/tsb/tsb_type.hpp>
-#include <hg/time_series/tsd/details/dict_conversion.hpp>
 #include <hg/type/time_series_bundle_type.hpp>
 #include <hg/type/time_series_dict_type.hpp>
 #include <hg/type/time_series_reference_type.hpp>
@@ -307,8 +308,11 @@ std::optional<WiringPoint> DefaultMapWiring::wire() const {
 
     auto arguments = outer_arguments;
     for (const auto &conversion : dictionary_conversions) {
+        auto type_map = TypeMap{};
+        type_map.set(type_parameter<operators::CONVERT_RESULT>(), static_cast<const Type *>(conversion.output_type));
         const auto input = arguments[conversion.parameter_index].time_series();
-        arguments[conversion.parameter_index] = WiringArgument{wire_dict_to_tsd(input, *conversion.output_type)};
+        arguments[conversion.parameter_index] =
+            WiringArgument{operators::convert(static_cast<const TypeMap &>(type_map), input)};
     }
     if (dictionary_key_set_parameter) {
         auto &key_set = arguments[*dictionary_key_set_parameter];

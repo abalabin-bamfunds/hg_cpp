@@ -16,7 +16,7 @@
 #include <hg/time_series/tsb/tsb_output.hpp>
 #include <hg/time_series/tss/tss_input.hpp>
 #include <hg/time_series/tsd/tsd_input.hpp>
-#include <hg/time_series/tsd/details/dict_conversion.hpp>
+#include <hg/time_series/tsd/tsd_output.hpp>
 #include <hg/time_series/tsl/tsl.hpp>
 #include <hg/time_series/tsl/tsl_type.hpp>
 #include <hg/type/time_series_dict_type.hpp>
@@ -43,6 +43,8 @@ using namespace hg::literals;
 
 inline constexpr auto G = guarantee_variable<"CONVERSION_G">;
 inline constexpr auto DICT_INPUT_G = guarantee_variable<"CONVERSION_DICT_INPUT_G">;
+inline constexpr auto DICT_OUTPUT_G = guarantee_variable<"CONVERSION_DICT_OUTPUT_G">;
+inline constexpr auto DICT_OUTPUT_ITEM_G = guarantee_variable<"CONVERSION_DICT_OUTPUT_ITEM_G">;
 using KEY = ScalarVariable<"CONVERSION_KEY", Hashable>;
 using SIZE_DECLARATION = std::remove_cv_t<decltype(SIZE)>;
 template <template <typename, auto...> typename Field>
@@ -59,6 +61,43 @@ inline constexpr auto combine_tsl_graph =
 
 inline constexpr auto combine_tsb_graph =
     [](wp<TSB<COMBINE_SCHEMA, G>, "values"_n, var_kwargs, optional> values) { return values.as<OUT>(); };
+
+struct DictToTsdNode {
+    In<TS<Dict<KEY, SCALAR>, DICT_INPUT_G>> value;
+    Out<TSD<KEY, TS<SCALAR, DICT_OUTPUT_ITEM_G>, DICT_OUTPUT_G>> output;
+
+    void evaluate() const {
+        const auto values = value.value_view();
+        if (!output.valid()) {
+            output.clear();
+        }
+
+        output.for_each_key([&](const auto &existing) {
+            if (!values.contains(existing)) {
+                output.erase(existing);
+            }
+        });
+        values.for_each([&](const auto &key, const auto &item) { output[key].set_value(item); });
+    }
+};
+
+WiringPoint wire_dict_to_tsd(WiringPoint input, const TimeSeriesDictionaryType &output_type) {
+    const auto &source = type_cast<TimeSeriesValueType>(input.type().dereferenced_type());
+    const auto &dictionary = type_cast<DictScalarType>(source.value_type());
+    const auto &output_item = type_cast<TimeSeriesValueType>(output_type.value_type());
+
+    auto type_map = TypeMap{};
+    type_map.set(::hg::details::scalar_variable_instance<KEY>(), &dictionary.key_type());
+    type_map.set(::hg::details::scalar_variable_instance<SCALAR>(), &dictionary.mapped_type());
+    type_map.set(::hg::details::guarantee_variable_instance<DICT_OUTPUT_ITEM_G>(),
+                 *output_item.guarantee().value());
+    type_map.set(::hg::details::guarantee_variable_instance<DICT_OUTPUT_G>(), *output_type.guarantee().value());
+
+    static const auto converter = node<DictToTsdNode>();
+    const auto arguments = std::array{WiringArgument{input}};
+    auto &wiring = WiringContext::current().wiring();
+    return *wiring.invoke(converter, arguments, &type_map);
+}
 
 struct conversion_overloads {
     static const TimeSeriesType *requested_result(const WiringArguments &arguments) {

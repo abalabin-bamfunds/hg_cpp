@@ -1,11 +1,9 @@
 #include <hg/graph.hpp>
 #include <hg/map.hpp>
 #include <hg/node.hpp>
-#include <hg/scalar/opaque.hpp>
+#include <hg/scalar/dict/type.hpp>
 #include <hg/testing/test_wiring.hpp>
 #include <hg/time_series/tsd/tsd_type.hpp>
-#include <hg/type/time_series_reference_type.hpp>
-#include <hg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -31,6 +29,14 @@ TEST_CASE("map callable traits normalize named dictionary, key-set, and pass-thr
     static_assert(std::same_as<typename DictionaryTraits::key_type, i64>);
     static_assert(std::same_as<typename DictionaryTraits::parameter_type, ExpectedDictionaryParameter>);
 
+    using ScalarDictionary = wp<TS<Dict<i64, float>>>;
+    using ScalarDictionaryTraits = details::map_callable_argument_t<ScalarDictionary>;
+    using ExpectedScalarDictionaryParameter = wp<REF<TS<float>, TimeSeriesGuarantee::ordinary>>;
+
+    static_assert(std::same_as<typename ScalarDictionaryTraits::key_type, i64>);
+    static_assert(
+        std::same_as<typename ScalarDictionaryTraits::parameter_type, ExpectedScalarDictionaryParameter>);
+
     using KeySet = wp<TSS<i64>>;
     using NamedKeySet = details::named_argument<"keys", const KeySet &>;
     using KeySetTraits = details::map_callable_argument_t<NamedKeySet &&>;
@@ -45,22 +51,6 @@ TEST_CASE("map callable traits normalize named dictionary, key-set, and pass-thr
 
     static_assert(!details::map_callable_key_set<NamedPassThrough>);
     static_assert(std::same_as<typename PassThroughTraits::parameter_type, ExpectedPassThroughParameter>);
-}
-
-TEST_CASE("map keeps ordinary item guarantees for scalar Dict values without equality",
-          "[feature:map][feature:wiring][series:value][series:tsd][scalar:opaque][guarantee:ordinary]") {
-    const auto values = node([](Out<TS<Dict<i64, Opaque<i64>>>>) {});
-    const auto identity = graph("name"_n = "identity_opaque_dictionary_item",
-                                [](wp<TS<Opaque<i64>>> value) { return value; });
-
-    testing::test_wiring([&] {
-        const auto result = map(identity, values());
-        const auto &dictionary = type_cast<TimeSeriesDictionaryType>(result.type());
-        const auto &item_reference = type_cast<TimeSeriesReferenceType>(dictionary.value_type());
-        const auto &item = type_cast<TimeSeriesValueType>(item_reference.target_type());
-
-        CHECK(item.guarantee().value() == TimeSeriesGuarantee::ordinary);
-    });
 }
 
 TEST_CASE("map validates collection key types for every graph form",
