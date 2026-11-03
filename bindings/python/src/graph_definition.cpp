@@ -4,7 +4,9 @@
 #include <hg/python/scalar_conversion.hpp>
 #include <hg/python/wiring_point.hpp>
 #include <hg/graph/wiring_context.hpp>
+#include <hg/graph/context.hpp>
 
+#include "python_context.hpp"
 #include "wiring_argument.hpp"
 
 #include <array>
@@ -91,8 +93,10 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
         throw std::logic_error{"a Python graph must wire in its active graph context"};
     }
 
-    auto scope = PythonWiringScope{wiring};
     auto gil = nanobind::gil_scoped_acquire{};
+    details::activate_contexts();
+    auto context_scopes = hg::details::ContextScopes::activate_context_parameters(resolved_signature, arguments);
+    auto scope = PythonWiringScope{wiring};
     auto python_arguments = std::vector<nanobind::object>{};
     python_arguments.reserve(arguments.size());
     for (auto index = std::size_t{}; index < arguments.size(); ++index) {

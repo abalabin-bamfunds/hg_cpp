@@ -54,6 +54,7 @@
 #include "operator_binding.hpp"
 #include "python_queue.hpp"
 #include "python_wiring_error.hpp"
+#include "python_context.hpp"
 #include "wiring_argument.hpp"
 
 #include <nanobind/stl/optional.h>
@@ -104,14 +105,14 @@ class TypeDescriptor {
   public:
     explicit TypeDescriptor(const Type &type, bool accepts_absent_scalar = false,
                             std::optional<TimeSeriesGuarantee> minimum_guarantee = std::nullopt,
-                            bool valid_items = false) noexcept
+                            bool valid_items = false, bool context = false) noexcept
         : type_{&type}, accepts_absent_scalar_{accepts_absent_scalar}, minimum_guarantee_{minimum_guarantee},
-          valid_items_{valid_items} {}
+          valid_items_{valid_items}, context_{context} {}
     explicit TypeDescriptor(const Schema &schema) noexcept : type_{&schema}, schema_{&schema} {}
     TypeDescriptor(const TypeDescriptor &value, bool accepts_time_series_value) noexcept
         : type_{value.type_}, schema_{value.schema_}, accepts_absent_scalar_{value.accepts_absent_scalar_},
           accepts_time_series_value_{accepts_time_series_value}, minimum_guarantee_{value.minimum_guarantee_},
-          valid_items_{value.valid_items_} {}
+          valid_items_{value.valid_items_}, context_{value.context_} {}
 
     const Type &type() const noexcept { return *type_; }
     const Schema *schema() const noexcept { return schema_; }
@@ -119,6 +120,7 @@ class TypeDescriptor {
     bool accepts_time_series_value() const noexcept { return accepts_time_series_value_; }
     std::optional<TimeSeriesGuarantee> minimum_guarantee() const noexcept { return minimum_guarantee_; }
     bool valid_items() const noexcept { return valid_items_; }
+    bool context() const noexcept { return context_; }
 
   private:
     const Type *type_;
@@ -127,6 +129,7 @@ class TypeDescriptor {
     bool accepts_time_series_value_{};
     std::optional<TimeSeriesGuarantee> minimum_guarantee_;
     bool valid_items_{};
+    bool context_{};
 };
 
 using PythonParameter = std::tuple<std::string, TypeDescriptor, std::string>;
@@ -177,6 +180,7 @@ class PythonServiceDefinition {
     }
 
     nb::object wire(nb::sequence arguments) const {
+        details::activate_contexts();
         auto &wiring = WiringContext::current().wiring();
         auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
         auto memory = allocator{temporary_memory};
@@ -190,6 +194,7 @@ class PythonServiceDefinition {
     }
 
     void client_requests(nb::handle client_id, nb::sequence arguments) const {
+        details::activate_contexts();
         auto *service = dynamic_cast<const Service *>(service_);
         if (service == nullptr) {
             throw std::invalid_argument{"split client wiring requires a request/reply service"};
@@ -204,6 +209,7 @@ class PythonServiceDefinition {
     }
 
     nb::object client_replies(nb::handle client_id, nb::sequence arguments) const {
+        details::activate_contexts();
         auto *service = dynamic_cast<const Service *>(service_);
         if (service == nullptr) {
             throw std::invalid_argument{"split client wiring requires a request/reply service"};
@@ -220,6 +226,7 @@ class PythonServiceDefinition {
     }
 
     nb::object implementation_requests(nb::sequence positional, nb::dict named) const {
+        details::activate_contexts();
         auto memory_resource = std::pmr::unsynchronized_pool_resource{};
         auto memory = allocator{memory_resource};
         auto arguments = implementation_arguments(positional, named, memory);
@@ -228,6 +235,7 @@ class PythonServiceDefinition {
     }
 
     void implementation_replies(nb::handle reply, nb::sequence positional, nb::dict named) const {
+        details::activate_contexts();
         if (!nb::isinstance<PythonWiringPoint>(reply)) {
             throw std::invalid_argument{"a Python service reply requires a time-series wiring point"};
         }
@@ -362,6 +370,7 @@ class PythonServiceCatalogue {
     void register_impl(const PythonServiceDefinition &service, std::shared_ptr<const WiringTemplate> graph,
                        nb::handle service_owner, nb::handle implementation_owner, nb::sequence positional,
                        nb::dict named) {
+        details::activate_contexts();
         auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
         auto memory = allocator{temporary_memory};
         auto arguments = std::vector<WiringArgument>{};
@@ -381,6 +390,7 @@ class PythonServiceCatalogue {
     PythonMultiserviceRegistration register_multiservice(const PythonGraphDefinition &implementation,
                                                          nb::handle implementation_owner,
                                                          nb::sequence positional, nb::dict named) {
+        details::activate_contexts();
         keep_alive_.reserve(keep_alive_.size() + 1);
         auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
         auto memory = allocator{temporary_memory};
@@ -402,6 +412,7 @@ class PythonServiceCatalogue {
     void register_multiservice_impl(PythonMultiserviceRegistration &registration,
                                     const PythonServiceDefinition &service, nb::handle service_owner,
                                     nb::dict named) {
+        details::activate_contexts();
         keep_alive_.reserve(keep_alive_.size() + 1);
         auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
         auto memory = allocator{temporary_memory};
@@ -512,6 +523,10 @@ make_signature(std::string_view name, const std::vector<PythonParameter> &parame
 
         auto parameter = Parameter{util::symbol{parameter_name}, type};
         parameter.accepts_absent_scalar = parameter_type.accepts_absent_scalar();
+        parameter.context = parameter_type.context();
+        if (parameter.context && (!type->is_time_series() || !variadic.empty())) {
+            throw std::invalid_argument{"a Python context input requires a non-variadic TS[...] annotation"};
+        }
         if (parameter_type.valid_items()) {
             if (type_cast<TimeSeriesDictionaryType>(type) == nullptr) {
                 throw std::invalid_argument{"hgraph.valid_items requires a TSD input annotation"};
@@ -710,6 +725,7 @@ nb::dict profiler_outer_period(EvaluationProfilerCyclePeriod period) {
 
 nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_values, nb::sequence positional_values,
                      nb::dict named_values) {
+    details::activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -749,6 +765,7 @@ nb::object wire_node(const PythonNodeDefinition &definition, nb::sequence fixed_
 
 nb::object wire_graph(const PythonGraphDefinition &definition, nb::sequence fixed_values,
                       nb::sequence positional_values, nb::dict named_values) {
+    details::activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -1037,13 +1054,22 @@ void bind_core(nb::module_ &module) {
                                          ? time_series->with_guarantee(minimum)
                                          : TypeRegistry::instance().register_owned(
                                                generic_time_series_type(*time_series, minimum));
-        return TypeDescriptor{annotated_type, value.accepts_absent_scalar(), minimum, value.valid_items()};
+        return TypeDescriptor{annotated_type, value.accepts_absent_scalar(), minimum, value.valid_items(),
+                              value.context()};
     });
     module.def("_with_valid_items", [](const TypeDescriptor &value) {
         if (type_cast<TimeSeriesDictionaryType>(&value.type()) == nullptr) {
             throw std::invalid_argument{"hgraph.valid_items requires a TSD input annotation"};
         }
-        return TypeDescriptor{value.type(), value.accepts_absent_scalar(), value.minimum_guarantee(), true};
+        return TypeDescriptor{value.type(), value.accepts_absent_scalar(), value.minimum_guarantee(), true,
+                              value.context()};
+    });
+    module.def("_with_context_input", [](const TypeDescriptor &value) {
+        if (!value.type().is_time_series()) {
+            throw std::invalid_argument{"hgraph.CONTEXT requires a TS[...] annotation"};
+        }
+        return TypeDescriptor{value.type(), value.accepts_absent_scalar(), value.minimum_guarantee(),
+                              value.valid_items(), true};
     });
     module.def("_time_series_set_type", [](const TypeDescriptor &value) {
         const auto *item = type_cast<ScalarType>(&value.type());
@@ -1503,6 +1529,7 @@ void bind_core(nb::module_ &module) {
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
         .def_prop_ro("valid_items", &TypeDescriptor::valid_items)
+        .def_prop_ro("context", &TypeDescriptor::context)
         .def_prop_ro("accepts_time_series_value", &TypeDescriptor::accepts_time_series_value)
         .def_prop_ro("accepts_absent_scalar", &TypeDescriptor::accepts_absent_scalar);
     nb::class_<PythonWiringPoint>(module, "WiringPoint")
@@ -1518,6 +1545,14 @@ void bind_core(nb::module_ &module) {
         })
         .def("_as_optional", &PythonWiringPoint::as_optional)
         .def("_as_valid_items", &PythonWiringPoint::as_valid_items)
+        .def("__enter__", [](nb::object self) {
+            details::enter_context(self);
+            return self;
+        })
+        .def("__exit__", [](nb::object self, nb::object, nb::object, nb::object) {
+            details::exit_context(self);
+            return false;
+        }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none())
         .def("__getitem__", &details::getitem)
         .def("__getattr__", [](const PythonWiringPoint &self, std::string_view name) {
             const auto *operation = details::find_wiring_method(name, self.type());

@@ -63,9 +63,25 @@ To share a named dependency through an enclosing C++ graph scope, request a cont
 input with `In<TS_T, "name"_n, context>`. A graph parameter can
 request the same binding through `wp<TS_T, "name"_n, context>`. `with_context("name"_n =
 point, callable)` establishes a lexical binding while constructing the callable's graph.
+Python declares the same input with `CONTEXT[TS[T]] = None` and uses `with point as name:`
+to bind the point under the local variable name:
+
+```python
+@hgraph.compute_node
+def add_offset(value: hgraph.TS[int], offset: hgraph.CONTEXT[hgraph.TS[int]] = None) -> hgraph.TS[int]:
+    return value.value + offset.value
+
+@hgraph.graph
+def graph(value: hgraph.TS[int], source: hgraph.TS[int]) -> hgraph.TS[int]:
+    with source as offset:
+        return add_offset(value)
+```
+
 The nearest binding wins. A named argument supplied directly to the receiving call takes
-priority over the lexical binding; a context parameter cannot bind a positional
-argument.
+priority over the lexical binding. Context parameters are keyword-only; positional
+binding is rejected. Python selects the context name from the `as` variable after Python
+assigns it. When the point has multiple changed local aliases, construction fails as
+ambiguous.
 
 Scalar bindings become constant time series. Missing names and incompatible bound types
 fail during construction. A context binding is a graph dependency, not mutable shared

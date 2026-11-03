@@ -81,15 +81,24 @@ WiringArgument wiring_argument(nb::handle value, allocator &memory, GraphWiring 
 std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::sequence fixed_values,
                                              nb::sequence positional_values, nb::dict named_values, allocator &memory,
                                              GraphWiring &wiring, std::span<const Type *const> parameter_types) {
-    const auto fixed_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
-    if (nb::len(fixed_values) != fixed_count) {
+    const auto fixed_parameter_count = signature.first_variadic_parameter().value_or(signature.parameter_count());
+    auto fixed_parameters = std::vector<std::size_t>{};
+    fixed_parameters.reserve(fixed_parameter_count);
+    for (auto index = std::size_t{}; index < fixed_parameter_count; ++index) {
+        if (!signature.parameter(index).context) {
+            fixed_parameters.push_back(index);
+        }
+    }
+    if (nb::len(fixed_values) != fixed_parameters.size()) {
         throw std::invalid_argument{"the Python definition received the wrong number of fixed arguments"};
     }
 
     auto arguments = std::vector<WiringArgument>{};
-    arguments.reserve(fixed_count + nb::len(positional_values) + nb::len(named_values));
-    for (auto index = std::size_t{}; index < fixed_count; ++index) {
-        const auto &expected = parameter_types.empty() ? *signature.parameter(index).type : *parameter_types[index];
+    arguments.reserve(fixed_parameters.size() + nb::len(positional_values) + nb::len(named_values));
+    for (auto index = std::size_t{}; index < fixed_parameters.size(); ++index) {
+        const auto parameter_index = fixed_parameters[index];
+        const auto &expected = parameter_types.empty() ? *signature.parameter(parameter_index).type
+                                                       : *parameter_types[parameter_index];
         arguments.push_back(wiring_argument(expected, fixed_values[index], memory, wiring));
     }
 
@@ -104,6 +113,20 @@ std::vector<WiringArgument> wiring_arguments(const Signature &signature, nb::seq
     for (const auto [name, value] : named_values) {
         auto argument = wiring_argument(value, memory, wiring);
         const auto argument_name = util::symbol{nb::cast<std::string>(name)};
+        const auto fixed_parameter = [&] {
+            for (auto index = std::size_t{}; index < fixed_parameter_count; ++index) {
+                if (signature.parameter(index).name == argument_name) {
+                    return true;
+                }
+            }
+            return false;
+        }();
+        if (fixed_parameter) {
+            argument.set_variadic_name(argument_name, hg::details::VariadicMode::none);
+            argument.match_fixed_parameter_by_name();
+            arguments.push_back(std::move(argument));
+            continue;
+        }
         const auto exact_parameter =
             (positional_parameter && signature.parameter(*positional_parameter).name == argument_name) ||
             (named_parameter && signature.parameter(*named_parameter).name == argument_name);

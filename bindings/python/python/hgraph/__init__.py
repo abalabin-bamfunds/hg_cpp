@@ -78,6 +78,7 @@ from ._hg import (
     _wire_graph,
     _wire_node,
     _with_time_series_guarantee,
+    _with_context_input,
     _with_valid_items,
     version,
 )
@@ -307,6 +308,17 @@ class TS(TimeSeries, Generic[_SCALAR_T]):
     def __class_getitem__(cls, arguments: Any) -> Any:
         scalar_type, guarantee = _annotation_arguments(arguments, 1, "TS")
         return _with_guarantee(_time_series_type(_native_type(scalar_type)), guarantee)
+
+
+class _ContextInput:
+    pass
+
+
+class CONTEXT:
+    """Declare a named context time-series input on a Python node or graph."""
+
+    def __class_getitem__(cls, time_series_type: Any) -> Any:
+        return Annotated[time_series_type, _ContextInput]
 
 
 class _ScalarAnnotation:
@@ -627,11 +639,13 @@ class NodeDefinition:
         injected_parameters: tuple[str, ...],
         lifecycle_registrar: Any,
         callback_references: dict[str, Any],
+        context_parameters: tuple[str, ...],
     ):
         self.function = function
         self._callback = callback
         self._native_definition = native_definition
         self._fixed_parameters = fixed_parameters
+        self._context_parameters = context_parameters
         self._lifecycle_registrar = lifecycle_registrar
         self._callback_references = callback_references
         update_wrapper(self, function)
@@ -643,12 +657,12 @@ class NodeDefinition:
                     if parameter.name not in injected_parameters
                 )
             )
-        self.signature = signature
-        self.__signature__ = signature
+        self.signature = _contextual_signature(signature, context_parameters)
+        self.__signature__ = self.signature
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         fixed, positional, named = _bind_definition_arguments(
-            self.signature, self._fixed_parameters, args, kwargs
+            self.signature, self._fixed_parameters, args, kwargs, self._context_parameters
         )
         return _wire_node(self._native_definition, fixed, positional, named)
 
@@ -674,17 +688,20 @@ class GraphDefinition:
         native_definition: Any,
         fixed_parameters: tuple[str, ...],
         callback: Any,
+        context_parameters: tuple[str, ...],
     ):
         self.function = function
         self._callback = callback
         self._native_definition = native_definition
         self._fixed_parameters = fixed_parameters
+        self._context_parameters = context_parameters
         update_wrapper(self, function)
-        self.signature = inspect.signature(function)
+        self.signature = _contextual_signature(inspect.signature(function), context_parameters)
+        self.__signature__ = self.signature
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         fixed, positional, named = _bind_definition_arguments(
-            self.signature, self._fixed_parameters, args, kwargs
+            self.signature, self._fixed_parameters, args, kwargs, self._context_parameters
         )
         return _wire_graph(self._native_definition, fixed, positional, named)
 
@@ -692,7 +709,30 @@ class GraphDefinition:
         if not isinstance(input_types, tuple):
             input_types = (input_types,)
         native = _specialize_graph(self._native_definition, input_types)
-        return GraphDefinition(self.function, native, self._fixed_parameters, self._callback)
+        return GraphDefinition(self.function, native, self._fixed_parameters, self._callback, self._context_parameters)
+
+
+def _contextual_signature(signature: inspect.Signature, context_parameters: tuple[str, ...]) -> inspect.Signature:
+    if not context_parameters:
+        return signature
+
+    context_names = set(context_parameters)
+    parameters = tuple(signature.parameters.values())
+    positional_only = [p for p in parameters if p.kind is p.POSITIONAL_ONLY and p.name not in context_names]
+    positional_or_keyword = [
+        p for p in parameters if p.kind is p.POSITIONAL_OR_KEYWORD and p.name not in context_names
+    ]
+    variadic_positional = [p for p in parameters if p.kind is p.VAR_POSITIONAL]
+    keyword_only = [p for p in parameters if p.kind is p.KEYWORD_ONLY and p.name not in context_names]
+    context_only = [
+        p.replace(kind=inspect.Parameter.KEYWORD_ONLY)
+        for p in parameters if p.name in context_names
+    ]
+    variadic_keyword = [p for p in parameters if p.kind is p.VAR_KEYWORD]
+    return signature.replace(
+        parameters=tuple(positional_only + positional_or_keyword + variadic_positional + keyword_only +
+                         context_only + variadic_keyword)
+    )
 
 
 class _Ticks:
@@ -785,6 +825,7 @@ class DispatchDefinition:
         self._implementations: list[GraphDefinition | NodeDefinition] = []
         update_wrapper(self, function)
         self.signature = self._contract.signature
+        self.__signature__ = self.signature
         for implementation in implementations:
             self.overload(implementation)
 
@@ -796,7 +837,7 @@ class DispatchDefinition:
 
     def __call__(self, *args: Any, **kwargs: Any) -> Any:
         fixed, positional, named = _bind_definition_arguments(
-            self.signature, self._contract._fixed_parameters, args, kwargs
+            self.signature, self._contract._fixed_parameters, args, kwargs, self._contract._context_parameters
         )
         return _dispatch(
             self._contract._native_definition, tuple(self._implementations), fixed, positional, named
@@ -927,6 +968,7 @@ def _bind_definition_arguments(
     fixed_parameters: tuple[str, ...],
     args: tuple[Any, ...],
     kwargs: dict[str, Any],
+    context_parameters: tuple[str, ...] = (),
 ) -> tuple[tuple[Any, ...], tuple[Any, ...], dict[str, Any]]:
     positional_pack = next(
         (
@@ -961,7 +1003,8 @@ def _bind_definition_arguments(
         ),
         {},
     )
-    named = direct_positional | named
+    context_values = {name: kwargs[name] for name in context_parameters if name in kwargs}
+    named = direct_positional | named | context_values
 
     return fixed, positional, named
 
@@ -997,12 +1040,13 @@ def _definition_signature(
     promote_plain_graph_inputs: bool = False,
     allow_injectables: bool = False,
     allow_queue: bool = False,
-) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, tuple[str, ...], Any]:
+) -> tuple[list[tuple[str, Any, str]], tuple[str, ...], Any, tuple[str, ...], Any, tuple[str, ...]]:
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
     fixed = []
     variadic = []
     injected_parameters = []
+    context_parameters = []
     state_factory = None
 
     for parameter in signature.parameters.values():
@@ -1052,10 +1096,17 @@ def _definition_signature(
                 native_type = native_type.type
                 if native_type.is_time_series:
                     raise TypeError("Scalar[...] parameters must use scalar annotations, not TS[...] annotations")
+            is_context = native_type.context
+            if is_context:
+                if not native_type.is_time_series:
+                    raise TypeError("hgraph.CONTEXT requires a TS[...] annotation")
+                if parameter.default is not None:
+                    raise TypeError("Python context inputs must use '= None' as their default")
+                context_parameters.append(parameter.name)
             if scalar_or_time_series_inputs:
-                if native_type.is_time_series:
+                if native_type.is_time_series and not is_context:
                     raise TypeError("@node parameters must use scalar annotations, not TS[...] annotations")
-                if not scalar_only:
+                if not native_type.is_time_series and not scalar_only:
                     native_type = _node_input_type(native_type)
             elif promote_plain_graph_inputs and not scalar_only and not native_type.is_time_series:
                 native_type = _node_input_type(native_type)
@@ -1063,16 +1114,22 @@ def _definition_signature(
         elif parameter.kind is parameter.VAR_POSITIONAL:
             if scalar_or_time_series_inputs:
                 raise TypeError("@node does not currently support variadic parameters")
-            variadic.append((parameter.name, _native_type(annotation), "positional"))
+            native_type = _native_type(annotation)
+            if native_type.context:
+                raise TypeError("Python context inputs cannot be variadic")
+            variadic.append((parameter.name, native_type, "positional"))
         elif parameter.kind is parameter.VAR_KEYWORD:
             if scalar_or_time_series_inputs:
                 raise TypeError("@node does not currently support variadic parameters")
-            variadic.append((parameter.name, _native_type(annotation), "named"))
+            native_type = _native_type(annotation)
+            if native_type.context:
+                raise TypeError("Python context inputs cannot be variadic")
+            variadic.append((parameter.name, native_type, "named"))
         else:
             raise TypeError(f"unsupported Python parameter kind for {parameter.name!r}")
 
     parameters = fixed + variadic
-    fixed_names = tuple(name for name, _, _ in fixed)
+    fixed_names = tuple(name for name, native_type, _ in fixed if not native_type.context)
     needs_positional_callback = variadic or any(
         parameter.kind is parameter.KEYWORD_ONLY for parameter in signature.parameters.values()
     )
@@ -1083,6 +1140,7 @@ def _definition_signature(
         callback,
         tuple(injected_parameters),
         state_factory,
+        tuple(context_parameters),
     )
 
 
@@ -1179,6 +1237,7 @@ def _define_node(
         callback,
         injected_parameters,
         state_factory,
+        context_parameters,
     ) = _definition_signature(
         function, scalar_or_time_series_inputs=scalar_or_time_series_inputs, allow_injectables=True,
         allow_queue=queue_mode is not None,
@@ -1195,6 +1254,8 @@ def _define_node(
         output = None
     else:
         output_type = _native_type(output)
+        if output_type.context:
+            raise TypeError("hgraph.CONTEXT can only annotate an input")
         if isinstance(output_type, _ScalarAnnotation):
             raise TypeError("Scalar[...] can only annotate a Python node or graph input")
         if scalar_or_time_series_inputs:
@@ -1264,7 +1325,7 @@ def _define_node(
     callback_references.update(retained_callbacks)
     definition = NodeDefinition(
         function, native_definition, fixed_parameters, callback, injected_parameters, register_lifecycle,
-        callback_references,
+        callback_references, context_parameters,
     )
     return definition
 
@@ -1313,6 +1374,8 @@ def _define_service(function: Any, kind: str) -> _ServiceDefinition:
         if annotation is inspect.Parameter.empty:
             raise TypeError(f"Python service parameter {parameter.name!r} requires a type annotation")
         native_type = _native_type(annotation)
+        if native_type.context:
+            raise TypeError("Python services do not support context inputs")
         if isinstance(native_type, _ScalarAnnotation):
             native_type = native_type.type
         if not native_type.is_time_series:
@@ -1324,6 +1387,8 @@ def _define_service(function: Any, kind: str) -> _ServiceDefinition:
         output = None
     else:
         output = _native_type(output)
+        if output.context:
+            raise TypeError("hgraph.CONTEXT can only annotate an input")
         if isinstance(output, _ScalarAnnotation) or not output.is_time_series:
             raise TypeError("Python service outputs must use an explicit TS[...] annotation")
 
@@ -1378,6 +1443,8 @@ def _native_type(annotation: Any) -> Any:
                 native_type = _with_time_series_guarantee(native_type, item)
             elif item is valid_items:
                 native_type = _with_valid_items(native_type)
+            elif item is _ContextInput:
+                native_type = _with_context_input(native_type)
         return native_type
     origin = get_origin(annotation)
     if annotation is list or origin is list:
@@ -1557,7 +1624,7 @@ def graph(function: Any) -> GraphDefinition:
     """Declare a graph template composed from Python nodes and graph functions."""
     signature = inspect.signature(function)
     annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback, _, _ = _definition_signature(
+    parameters, fixed_parameters, callback, _, _, context_parameters = _definition_signature(
         function, promote_plain_graph_inputs=True
     )
 
@@ -1574,7 +1641,7 @@ def graph(function: Any) -> GraphDefinition:
             lift_scalar_output = True
 
     native = _make_graph(function.__name__, parameters, output, callback, lift_scalar_output)
-    return GraphDefinition(function, native, fixed_parameters, callback)
+    return GraphDefinition(function, native, fixed_parameters, callback, context_parameters)
 
 
 def dispatch(signature: Any,
@@ -1635,7 +1702,7 @@ def run_graph(
         raise TypeError("stop_token must be a hgraph.StopToken or None")
 
     fixed, positional, named = _bind_definition_arguments(
-        definition.signature, definition._fixed_parameters, args, kwargs
+        definition.signature, definition._fixed_parameters, args, kwargs, definition._context_parameters
     )
     native_catalogue = None if catalogue is None else catalogue._native_catalogue
     result = _run_graph(
@@ -1682,6 +1749,7 @@ __all__ = [
     "Scheduler",
     "ScheduleHandle",
     "const_",
+    "CONTEXT",
     "deduplicated",
     "dispatch",
     "DispatchDefinition",

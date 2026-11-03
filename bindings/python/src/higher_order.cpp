@@ -1,6 +1,7 @@
 #include "higher_order.hpp"
 
 #include "operator_binding.hpp"
+#include "python_context.hpp"
 #include "python_wiring_error.hpp"
 #include "wiring_argument.hpp"
 
@@ -75,6 +76,7 @@ PythonFeedback *make_feedback(nb::handle type, std::string name) {
 }
 
 nb::object wire_feedback(const PythonWiringPoint &point, std::string name) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     const auto lifetime = PythonWiringScope::current();
     lifetime->check(wiring);
@@ -160,6 +162,7 @@ nb::object wiring_result(WiringPoint result) {
 }
 
 nb::object wire_map(const PythonGraphDefinition &function, nb::sequence positional, nb::sequence named) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -171,6 +174,7 @@ nb::object wire_map(const PythonGraphDefinition &function, nb::sequence position
 
 nb::object wire_reduce(nb::handle function, nb::handle values, bool has_default,
                        nb::handle default_value) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -243,6 +247,7 @@ nb::object wire_reduce(nb::handle function, nb::handle values, bool has_default,
 
 nb::object wire_mesh(const PythonGraphDefinition &function, nb::sequence positional, nb::sequence named,
                      std::optional<std::string> name) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -259,6 +264,7 @@ nb::object wire_mesh(const PythonGraphDefinition &function, nb::sequence positio
 }
 
 nb::object wire_mesh_dependency(nb::handle key, const std::string &name) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -269,6 +275,7 @@ nb::object wire_mesh_dependency(nb::handle key, const std::string &name) {
 
 nb::object wire_switch(const PythonWiringPoint &key, nb::sequence case_values, nb::sequence positional,
                        nb::sequence named) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};
@@ -301,6 +308,7 @@ nb::object wire_switch(const PythonWiringPoint &key, nb::sequence case_values, n
 
 nb::object wire_dispatch(const PythonGraphDefinition &contract, nb::sequence implementations,
                          nb::sequence fixed, nb::sequence positional, nb::dict named) {
+    activate_contexts();
     auto &wiring = WiringContext::current().wiring();
     auto temporary_memory = std::pmr::unsynchronized_pool_resource{};
     auto memory = allocator{temporary_memory};

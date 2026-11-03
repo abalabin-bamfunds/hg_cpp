@@ -1,6 +1,7 @@
 #include <hg/python/operator.hpp>
 
 #include "operator_binding.hpp"
+#include "python_context.hpp"
 #include "wiring_argument.hpp"
 
 #include <hg/graph/details/variadic_wiring_record.hpp>
@@ -133,6 +134,7 @@ nb::object PythonOperator::call(nb::handle value) const {
 }
 
 nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) const {
+    activate_contexts();
     try {
         if (owned_operation_ != nullptr) {
             WiringContext::current().wiring().retain_wiring_template(owned_operation_);

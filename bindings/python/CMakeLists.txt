@@ -32,6 +32,7 @@ add_library(
     src/python_object_operators.cpp
     src/wiring_argument.cpp
     src/python_wiring_error.cpp
+    src/python_context.cpp
     src/graph_run_input.cpp
     src/graph_run_output.cpp
     src/python.cpp

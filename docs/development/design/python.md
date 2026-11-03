@@ -161,6 +161,15 @@ The annotation adds no runtime node and leaves the original wiring point
 unchanged. Its [input-view behavior](time-series-validity.md#collections)
 matches C++, including immediate-item validity and physical `key_set` access.
 
+`CONTEXT[TS[T]] = None` declares a named context input on a Python node or graph. The
+parameter name is the context name. `with point as name:` binds a wiring point under
+the assigned local name for the duration of the block. Python wiring activates the
+native `ContextScope` before resolving each wiring operation; the nearest scope wins,
+and an explicit named argument overrides it. Context parameters are keyword-only at
+Python wiring call sites. The binding captures the caller frame at `__enter__` and
+compares local names and values before and after the `as` assignment to identify the
+name. Ambiguous changed aliases fail during graph construction.
+
 Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
 `**kwargs` parameters. A graph function expands into the active graph while it
