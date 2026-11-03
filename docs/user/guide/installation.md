@@ -80,7 +80,8 @@ The [example downloads](../how-to/examples.md) include complete C++ projects.
 
 ## Optional extensions
 
-The `hg-cpp` Python wheel includes the [web extension](../extensions/index.md#web),
-which adds HTTP and WebSocket services. C++ source builds can enable it with its
-documented build option. The [frame extension](../extensions/index.md#frame) adds
-C++ columns and tables and currently builds from its source directory.
+If your graph needs HTTP or WebSocket connections, use the
+[web extension](../extensions/index.md#web), included in the `hg-cpp` wheel for both
+Python and C++. For C++ columns and tables, use the
+[frame extension](../extensions/index.md#frame), which currently builds from its
+source directory.

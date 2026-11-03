@@ -1,8 +1,9 @@
 # Binary WebSocket connections
 
 If your application exchanges a continuing stream of binary messages, use WebSocket
-to keep a connection open between the graph and its peer. Build the
-[web extension](index.md#web) and run the graph with the realtime engine.
+to keep a connection open between the graph and its peer. The
+[web extension](index.md#web) is included in `hg-cpp`; run the graph with the realtime
+engine to wait for network events.
 
 ## Serving a connection
 
