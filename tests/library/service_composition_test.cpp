@@ -23,6 +23,7 @@
 
 using namespace hg;
 using namespace hg::literals;
+using namespace hg::util::literals;
 
 TEST_CASE("a request reply service can call another service",
           "[feature:service][series:tsd][series:value][shape:nested]") {
@@ -201,7 +202,7 @@ TEST_CASE("service wiring preserves client order across mixed implementations",
         return expected_values[static_cast<std::size_t>(selected)];
     };
 
-    const auto copy = node([](In<TSL<TS<i64>>> values, Out<TSL<TS<i64>>> output) {
+    const auto copy = node([](In<TSL<TS<i64>, SIZE>> values, Out<TSL<TS<i64>, SIZE>> output) {
         output.copy_tick(values);
     });
 
@@ -273,9 +274,8 @@ TEST_CASE("a request reply service can call itself until its request reaches zer
                                   GraphRunOptions{.services = &catalogue, .run_time = std::chrono::microseconds{10}},
                                   {3});
 
-    REQUIRE(actual.size() > 0);
-    REQUIRE(actual[actual.size() - 1].has_value());
-    CHECK(actual[actual.size() - 1]->value() == i64{4});
+    CAPTURE(actual);
+    CHECK(actual.equals<i64>({std::nullopt, std::nullopt, std::nullopt, std::nullopt, 4}));
 }
 
 TEST_CASE("a service installation input stays bound to the root across map wiring",
@@ -335,11 +335,12 @@ TEST_CASE("mapped subscription clients handle late keys and recreation",
         return copy(map(per_key, keys));
     };
 
-    CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue},
-                    {{{1, 7}}, {{2, 8}}, {{1, literal::REMOVE}}, {{1, 9}}})
-              .equals({{{1, literal::INVALID}},
-                       {{1, 70}, {2, literal::INVALID}},
-                       {{1, literal::REMOVE}, {2, 80}},
-                       {{1, literal::INVALID}},
-                       {{1, 90}}}));
+    const auto actual = run_graph(tested, GraphRunOptions{.services = &catalogue},
+                                  {{{1, 7}}, {{2, 8}}, {{1, literal::REMOVE}}, {{1, 9}}});
+    CAPTURE(actual);
+    CHECK(actual.equals({{{1, literal::INVALID}},
+                         {{1, 70}, {2, literal::INVALID}},
+                         {{1, literal::REMOVE}, {2, 80}},
+                         {{1, literal::INVALID}},
+                         {{1, 90}}}));
 }
