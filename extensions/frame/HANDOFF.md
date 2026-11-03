@@ -2,6 +2,21 @@
 
 Updated: 2026-11-04.
 
+## Current verification
+
+The frame lane is clean at `a73a99742`, rebased on main `a38fe270f` and the
+fixed BG dependency at `455f30a0b`. The Arrow-enabled Release build completed
+all 124 build steps. All 15 frame CTest suites passed. Both group-by benchmark
+smoke modes passed, including Arrow Compute/Acero result validation. Six
+focused ASan/UBSan suites passed with leak detection: column binding,
+reductions, column assembly, group-by, copying, and reference sampling. The
+sanitizer tests ran outside the sandbox because LeakSanitizer cannot inspect
+threads under the sandbox's ptrace. Documentation tooling tests and the strict
+Sphinx build also pass. No source changes were needed during verification.
+
+Builds are `build/merge-release` and `build/merge-asan`; CTest output is under
+their `Testing/Temporary` directories. Both benchmark commands used `--smoke`.
+
 ## Arrow grouped-aggregation comparison
 
 The [comparison report](benchmarks/group_by_arrow.md) and raw CSVs compare the
