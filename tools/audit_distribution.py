@@ -19,7 +19,12 @@ FORBIDDEN_PARTS = {".git", "__pycache__", ".pytest_cache", ".mypy_cache"}
 WHEEL_FILES = {
     "hgraph/__init__.py",
     "hgraph/operators.py",
+    "hg_web/__init__.py",
+    "hg_web/auth.py",
     "include/hg/hg.hpp",
+    "include/hg/web/http_client.hpp",
+    "include/hg/web/http_server.hpp",
+    "include/hg/web/websocket_client.hpp",
 }
 SDIST_FILES = {
     "CMakeLists.txt",
@@ -28,6 +33,10 @@ SDIST_FILES = {
     "bindings/python/src/module.cpp",
     "bindings/python/tests/extension_module.cpp",
     "cmake/hgConfig.cmake.in",
+    "extensions/web/CMakeLists.txt",
+    "extensions/web/include/hg/web/http_client.hpp",
+    "extensions/web/python/hg_web/__init__.py",
+    "extensions/web/src/http_client.cpp",
     "include/hg/hg.hpp",
     "packaging/consumer/CMakeLists.txt",
     "pyproject.toml",
@@ -90,10 +99,16 @@ def audit_wheel(path: Path, platform: str | None) -> None:
 
         if not any(name.startswith("hgraph/_hg") and name.endswith((".so", ".pyd")) for name in paths):
             raise ValueError("wheel is missing the hgraph._hg native extension")
+        if not any(name.startswith("hg_web/_hg_web") and name.endswith((".so", ".pyd")) for name in paths):
+            raise ValueError("wheel is missing the hg_web._hg_web native extension")
 
-        for library in ("hg", "hg_library", "hg_python", "nanobind", "fmt"):
+        for library in ("hg", "hg_library", "hg_python", "hg_web", "nanobind", "fmt"):
             if not any(is_runtime_library(name, library) for name in paths):
                 raise ValueError(f"wheel is missing the native runtime library {library}")
+        if platform:
+            for library in ("curl", "ssl", "crypto"):
+                if not any(is_runtime_library(name, library) for name in paths):
+                    raise ValueError(f"repaired wheel is missing the native runtime library {library}")
 
         if not any("cmake/fmt/" in name and name.endswith("fmt-config.cmake") for name in paths):
             raise ValueError("wheel is missing the fmt CMake package required by the installed SDK")

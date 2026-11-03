@@ -19,7 +19,9 @@ The frame extension adds scalar and time series types. Its examples use
 
 ### Web
 
-Build HG with the web option. Python also requires the Python option:
+The `hg-cpp` Python wheel includes the web extension. A C++ source build enables it
+with `HG_BUILD_WEB=ON`. Python bindings in a source build also require
+`HG_BUILD_PYTHON=ON`:
 
 ```sh
 cmake -S . -B build/web -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DHG_BUILD_WEB=ON -DHG_BUILD_PYTHON=ON -DCMAKE_INSTALL_PREFIX=install
