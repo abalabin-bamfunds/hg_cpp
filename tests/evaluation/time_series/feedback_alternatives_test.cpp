@@ -1,5 +1,6 @@
 #include <hg/feedback.hpp>
 #include <hg/graph.hpp>
+#include <hg/nested.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <hg/scalar/bundle/value.hpp>
@@ -15,60 +16,12 @@ template <template <typename, auto...> typename Field> struct FeedbackEvent {
     Field<symbol> kind;
 };
 
-template <template <typename, auto...> typename Field>
-struct SmallFeedbackEvent : schema_extends<FeedbackEvent, Field> {
-    Field<i64> sequence;
-};
-
-template <template <typename, auto...> typename Field>
-struct LargeFeedbackEvent : schema_extends<SmallFeedbackEvent, Field> {
-    Field<double> amount;
-    Field<symbol> topic;
-    Field<i64> detail_count;
-};
-
-const auto publish_event = node([](In<TS<i64>> selection,
-                                   Scalar<Bundle<FeedbackEvent>> base,
-                                   Scalar<Bundle<SmallFeedbackEvent>> small,
-                                   Scalar<Bundle<LargeFeedbackEvent>> large,
-                                   Out<TS<Bundle<FeedbackEvent>>> output) {
-    switch (*selection) {
-        case 0: output.set(base); break;
-        case 1: output.set(small); break;
-        case 2: output.set(large); break;
-    }
-});
-
-void check_base_event(const std::optional<ScalarValue<Bundle<FeedbackEvent>>> &actual,
-                      const ScalarValue<Bundle<FeedbackEvent>> &expected) {
+template <typename Expected>
+void check_event(const std::optional<ScalarValue<Bundle<FeedbackEvent>>> &actual,
+                 const Expected &expected) {
     REQUIRE(actual.has_value());
     CHECK(&actual->type() == &expected.type());
-
-    const auto event = scalar_cast<Bundle<FeedbackEvent>>(actual->view());
-    CHECK(scalar_cast<symbol>(event[0]).value() == scalar_cast<symbol>(expected.view()[0]).value());
-}
-
-void check_small_event(const std::optional<ScalarValue<Bundle<FeedbackEvent>>> &actual,
-                       const ScalarValue<Bundle<SmallFeedbackEvent>> &expected) {
-    REQUIRE(actual.has_value());
-    CHECK(&actual->type() == &expected.type());
-
-    const auto event = scalar_cast<Bundle<SmallFeedbackEvent>>(actual->view());
-    CHECK(scalar_cast<symbol>(event[0]).value() == symbol{"small"});
-    CHECK(scalar_cast<i64>(event[1]).value() == scalar_cast<i64>(expected.view()[1]).value());
-}
-
-void check_large_event(const std::optional<ScalarValue<Bundle<FeedbackEvent>>> &actual,
-                       const ScalarValue<Bundle<LargeFeedbackEvent>> &expected) {
-    REQUIRE(actual.has_value());
-    CHECK(&actual->type() == &expected.type());
-
-    const auto event = scalar_cast<Bundle<LargeFeedbackEvent>>(actual->view());
-    CHECK(scalar_cast<symbol>(event[0]).value() == symbol{"large"});
-    CHECK(scalar_cast<i64>(event[1]).value() == scalar_cast<i64>(expected.view()[1]).value());
-    CHECK(scalar_cast<double>(event[2]).value() == scalar_cast<double>(expected.view()[2]).value());
-    CHECK(scalar_cast<symbol>(event[3]).value() == scalar_cast<symbol>(expected.view()[3]).value());
-    CHECK(scalar_cast<i64>(event[4]).value() == scalar_cast<i64>(expected.view()[4]).value());
+    CHECK(actual->view().equals(expected));
 }
 
 }  // namespace
@@ -83,12 +36,40 @@ TEST_CASE("feedback delays a base Bundle by one cycle",
         return wp<TS<Bundle<FeedbackEvent>>>{delayed};
     };
 
-    const auto actual = run_graph(graph, input<TS<Bundle<FeedbackEvent>>>({base}));
+    const auto actual = run_graph(graph, {base});
 
     REQUIRE(actual.size() == 2);
     CHECK_FALSE(actual[0].has_value());
-    check_base_event(actual[1], base);
+    check_event(actual[1], base);
 }
+
+namespace {
+
+template <template <typename, auto...> typename Field>
+struct SmallFeedbackEvent : schema_extends<FeedbackEvent, Field> {
+    Field<i64> sequence;
+};
+
+template <template <typename, auto...> typename Field>
+struct LargeFeedbackEvent : schema_extends<SmallFeedbackEvent, Field> {
+    Field<double> amount;
+    Field<symbol> topic;
+    Field<i64> detail_count;
+};
+
+const auto publish_event = node([](i64 selection,
+                                   Scalar<Bundle<FeedbackEvent>> base,
+                                   Scalar<Bundle<SmallFeedbackEvent>> small,
+                                   Scalar<Bundle<LargeFeedbackEvent>> large,
+                                   Out<TS<Bundle<FeedbackEvent>>> output) {
+    switch (selection) {
+        case 0: output.set(base); break;
+        case 1: output.set(small); break;
+        case 2: output.set(large); break;
+    }
+});
+
+}  // namespace
 
 TEST_CASE("feedback preserves a small derived Bundle",
           "[feature:feedback][series:value][scalar:hierarchical][schema:named]"
@@ -107,7 +88,7 @@ TEST_CASE("feedback preserves a small derived Bundle",
 
     REQUIRE(actual.size() == 2);
     CHECK_FALSE(actual[0].has_value());
-    check_small_event(actual[1], small);
+    check_event(actual[1], small);
 }
 
 TEST_CASE("feedback preserves a large derived Bundle",
@@ -127,7 +108,7 @@ TEST_CASE("feedback preserves a large derived Bundle",
 
     REQUIRE(actual.size() == 2);
     CHECK_FALSE(actual[0].has_value());
-    check_large_event(actual[1], large);
+    check_event(actual[1], large);
 }
 
 TEST_CASE("feedback switches concrete Bundle alternatives across sparse updates",
@@ -143,16 +124,15 @@ TEST_CASE("feedback switches concrete Bundle alternatives across sparse updates"
         return wp<TS<Bundle<FeedbackEvent>>>{delayed};
     };
 
-    const auto actual = run_graph(
-        graph, input<TS<i64>>({0, literal::SKIP, 2, literal::SKIP, 1}));
+    const auto actual = run_graph(graph, {0, literal::SKIP, 2, literal::SKIP, 1});
 
     REQUIRE(actual.size() == 6);
     CHECK_FALSE(actual[0].has_value());
-    check_base_event(actual[1], base);
+    check_event(actual[1], base);
     CHECK_FALSE(actual[2].has_value());
-    check_large_event(actual[3], large);
+    check_event(actual[3], large);
     CHECK_FALSE(actual[4].has_value());
-    check_small_event(actual[5], small);
+    check_event(actual[5], small);
 }
 
 TEST_CASE("feedback preserves a derived Bundle sampled through a reference",
@@ -178,8 +158,8 @@ TEST_CASE("feedback preserves a derived Bundle sampled through a reference",
 
     REQUIRE(actual.size() == 3);
     CHECK_FALSE(actual[0].has_value());
-    check_large_event(actual[1], large);
-    check_small_event(actual[2], small);
+    check_event(actual[1], large);
+    check_event(actual[2], small);
 }
 
 TEST_CASE("a nested graph delays and preserves derived Bundle alternatives",
@@ -196,13 +176,13 @@ TEST_CASE("a nested graph delays and preserves derived Bundle alternatives",
             return wp<TS<Bundle<FeedbackEvent>>>{delayed};
         });
     const auto tested = [&](wp<TS<i64>> selection) {
-        return delayed_graph(publish_event(selection, base, small, large));
+        return nested(delayed_graph, operators::const_(true), publish_event(selection, base, small, large));
     };
 
     const auto actual = run_graph(tested, {1, 2});
 
     REQUIRE(actual.size() == 3);
     CHECK_FALSE(actual[0].has_value());
-    check_small_event(actual[1], small);
-    check_large_event(actual[2], large);
+    check_event(actual[1], small);
+    check_event(actual[2], large);
 }
