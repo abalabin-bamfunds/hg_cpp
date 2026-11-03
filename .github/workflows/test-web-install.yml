@@ -1,0 +1,142 @@
+name: Test installed web extension
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  install:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    env:
+      CMAKE_GENERATOR: Ninja
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: Ubuntu 24.04 / GCC 14
+            os: ubuntu-24.04
+            parallel: 2
+          - name: macOS 26 / AppleClang
+            os: macos-26
+            parallel: 1
+          - name: Windows / MSVC
+            os: windows-latest
+            parallel: 4
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Install Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes gcc-14 g++-14 libicu-dev libcurl4-openssl-dev libssl-dev
+          echo "CC=gcc-14" >> "$GITHUB_ENV"
+          echo "CXX=g++-14" >> "$GITHUB_ENV"
+      - name: Install macOS dependencies
+        if: runner.os == 'macOS'
+        shell: bash
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+          HOMEBREW_NO_INSTALL_CLEANUP: "1"
+        run: |
+          brew install curl icu4c openssl@3
+          echo "CC=/usr/bin/clang" >> "$GITHUB_ENV"
+          echo "CXX=/usr/bin/clang++" >> "$GITHUB_ENV"
+          echo "MACOSX_DEPLOYMENT_TARGET=26.0" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix curl):$(brew --prefix icu4c):$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$(brew --prefix curl)/lib:$(brew --prefix icu4c)/lib:$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
+      - name: Configure MSVC
+        if: runner.os == 'Windows'
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - name: Install Windows dependencies
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = $env:VCPKG_ROOT }
+          if (-not $vcpkgRoot -or -not (Test-Path "$vcpkgRoot/vcpkg.exe")) {
+            throw "Could not locate the runner's vcpkg installation"
+          }
+          & "$vcpkgRoot/vcpkg.exe" install icu "curl[openssl]" openssl --triplet x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg failed to install web dependencies ($LASTEXITCODE)" }
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "CMAKE_TOOLCHAIN_FILE=$vcpkgRoot/scripts/buildsystems/vcpkg.cmake" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+          "CMAKE_PREFIX_PATH=$vcpkgRoot/installed/x64-windows" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "PATH=$vcpkgRoot/installed/x64-windows/bin;$env:PATH" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "HG_TEST_DLL_DIR=$vcpkgRoot/installed/x64-windows/bin" | Out-File -FilePath $env:GITHUB_ENV -Append
+      - name: Install Python build and test tools
+        run: >-
+          python -m pip install --only-binary=:all:
+          "nanobind==3.1.0" "cmake>=3.31" "ninja==1.13.0" "pytest>=8,<9"
+      - name: Configure and install on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          prefix="$RUNNER_TEMP/hg-web-install"
+          cmake -S . -B build/web-install -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$prefix" \
+            -DPython_EXECUTABLE="$(command -v python)" \
+            -DHG_BUNDLE_FMT=ON -DHG_BUILD_PYTHON=ON -DHG_BUILD_WEB=ON -DBUILD_TESTING=OFF
+          cmake --build build/web-install --parallel ${{ matrix.parallel }}
+          cmake --install build/web-install
+      - name: Configure and install on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $prefix = Join-Path $env:RUNNER_TEMP "hg-web-install"
+          $python = (Get-Command python).Source
+          cmake -S . -B build/web-install -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            -DCMAKE_INSTALL_PREFIX="$prefix" `
+            -DCMAKE_TOOLCHAIN_FILE="$env:CMAKE_TOOLCHAIN_FILE" `
+            -DCMAKE_PREFIX_PATH="$env:CMAKE_PREFIX_PATH" `
+            -DPython_EXECUTABLE="$python" `
+            -DHG_BUNDLE_FMT=ON -DHG_BUILD_PYTHON=ON -DHG_BUILD_WEB=ON -DBUILD_TESTING=OFF
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed ($LASTEXITCODE)" }
+          cmake --build build/web-install --parallel ${{ matrix.parallel }}
+          if ($LASTEXITCODE -ne 0) { throw "CMake build failed ($LASTEXITCODE)" }
+          cmake --install build/web-install
+          if ($LASTEXITCODE -ne 0) { throw "CMake install failed ($LASTEXITCODE)" }
+          "$prefix/hgraph" | Out-File -FilePath $env:GITHUB_PATH -Append
+          "$prefix/hg_web" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Test installed SDK and Python web API on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        env:
+          PYTHONPATH: ${{ runner.temp }}/hg-web-install
+          NO_PROXY: 127.0.0.1,localhost
+        run: |
+          cd "$RUNNER_TEMP"
+          export no_proxy="$NO_PROXY"
+          python "$GITHUB_WORKSPACE/tools/test_installed_sdk.py" --prefix "$RUNNER_TEMP/hg-web-install" --web
+          python -m pytest -q "$GITHUB_WORKSPACE/extensions/web/tests_python"
+      - name: Test installed SDK and Python web API on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        env:
+          PYTHONPATH: ${{ runner.temp }}/hg-web-install
+          NO_PROXY: 127.0.0.1,localhost
+        run: |
+          Set-Location $env:RUNNER_TEMP
+          python "$env:GITHUB_WORKSPACE/tools/test_installed_sdk.py" --prefix "$env:RUNNER_TEMP/hg-web-install" --web
+          if ($LASTEXITCODE -ne 0) { throw "Installed SDK consumer failed ($LASTEXITCODE)" }
+          $env:HG_WEB_PYTHON_TESTS = "$env:GITHUB_WORKSPACE/extensions/web/tests_python"
+          python -c 'import os, pytest; dll_directory = os.add_dll_directory(os.environ["HG_TEST_DLL_DIR"]); raise SystemExit(pytest.main(["-q", os.environ["HG_WEB_PYTHON_TESTS"]]))'
+          if ($LASTEXITCODE -ne 0) { throw "Installed web Python tests failed ($LASTEXITCODE)" }

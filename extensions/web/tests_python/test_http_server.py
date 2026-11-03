@@ -13,7 +13,13 @@ import pytest
 
 
 def test_hg_web_imports_before_hgraph():
-    subprocess.run([sys.executable, "-c", "import hg_web; import hgraph"], check=True,
+    dll_directory = os.environ.get("HG_TEST_DLL_DIR")
+    dll_setup = (
+        f"import os; _dll_directory = os.add_dll_directory({dll_directory!r}); "
+        if os.name == "nt" and dll_directory
+        else ""
+    )
+    subprocess.run([sys.executable, "-c", dll_setup + "import hg_web; import hgraph"], check=True,
                    env=os.environ.copy(), timeout=5)
 
 

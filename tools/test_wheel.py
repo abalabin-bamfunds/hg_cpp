@@ -19,9 +19,12 @@ import os
 from pathlib import Path
 from sysconfig import get_paths
 import hgraph as hg
+import hg_web
 
 package_dir = Path(hg.__file__).resolve().parent
+web_package_dir = Path(hg_web.__file__).resolve().parent
 assert package_dir.is_relative_to(Path(get_paths()["purelib"]).resolve())
+assert web_package_dir.is_relative_to(Path(get_paths()["purelib"]).resolve())
 installed_distribution = distribution(os.environ["HG_DISTRIBUTION_NAME"])
 assert installed_distribution.metadata["Name"] == "hg-cpp"
 assert installed_distribution.version == os.environ["HG_DISTRIBUTION_VERSION"]
@@ -36,7 +39,7 @@ def graph(value: int) -> int:
     return increment(value)
 
 assert hg.run_graph(graph, [1, 4, None, 7]) == [2, 5, None, 8]
-print(f"Imported hgraph from {package_dir}; hg-cpp graph smoke passed")
+print(f"Imported hgraph from {package_dir} and hg_web from {web_package_dir}; graph smoke passed")
 '''
 
 

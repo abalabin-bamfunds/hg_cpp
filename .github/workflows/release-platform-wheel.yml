@@ -43,8 +43,9 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: "1"
           HOMEBREW_NO_INSTALL_CLEANUP: "1"
         run: |
-          brew install icu4c
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix icu4c)" >> "$GITHUB_ENV"
+          brew install curl icu4c openssl@3
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix curl):$(brew --prefix icu4c):$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+          echo "DYLD_LIBRARY_PATH=$(brew --prefix curl)/lib:$(brew --prefix icu4c)/lib:$(brew --prefix openssl@3)/lib" >> "$GITHUB_ENV"
           python -m pip install --upgrade --only-binary=:all: \
             "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" \
             "cmake>=3.31" "ninja==1.13.0" "abi3audit==0.0.26" \
@@ -66,8 +67,8 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
-          & "$env:VCPKG_ROOT/vcpkg.exe" install icu --triplet x64-windows
-          if ($LASTEXITCODE -ne 0) { throw "vcpkg failed to install ICU (exit $LASTEXITCODE)" }
+          & "$env:VCPKG_ROOT/vcpkg.exe" install icu "curl[openssl]" openssl --triplet x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg failed to install web dependencies ($LASTEXITCODE)" }
           if (-not (Test-Path "$env:VCPKG_ROOT/installed/x64-windows/include/unicode/utypes.h")) {
             throw "vcpkg did not install ICU headers for x64-windows"
           }
@@ -85,6 +86,10 @@ jobs:
         run: |
           "CMAKE_GENERATOR=Ninja" | Out-File -FilePath $env:GITHUB_ENV -Append
           "CMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+          "CMAKE_PREFIX_PATH=$env:VCPKG_ROOT/installed/x64-windows" |
+            Out-File -FilePath $env:GITHUB_ENV -Append
+          "PATH=$env:VCPKG_ROOT/installed/x64-windows/bin;$env:PATH" |
             Out-File -FilePath $env:GITHUB_ENV -Append
           "CMAKE_ARGS=-DVCPKG_TARGET_TRIPLET=x64-windows -DCMAKE_BUILD_TYPE=Release" |
             Out-File -FilePath $env:GITHUB_ENV -Append

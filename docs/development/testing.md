@@ -812,6 +812,20 @@ For each reusable node and graph, test:
 - WebSocket server and client schema wiring, binary message exchange, subprotocol negotiation, and reconnect
 - WebSocket rejected handshakes, pending-handshake cancellation, URL validation, and transport failures
 
+### Installed SDK
+
+`tools/test_installed_sdk.py` without arguments builds and runs consumers against
+the installed Python wheel. To verify a CMake install that includes the web
+extension, pass its prefix and `--web`:
+
+```sh
+python tools/test_installed_sdk.py --prefix /path/to/install --web
+```
+
+This also checks that `hg_web` and `hgraph` import from that prefix. Run the web
+Python tests from outside the source and build directories with only the install
+prefix on `PYTHONPATH`.
+
 ### Performance and portability
 
 - public and runtime object sizes

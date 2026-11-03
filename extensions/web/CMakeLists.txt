@@ -61,6 +61,7 @@ set_target_properties(
         CXX_EXTENSIONS OFF
         WINDOWS_EXPORT_ALL_SYMBOLS ON
         EXPORT_NAME web
+        INSTALL_RPATH "${native_library_install_rpath}"
         VERSION ${PROJECT_VERSION}
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )
@@ -75,7 +76,7 @@ install(
 install(DIRECTORY include/ DESTINATION "${CMAKE_INSTALL_INCLUDEDIR}")
 
 if(HG_BUILD_PYTHON)
-    find_package(Python 3.13 COMPONENTS Interpreter Development.Module Development.SABIModule REQUIRED)
+    find_package(Python 3.12 COMPONENTS Interpreter Development.Module Development.SABIModule REQUIRED)
     if(APPLE)
         set(HG_WEB_PYTHON_BUILD_RPATH
             "@loader_path/../..;@loader_path/../../../../bindings/python;@loader_path/../../../..")
