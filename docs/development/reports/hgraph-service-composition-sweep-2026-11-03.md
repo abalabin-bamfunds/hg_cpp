@@ -127,6 +127,26 @@ this upstream recursive pattern requires a design decision about the reply
 boundary. The hidden `[.][repro]` case asserts the intended successful
 trace. No graph evaluation starts, and no production code changed.
 
+## Verification
+
+The batch adds 12 test cases: six service-composition cases and six
+hierarchical-scalar feedback cases. Eleven pass; the recursive service case
+is a hidden reproduction. The multiservice case runs all 18 selected interface
+orders.
+
+The focused runner includes the new cases and their existing service,
+multiservice, subscription, reference-service, and feedback neighbors:
+
+- Ordinary run: **96 cases, 249 assertions passed**.
+- Explicit recursive reproduction: **one case fails** with the dependency
+  cycle above.
+- Structured coverage tags validate with `tools/test_coverage.py --check`.
+- `git diff --check`, the new C++ files' 120-column limit, and the report/index
+  local link targets and anchors pass.
+
+Both new sources are registered in the normal CMake test targets. The full HG
+suite was not run for this tests-only batch.
+
 ## Scope limits
 
 This batch reviews selected graph patterns rather than executing the complete

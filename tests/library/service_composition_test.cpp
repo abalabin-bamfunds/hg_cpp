@@ -248,6 +248,7 @@ TEST_CASE("service wiring preserves client order across mixed implementations",
 TEST_CASE("a request reply service can call itself until its request reaches zero",
           "[.][repro][feature:service][feature:feedback][feature:nested-graph][series:tsd][series:value]") {
     const auto add_until_zero = service<auto(TS<i64>)->TS<i64>>{"add_until_zero", {"value"}};
+
     const auto add_one = node([](i64 value) { return value + 1; });
 
     const auto base_case = graph("name"_n = "service_base_case", [](wp<TS<i64>>) {
@@ -283,6 +284,7 @@ TEST_CASE("a service installation input stays bound to the root across map wirin
           "[feature:service][feature:reference][feature:map][feature:nested-graph]"
           "[series:tsd][series:value][shape:nested]") {
     const auto contextual_value = reference_service<auto()->TS<i64>>{"contextual_value"};
+
     const auto add = node([](i64 request, i64 child_setting, i64 installed_setting) {
         return request + child_setting + installed_setting;
     });
@@ -318,6 +320,7 @@ TEST_CASE("mapped subscription clients handle late keys and recreation",
           "[series:tss][series:tsd][series:value][transition:addition][transition:removal]") {
     const auto lookup =
         subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{"mapped_lookup", {"key"}};
+
     const auto answer = node([](In<TSS<i64>> keys, Out<TSD<i64, TS<i64>>> replies) {
         keys.for_each_removed([&](const auto &key) { replies.erase(key); });
         keys.for_each_added([&](const auto &key) { replies[key].set(*key * 10); });

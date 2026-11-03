@@ -148,6 +148,7 @@ TEST_CASE("feedback preserves a derived Bundle sampled through a reference",
     const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
     const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
     const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
+
     const auto copy_value = node([](In<TS<Bundle<FeedbackEvent>>> input,
                                     Out<TS<Bundle<FeedbackEvent>>> output) {
         output.set(input.value());
@@ -176,6 +177,7 @@ TEST_CASE("a nested graph delays and preserves derived Bundle alternatives",
     const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
     const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
     const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
+
     const auto delayed_graph = graph(
         "name"_n = "feedback_bundle_nested",
         [](wp<TS<Bundle<FeedbackEvent>>> input) {
@@ -183,6 +185,7 @@ TEST_CASE("a nested graph delays and preserves derived Bundle alternatives",
             delayed = input;
             return wp<TS<Bundle<FeedbackEvent>>>{delayed};
         });
+
     const auto tested = [&](wp<TS<i64>> selection) {
         return nested(delayed_graph, operators::const_(true), publish_event(selection, base, small, large));
     };
