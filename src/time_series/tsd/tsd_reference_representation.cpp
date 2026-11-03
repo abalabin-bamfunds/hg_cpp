@@ -117,11 +117,6 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
         return representation(value).is_modified_item(last_updated, id);
     }
 
-    ItemLayout item_layout(item_id_t id) const override {
-        (void)id;
-        throw std::logic_error{"a TSD reference representation has no packed output layout"};
-    }
-
     std::size_t item_count(const void *value) const override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();

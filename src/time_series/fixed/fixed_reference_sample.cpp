@@ -63,10 +63,6 @@ class SampledFixedCollectionRuntimeType final : public TimeSeriesRuntimeType {
         return *cache.back().runtime_type;
     }
 
-    ItemLayout item_layout(item_id_t) const override {
-        throw std::logic_error{"a sampled fixed collection has no packed item layout"};
-    }
-
     const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const override {
         return declared_runtime_type_->item_runtime_type(id);
     }

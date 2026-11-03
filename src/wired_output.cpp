@@ -4,6 +4,7 @@
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/wiring_arguments.hpp>
 #include <hg/graph/wiring_error.hpp>
+#include <hg/time_series/time_series_runtime_type.hpp>
 #include "time_series/ref/ref_node.hpp"
 
 #include <algorithm>
@@ -256,6 +257,35 @@ WiringPoint GraphWiring::output_item(WiringPoint parent, item_id_t item, const T
 
     const auto node_index = outputs_[parent_index].node_index;
     return register_output({node_index, parent_index, item, &type, nullptr});
+}
+
+const TimeSeriesRuntimeType &GraphWiring::output_runtime_type(WiringPoint point) const {
+    if (!point.has_output()) {
+        throw WiringError{"a WiringPoint has no output"};
+    }
+    if (&point.graph() != this) {
+        throw WiringError{"a WiringPoint belongs to another GraphWiring"};
+    }
+
+    if (!point.record()->has_wired_output()) {
+        if (point.record()->input_binding(point.type())) {
+            return resolve_time_series_runtime_type(point.type());
+        }
+        throw WiringError{"a WiringPoint has no wired output or input binding"};
+    }
+
+    const auto find_runtime_type = [&](auto &&self, std::size_t output_index) -> const TimeSeriesRuntimeType & {
+        const auto &output = outputs_[output_index];
+        if (output.parent == WiredOutput::npos) {
+            if (output.runtime_type != nullptr) {
+                return *output.runtime_type;
+            }
+            return resolve_time_series_runtime_type(*output.type);
+        }
+        return self(self, output.parent).item_layout(output.item).runtime_type;
+    };
+
+    return find_runtime_type(find_runtime_type, output_index(point));
 }
 
 WiringPoint GraphWiring::materialisation_form(WiringPoint point, const TimeSeriesType &target_type) {

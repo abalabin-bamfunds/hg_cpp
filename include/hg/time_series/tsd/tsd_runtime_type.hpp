@@ -227,12 +227,12 @@ class TimeSeriesDictionaryRuntimeType : public TimeSeriesRuntimeType {
         return item_state.valid();
     }
 
-    ItemLayout item_layout(item_id_t id) const override {
+    std::optional<ItemLayout> try_item_layout(item_id_t id) const override {
         if (id != key_set_item_id) {
-            throw std::out_of_range{"time series dictionary item is not in packed output storage"};
+            return std::nullopt;
         }
-        return {*keys_, time_series_dict_storage::key_last_updated_offset(),
-                time_series_dict_storage::key_value_offset()};
+        return ItemLayout{*keys_, time_series_dict_storage::key_last_updated_offset(),
+                          time_series_dict_storage::key_value_offset()};
     }
 
     std::size_t item_count(const void *value) const override {

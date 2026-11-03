@@ -234,10 +234,6 @@ void register_time_series_runtime_type(const TimeSeriesRuntimeType &runtime_type
     }
 }
 
-TimeSeriesRuntimeType::ItemLayout TimeSeriesRuntimeType::item_layout(item_id_t) const {
-    throw std::out_of_range{"time series has no packed item layout"};
-}
-
 void TimeSeriesRuntimeType::invalidate_output(const details::OutputState &output) const {
     invalidate_output_value(output);
 }

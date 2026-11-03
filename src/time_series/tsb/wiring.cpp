@@ -128,6 +128,13 @@ const TimeSeriesType &time_series_bundle_field_type(const WiringArgument &argume
     return type;
 }
 
+WiringPoint reference_bundle_field(WiringPoint bundle, util::symbol name) {
+    const auto &type = type_cast<TimeSeriesBundleType>(bundle.type().target_type());
+    const auto &reference_type = time_series_reference_type(type, TimeSeriesGuarantee::const_);
+    const auto reference = bundle.record()->wiring().materialize(bundle, reference_type);
+    return static_cast<WiringPoint>(operators::getattr(reference, name));
+}
+
 class FreeTimeSeriesBundleWiringRecord final : public WiringRecord {
   public:
     FreeTimeSeriesBundleWiringRecord(const TimeSeriesBundleType &type, std::vector<WiringArgument> fields)
@@ -186,7 +193,8 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
   public:
     TimeSeriesBundleFieldWiringRecord(WiringPoint bundle, const TimeSeriesBundleType &type,
                                       std::size_t index)
-        : WiringRecord{type.item_type(index)}, bundle_{bundle}, field_{type.item_id(index)} {}
+        : WiringRecord{type.item_type(index)}, bundle_{bundle}, field_{type.item_id(index)},
+          name_{type.item_name(index)} {}
 
     bool materialisation_ready_impl() const noexcept override { return bundle_.record()->materialisation_ready(); }
 
@@ -200,12 +208,18 @@ class TimeSeriesBundleFieldWiringRecord final : public WiringRecord {
     WiringPoint materialize(const TimeSeriesType &requested_type) const override {
         auto &graph_wiring = wiring();
         const auto bundle = graph_wiring.materialize(bundle_, bundle_.type());
+        const auto &runtime_type = graph_wiring.output_runtime_type(bundle);
+        if (!bundle.record()->has_wired_output() || !runtime_type.try_item_layout(field_)) {
+            const auto field = reference_bundle_field(bundle, name_);
+            return graph_wiring.materialize(field, requested_type);
+        }
         const auto field = graph_wiring.output_item(bundle, field_, type());
         return graph_wiring.materialize(field, requested_type);
     }
 
     WiringPoint bundle_;
     item_id_t field_;
+    util::symbol name_;
 };
 
 class TimeSeriesBundleVariadicWiringOperations final : public VariadicWiringOperations {
@@ -420,10 +434,8 @@ WiringArgument time_series_bundle_argument(WiringPoint bundle, std::size_t index
         return std::move(*argument);
     }
 
-    if (const auto input = record.input_binding(*type)) {
-        const auto &reference_type = time_series_reference_type(*type, TimeSeriesGuarantee::const_);
-        const auto reference = record.wiring().materialize(bundle, reference_type);
-        return WiringArgument{static_cast<WiringPoint>(operators::getattr(reference, type->item_name(index)))};
+    if (record.input_binding(*type)) {
+        return WiringArgument{reference_bundle_field(bundle, type->item_name(index))};
     }
 
     const auto field = type->item_id(index);

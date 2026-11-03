@@ -9,7 +9,9 @@
 #include <hg/type/time_series_type.hpp>
 
 #include <cstddef>
+#include <optional>
 #include <span>
+#include <stdexcept>
 
 namespace hg {
 
@@ -82,7 +84,13 @@ class TimeSeriesRuntimeType : public RuntimeType {
         return storage_supports_byte_copy_initialization();
     }
     bool is_reference() const noexcept { return has_runtime_type_flag(reference_flag); }
-    virtual ItemLayout item_layout(item_id_t) const;
+    virtual std::optional<ItemLayout> try_item_layout(item_id_t) const { return std::nullopt; }
+    ItemLayout item_layout(item_id_t id) const {
+        if (const auto layout = try_item_layout(id)) {
+            return *layout;
+        }
+        throw std::out_of_range{"time series has no packed item layout"};
+    }
     virtual const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const { return item_layout(id).runtime_type; }
     virtual std::size_t item_count(const void *) const;
     virtual ConstItem item(const void *, item_id_t) const;

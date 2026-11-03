@@ -43,7 +43,7 @@ class TimeSeriesBundleRuntimeTypeBase : public TimeSeriesRuntimeType {
                            std::ranges::all_of(items, &TimeSeriesRuntimeType::supports_byte_copy_initialization));
     }
 
-    ItemLayout item_layout(item_id_t id) const final { return fields_.at(id); }
+    std::optional<ItemLayout> try_item_layout(item_id_t id) const final { return fields_.at(id); }
 
     std::size_t item_count(const void *) const final { return fields_.size(); }
 

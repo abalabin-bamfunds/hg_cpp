@@ -73,7 +73,10 @@ time series as C++-defined collection types.
 Collection runtime types identify items with 32-bit item IDs. TSL and TSB use
 the item position. TSD uses its stable sparse-storage position and reserves
 `key_set_item_id` for its key set. Item enumeration returns current collection
-items. Packed output storage also provides each item's storage layout.
+items. `try_item_layout(id)` returns a child's layout when the parent stores it
+in packed output storage. It returns no value for child storage that is indirect
+or dynamically allocated. `item_layout(id)` requires packed storage and throws
+when the item has no packed layout.
 
 TSD input can enumerate keys, item IDs, values, key-value pairs, or ID-value
 pairs. Its [change selections](../../user/reference/input-views.md#dictionary-change-selections)

@@ -55,10 +55,6 @@ class FixedCollectionRepresentationRuntimeType final : public TimeSeriesRuntimeT
     FixedCollectionRepresentationRuntimeType(const TimeSeriesType &type, std::vector<Field> fields)
         : TimeSeriesRuntimeType{type, 0, 1, false, false, false}, fields_{std::move(fields)} {}
 
-    ItemLayout item_layout(item_id_t) const override {
-        throw std::logic_error{"a fixed collection reference representation has no packed output layout"};
-    }
-
     const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const override { return *fields_.at(id).runtime_type; }
 
     std::size_t item_count(const void *) const override { return fields_.size(); }

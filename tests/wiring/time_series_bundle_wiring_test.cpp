@@ -1,4 +1,5 @@
 #include <hg/graph.hpp>
+#include <hg/graph/compiled_graph.hpp>
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/wiring_context.hpp>
 #include <hg/node.hpp>
@@ -6,6 +7,7 @@
 #include <hg/testing/test_wiring.hpp>
 #include <hg/time_series/tsb/tsb.hpp>
 #include <hg/time_series/tsb/details/wiring.hpp>
+#include <hg/time_series/tsb/tsb_free_runtime_type.hpp>
 #include <hg/time_series/tsd/tsd_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
@@ -44,6 +46,27 @@ template <template <typename, auto...> typename Field> struct DictionaryFieldBun
 template <template <typename, auto...> typename Field> struct SharedBundle {
     Field<i64> count;
     Field<double> value;
+};
+
+template <template <typename, auto...> typename Field> struct InnerRuntimeBundle {
+    Field<TS<i64>> value;
+};
+
+template <template <typename, auto...> typename Field> struct OuterRuntimeBundle {
+    Field<TSB<InnerRuntimeBundle>> inner;
+};
+
+struct NonDefaultNestedBundleSource {
+    Out<TSB<OuterRuntimeBundle>> output;
+
+    static const TimeSeriesRuntimeType &output_runtime_type(const WiringArguments &) {
+        static const auto &inner_runtime = details::free_time_series_bundle_runtime_type(
+            TSB<InnerRuntimeBundle>::type());
+        static const auto items = std::array<const TimeSeriesRuntimeType *, 1>{&inner_runtime};
+        return details::time_series_bundle_runtime_type(TSB<OuterRuntimeBundle>::type(), items);
+    }
+
+    void evaluate() const {}
 };
 
 struct NamedScalarFixedGraph {
@@ -91,6 +114,7 @@ TEST_CASE("a typed TSB wiring point exposes typed fields",
     const auto context = WiringContext{wiring};
     const auto bundle = source();
     (void)wiring.complete_pending_wiring(static_cast<WiringPoint>(bundle));
+    CHECK(wiring.output_runtime_type(static_cast<WiringPoint>(bundle)).try_item_layout(0));
     const auto count = bundle->count;
 
     STATIC_CHECK(std::same_as<decltype(count), const wp<TS<i64>>>);
@@ -150,6 +174,55 @@ TEST_CASE("typed TSB field access reuses its wiring record",
 
     CHECK(static_cast<WiringPoint>(first).record() == static_cast<WiringPoint>(second).record());
     CHECK(wiring.outputs().size() == 1);
+}
+
+TEST_CASE("field selection from a materialized free TSB uses its runtime field binding",
+          "[feature:getattr][feature:wiring][series:tsb][representation:free][representation:reference]") {
+    const auto value_source = node([](Out<TS<i64>>) {});
+    const auto dictionary_source = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto value_sink = node([](In<TS<i64>>) {});
+    const auto dictionary_sink = node([](In<TSD<i64, TS<i64>>>) {});
+
+    auto wiring = GraphWiring{};
+    const auto context = WiringContext{wiring};
+    const auto fields = std::array{
+        WiringArgument{util::symbol{"value"}, value_source()},
+        WiringArgument{util::symbol{"dictionary"}, dictionary_source()},
+    };
+    const auto materialized = wiring.complete_pending_wiring(details::make_free_time_series_bundle(fields));
+
+    const auto &runtime_type = wiring.output_runtime_type(materialized);
+    CHECK_FALSE(runtime_type.try_item_layout(0));
+    CHECK_THROWS_AS(runtime_type.item_layout(0), std::out_of_range);
+
+    value_sink(details::time_series_bundle_field(materialized, util::symbol{"value"}));
+    dictionary_sink(details::time_series_bundle_field(materialized, util::symbol{"dictionary"}));
+    wiring.finalize();
+
+    const auto compiled = CompiledGraph{wiring};
+    CHECK(compiled.node_count() > 4);
+}
+
+TEST_CASE("nested bundle field selection uses the parent's selected runtime type",
+          "[feature:getattr][feature:wiring][series:tsb][representation:native][representation:free]") {
+    const auto source = node<NonDefaultNestedBundleSource>();
+    const auto sink = node([](In<TS<i64>>) {});
+    auto wiring = GraphWiring{};
+
+    const auto context = WiringContext{wiring};
+    const auto outer = wiring.complete_pending_wiring(static_cast<WiringPoint>(source()));
+    const auto &outer_runtime = wiring.output_runtime_type(outer);
+    REQUIRE(outer_runtime.try_item_layout(0));
+
+    const auto inner = details::time_series_bundle_field(outer, 0);
+    const auto materialized_inner = wiring.materialize(inner, inner.type());
+    const auto &inner_runtime = wiring.output_runtime_type(materialized_inner);
+    CHECK_FALSE(inner_runtime.try_item_layout(0));
+
+    sink(details::time_series_bundle_field(materialized_inner, util::symbol{"value"}));
+    wiring.finalize();
+
+    CHECK_NOTHROW(CompiledGraph{wiring});
 }
 
 TEST_CASE("typed field access preserves free TSB sources",

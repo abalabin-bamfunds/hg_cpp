@@ -27,13 +27,13 @@ class FixedTimeSeriesListRuntimeType final : public TimeSeriesRuntimeType {
     FixedTimeSeriesListRuntimeType(const TimeSeriesListType &type, const TimeSeriesRuntimeType &item) noexcept
         : FixedTimeSeriesListRuntimeType{type, item, make_layout(type, item)} {}
 
-    ItemLayout item_layout(item_id_t id) const override {
+    std::optional<ItemLayout> try_item_layout(item_id_t id) const override {
         if (id >= list_type().item_count()) {
             throw std::out_of_range{"time series list item index is out of range"};
         }
 
         const auto item = first_item_offset_ + id * item_stride_;
-        return {*item_, item, item + value_offset_};
+        return ItemLayout{*item_, item, item + value_offset_};
     }
 
     std::size_t item_count(const void *) const override { return list_type().item_count(); }

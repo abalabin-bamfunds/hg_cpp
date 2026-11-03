@@ -199,6 +199,7 @@ class GraphWiring {
     [[nodiscard]] WiringPoint expand_materialisation(WiringPoint point, const TimeSeriesType &target_type);
     [[nodiscard]] WiringPoint materialize(WiringPoint point, const TimeSeriesType &type);
     [[nodiscard]] WiringPoint output_item(WiringPoint parent, item_id_t item, const TimeSeriesType &type);
+    const TimeSeriesRuntimeType &output_runtime_type(WiringPoint point) const;
     [[nodiscard]] std::size_t output_index(WiringPoint point) const;
     [[nodiscard]] std::size_t output_node_index(WiringPoint point) const;
     [[nodiscard]] std::optional<WiringPoint> find_output_item(std::size_t parent, item_id_t item) const;
