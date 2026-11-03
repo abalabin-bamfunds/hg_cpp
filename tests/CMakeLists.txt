@@ -93,6 +93,7 @@ add_executable(
     evaluation/time_series/tick_serializer_test.cpp
     evaluation/time_series/tick_format_test.cpp
     evaluation/time_series/feedback_test.cpp
+    evaluation/time_series/feedback_patterns_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/optional_input_test.cpp
@@ -252,6 +253,7 @@ add_executable(
     library/debounce_test.cpp
     library/overload_registration_test.cpp
     library/merge_test.cpp
+    library/reference_consumer_test.cpp
     library/running_test.cpp
     library/stateful_test.cpp
     library/stream_test.cpp
@@ -263,7 +265,8 @@ add_executable(
     value/scalar/test_scalar_provider.cpp
     library/tick_selection_test.cpp
     library/timed_test.cpp
-    library/tsd_transform_test.cpp)
+    library/tsd_transform_test.cpp
+    library/service_patterns_test.cpp)
 target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
 target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 target_compile_definitions(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
