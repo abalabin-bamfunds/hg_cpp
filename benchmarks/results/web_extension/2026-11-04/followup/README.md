@@ -81,11 +81,44 @@ including warmup and lifecycle, but consumes only 2.1 seconds of CPU time.
 Host CPU pressure is low during these runs. This is a wait rather than CPU
 saturation.
 
-Neither WebSocket runtime explicitly sets `TCP_NODELAY`. Nagle/delayed-ACK interaction
-is a candidate cause; no socket-option experiment was performed. Queued
+Neither WebSocket runtime explicitly sets `TCP_NODELAY` in these baseline
+measurements. Nagle/delayed-ACK interaction was a candidate cause. Queued
 64-byte messages also show long tails: window-64 p99 is 58.00 ms WS and
-54.61 ms WSS, compared with below 0.3 ms at window 1. A targeted socket-option
-comparison is the next diagnostic step.
+54.61 ms WSS, compared with below 0.3 ms at window 1.
+
+### `TCP_NODELAY` follow-up
+
+The WebSocket client socket and accepted server socket now enable
+`TCP_NODELAY`. The follow-up runs use five samples per protocol and case. The
+64 KiB/window-1 case measures 64 messages per sample; the window-64 cases
+measure 4,096 messages per sample.
+
+| Body | Window | Protocol | Median messages/s | Pooled p50 ms | Pooled p99 ms |
+|---|---:|---|---:|---:|---:|
+| 64 KiB | 1 | WS | 758 | 1.090 | 3.491 |
+| 64 KiB | 1 | WSS | 743 | 1.195 | 3.353 |
+| 64 B | 64 | WS | 23,988 | 2.258 | 6.320 |
+| 64 B | 64 | WSS | 21,280 | 2.631 | 6.596 |
+| 64 KiB | 64 | WS | 1,834 | 34.001 | 53.094 |
+| 64 KiB | 64 | WSS | 1,671 | 41.030 | 121.858 |
+
+For 64 KiB/window 1, the baseline measured 8.4 WS and 8.3 WSS messages/s,
+with pooled p50 of 117.81 and 118.53 ms. The follow-up p50 is about 1.1–1.2 ms.
+The baseline is from revision `a2f3d723d695eeca5e4399fb7cc850349c5dd0ef`; the
+follow-up tree is based on `0c3ad1734a6134f18893ace868a7c6a28dca3fe3` and
+includes the two socket-option changes above. Intervening engine changes are
+Python-only, and Python is disabled in this benchmark. This remains a
+cross-revision comparison, not an isolated socket-option comparison.
+
+The 64 B/window-64 pooled p99 values are lower than the baseline values, while
+the measured throughput is also lower. The 64 KiB/window-64 throughput is
+lower than baseline. Host load was high after these runs (load average 40.16;
+CPU `some avg10` 24.87), and pressure was not sampled during each case. Treat
+these window-64 differences as inconclusive. The 64 KiB/window-1 latency drop
+is large, but the cross-revision comparison does not isolate its cause.
+
+The HTTP client continues to use libcurl. The loaded libcurl is 8.20.0, which
+enables `TCP_NODELAY` by default.
 
 The original 4,096-message and subsequent 256-message 64 KiB/window-1 attempts
 were interrupted before a case completed because the measured rate implied
@@ -133,6 +166,11 @@ Raw results:
 - [WS/WSS 64 KiB, window 1](ws-64k-window1-64x5.jsonl)
 - [WS/WSS 64 KiB, window 64](ws-64k-window64-4096x5.jsonl)
 - [WS/WSS 64 KiB, window 256](ws-64k-window256-8192x5.jsonl)
+- [TCP_NODELAY WS/WSS 64 KiB, window 1](nodelay-64k-window1-64x5.jsonl)
+- [TCP_NODELAY WS/WSS 64 B, window 64](nodelay-64b-window64-4096x5.jsonl)
+- [TCP_NODELAY WS/WSS 64 KiB, window 64](nodelay-64k-window64-4096x5.jsonl)
+- [TCP_NODELAY one-sample diagnostic probe](nodelay-quick-64k-window1.jsonl)
+- [TCP_NODELAY environment and validation](nodelay-environment.txt)
 
 [Run environment snapshots](run-environment.txt) retain CPU pressure, load,
 time, and per-core samples grouped by their original capture names.
