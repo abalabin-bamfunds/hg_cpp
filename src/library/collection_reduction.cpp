@@ -4,6 +4,8 @@
 #include <hg/library/operators.hpp>
 #include <hg/node.hpp>
 #include <hg/overload.hpp>
+#include <hg/scalar/dict/scalar.hpp>
+#include <hg/scalar/dict/type.hpp>
 #include <hg/scalar/list/type.hpp>
 #include <hg/scalar/set/type.hpp>
 #include <hg/time_series/tsl/tsl_type.hpp>
@@ -142,6 +144,17 @@ void visit_collection_values(const In<TSD<KEY, TS<T, G>, G>, Validity> &values, 
 }
 
 template <InputValidity Validity, typename T, typename Function>
+void visit_collection_values(const In<TS<Dict<KEY, T>, G>, Validity> &values, Function &&function) {
+    if constexpr (Validity == InputValidity::optional) {
+        if (!values.valid()) {
+            return;
+        }
+    }
+
+    values.value_view().for_each([&](Scalar<KEY>, Scalar<T> item) { function(item.value()); });
+}
+
+template <InputValidity Validity, typename T, typename Function>
 void visit_collection_values(const In<TSS<T, G>, Validity> &values, Function &&function) {
     if (!values.valid()) {
         return;
@@ -178,6 +191,32 @@ auto calculate_collection_value(const Collection &values) {
 template <template <typename> typename COLLECTION, typename T, typename REDUCER, InputValidity VALIDITY>
 struct scalar_collection_reduction_impl {
     In<TS<COLLECTION<T>, G>, VALIDITY> values;
+    Out<TS<typename REDUCER::output_type, RESULT_G>> output;
+
+    static TimeSeriesGuarantee resolve(decltype(RESULT_G), const WiringArguments &arguments) {
+        if constexpr (std::same_as<REDUCER, sum_reducer<T>>) {
+            return sum_result_guarantee<VALIDITY>(arguments);
+        } else {
+            return result_guarantee(arguments);
+        }
+    }
+
+    void evaluate() const {
+        const auto result = calculate_collection_value<REDUCER, VALIDITY>(values);
+        if constexpr (requires { result.has_value(); }) {
+            if (result) {
+                output.set(*result);
+            } else {
+                output.invalidate();
+            }
+        } else {
+            output.set(result);
+        }
+    }
+};
+
+template <typename T, typename REDUCER, InputValidity VALIDITY> struct scalar_dict_reduction_impl {
+    In<TS<Dict<KEY, T>, G>, VALIDITY> values;
     Out<TS<typename REDUCER::output_type, RESULT_G>> output;
 
     static TimeSeriesGuarantee resolve(decltype(RESULT_G), const WiringArguments &arguments) {
@@ -275,6 +314,14 @@ struct sum_reduction_overloads {
     instantiate_overloads<sum_, sum_scalar_list_optional_family, i64, double> sum_scalar_list_optional;
     instantiate_overloads<sum_, sum_scalar_set_required_family, i64, double> sum_scalar_set_required;
     instantiate_overloads<sum_, sum_scalar_set_optional_family, i64, double> sum_scalar_set_optional;
+
+    template <typename T>
+    using sum_scalar_dict_required_family = scalar_dict_reduction_impl<T, sum_reducer<T>, required>;
+    template <typename T>
+    using sum_scalar_dict_optional_family = scalar_dict_reduction_impl<T, sum_reducer<T>, optional>;
+
+    instantiate_overloads<sum_, sum_scalar_dict_required_family, i64, double> sum_scalar_dict_required;
+    instantiate_overloads<sum_, sum_scalar_dict_optional_family, i64, double> sum_scalar_dict_optional;
 };
 
 struct min_reduction_overloads {
@@ -365,6 +412,14 @@ struct min_reduction_overloads {
     instantiate_overloads<min_, min_scalar_list_optional_family, i64, double> min_scalar_list_optional;
     instantiate_overloads<min_, min_scalar_set_required_family, i64, double> min_scalar_set_required;
     instantiate_overloads<min_, min_scalar_set_optional_family, i64, double> min_scalar_set_optional;
+
+    template <typename T>
+    using min_scalar_dict_required_family = scalar_dict_reduction_impl<T, minimum_reducer<T>, required>;
+    template <typename T>
+    using min_scalar_dict_optional_family = scalar_dict_reduction_impl<T, minimum_reducer<T>, optional>;
+
+    instantiate_overloads<min_, min_scalar_dict_required_family, i64, double> min_scalar_dict_required;
+    instantiate_overloads<min_, min_scalar_dict_optional_family, i64, double> min_scalar_dict_optional;
 };
 
 struct max_reduction_overloads {
@@ -455,6 +510,14 @@ struct max_reduction_overloads {
     instantiate_overloads<max_, max_scalar_list_optional_family, i64, double> max_scalar_list_optional;
     instantiate_overloads<max_, max_scalar_set_required_family, i64, double> max_scalar_set_required;
     instantiate_overloads<max_, max_scalar_set_optional_family, i64, double> max_scalar_set_optional;
+
+    template <typename T>
+    using max_scalar_dict_required_family = scalar_dict_reduction_impl<T, maximum_reducer<T>, required>;
+    template <typename T>
+    using max_scalar_dict_optional_family = scalar_dict_reduction_impl<T, maximum_reducer<T>, optional>;
+
+    instantiate_overloads<max_, max_scalar_dict_required_family, i64, double> max_scalar_dict_required;
+    instantiate_overloads<max_, max_scalar_dict_optional_family, i64, double> max_scalar_dict_optional;
 };
 
 struct mean_reduction_overloads {
@@ -545,6 +608,14 @@ struct mean_reduction_overloads {
     instantiate_overloads<mean, mean_scalar_list_optional_family, i64, double> mean_scalar_list_optional;
     instantiate_overloads<mean, mean_scalar_set_required_family, i64, double> mean_scalar_set_required;
     instantiate_overloads<mean, mean_scalar_set_optional_family, i64, double> mean_scalar_set_optional;
+
+    template <typename T>
+    using mean_scalar_dict_required_family = scalar_dict_reduction_impl<T, mean_reducer<T>, required>;
+    template <typename T>
+    using mean_scalar_dict_optional_family = scalar_dict_reduction_impl<T, mean_reducer<T>, optional>;
+
+    instantiate_overloads<mean, mean_scalar_dict_required_family, i64, double> mean_scalar_dict_required;
+    instantiate_overloads<mean, mean_scalar_dict_optional_family, i64, double> mean_scalar_dict_optional;
 };
 
 } // namespace

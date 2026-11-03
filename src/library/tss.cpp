@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <cstddef>
+#include <utility>
 #include <vector>
 
 namespace hg::operators::details {
@@ -506,6 +507,47 @@ struct scalar_set_overloads {
         bit_xor_set_optional;
 };
 
+struct scalar_dict_overloads {
+    using LHS_VALUE = ScalarVariable<"SCALAR_DICT_SUB_LHS_VALUE">;
+    using RHS_VALUE = ScalarVariable<"SCALAR_DICT_SUB_RHS_VALUE">;
+
+    template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE> struct sub_dict_impl {
+        In<TS<Dict<K, LHS_VALUE>, G>, VALIDITY> lhs;
+        In<TS<Dict<K, RHS_VALUE>, G>, VALIDITY> rhs;
+        Out<TS<Dict<K, LHS_VALUE>, OUTPUT_GUARANTEE>> output;
+
+        void evaluate() const {
+            using Entry = std::pair<Scalar<K>, Scalar<LHS_VALUE>>;
+            auto entries = std::vector<Entry>{};
+
+            if constexpr (VALIDITY == optional) {
+                if (!lhs.valid()) {
+                    output.set(entries);
+                    return;
+                }
+
+                if (!rhs.valid()) {
+                    output.copy(lhs);
+                    return;
+                }
+            }
+
+            const auto lhs_values = lhs.value_view();
+            const auto rhs_values = rhs.value_view();
+            entries.reserve(lhs_values.size());
+            lhs_values.for_each([&](Scalar<K> key, Scalar<LHS_VALUE> value) {
+                if (!rhs_values.contains(key)) {
+                    entries.emplace_back(key, value);
+                }
+            });
+            output.set(entries);
+        }
+    };
+
+    overload<sub, sub_dict_impl<required, G>> sub_dict_required;
+    overload<sub, sub_dict_impl<optional, TimeSeriesGuarantee::ordinary>> sub_dict_optional;
+};
+
 struct tsd_set_overloads {
     template <typename KEY_OPERATION>
     static wp<TSD<K, REF<TS_T>>> select_keys(auto lhs, auto rhs, KEY_OPERATION key_operation) {
@@ -698,6 +740,7 @@ struct tsd_set_overloads {
 void register_tss_operators() {
     register_overloads<tss_overloads>();
     register_overloads<scalar_set_overloads>();
+    register_overloads<scalar_dict_overloads>();
     register_overloads<tsd_set_overloads>();
 }
 

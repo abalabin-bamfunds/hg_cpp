@@ -191,7 +191,7 @@ def test_scalar_set_operations_follow_reference_retargeting():
     ]
 
 
-def test_scalar_list_and_set_integer_sums_wrap_at_i64_width():
+def test_scalar_collection_integer_sums_wrap_at_i64_width():
     @hg.graph
     def list_sum(values: hg.TS[tuple[int, ...]]) -> hg.TS[int]:
         return hg.operators.sum_(values)
@@ -200,7 +200,103 @@ def test_scalar_list_and_set_integer_sums_wrap_at_i64_width():
     def set_sum(values: hg.TS[frozenset[int]]) -> hg.TS[int]:
         return hg.operators.sum_(values)
 
+    @hg.graph
+    def dictionary_sum(values: hg.TS[dict[int, int]]) -> hg.TS[int]:
+        return hg.operators.sum_(values)
+
     largest_i64 = (1 << 63) - 1
     smallest_i64 = -(1 << 63)
     assert hg.run_graph(list_sum, [(largest_i64, 1)]) == [smallest_i64]
     assert hg.run_graph(set_sum, [{largest_i64, 1}]) == [smallest_i64]
+    assert hg.run_graph(dictionary_sum, [{100: largest_i64, 200: 1}]) == [smallest_i64]
+
+
+def test_scalar_dictionary_reductions_use_values_and_handle_empty_or_invalid_roots():
+    @hg.graph
+    def sum_values(values: hg.TS[dict[int, int]]) -> hg.TS[int]:
+        return hg.operators.sum_(values)
+
+    @hg.graph
+    def minimum(values: hg.TS[dict[int, int]]) -> hg.TS[int]:
+        return hg.operators.min_(values)
+
+    @hg.graph
+    def maximum(values: hg.TS[dict[int, int]]) -> hg.TS[int]:
+        return hg.operators.max_(values)
+
+    @hg.graph
+    def mean(values: hg.TS[dict[int, int]]) -> hg.TS[float]:
+        return hg.operators.mean(values)
+
+    @hg.graph
+    def optional_sum(values: hg.TS[dict[int, int]]) -> hg.TS[int]:
+        return hg.operators.sum_(hg.opt(values))
+
+    values = [{101: 7, 202: 2}, {}, hg.INVALID, {303: -4, 404: 8}]
+    assert hg.run_graph(sum_values, values) == [9, 0, None, 4]
+    assert hg.run_graph(minimum, values) == [2, None, None, -4]
+    assert hg.run_graph(maximum, values) == [7, None, None, 8]
+    assert hg.run_graph(mean, values) == [4.5, None, None, 2.0]
+    assert hg.run_graph(optional_sum, values) == [9, 0, 0, 4]
+
+
+def test_scalar_dictionary_boolean_reductions_use_empty_identities():
+    @hg.graph
+    def all_values(values: hg.TS[dict[int, bool]]) -> hg.TS[bool]:
+        return hg.operators.all_(values)
+
+    @hg.graph
+    def any_values(values: hg.TS[dict[int, bool]]) -> hg.TS[bool]:
+        return hg.operators.any_(values)
+
+    @hg.graph
+    def optional_all(values: hg.TS[dict[int, bool]]) -> hg.TS[bool]:
+        return hg.operators.all_(hg.opt(values))
+
+    @hg.graph
+    def optional_any(values: hg.TS[dict[int, bool]]) -> hg.TS[bool]:
+        return hg.operators.any_(hg.opt(values))
+
+    values = [{100: True, 200: False}, {}, hg.INVALID, {300: True}]
+    assert hg.run_graph(all_values, values) == [False, True, None, True]
+    assert hg.run_graph(any_values, values) == [True, False, None, True]
+    assert hg.run_graph(optional_all, values) == [False, True, True, True]
+    assert hg.run_graph(optional_any, values) == [True, False, False, True]
+
+
+def test_scalar_dictionary_subtraction_matches_keys_and_preserves_nested_values():
+    @hg.graph
+    def difference(
+        lhs: hg.TS[dict[str, tuple[int, int]]], rhs: hg.TS[dict[str, str]]
+    ) -> hg.TS[dict[str, tuple[int, int]]]:
+        return lhs - rhs
+
+    @hg.graph
+    def optional_difference(
+        lhs: hg.TS[dict[str, tuple[int, int]]], rhs: hg.TS[dict[str, str]]
+    ) -> hg.TS[dict[str, tuple[int, int]]]:
+        return hg.opt(lhs) - rhs
+
+    @hg.graph
+    def optional_rhs_difference(
+        lhs: hg.TS[dict[str, tuple[int, int]]], rhs: hg.TS[dict[str, str]]
+    ) -> hg.TS[dict[str, tuple[int, int]]]:
+        return lhs - hg.opt(rhs)
+
+    lhs = [
+        {"remove": (1, 2), "keep": (3, 4)},
+        {"remove": (5, 6)},
+        hg.INVALID,
+        {"keep": (7, 8)},
+    ]
+    rhs = [{"remove": "ignored"}, {"keep": "ignored"}, {}, hg.INVALID]
+
+    assert hg.run_graph(difference, lhs, rhs) == [
+        {"keep": (3, 4)}, {"remove": (5, 6)}, None, None
+    ]
+    assert hg.run_graph(optional_difference, lhs, rhs) == [
+        {"keep": (3, 4)}, {"remove": (5, 6)}, {}, {"keep": (7, 8)}
+    ]
+    assert hg.run_graph(optional_rhs_difference, lhs, rhs) == [
+        {"keep": (3, 4)}, {"remove": (5, 6)}, {}, {"keep": (7, 8)}
+    ]
