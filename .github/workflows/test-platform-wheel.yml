@@ -18,6 +18,8 @@ jobs:
   test:
     name: Test ${{ inputs.os }} / Python ${{ matrix.python-version }}
     runs-on: ${{ inputs.os }}
+    env:
+      NO_PROXY: 127.0.0.1,localhost
     strategy:
       fail-fast: false
       matrix:
@@ -70,11 +72,11 @@ jobs:
       - name: Build and test installed SDK consumers on Unix
         if: runner.os != 'Windows'
         shell: bash
-        run: '"$HG_TEST_PYTHON" tools/test_installed_sdk.py'
+        run: '"$HG_TEST_PYTHON" tools/test_installed_sdk.py --web'
       - name: Build and test installed SDK consumers on Windows
         if: runner.os == 'Windows'
         shell: pwsh
-        run: '& $env:HG_TEST_PYTHON tools/test_installed_sdk.py'
+        run: '& $env:HG_TEST_PYTHON tools/test_installed_sdk.py --web'
       - name: Run full Python suite against installed wheel
         if: runner.os != 'Windows'
         shell: bash
@@ -84,3 +86,13 @@ jobs:
         if: runner.os == 'Windows'
         shell: pwsh
         run: '& $env:HG_TEST_PYTHON -I -m pytest -q "$env:GITHUB_WORKSPACE/bindings/python/tests"'
+      - name: Run web Python suite against installed wheel on Unix
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          export no_proxy="$NO_PROXY"
+          "$HG_TEST_PYTHON" -I -m pytest -q "$GITHUB_WORKSPACE/extensions/web/tests_python"
+      - name: Run web Python suite against installed wheel on Windows
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: '& $env:HG_TEST_PYTHON -I -m pytest -q "$env:GITHUB_WORKSPACE/extensions/web/tests_python"'

@@ -13,18 +13,23 @@ test = ["pytest>=8"]
 
 [tool.scikit-build]
 cmake.define.HG_BUILD_PYTHON = "ON"
+cmake.define.HG_BUILD_WEB = "ON"
 cmake.define.HG_BUNDLE_FMT = "ON"
 cmake.define.BUILD_TESTING = "OFF"
 cmake.define.CMAKE_INSTALL_LIBDIR = "lib"
-wheel.packages = ["bindings/python/python/hgraph"]
+wheel.packages = ["bindings/python/python/hgraph", "extensions/web/python/hg_web"]
 wheel.py-api = "cp312"
 sdist.include = [
   "CMakeLists.txt",
   "bindings/python/CMakeLists.txt",
-  "bindings/python/python/**",
+  "bindings/python/python/**/*.py",
   "bindings/python/src/**",
   "bindings/python/tests/extension_module.cpp",
   "cmake/**",
+  "extensions/web/CMakeLists.txt",
+  "extensions/web/include/**",
+  "extensions/web/python/hg_web/*.py",
+  "extensions/web/src/**",
   "include/**",
   "packaging/**",
   "pyproject.toml",
