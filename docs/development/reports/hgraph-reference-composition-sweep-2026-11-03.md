@@ -43,7 +43,7 @@ The ten cases are in
 | Direct dictionary selection before conversion | Provides a control case that asserts complete `Dict` snapshots directly. |
 | Free fixed list built from mapped selections | A reduction observes sparse item updates, invalidation, and revalidation. |
 | Free bundle recombined from mapped reference fields | Independent field counts reflect partial field updates. |
-| Switch outer dictionary before nested map selection | Changes to the inactive first source are ignored; switching back samples its re-added nested item. |
+| Switch outer dictionary before nested map selection | Selected values and event counts follow both sources. Updates to the inactive source alone produce no output; switching back samples its re-added nested item. |
 
 ## Findings
 
@@ -59,9 +59,24 @@ consumer tests, passes **45 cases and 45 assertions**. Structured coverage
 validation classifies 45 tests with no errors. `git diff --check` and the
 120-column check pass. The full HG test suite was not run.
 
-Test-source registration and the development index entry are handled by the
-integration lane. The new source is not yet part of the normal CMake test
-targets in this lane.
+The new source is registered in `hg_library_tests` and this report is linked
+from the development index.
+
+Combined integration verification includes this sweep, the
+[service queue sweep](hgraph-service-queue-sweep-2026-11-03.md), the
+[reduce composition sweep](hgraph-reduce-composition-sweep-2026-11-03.md), and
+existing tests in the affected areas. These groups contain distinct cases:
+
+| Focused group | Cases | Assertions | Result |
+| --- | ---: | ---: | --- |
+| Engine: references, collections, map, mesh, reduce, switch, nested graphs | 458 | 1,213 | Pass |
+| Library: references, streams, merge, collections, reductions | 281 | 531 | Pass |
+| Services, queues, and feedback | 161 | 651 | Pass |
+| Total | 900 | 2,395 | Pass |
+
+All 22 new cases have valid structured coverage tags. The complete library
+and service groups also pass tag validation. These focused runs do not
+replace a full-suite run.
 
 ## Scope limits
 

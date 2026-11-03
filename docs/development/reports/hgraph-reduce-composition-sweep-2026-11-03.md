@@ -9,11 +9,15 @@ changed.
 
 The upstream pins are hgraph 0.5.42 and the 0.8 development snapshot listed in
 the [service composition sweep](hgraph-service-composition-sweep-2026-11-03.md#sources).
+The 0.5 sources are `hgraph_unit_tests/_wiring/test_reduce.py` and
+`test_switch.py`. The 0.8 sources are `python/tests/ported/_wiring/test_reduce.py`,
+`test_switch.py`, `python/tests/test_reduce_zero_semantics.py`, and
+`tests/cpp/test_reduce.cpp`.
 
 | Source pattern | Existing HG coverage |
 | --- | --- |
-| 0.5 `test_reduce_map`; 0.8 `test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | [`reduce maps and combines nested dictionaries`](../../../tests/evaluation/reduce_test.cpp) and [`reduce maps a projected bundle of nested dictionaries`](../../../tests/evaluation/reduce_test.cpp) cover nested dictionary reducers and bundle projection. |
-| 0.8 `test_switch_reduce_map_shrink_with_trace` | Existing tests cover smaller nested reduce and map/switch/reduce traces. The source exercises a 17-item reduction tree while the outer TSD shrinks, empties, and rebuilds. It also checks per-node trace output, which this test pack does not reproduce. |
+| 0.5 `test_reduce_map`; 0.8 `python/tests/test_reduce_zero_semantics.py::test_reduce_mapped_bundle_collection_projection_dereferences_key_set_source` | [`reduce maps and combines nested dictionaries`](../../../tests/evaluation/reduce_test.cpp) and [`reduce maps a projected bundle of nested dictionaries`](../../../tests/evaluation/reduce_test.cpp) cover nested dictionary reducers and bundle projection. |
+| 0.8 `python/tests/ported/_wiring/test_reduce.py::test_switch_reduce_map_shrink_with_trace` | Existing tests cover smaller nested reduce and map/switch/reduce traces. The source exercises a 17-item reduction tree while the outer TSD shrinks, empties, and rebuilds. It also checks per-node trace output, which this test pack does not reproduce. |
 | 0.5 and 0.8 `test_switch_bundle_from_reduce` | [`switch passes a reduced value through a free bundle argument`](../../../tests/evaluation/switch_test.cpp) covers a bundle-shaped reducer result crossing a switch boundary. Existing reduce tests cover scalar and non-scalar defaults, but not a TSB default updated while the TSD is empty. |
 
 HG's reduction behavior follows its [reduce contract](../design/reduce.md).
@@ -30,7 +34,7 @@ contains these cases:
 | --- | --- |
 | Nested dictionaries merge by key, then reduce their values | The mapped reducer combines overlapping inner keys and retains keys that occur in only one outer item. A second reduction produces the scalar total. |
 | Bundle default applies only while the TSD has no valid items | Empty, singleton, pair, and odd-sized inputs are followed by removals. Updates to the free TSB default reach the output while the TSD is empty. |
-| Nested dictionary reducer branches retire as the outer tree shrinks | Seventeen outer items shrink to six, then to empty; the graph adds new items, removes them, and recreates an active branch. Direct and switch-selected runs assert the same scalar trace. |
+| Nested dictionary reducer branches retire as the outer tree shrinks | Seventeen outer items shrink to six, grow to seven, then shrink to one and empty. New items recreate the tree before its final removal. Direct and switch-selected runs assert the same scalar trace. |
 
 The higher-count case checks observable output and branch selection. It does not
 assert hgraph's internal reducer trace. The selected switch remains stable on the
@@ -49,7 +53,9 @@ type explicit.
 
 The focused test executable was built against the refreshed review headers and
 Release libraries and run from `build/reduce-composition/cmake`. The full HG
-suite was not run. No new failure or production defect was found.
+suite was not run. No new failure or production defect was found. The source
+is registered in `hg_library_tests` and this report is linked from the
+development index.
 
 ## Scope limits
 

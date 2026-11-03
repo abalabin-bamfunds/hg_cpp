@@ -52,7 +52,7 @@ implementation input.
 
 ## Classification
 
-All nine added cases pass. No BG failure was reproduced. These cases exercise
+All nine added cases pass. No HG failure was reproduced. These cases exercise
 queue sources returned by service implementation graphs and their use by
 reference, subscription, request/reply, map, and switch clients. They do not
 claim support for queue sources in arbitrary nested graphs.
@@ -61,8 +61,7 @@ claim support for queue sources in arbitrary nested graphs.
 
 - Focused runner: **9 cases, 12 assertions passed**.
 - Full HG test suite not run for this batch.
-- The normal CMake test source list and development report index are unchanged;
-  the root integration lane must register this test source and index this
-  report.
+- The source is registered in `hg_tests` and this report is linked from the
+  development index.
 
 [upstream]: https://github.com/hhenson/hgraph/tree/d36be500ec8b6fda77ff077566f891ffcf5c84a8
