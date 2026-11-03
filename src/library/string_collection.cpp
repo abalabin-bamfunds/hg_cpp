@@ -165,8 +165,8 @@ struct string_collection_overloads {
     }
 
     template <typename TEXT, typename SEPARATOR>
-    static void split_fixed_maxsplit(TEXT text, SEPARATOR separator, i64 maxsplit,
-                                     const Out<TSL<TS<string, G>, SIZE, G>> &output) {
+    static void split_tsl_maxsplit(TEXT text, SEPARATOR separator, i64 maxsplit,
+                                   const Out<TSL<TS<string, G>, SIZE, G>> &output) {
         const auto count = output.size();
         const auto pieces = SplitText::parts(text, separator, maxsplit, count);
         if (pieces.size() < count) {
@@ -178,96 +178,96 @@ struct string_collection_overloads {
     }
 
     // Split.
-    overload<split> split_list_default_string_string{node(
+    overload<split> split_list_string_string_default{node(
         eval = [](std::string_view text, std::string_view separator, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_default_string_symbol{node(
+    overload<split> split_list_string_symbol_default{node(
         eval = [](std::string_view text, symbol separator, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_default_symbol_string{node(
+    overload<split> split_list_symbol_string_default{node(
         eval = [](symbol text, std::string_view separator, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_default_symbol_symbol{node(
+    overload<split> split_list_symbol_symbol_default{node(
         eval = [](symbol text, symbol separator, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_maxsplit_string_string{node(
+    overload<split> split_list_string_string_maxsplit{node(
         eval = [](std::string_view text, std::string_view separator, i64 maxsplit,
                  Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_maxsplit_string_symbol{node(
+    overload<split> split_list_string_symbol_maxsplit{node(
         eval = [](std::string_view text, symbol separator, i64 maxsplit, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_maxsplit_symbol_string{node(
+    overload<split> split_list_symbol_string_maxsplit{node(
         eval = [](symbol text, std::string_view separator, i64 maxsplit, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
-    overload<split> split_list_maxsplit_symbol_symbol{node(
+    overload<split> split_list_symbol_symbol_maxsplit{node(
         eval = [](symbol text, symbol separator, i64 maxsplit, Out<TS<List<string>, G>> output) {
             split_list_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, require = require_list_output)};
 
-    overload<split> split_fixed_default_string_string{node(
+    overload<split> split_tsl_string_string_default{node(
         eval = [](std::string_view text, std::string_view separator, Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, i64{-1}, output);
+            split_tsl_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_default_string_symbol{node(
+    overload<split> split_tsl_string_symbol_default{node(
         eval = [](std::string_view text, symbol separator, Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, i64{-1}, output);
+            split_tsl_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_default_symbol_string{node(
+    overload<split> split_tsl_symbol_string_default{node(
         eval = [](symbol text, std::string_view separator, Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, i64{-1}, output);
+            split_tsl_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_default_symbol_symbol{node(
+    overload<split> split_tsl_symbol_symbol_default{node(
         eval = [](symbol text, symbol separator, Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, i64{-1}, output);
+            split_tsl_maxsplit(text, separator, i64{-1}, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_maxsplit_string_string{node(
+    overload<split> split_tsl_string_string_maxsplit{node(
         eval = [](std::string_view text, std::string_view separator, i64 maxsplit,
                  Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, maxsplit, output);
+            split_tsl_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_maxsplit_string_symbol{node(
+    overload<split> split_tsl_string_symbol_maxsplit{node(
         eval = [](std::string_view text, symbol separator, i64 maxsplit,
                  Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, maxsplit, output);
+            split_tsl_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_maxsplit_symbol_string{node(
+    overload<split> split_tsl_symbol_string_maxsplit{node(
         eval = [](symbol text, std::string_view separator, i64 maxsplit,
                  Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, maxsplit, output);
+            split_tsl_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
-    overload<split> split_fixed_maxsplit_symbol_symbol{node(
+    overload<split> split_tsl_symbol_symbol_maxsplit{node(
         eval = [](symbol text, symbol separator, i64 maxsplit, Out<TSL<TS<string, G>, SIZE, G>> output) {
-            split_fixed_maxsplit(text, separator, maxsplit, output);
+            split_tsl_maxsplit(text, separator, maxsplit, output);
         },
         resolve<decltype(G)> = resolve_output, resolve<SIZE_DECLARATION> = resolve_fixed_size,
         require = require_fixed_output)};
@@ -333,7 +333,7 @@ struct string_collection_overloads {
         },
         resolve<decltype(G)> = resolve_output)};
 
-    template <typename SEPARATOR> struct join_optional_list_impl {
+    template <typename SEPARATOR> struct join_list_optional_impl {
         In<TS<List<TEXT>, G>, optional> values;
         SEPARATOR separator;
         Out<TS<string, TimeSeriesGuarantee::ordinary>> output;
@@ -355,7 +355,7 @@ struct string_collection_overloads {
         }
     };
 
-    instantiate_overloads<join, join_optional_list_impl, std::string_view, symbol> join_optional_list;
+    instantiate_overloads<join, join_list_optional_impl, std::string_view, symbol> join_list_optional;
 
     template <typename SEPARATOR> struct join_tsl_impl {
         In<TSL<TS<TEXT, G>, SIZE, G>, InputValidity::all_valid> values;
@@ -391,7 +391,7 @@ struct string_collection_overloads {
 
     instantiate_overloads<join, join_tsl_impl, std::string_view, symbol> join_tsl;
 
-    template <typename SEPARATOR> struct join_optional_tsl_impl {
+    template <typename SEPARATOR> struct join_tsl_optional_impl {
         In<TSL<TS<TEXT, G>, SIZE, G>, optional> values;
         SEPARATOR separator;
         Out<TS<string, TimeSeriesGuarantee::ordinary>> output;
@@ -427,7 +427,7 @@ struct string_collection_overloads {
         }
     };
 
-    instantiate_overloads<join, join_optional_tsl_impl, std::string_view, symbol> join_optional_tsl;
+    instantiate_overloads<join, join_tsl_optional_impl, std::string_view, symbol> join_tsl_optional;
 };
 
 } // namespace

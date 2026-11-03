@@ -51,18 +51,28 @@ operation; continued registry use after a registration failure is unsupported.
 Completed descriptors support concurrent reads.
 
 Registries, canonical lookup indexes, and registered descriptors remain alive
-through process shutdown. An extension that provides a registered descriptor
-must remain loaded until process termination because the descriptor's virtual
-functions belong to that extension.
+through process shutdown.
 
-Engine and extension implementations use `util::static_storage<T>` for
-nontrivial function-static descriptors, then register them with
-`TypeRegistry::register_static()`. The storage keeps the object alive without
-running its destructor at process shutdown. Use
-`TypeRegistry::instance().register_owned()` to transfer dynamic ownership.
-Both registration APIs return a stable typed reference. Static registration
-allocates no memory; primitive accessors remain `noexcept`.
-Type objects cannot be copied or moved.
+Static declaration helpers use
+`TypeRegistry::instance().get_or_create_static<Declaration, Descriptor>(factory)`
+to return one canonical descriptor across shared libraries. The declaration
+type and descriptor type together identify the registry entry. The factory
+runs only when that entry is absent and returns an unregistered descriptor
+in `util::static_storage<T>`. The storage retains the object without running
+its destructor at process shutdown. `VariableRegistry` provides the same
+operation for non-type variables.
+
+The first shared library that creates a static descriptor owns its storage
+and its embedded registry entry. That library must remain loaded for the life
+of the process, including when later lookups come from other libraries.
+Any library that implements a registered descriptor's virtual functions must
+also remain loaded until process termination.
+
+`TypeRegistry::register_static()` registers a process-static object without
+canonical lookup. Use `TypeRegistry::instance().register_owned()` to transfer
+dynamic ownership. These operations return stable typed references. Static
+registration and lookup allocate no memory; primitive accessors remain
+`noexcept`. Type objects cannot be copied or moved.
 
 `TypeRegistry::instance().get_or_create<Descriptor, Hash>(key, factory)` provides
 a shared cache for ordinary canonical factories.
@@ -84,8 +94,7 @@ the construction and completion of recursive descriptors.
 
 Resolved objects are immutable and canonical. Equivalent types have the same
 address, so exact equality is a pointer comparison. Modules can register types
-before an engine exists. A module that implements a type must remain loaded
-while the type can be used.
+before an engine exists.
 
 A C++ time series declaration exposes its semantic type through `type()`.
 This constructs a neutral declaration: an omitted root guarantee is `ordinary`,

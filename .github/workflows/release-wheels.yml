@@ -168,6 +168,57 @@ jobs:
       platform: win_amd64
       parallel: "4"
 
+  test-windows-cpp:
+    name: Build and test Windows C++
+    needs: validate-release
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: "3.12"
+      - name: Configure MSVC toolchain
+        uses: ilammy/msvc-dev-cmd@0b201ec74fa43914dc39ae48a89fd1d8cb592756 # v1
+      - name: Install Windows native dependencies and build tools
+        run: |
+          $vcpkgRoot = $env:VCPKG_INSTALLATION_ROOT
+          if (-not $vcpkgRoot) { $vcpkgRoot = $env:VCPKG_ROOT }
+          if (-not $vcpkgRoot -or -not (Test-Path "$vcpkgRoot/vcpkg.exe")) {
+            throw "Could not locate the runner's vcpkg installation"
+          }
+          & "$vcpkgRoot/vcpkg.exe" install icu --triplet x64-windows
+          if ($LASTEXITCODE -ne 0) { throw "vcpkg failed to install ICU (exit $LASTEXITCODE)" }
+          if (-not (Test-Path "$vcpkgRoot/installed/x64-windows/include/unicode/utypes.h")) {
+            throw "vcpkg did not install ICU headers for x64-windows"
+          }
+          python -m pip install --upgrade --only-binary=:all: "cmake>=3.31" "ninja==1.13.0"
+          if ($LASTEXITCODE -ne 0) { throw "Failed to install build tools (exit $LASTEXITCODE)" }
+          "VCPKG_ROOT=$vcpkgRoot" | Out-File -FilePath $env:GITHUB_ENV -Append
+          "$vcpkgRoot/installed/x64-windows/bin" | Out-File -FilePath $env:GITHUB_PATH -Append
+      - name: Configure native tests
+        run: |
+          cmake -S . -B build/windows-cpp -G Ninja `
+            -DCMAKE_BUILD_TYPE=Release `
+            "-DCMAKE_TOOLCHAIN_FILE=$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" `
+            -DVCPKG_TARGET_TRIPLET=x64-windows `
+            -DBUILD_TESTING=ON -DHG_BUILD_BENCHMARKS=OFF -DHG_BUILD_PYTHON=OFF -DHG_BUNDLE_FMT=ON `
+            "-DCMAKE_EXE_LINKER_FLAGS_RELEASE=/INCREMENTAL:NO /OPT:REF /OPT:ICF"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configuration failed (exit $LASTEXITCODE)" }
+      - name: Build native tests
+        run: |
+          cmake --build build/windows-cpp --parallel 2 --target `
+            hg_tests hg_library_tests hg_declaration_identity_tests hg_logging_initialization_tests
+          if ($LASTEXITCODE -ne 0) { throw "Native test build failed (exit $LASTEXITCODE)" }
+      - name: Run native tests
+        run: |
+          ctest --test-dir build/windows-cpp --build-config Release --parallel 2 --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { throw "Native tests failed (exit $LASTEXITCODE)" }
+
   test-linux-wheel:
     needs: build-linux-wheel
     uses: ./.github/workflows/test-platform-wheel.yml

@@ -125,7 +125,7 @@ struct conversion_overloads {
     }
 
     // Copy a scalar list into a TSL snapshot.
-    struct list_to_tsl {
+    struct convert_list_to_tsl_impl {
         In<TS<List<SCALAR>, G>> value;
         Out<TSL<TS<SCALAR, G>, SIZE, G>> output;
 
@@ -150,10 +150,10 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, list_to_tsl> convert_list_to_tsl;
+    overload<convert, convert_list_to_tsl_impl> convert_list_to_tsl;
 
     // Copy a fixed TSL snapshot into a scalar list.
-    struct tsl_to_list {
+    struct convert_tsl_to_list_impl {
         In<TSL<TS<SCALAR, G>, SIZE, G>, InputValidity::all_valid> value;
         Out<TS<List<SCALAR>, G>> output;
 
@@ -168,10 +168,10 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, tsl_to_list> convert_tsl_to_list;
+    overload<convert, convert_tsl_to_list_impl> convert_tsl_to_list;
 
     // Copy a TSS snapshot into a scalar set.
-    struct tss_to_set {
+    struct convert_tss_to_set_impl {
         In<TSS<KEY, G>> value;
         Out<TS<Set<KEY>, G>> output;
 
@@ -188,10 +188,10 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, tss_to_set> convert_tss_to_set;
+    overload<convert, convert_tss_to_set_impl> convert_tss_to_set;
 
     // Copy a TSD snapshot into a scalar dictionary.
-    struct tsd_to_dict {
+    struct convert_tsd_to_dict_impl {
         In<TSD<KEY, TS<SCALAR, G>, G>, InputValidity::all_valid> value;
         Out<TS<Dict<KEY, SCALAR>, G>> output;
 
@@ -210,10 +210,10 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, tsd_to_dict> convert_tsd_to_dict;
+    overload<convert, convert_tsd_to_dict_impl> convert_tsd_to_dict;
 
     // Copy scalar collection members into a TSS snapshot.
-    struct list_to_tss {
+    struct convert_list_to_tss_impl {
         In<TS<List<KEY>, G>> value;
         Out<TSS<KEY, G>> output;
 
@@ -245,9 +245,9 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, list_to_tss> convert_list_to_tss;
+    overload<convert, convert_list_to_tss_impl> convert_list_to_tss;
 
-    struct set_to_tss {
+    struct convert_set_to_tss_impl {
         In<TS<Set<KEY>, G>> value;
         Out<TSS<KEY, G>> output;
 
@@ -269,10 +269,10 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, set_to_tss> convert_set_to_tss;
+    overload<convert, convert_set_to_tss_impl> convert_set_to_tss;
 
     // Copy scalar dictionary members into a TSD snapshot.
-    struct dict_to_tsd {
+    struct convert_dict_to_tsd_impl {
         In<TS<Dict<KEY, SCALAR>, G>> value;
         Out<TSD<KEY, TS<SCALAR, G>, G>> output;
 
@@ -295,10 +295,10 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, dict_to_tsd> convert_dict_to_tsd;
+    overload<convert, convert_dict_to_tsd_impl> convert_dict_to_tsd;
 
     // Copy scalar Bundle fields into TSB fields using a wiring-time field-index map.
-    struct bundle_to_tsb_impl {
+    struct convert_bundle_to_tsb_impl {
         In<TS<Bundle<SCALAR_SCHEMA>, G>> value;
         Scalar<List<i64>> field_mapping;
         Out<TSB<SERIES_SCHEMA, G>> output;
@@ -349,7 +349,7 @@ struct conversion_overloads {
         require = require_bundle_to_tsb,
         [](const WiringArguments &arguments, wp<TS<Bundle<SCALAR_SCHEMA>, G>, "value"_n> value)
             -> wp<TSB<SERIES_SCHEMA, G>> {
-            static const auto copy_fields = node<bundle_to_tsb_impl>();
+            static const auto copy_fields = node<convert_bundle_to_tsb_impl>();
 
             const auto &source_type = type_cast<TimeSeriesType>(arguments.resolved_type("value"));
             const auto &source_value = type_cast<TimeSeriesValueType>(source_type.target_type());
@@ -371,7 +371,7 @@ struct conversion_overloads {
         })};
 
     // Copy same-named scalar-valued TSB fields into a scalar Bundle.
-    struct tsb_to_bundle {
+    struct convert_tsb_to_bundle_impl {
         In<TSB<SERIES_SCHEMA, G>, InputValidity::all_valid> value;
         Out<TS<Bundle<SCALAR_SCHEMA>, G>> output;
 
@@ -433,7 +433,7 @@ struct conversion_overloads {
         }
     };
 
-    overload<convert, tsb_to_bundle> convert_tsb_to_bundle;
+    overload<convert, convert_tsb_to_bundle_impl> convert_tsb_to_bundle;
 
     overload<combine> combine_tsl{graph<OUT>(
         require = require_combine_tsl,

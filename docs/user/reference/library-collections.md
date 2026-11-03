@@ -7,10 +7,15 @@ direct Python imports or C++ namespace imports.
 ## Collection reductions
 
 To summarize the current items, use `sum_(values)`, `min_(values)`, `max_(values)`,
-or `mean(values)` on a numeric fixed-size TSL, TSD, or TSS. They accept `i64` and `double`
-items. Sums and extrema retain the item scalar type. `mean` returns `double` and
-accumulates in `double`; integer sums use the [wrapping
-policy](library-numeric.md#arithmetic).
+or `mean(values)` on a numeric fixed-size TSL, TSD, TSS, or scalar list, set, or
+dictionary time series. They accept `i64` and `double` items. Sums and extrema retain
+the item scalar type. `mean` returns `double` and accumulates in `double`; integer sums use the
+[wrapping policy](library-numeric.md#arithmetic).
+
+Scalar collection inputs are `TS<List<T>>`, `TS<Set<T>>`, or `TS<Dict<K, T>>`.
+Python uses `TS[tuple[T, ...]]`, `TS[frozenset[T]]`, or `TS[dict[K, T]]`.
+Dictionary reductions use values and ignore keys. Required overloads check root
+validity for these inputs.
 
 An ordinary call requires a valid collection and valid immediate items. `opt(values)`
 selects an optional overload that skips invalid items:
@@ -62,11 +67,11 @@ versions. Each evaluation takes O(N) work and O(1) auxiliary storage.
 ## Boolean reductions
 
 To check a condition across a collection, use `all_(values)` or `any_(values)` on
-a Boolean fixed-size TSL, TSD, or TSS. `all_`
-tests whether every contributing value is true; `any_` tests whether at least one is
-true. They accept one collection argument. A required overload needs a valid root and
-valid immediate items. `opt(values)` selects an overload that skips invalid items and
-treats an invalid root as empty:
+a Boolean fixed-size TSL, TSD, TSS, or scalar list, set, or dictionary time series.
+`all_` tests whether every contributing value is true; `any_` tests whether at least one is true.
+They accept one collection argument. A required overload needs a valid root and valid
+immediate items. `opt(values)` selects an overload that skips invalid items and treats
+an invalid root as empty:
 
 ::::{tab-set}
 :sync-group: language
@@ -103,8 +108,9 @@ operator schedules on start. Ordinary outputs publish equal results on separate
 evaluations. Required overloads propagate the observed collection guarantee; optional
 overloads produce ordinary outputs.
 
-Each calculation retains no state. TSL and TSD evaluation takes O(N) work in the worst
-case; TSS uses one Boolean membership lookup.
+Each calculation retains no state. TSL, TSD, and scalar dictionary evaluation takes
+O(N) work in the worst case; scalar lists take O(N) work with early termination. TSS
+and scalar sets use one Boolean membership lookup.
 
 
 ## Collection queries
@@ -345,6 +351,45 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::
 :::::
 ::::::
+
+## Scalar set operations
+
+Two `TS<Set<K>>` inputs support union (`bit_or`, `|`), intersection (`bit_and`, `&`),
+difference (`sub`, `-`), and symmetric difference (`bit_xor`, `^`). Both inputs must
+have the same hashable item type. Python spells the scalar type `frozenset[K]`.
+The result is a complete scalar set on each permitted evaluation.
+
+Inputs are required by default. An invalid required input invalidates the result.
+`opt()` selects overloads that treat invalid inputs as empty sets; marking either
+operand selects that behavior for both operands. These overloads evaluate on input
+changes without startup scheduling. Required overloads propagate the weakest observed
+input guarantee; optional overloads produce ordinary outputs.
+
+Ordinary outputs publish equal results on separate evaluations. Deduplicated outputs
+suppress equal sets. Set operations retain no state between evaluations and construct
+the result from the current input values.
+
+For left and right input sizes N and M, with constant-time hash lookups, union and
+symmetric difference take O(N + M) work, intersection takes O(min(N, M)), and
+difference takes O(N). Temporary borrowed item views use storage bounded by the same
+input counts, in addition to the result storage.
+
+## Scalar dictionary subtraction
+
+`TS<Dict<K, L>> - TS<Dict<K, R>>` keeps each left key-value entry whose key is absent
+from the right dictionary. The key types must match and be hashable. The value types
+may differ; right values are ignored. Python uses `TS[dict[K, L]]` and
+`TS[dict[K, R]]`.
+
+Inputs are required by default. An invalid required input invalidates the result.
+`opt()` on either operand selects the optional overload: an invalid left dictionary
+produces an empty result, and an invalid right dictionary leaves the left dictionary
+unchanged. Optional outputs are ordinary. Required outputs propagate the weakest
+observed input guarantee. Ordinary outputs publish equal results on separate
+evaluations; deduplicated outputs suppress equal dictionaries.
+
+The operator retains no state. For N left entries, it takes expected O(N) work and
+O(N) temporary storage for borrowed entries, in addition to the result storage.
 
 ## Time series set operations
 

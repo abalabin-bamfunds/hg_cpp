@@ -1014,9 +1014,10 @@ struct timer_allocation_failure_definition {
     }
 
     void evaluate(EvaluationContext *context) const {
-        resource->fail_after(2);
+        resource->fail_after(failure_budget);
         try {
-            (void)context->schedule_at(context->evaluation_time() + std::chrono::microseconds{100});
+            const auto handle = context->schedule_at(context->evaluation_time() + std::chrono::microseconds{100});
+            context->cancel(handle);
         } catch (const std::bad_alloc &) {
             registration_failed = true;
         }
@@ -1026,6 +1027,7 @@ struct timer_allocation_failure_definition {
     }
 
     inline static counting_memory_resource *resource{};
+    inline static std::size_t failure_budget{};
     inline static std::array<ScheduleHandle, 8> initial_timers{};
     inline static ScheduleHandle retry{};
     inline static bool registration_failed{};
@@ -1093,19 +1095,31 @@ TEST_CASE("failed timer registration rolls back its slot, heap and owner links",
     wiring.finalize();
     const CompiledGraph compiled{wiring};
     auto global_state = GlobalState{};
-    auto memory = counting_memory_resource{};
-    RuntimeGraph runtime{compiled, allocator{memory}, global_state};
-    timer_allocation_failure_definition::resource = &memory;
-    timer_allocation_failure_definition::registration_failed = false;
-    timer_allocation_failure_definition::retry = {};
-    runtime.start(time(1));
+    auto failure_count = std::size_t{};
+    auto registration_succeeded = false;
+    for (auto failure_budget = std::size_t{}; !registration_succeeded; ++failure_budget) {
+        CAPTURE(failure_budget);
+        auto memory = counting_memory_resource{};
+        {
+            RuntimeGraph runtime{compiled, allocator{memory}, global_state};
+            timer_allocation_failure_definition::resource = &memory;
+            timer_allocation_failure_definition::failure_budget = failure_budget;
+            timer_allocation_failure_definition::registration_failed = false;
+            timer_allocation_failure_definition::retry = {};
+            runtime.start(time(1));
 
-    runtime.evaluate(time(1));
+            runtime.evaluate(time(1));
 
-    CHECK(timer_allocation_failure_definition::registration_failed);
-    CHECK(timer_allocation_failure_definition::retry);
-    CHECK(runtime.next_scheduled_time() == time(3));
-    runtime.stop();
+            registration_succeeded = !timer_allocation_failure_definition::registration_failed;
+            failure_count += !registration_succeeded;
+            CHECK(timer_allocation_failure_definition::retry);
+            CHECK(runtime.next_scheduled_time() == time(3));
+            runtime.stop();
+            CHECK_FALSE(runtime.next_scheduled_time());
+        }
+        CHECK(memory.allocations() == 0);
+    }
+    CHECK(failure_count > 0);
 }
 
 } // namespace

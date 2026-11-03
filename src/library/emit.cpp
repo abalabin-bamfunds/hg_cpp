@@ -121,7 +121,7 @@ struct emit_overloads {
     }
 
     // Scalar collection values emit every item in their current value.
-    struct list_to_value {
+    struct emit_list_to_value_impl {
         static constexpr bool uses_timed_scheduling = true;
 
         In<TS<List<VALUE>, INPUT_G>, optional> value;
@@ -149,9 +149,9 @@ struct emit_overloads {
         void finalize(EvaluationContext *context) const noexcept { emit_overloads::release(*pending, *context); }
     };
 
-    overload<emit, list_to_value> emit_list_to_value;
+    overload<emit, emit_list_to_value_impl> emit_list_to_value;
 
-    struct set_to_value {
+    struct emit_set_to_value_impl {
         static constexpr bool uses_timed_scheduling = true;
 
         In<TS<Set<VALUE>, INPUT_G>, optional> value;
@@ -178,9 +178,9 @@ struct emit_overloads {
         void finalize(EvaluationContext *context) const noexcept { emit_overloads::release(*pending, *context); }
     };
 
-    overload<emit, set_to_value> emit_set_to_value;
+    overload<emit, emit_set_to_value_impl> emit_set_to_value;
 
-    struct dict_to_bundle {
+    struct emit_dict_to_bundle_impl {
         static constexpr bool uses_timed_scheduling = true;
 
         In<TS<Dict<KEY, VALUE>, INPUT_G>, optional> value;
@@ -210,9 +210,9 @@ struct emit_overloads {
         void finalize(EvaluationContext *context) const noexcept { emit_overloads::release(*pending, *context); }
     };
 
-    overload<emit, dict_to_bundle> emit_dict_to_bundle;
+    overload<emit, emit_dict_to_bundle_impl> emit_dict_to_bundle;
 
-    struct set_to_value_changes {
+    struct emit_tss_to_value_changes_impl {
         static constexpr bool uses_timed_scheduling = true;
 
         In<TSS<VALUE, INPUT_G>, optional> value;
@@ -239,9 +239,9 @@ struct emit_overloads {
         void finalize(EvaluationContext *context) const noexcept { emit_overloads::release(*pending, *context); }
     };
 
-    overload<emit, set_to_value_changes> emit_set_to_value_changes;
+    overload<emit, emit_tss_to_value_changes_impl> emit_tss_to_value_changes;
 
-    struct fixed_list_to_value_changes {
+    struct emit_tsl_to_value_changes_impl {
         static constexpr bool uses_timed_scheduling = true;
 
         In<TSL<TS<VALUE, ITEM_G>, SIZE, INPUT_G>, optional> value;
@@ -271,9 +271,9 @@ struct emit_overloads {
         void finalize(EvaluationContext *context) const noexcept { emit_overloads::release(*pending, *context); }
     };
 
-    overload<emit, fixed_list_to_value_changes> emit_fixed_list_to_value_changes;
+    overload<emit, emit_tsl_to_value_changes_impl> emit_tsl_to_value_changes;
 
-    struct dict_to_bundle_changes {
+    struct emit_tsd_to_bundle_changes_impl {
         static constexpr bool uses_timed_scheduling = true;
 
         In<TSD<KEY, TS<VALUE, ITEM_G>, INPUT_G>, optional> value;
@@ -308,7 +308,7 @@ struct emit_overloads {
         void finalize(EvaluationContext *context) const noexcept { emit_overloads::release(*pending, *context); }
     };
 
-    overload<emit, dict_to_bundle_changes> emit_dict_to_bundle_changes;
+    overload<emit, emit_tsd_to_bundle_changes_impl> emit_tsd_to_bundle_changes;
 };
 
 } // namespace
