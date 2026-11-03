@@ -501,10 +501,10 @@ restarted_total = hgraph.operators.sums(value, reset=reset)
 ## Collection reductions
 
 `sum_(values)`, `min_(values)`, `max_(values)`, and `mean(values)` calculate
-over the current items of a numeric fixed-size TSL, TSD, or TSS. They accept `i64` and
-`double` items. Sums and extrema retain the item scalar type. `mean` returns
-`double` and accumulates in `double`; integer sums use the wrapping policy
-described above.
+over the current items of a numeric fixed-size TSL, TSD, TSS, or scalar list or set
+time series. They accept `i64` and `double` items. Sums and extrema retain the item
+scalar type. `mean` returns `double` and accumulates in `double`; integer sums use
+the wrapping policy described above.
 
 A required overload needs a valid collection and valid immediate items.
 `opt(values)` selects an optional overload that skips invalid items:
@@ -543,7 +543,8 @@ storage.
 
 ## Boolean collection reductions
 
-`all_(values)` and `any_(values)` reduce a Boolean fixed-size TSL, TSD, or TSS.
+`all_(values)` and `any_(values)` reduce a Boolean fixed-size TSL, TSD, TSS, or scalar
+list or set time series.
 `all_` tests whether every contributing value is true; `any_` tests whether at
 least one is true. They accept one collection argument. A required overload
 needs a valid root and valid immediate items. `opt(values)` selects an
@@ -570,7 +571,8 @@ results on separate evaluations. Required overloads propagate the observed
 collection guarantee; optional overloads produce ordinary outputs.
 
 Each calculation retains no state. TSL and TSD evaluation takes O(N) work in
-the worst case; TSS uses one Boolean membership lookup.
+the worst case; scalar lists take O(N) work with early termination. TSS and scalar
+sets use one Boolean membership lookup.
 
 ## Collection queries
 
@@ -780,6 +782,12 @@ to be valid. `join(opt(values), separator)` skips invalid items and treats
 an invalid root as empty. Optional join publishes an ordinary output on
 input changes; it does not schedule an initial evaluation. Empty input
 produces an empty string. Both strings and symbols produce string output.
+
+## Scalar set operations
+
+The [scalar set operation reference](../../user/reference/library-collections.md#scalar-set-operations)
+defines native `TS<Set<K>>` set operations, including Python `TS[frozenset[K]]`.
+Implementations construct the result through scalar output APIs and retain no state.
 
 ## Time series set operations
 

@@ -226,6 +226,7 @@ add_executable(
     library/conversion_test.cpp
     library/emit_test.cpp
     library/operators_test.cpp
+    library/scalar_collection_test.cpp
     library/buffering_test.cpp
     library/debounce_test.cpp
     library/overload_registration_test.cpp
