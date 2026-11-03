@@ -13,7 +13,9 @@ or `<hg/reduce.hpp>` header.
 
 If you need the same computation for every item in a collection, use
 `map(graph, arguments...)` to apply a graph per selected key. A mapped argument is a TSD
-whose item feeds that branch parameter. `pass_through(point)` supplies the whole time
+or a `TS<Dict<K, V>>` whose item feeds that branch parameter. A scalar Dict tick supplies
+a complete snapshot; map scans it and updates only branches whose values changed when
+the item type supports equality. `pass_through(point)` supplies the whole time
 series to each branch. Scalars remain fixed arguments. A TSS can supply keys for a
 source-like graph.
 

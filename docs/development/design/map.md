@@ -9,8 +9,8 @@ current key.
 The first argument can be a `WiringTemplate` (such as a graph, node, or
 operator template) or a graph function. A `WiringTemplate` accepts typed or
 untyped wiring points because wiring resolves their semantic types. A C++ graph
-function requires typed TSD and TSS arguments so that C++ can derive its
-per-key parameter types before invoking it.
+function requires typed TSD, TSS, or scalar Dict arguments so that C++ can
+derive its per-key parameter types before invoking it.
 
 For example, map can select one field from each Bundle with the operator
 template directly:
@@ -70,6 +70,14 @@ key through a reference. With several mapped TSD arguments, their key sets form
 a union. An item that is absent from one TSD produces an invalid input for that
 inner graph.
 
+A `TS<Dict<K, V>>` argument is also mapped by default. The selected default map
+implementation wires a Dict-to-TSD conversion in the outer graph and uses the
+result as a mapped TSD. The conversion reconciles each complete Dict snapshot.
+When `V` supports equality, its TSD items are deduplicated so equal values do
+not schedule their branches. Otherwise its items retain the input guarantee.
+`pass_through()` keeps a `TS<Dict<K, V>>` as one complete input. Multiple mapped
+Dict and TSD arguments follow the same key-set rules.
+
 A mapped TSD controls branch lifetime when it is the only mapped TSD and no
 key set is selected, or when it is the selected TSD key set. Its item reference
 is constant for that branch. Other mapped TSD item references remain mutable
@@ -92,10 +100,10 @@ Without an explicit key set, mapped TSD arguments supply the union of current
 keys. A sole TSS argument supplies the key set and is not passed to the inner
 graph. Calls with several TSS arguments must select one.
 
-`"__key_set_arg__"_n` selects a TSD or TSS argument by flat index or name. A
-selected TSD remains a mapped argument. Its key set determines which inner
-graphs exist. A selected TSS is omitted from the inner graph arguments.
-Unselected TSS arguments are passed through.
+`"__key_set_arg__"_n` selects a TSD, scalar Dict, or TSS argument by flat index
+or name. A selected TSD or scalar Dict remains a mapped argument. Its key set
+determines which inner graphs exist. A selected TSS is omitted from the inner
+graph arguments. Unselected TSS arguments are passed through.
 
 ## Key argument
 
@@ -133,6 +141,8 @@ next outer cycle. Starting an inner graph publishes its key input and schedules
 active consumers of that key.
 
 A mapped item update schedules only the inner runtime graph for that key.
+Mapping a scalar Dict scans its complete snapshot on each Dict tick; branch
+evaluation still follows only the resulting TSD item changes.
 Pass-through inputs use normal input subscriptions. Their consumers determine
 which updates schedule an inner graph, including
 [selected-key membership subscriptions](time-series-references.md#collection-membership-subscriptions).
