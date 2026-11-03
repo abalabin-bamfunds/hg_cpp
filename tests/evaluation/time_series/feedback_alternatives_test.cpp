@@ -7,6 +7,8 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <optional>
+
 namespace {
 
 using namespace hg;
@@ -29,14 +31,15 @@ void check_event(const std::optional<ScalarValue<Bundle<FeedbackEvent>>> &actual
 TEST_CASE("feedback delays a base Bundle by one cycle",
           "[feature:feedback][series:value][scalar:hierarchical][schema:named]"
           "[transition:first-tick][transition:update]") {
-    const auto base = bundle<FeedbackEvent>(symbol{"base"});
+    auto memory = allocator{};
+    const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
     const auto graph = [](wp<TS<Bundle<FeedbackEvent>>> input) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
         delayed = input;
         return wp<TS<Bundle<FeedbackEvent>>>{delayed};
     };
 
-    const auto actual = run_graph(graph, {base});
+    const auto actual = run_graph(graph, {{{"kind", symbol{"base"}}}});
 
     REQUIRE(actual.size() == 2);
     CHECK_FALSE(actual[0].has_value());
@@ -74,9 +77,10 @@ const auto publish_event = node([](i64 selection,
 TEST_CASE("feedback preserves a small derived Bundle",
           "[feature:feedback][series:value][scalar:hierarchical][schema:named]"
           "[binding:covariant][transition:update]") {
-    const auto base = bundle<FeedbackEvent>(symbol{"base"});
-    const auto small = bundle<SmallFeedbackEvent>(symbol{"small"}, i64{17});
-    const auto large = bundle<LargeFeedbackEvent>(symbol{"large"}, i64{99}, 3.5, symbol{"unused"}, i64{4});
+    auto memory = allocator{};
+    const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
+    const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
+    const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"unused"}, i64{4});
 
     const auto graph = [&](wp<TS<i64>> selection) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
@@ -94,9 +98,10 @@ TEST_CASE("feedback preserves a small derived Bundle",
 TEST_CASE("feedback preserves a large derived Bundle",
           "[feature:feedback][series:value][scalar:hierarchical][schema:named]"
           "[binding:covariant][transition:update]") {
-    const auto base = bundle<FeedbackEvent>(symbol{"base"});
-    const auto small = bundle<SmallFeedbackEvent>(symbol{"small"}, i64{17});
-    const auto large = bundle<LargeFeedbackEvent>(symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
+    auto memory = allocator{};
+    const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
+    const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
+    const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
 
     const auto graph = [&](wp<TS<i64>> selection) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
@@ -114,9 +119,10 @@ TEST_CASE("feedback preserves a large derived Bundle",
 TEST_CASE("feedback switches concrete Bundle alternatives across sparse updates",
           "[feature:feedback][series:value][scalar:hierarchical][schema:named]"
           "[binding:covariant][transition:first-tick][transition:update]") {
-    const auto base = bundle<FeedbackEvent>(symbol{"base"});
-    const auto small = bundle<SmallFeedbackEvent>(symbol{"small"}, i64{17});
-    const auto large = bundle<LargeFeedbackEvent>(symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
+    auto memory = allocator{};
+    const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
+    const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
+    const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
 
     const auto graph = [&](wp<TS<i64>> selection) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
@@ -138,9 +144,10 @@ TEST_CASE("feedback switches concrete Bundle alternatives across sparse updates"
 TEST_CASE("feedback preserves a derived Bundle sampled through a reference",
           "[feature:feedback][feature:reference][series:value][scalar:hierarchical]"
           "[schema:named][binding:reference-to-value][transition:update]") {
-    const auto base = bundle<FeedbackEvent>(symbol{"base"});
-    const auto small = bundle<SmallFeedbackEvent>(symbol{"small"}, i64{17});
-    const auto large = bundle<LargeFeedbackEvent>(symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
+    auto memory = allocator{};
+    const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
+    const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
+    const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
     const auto copy_value = node([](In<TS<Bundle<FeedbackEvent>>> input,
                                     Out<TS<Bundle<FeedbackEvent>>> output) {
         output.set(input.value());
@@ -165,9 +172,10 @@ TEST_CASE("feedback preserves a derived Bundle sampled through a reference",
 TEST_CASE("a nested graph delays and preserves derived Bundle alternatives",
           "[feature:feedback][feature:nested-graph][series:value][scalar:hierarchical]"
           "[schema:named][binding:covariant][transition:update]") {
-    const auto base = bundle<FeedbackEvent>(symbol{"base"});
-    const auto small = bundle<SmallFeedbackEvent>(symbol{"small"}, i64{17});
-    const auto large = bundle<LargeFeedbackEvent>(symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
+    auto memory = allocator{};
+    const auto base = bundle<FeedbackEvent>(memory, symbol{"base"});
+    const auto small = bundle<SmallFeedbackEvent>(memory, symbol{"small"}, i64{17});
+    const auto large = bundle<LargeFeedbackEvent>(memory, symbol{"large"}, i64{99}, 3.5, symbol{"orders"}, i64{4});
     const auto delayed_graph = graph(
         "name"_n = "feedback_bundle_nested",
         [](wp<TS<Bundle<FeedbackEvent>>> input) {
