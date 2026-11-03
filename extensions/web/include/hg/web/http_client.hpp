@@ -8,12 +8,15 @@
 #include <chrono>
 #include <cstddef>
 #include <memory>
+#include <optional>
+#include <string>
 
 namespace hg::web {
 
 struct HttpClientOptions {
     std::chrono::milliseconds timeout{std::chrono::seconds{30}};
     std::size_t max_response_body_size{8 * 1024 * 1024};
+    std::optional<std::string> ca_file;
 };
 
 extern HG_WEB_EXPORT const service<auto(TS<Bundle<HttpClientRequest>>) -> TS<Bundle<HttpResponse>>> http_client;

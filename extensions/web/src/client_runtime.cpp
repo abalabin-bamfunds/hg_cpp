@@ -3,6 +3,7 @@
 #include "client_credentials.hpp"
 #include "http_header.hpp"
 #include "runtime_logging.hpp"
+#include "system_ca_paths.hpp"
 
 #include <hg/literal/time_series_literal.hpp>
 #include <hg/scalar/bundle/value.hpp>
@@ -72,7 +73,8 @@ struct Transfer {
     bool callback_failed{};
 
     std::optional<std::string> validate() const;
-    std::optional<std::string> configure(const HttpClientOptions &options);
+    std::optional<std::string> configure(const HttpClientOptions &options,
+                                         const details::SystemCaPaths &ca_paths);
 
     void read_request() {
         const auto request = request_value.view();
@@ -327,7 +329,8 @@ template <typename Value> void set_easy_option(CURL *easy, CURLoption option, Va
     }
 }
 
-std::optional<std::string> Transfer::configure(const HttpClientOptions &options) {
+std::optional<std::string> Transfer::configure(const HttpClientOptions &options,
+                                              const details::SystemCaPaths &ca_paths) {
     max_response_body_size = options.max_response_body_size;
     for (const auto &[name, raw_value] : request_headers_values) {
         const auto value = details::utf8_header_value_to_latin1(raw_value);
@@ -366,6 +369,15 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
     set_easy_option(easy, CURLOPT_TIMEOUT_MS, static_cast<long>(timeout));
     set_easy_option(easy, CURLOPT_SSL_VERIFYPEER, 1L);
     set_easy_option(easy, CURLOPT_SSL_VERIFYHOST, 2L);
+    if (options.ca_file) {
+        set_easy_option(easy, CURLOPT_CAINFO, options.ca_file->c_str());
+        set_easy_option(easy, CURLOPT_CAPATH, nullptr);
+        set_easy_option(easy, CURLOPT_SSL_OPTIONS, 0L);
+    } else {
+        if (ca_paths.file) set_easy_option(easy, CURLOPT_CAINFO, ca_paths.file->c_str());
+        if (ca_paths.directory) set_easy_option(easy, CURLOPT_CAPATH, ca_paths.directory->c_str());
+        set_easy_option(easy, CURLOPT_SSL_OPTIONS, static_cast<long>(CURLSSLOPT_NATIVE_CA));
+    }
     set_easy_option(easy, CURLOPT_SUPPRESS_CONNECT_HEADERS, 1L);
     set_easy_option(easy, CURLOPT_CUSTOMREQUEST, method.c_str());
     set_easy_option(easy, CURLOPT_HTTPHEADER, request_headers);
@@ -412,7 +424,10 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options)
 
 class ClientImplementation final {
   public:
-    ClientImplementation(HttpClientOptions options, Queue output) : options_{std::move(options)}, output_{std::move(output)} {
+    ClientImplementation(HttpClientOptions options, Queue output)
+        : options_{std::move(options)},
+          ca_paths_{options_.ca_file ? details::SystemCaPaths{} : details::system_ca_paths()},
+          output_{std::move(output)} {
         initialize_curl();
         if (options_.timeout.count() <= 0 || options_.timeout.count() > std::numeric_limits<long>::max()) {
             throw std::invalid_argument{"HTTP client timeout must be positive and fit libcurl's millisecond limit"};
@@ -640,7 +655,7 @@ class ClientImplementation final {
             write_error(command.client_id, "HTTP request could not be initialized");
             return;
         }
-        if (const auto error = transfer->configure(options_)) {
+        if (const auto error = transfer->configure(options_, ca_paths_)) {
             record_failure(*error);
             write_error(command.client_id, *error);
             return;
@@ -802,6 +817,7 @@ class ClientImplementation final {
     }
 
     HttpClientOptions options_;
+    details::SystemCaPaths ca_paths_;
     Queue output_;
     std::unique_ptr<CURLM, decltype(&curl_multi_cleanup)> multi_{nullptr, curl_multi_cleanup};
     std::jthread thread_;

@@ -1,5 +1,16 @@
 find_package(CURL 7.85 REQUIRED)
 find_package(OpenSSL REQUIRED)
+
+FetchContent_Declare(
+    certify
+    URL https://github.com/djarek/certify/archive/b74d50d6d91d460f92defb33f32baf302ce82986.tar.gz
+    URL_HASH SHA256=1cfca816c51ffee84b1a66a3698f2a6ef5536914cb5d36829d81c3dd7ffa70de
+    SOURCE_SUBDIR include/boost/certify
+)
+# Consume only the headers. Upstream's CMake project adds unrelated Boost
+# components and installs targets that are private to this implementation.
+FetchContent_MakeAvailable(certify)
+
 find_package(Boost 1.87 CONFIG QUIET COMPONENTS system url)
 if(TARGET Boost::headers AND TARGET Boost::url)
     set(HG_WEB_BOOST_TARGETS Boost::headers Boost::url)
@@ -55,6 +66,12 @@ target_link_libraries(
     hg_web PUBLIC hg::hg PRIVATE hg::library CURL::libcurl ICU::uc OpenSSL::SSL OpenSSL::Crypto
                     ${HG_WEB_BOOST_TARGETS} Threads::Threads
 )
+target_include_directories(hg_web SYSTEM PRIVATE ${certify_SOURCE_DIR}/include)
+if(WIN32)
+    target_link_libraries(hg_web PRIVATE Crypt32)
+elseif(APPLE)
+    target_link_libraries(hg_web PRIVATE "-framework CoreFoundation" "-framework Security")
+endif()
 set_target_properties(
     hg_web
     PROPERTIES

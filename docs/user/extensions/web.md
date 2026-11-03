@@ -295,7 +295,19 @@ response time series. Removing a client cancels its outstanding requests.
 
 HTTP error statuses such as 401 and 500 are ordinary responses. Transport and protocol
 failures produce status 599 with an error message in the body. Redirect following and
-retries are disabled. HTTPS verifies the certificate and hostname.
+retries are disabled.
+
+## Client TLS trust
+
+HTTPS and WSS clients verify certificate chains and hostnames. By default they use
+system CA trust. On Linux, they honor `SSL_CERT_FILE` and `SSL_CERT_DIR` and use common
+system certificate paths when those variables are unset. WSS uses the native Windows
+and macOS trust stores; HTTP uses the trust facilities of its libcurl TLS backend.
+
+Set `ca_file` to trust only the CA certificates in that PEM file. This option is
+available on `http_client_impl(...)` and `websocket_client_impl(...)`. The
+`register_client_transports(...)` option applies to both clients. C++ uses
+`HttpClientOptions::ca_file` and `WebSocketClientOptions::ca_file`.
 
 ## Testing response handling
 
