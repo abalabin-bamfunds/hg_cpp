@@ -49,6 +49,23 @@ TEST_CASE("switch selects a case graph from its key",
     CHECK(actual.equals<i64>({13, 23, 24, 15}));
 }
 
+TEST_CASE("switch accepts case graphs with inferred output types",
+          "[feature:switch][feature:nested-graph][feature:graph-compilation][series:value]") {
+    const auto add_ten = graph(
+        "name"_n = "inferred_switch_add_ten",
+        [](wp<TS<i64>> value) -> wp<> { return wp<>{add(value, 10)}; });
+
+    const auto add_twenty = graph(
+        "name"_n = "inferred_switch_add_twenty",
+        [](wp<TS<i64>> value) -> wp<> { return wp<>{add(value, 20)}; });
+
+    const auto tested = [&](wp<TS<i64>> key, wp<TS<i64>> value) {
+        return switch_(key, cases{case_(i64{1}, add_ten), case_(i64{2}, add_twenty)}, value);
+    };
+
+    CHECK(hg::run_graph(tested, {1, 2, 2, 1}, {3, 3, 4, 5}).equals<i64>({13, 23, 24, 15}));
+}
+
 TEST_CASE("switch retains node templates captured by a generic case function",
           "[feature:switch][feature:nested-graph][feature:operator][series:value]"
           "[definition:function][lifetime:capture]") {

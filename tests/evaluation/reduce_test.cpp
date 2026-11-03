@@ -44,6 +44,18 @@ TEST_CASE("reduce combines all valid TSD items through nested reducer graphs",
     CHECK(actual.equals<i64>({5, 7, 9}));
 }
 
+TEST_CASE("reduce accepts a reducer graph with an inferred output type",
+          "[feature:reduce][feature:nested-graph][feature:graph-compilation][series:tsd][series:value]") {
+    const auto add = graph(
+        "name"_n = "inferred_reduce_output",
+        [](wp<TS<i64>> left, wp<TS<i64>> right) -> wp<> { return wp<>{add_values(left, right)}; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) { return reduce(add, values); };
+
+    CHECK(hg::run_graph(tested, {{{1, 1}, {2, 4}}, {{1, 2}, {2, 5}}, {{1, 3}, {2, 6}}})
+              .equals<i64>({5, 7, 9}));
+}
+
 TEST_CASE("reduce carries an odd item to the next level of its tree",
           "[feature:reduce][feature:nested-graph][series:tsd][shape:nested]") {
     const auto tested = [](wp<TSD<i64, TS<i64>>> values) {

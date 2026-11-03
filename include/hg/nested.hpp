@@ -29,34 +29,45 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
 
     auto &outer_wiring = WiringContext::current().wiring();
     auto temporary_records = details::WiringRecordOverlay{outer_wiring};
-    auto probed = details::probe_wiring_arguments(
-        graph.signature(), std::span<const WiringArgument>{supplied}, temporary_records);
-    auto resolution = graph.signature().resolve_wiring_arguments(probed.arguments, probed.descriptors, seed_type_map);
-
     auto normalized_result = details::normalize_wiring_arguments(
         graph.signature(), std::span<const WiringArgument>{supplied}, outer_wiring.allocation(), temporary_records);
     auto &normalized = normalized_result.arguments;
-    const auto &resolved = resolution.signature;
+    const auto &signature = graph.signature();
+    auto parameters = std::vector<ResolvedParameter>{};
+    parameters.reserve(signature.parameter_count());
+    for (auto index = std::size_t{}; index < signature.parameter_count(); ++index) {
+        const auto &parameter = signature.parameter(index);
+        parameters.push_back({.name = parameter.name,
+                              .type = &normalized[index].type(),
+                              .activity = parameter.activity,
+                              .validity = parameter.validity,
+                              .accepts_absent_scalar = parameter.accepts_absent_scalar,
+                              .variadic_mode = parameter.variadic_mode,
+                              .context = parameter.context,
+                              .dynamic_activity = parameter.dynamic_activity,
+                              .valid_items = parameter.valid_items});
+    }
+    auto input_signature = ResolvedSignature{signature.name(), std::move(parameters), nullptr};
 
     const auto outer_diagnostics = details::WiringDiagnosticContext::current(outer_wiring);
     auto inner_wiring = std::make_shared<GraphWiring>(outer_wiring);
     auto diagnostics = details::WiringDiagnosticContext{*inner_wiring, outer_diagnostics};
     auto input_boundaries = std::vector<WiringPoint>{};
     auto flattened_parameters = std::vector<ResolvedParameter>{};
-    flattened_parameters.reserve(resolved.parameters.size());
+    flattened_parameters.reserve(input_signature.parameters.size());
     auto output_node = std::size_t{};
     auto boundary_output = WiringPoint{};
     {
         auto context = WiringContext{*inner_wiring};
-        // Make resolved graph context parameters available as inner contexts while wiring the graph body.
-        auto context_scopes = details::ContextScopes::activate_context_parameters(resolved, normalized);
+        // Make graph context parameters available while the inner call resolves its omitted arguments.
+        auto context_scopes = details::ContextScopes::activate_context_parameters(input_signature, normalized);
         auto inner_arguments = std::vector<WiringArgument>{};
         inner_arguments.reserve(normalized.size());
-        for (auto i = std::size_t{}; i < resolved.parameters.size(); ++i) {
-            if (resolved.parameters[i].context) {
+        for (auto i = std::size_t{}; i < input_signature.parameters.size(); ++i) {
+            if (input_signature.parameters[i].context) {
                 continue;
             }
-            if (resolved.parameters[i].variadic_mode != details::VariadicMode::none) {
+            if (input_signature.parameters[i].variadic_mode != details::VariadicMode::none) {
                 const auto &record = *details::variadic_wiring_record(normalized[i].time_series());
                 if (record.direct_collection()) {
                     const auto direct = *record.direct_collection();
@@ -67,12 +78,13 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
                                                       : time_series_reference_type(type, TimeSeriesGuarantee::const_);
                     const auto input = details::wire_nested_input(input_reference);
                     input_boundaries.push_back(input);
-                    auto parameter = resolved.parameters[i];
+                    auto parameter = input_signature.parameters[i];
                     parameter.type = &input.type();
                     parameter.variadic_mode = details::VariadicMode::none;
                     flattened_parameters.push_back(parameter);
                     auto argument = WiringArgument{input};
-                    argument.set_variadic_name(resolved.parameters[i].name, resolved.parameters[i].variadic_mode);
+                    argument.set_variadic_name(input_signature.parameters[i].name,
+                                               input_signature.parameters[i].variadic_mode);
                     inner_arguments.push_back(std::move(argument));
                     continue;
                 }
@@ -90,17 +102,17 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
                         input_boundaries.push_back(input);
                         inner_arguments.back().replace_time_series(input);
                         flattened_parameters.push_back({.name = *argument.name(),
-                                                         .type = &input.type(),
-                                                         .activity = active,
-                                                         .validity = optional,
-                                                         .valid_items = argument.annotations().valid_items});
+                                                        .type = &input.type(),
+                                                        .activity = active,
+                                                        .validity = optional,
+                                                        .valid_items = argument.annotations().valid_items});
                     }
                 }
                 continue;
             }
 
             inner_arguments.push_back(WiringArgument::borrow(normalized[i]));
-            if (resolved.parameters[i].type->is_time_series()) {
+            if (normalized[i].type().is_time_series()) {
                 const auto &type = static_cast<const TimeSeriesType &>(normalized[i].type());
                 const auto *reference = type_cast<TimeSeriesReferenceType>(&type);
                 const auto &input_reference = reference != nullptr
@@ -109,17 +121,18 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
                 const auto input = details::wire_nested_input(input_reference);
                 input_boundaries.push_back(input);
                 inner_arguments.back().replace_time_series(input);
-                auto parameter = resolved.parameters[i];
+                auto parameter = input_signature.parameters[i];
                 parameter.type = &input.type();
                 flattened_parameters.push_back(parameter);
             } else {
-                flattened_parameters.push_back(resolved.parameters[i]);
+                flattened_parameters.push_back(input_signature.parameters[i]);
             }
         }
 
-        const auto result = *static_cast<const WiringTemplate &>(graph)(
-            resolution.type_map, std::span<const WiringArgument>{inner_arguments});
-        boundary_output = details::wire_nested_output(result, static_cast<const TimeSeriesType &>(*resolved.output));
+        const auto result = *inner_wiring->invoke(static_cast<const WiringTemplate &>(graph),
+                                                  std::span<const WiringArgument>{inner_arguments}, seed_type_map);
+        boundary_output = details::wire_nested_output(result, result.type());
+        input_signature.output = &result.type();
     }
 
     inner_wiring->finalize();
@@ -130,7 +143,7 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
     }
     output_node = inner_wiring->output_node_index(boundary_output);
 
-    auto flattened = ResolvedSignature{resolved.name, std::move(flattened_parameters), resolved.output};
+    auto flattened = ResolvedSignature{input_signature.name, std::move(flattened_parameters), input_signature.output};
 
     for (const auto &requirement : inner_wiring->inherited_requirements()) {
         flattened.parameters.push_back({requirement.name, &requirement.boundary_input_type(), passive, optional});
@@ -153,10 +166,10 @@ auto wire(const Graph &graph, const TypeMap *seed_type_map, Run &&run,
     outer_arguments.reserve(flattened.parameters.size() + 1);
     outer_arguments.emplace_back(std::forward<Run>(run));
     for (auto index = std::size_t{}; index < normalized.size(); ++index) {
-        if (resolved.parameters[index].context) {
+        if (input_signature.parameters[index].context) {
             continue;
         }
-        if (resolved.parameters[index].variadic_mode != details::VariadicMode::none) {
+        if (input_signature.parameters[index].variadic_mode != details::VariadicMode::none) {
             const auto &record = *details::variadic_wiring_record(normalized[index].time_series());
             if (const auto collection = record.direct_collection()) {
                 outer_arguments.emplace_back(*collection);

@@ -492,6 +492,18 @@ TEST_CASE("map infers a leading key for a graph function with an output",
     CHECK(actual.equals<i64>({4, 8}));
 }
 
+TEST_CASE("map accepts a graph with an inferred output type",
+          "[feature:map][feature:nested-graph][feature:graph-compilation][series:tsd][series:value]") {
+    const auto add_one = node([](i64 value) { return value + 1; });
+    const auto increment = graph(
+        "name"_n = "inferred_map_output",
+        [add_one](wp<TS<i64>> value) -> wp<> { return wp<>{add_one(value)}; });
+
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> values) { return map(increment, values)[i64{1}]; };
+
+    CHECK(hg::run_graph(tested, {{{1, 1}}, {{1, 2}}}).equals<i64>({2, 3}));
+}
+
 TEST_CASE("map passes a const key to an indexed graph parameter",
           "[feature:map][feature:nested-graph][feature:operator][series:tsd][shape:nested]"
           "[guarantee:const][definition:function]") {
