@@ -8,6 +8,7 @@
 #include <hg/scalar/list/scalar.hpp>
 #include <hg/scalar/tuple/scalar.hpp>
 #include <hg/service_catalogue.hpp>
+#include <hg/util/scope_exit.hpp>
 #include <hg/web/http_client.hpp>
 #include <hg/web/http_server.hpp>
 #include <hg/web/auth.hpp>
@@ -21,7 +22,10 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
+#include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -93,7 +97,94 @@ ObservedResponse observe(Scalar<Bundle<HttpResponse>> response) {
     return result;
 }
 
+std::string test_data_file(std::string_view filename) {
+    return (std::filesystem::path{__FILE__}.parent_path() / "data" / filename).string();
+}
+
+ObservedResponse run_https_attempt(HttpClientOptions options, std::string_view host) {
+    auto catalogue = ServiceCatalogue{};
+    catalogue.register_impl(http_client, http_client_impl(std::move(options)), {});
+    register_http_server(catalogue, ServerOptions{.tls = ServerTlsOptions{
+                                    test_data_file("test_server_cert.pem"),
+                                    test_data_file("test_server_key.pem")}});
+
+    auto writer = Queue{};
+    const auto requests = queue<TS<Bundle<HttpClientRequest>>>(start = [&](Queue queue) { writer = queue; });
+    const auto handler = graph([](wp<TS<Bundle<HttpServerRequest>>> request) {
+        const auto response = make_response(204, {});
+        return operators::sample(request, operators::const_(response.view()));
+    });
+    const auto route = http_handler("/tls", handler);
+    auto stop = std::stop_source{};
+    auto result = ObservedResponse{};
+
+    run_graph(
+        [&] {
+            (void)route();
+            const auto port = http_server();
+            const auto reply = http_client(requests());
+            (void)node([&](In<TS<i64>> bound_port) {
+                const auto url = "https://" + std::string{host} + ":" + std::to_string(*bound_port) + "/tls";
+                const auto request = make_request("GET", url);
+                if (!writer.write(literal::TimeSeriesLiteral(request.view()))) {
+                    throw std::runtime_error{"could not queue the HTTPS request"};
+                }
+            })(port);
+            (void)node([&](In<TS<Bundle<HttpResponse>>> response) {
+                result = observe(response.value());
+                stop.request_stop();
+            })(reply);
+        },
+        GraphRunOptions{.services = &catalogue,
+                        .engine = EvaluationEngine::realtime,
+                        .run_time = std::chrono::seconds{3},
+                        .stop_token = stop.get_token()});
+    return result;
+}
+
 } // namespace
+
+TEST_CASE("HTTPS verifies certificates and hostnames", "[feature:http][feature:tls]") {
+    const auto unknown_by_system = run_https_attempt({}, "localhost");
+    CHECK(unknown_by_system.status == 599);
+
+    const auto trusted = run_https_attempt(HttpClientOptions{.ca_file = test_data_file("test_server_cert.pem")},
+                                           "localhost");
+    CHECK(trusted.status == 204);
+
+    const auto wrong_ca = run_https_attempt(HttpClientOptions{.ca_file = test_data_file("test_wrong_ca.pem")},
+                                            "localhost");
+    CHECK(wrong_ca.status == 599);
+
+    const auto wrong_host = run_https_attempt(HttpClientOptions{.ca_file = test_data_file("test_server_cert.pem")},
+                                              "127.0.0.1");
+    CHECK(wrong_host.status == 599);
+}
+
+#if defined(__linux__)
+TEST_CASE("HTTP client uses system CA paths by default and excludes them for ca_file",
+          "[feature:http][feature:tls]") {
+    const auto previous = std::getenv("SSL_CERT_FILE");
+    const auto previous_value = previous ? std::optional<std::string>{previous} : std::nullopt;
+    REQUIRE(setenv("SSL_CERT_FILE", test_data_file("test_server_cert.pem").c_str(), 1) == 0);
+    const auto restore = util::scope_exit{[&]() noexcept {
+        if (previous_value) {
+            (void)setenv("SSL_CERT_FILE", previous_value->c_str(), 1);
+        } else {
+            (void)unsetenv("SSL_CERT_FILE");
+        }
+    }};
+    const auto trusted_by_system = run_https_attempt({}, "localhost");
+    const auto failure = std::string{reinterpret_cast<const char *>(trusted_by_system.body.data()),
+                                     trusted_by_system.body.size()};
+    INFO(failure);
+    CHECK(trusted_by_system.status == 204);
+
+    const auto explicitly_untrusted = run_https_attempt(
+        HttpClientOptions{.ca_file = test_data_file("test_wrong_ca.pem")}, "localhost");
+    CHECK(explicitly_untrusted.status == 599);
+}
+#endif
 
 TEST_CASE("HTTP client runtime handles Basic and Negotiate authentication", "[feature:http][feature:auth]") {
     const auto use_negotiate = GENERATE(false, true);

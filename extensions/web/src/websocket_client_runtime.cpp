@@ -4,13 +4,16 @@
 #include "http_header.hpp"
 #include "websocket_client_output.hpp"
 #include "runtime_logging.hpp"
+#include "system_ca_paths.hpp"
 #include "transport_stream.hpp"
 
 #include <boost/asio.hpp>
 #include <boost/beast.hpp>
+#include <boost/certify/https_verification.hpp>
 #include <boost/url.hpp>
 
 #include <unicode/utf8.h>
+#include <openssl/x509v3.h>
 
 #include <hg/literal/time_series_literal.hpp>
 #include <hg/scalar/bundle/value.hpp>
@@ -168,7 +171,8 @@ ScalarValue<Bundle<WebSocketClose>> close_value(i64 code, std::string_view reaso
 class WebSocketClientImplementation final {
   public:
     WebSocketClientImplementation(WebSocketClientOptions options, Queue output)
-        : options_{std::move(options)}, output_{std::move(output)}, work_{asio::make_work_guard(io_)} {
+        : options_{std::move(options)},
+          output_{std::move(output)}, work_{asio::make_work_guard(io_)} {
         if (options_.handshake_timeout.count() <= 0) {
             throw std::invalid_argument{"WebSocket handshake timeout must be positive"};
         }
@@ -180,10 +184,22 @@ class WebSocketClientImplementation final {
         if (SSL_CTX_set_min_proto_version(ssl_context_.native_handle(), TLS1_2_VERSION) != 1) {
             throw std::runtime_error{"could not set the minimum client TLS version"};
         }
-        auto trust_error = boost::system::error_code{};
-        ssl_context_.set_default_verify_paths(trust_error);
-        if (options_.ca_file) ssl_context_.load_verify_file(*options_.ca_file);
         ssl_context_.set_verify_mode(ssl::verify_peer);
+        if (options_.ca_file) {
+            ssl_context_.load_verify_file(*options_.ca_file);
+        } else {
+#if defined(__linux__)
+            const auto ca_paths = details::system_ca_paths();
+            auto error = boost::system::error_code{};
+            if (ca_paths.file) ssl_context_.load_verify_file(*ca_paths.file, error);
+            if (ca_paths.directory) ssl_context_.add_verify_path(*ca_paths.directory, error);
+#elif defined(_WIN32) || defined(__APPLE__)
+            boost::certify::enable_native_https_server_verification(ssl_context_);
+#else
+            auto error = boost::system::error_code{};
+            ssl_context_.set_default_verify_paths(error);
+#endif
+        }
         thread_ = std::jthread{[this] {
             while (!stopped_.load(std::memory_order_acquire)) {
                 try {
@@ -340,9 +356,18 @@ class WebSocketClientImplementation final {
                     auto &transport = stream_.next_layer();
                     transport.enable_tls(client_.ssl_context_);
                     auto *tls = transport.tls_stream();
-                    tls->set_verify_callback(ssl::host_name_verification(parsed_url_.host));
                     auto address_error = boost::system::error_code{};
                     (void)asio::ip::make_address(parsed_url_.host, address_error);
+                    if (address_error) {
+                        boost::certify::set_server_hostname(*tls, parsed_url_.host);
+                    } else {
+                        auto *parameters = SSL_get0_param(tls->native_handle());
+                        X509_VERIFY_PARAM_set_hostflags(parameters, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
+                        if (X509_VERIFY_PARAM_set1_ip_asc(parameters, parsed_url_.host.c_str()) != 1) {
+                            fail_before_handshake("could not set the WebSocket TLS server name");
+                            return;
+                        }
+                    }
                     if (address_error &&
                         SSL_set_tlsext_host_name(tls->native_handle(), parsed_url_.host.c_str()) != 1) {
                         fail_before_handshake("could not set the WebSocket TLS server name");

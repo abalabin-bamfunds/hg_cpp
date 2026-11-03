@@ -359,7 +359,7 @@ def websocket_client(request: hg.TSB[WebSocketClientRequest]) -> hg.TSB[WebSocke
     raise RuntimeError("websocket_client is a service declaration")
 
 
-def http_client_impl(timeout=timedelta(seconds=30), max_response_body_size=8 * 1024 * 1024):
+def http_client_impl(timeout=timedelta(seconds=30), max_response_body_size=8 * 1024 * 1024, ca_file=None):
     """Build a graph implementation for the HTTP client service."""
     if not isinstance(timeout, timedelta):
         raise TypeError("timeout must be a datetime.timedelta")
@@ -372,10 +372,12 @@ def http_client_impl(timeout=timedelta(seconds=30), max_response_body_size=8 * 1
         or max_response_body_size < 0
     ):
         raise ValueError("max_response_body_size must be a non-negative integer")
+    if ca_file is not None and not isinstance(ca_file, str):
+        raise TypeError("ca_file must be a path string or None")
 
     @hg.graph
     def implementation(request: hg.TSD[int, hg.TS[HttpClientRequest]]) -> hg.TSD[int, hg.TS[HttpResponse]]:
-        return _http_client_impl(request, timeout_ms, max_response_body_size)
+        return _http_client_impl(request, timeout_ms, max_response_body_size, ca_file)
 
     return implementation
 

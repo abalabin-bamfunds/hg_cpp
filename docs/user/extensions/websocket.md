@@ -135,8 +135,8 @@ timeout (30 seconds by default), maximum message size (8 MiB), and optional `ca_
 Python accepts `handshake_timeout=timedelta(...)`,
 `max_message_size=...`, and `ca_file=...`. `register_client_transports(...)` accepts
 the same three keyword options when it installs both HTTP and WebSocket clients.
-The client supports `ws://` and `wss://`. For WSS, certificate and hostname verification
-are enabled. `ca_file` adds a PEM CA file to OpenSSL's configured default trust paths.
+The client supports `ws://` and `wss://`. See [Client TLS trust](web.md#client-tls-trust)
+for the default trust stores and `ca_file` behavior shared with HTTPS.
 
 ## Messages, closing, and authentication
 

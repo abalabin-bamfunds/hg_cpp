@@ -1,5 +1,7 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
 import socket
+import sys
 from threading import Event, Thread
 from datetime import timedelta
 
@@ -11,9 +13,13 @@ from hg_web import (
     ClientAuthRegex,
     HttpClientRequest,
     HttpResponse,
+    HttpServerRequest,
     http_client,
     http_client_impl,
+    http_handler,
+    http_server,
     register_client_auth,
+    register_http_server,
     register_client_transports,
 )
 
@@ -356,3 +362,76 @@ def test_client_transports_and_auth_registration_integrate_with_python_services(
 
     assert [value for _, value in replies.events] == ["200:authorized"]
     assert received_authorization == ["Bearer python-token"]
+
+
+def test_https_client_ca_file_and_combined_transport_option(monkeypatch):
+    from pathlib import Path
+
+    test_data = Path(__file__).parent.parent / "tests" / "data"
+    certificate = test_data / "test_server_cert.pem"
+    private_key = test_data / "test_server_key.pem"
+    wrong_ca = test_data / "test_wrong_ca.pem"
+
+    def request_with(ca_file=None, combined=False, host="localhost"):
+        stop = hg.StopSource()
+        statuses = []
+
+        @hg.graph
+        def handler(request: hg.TS[HttpServerRequest]) -> hg.TS[HttpResponse]:
+            return hg.operators.sample(request, hg.operators.const_(HttpResponse(status=204)))
+
+        route = http_handler("/tls", handler)
+
+        @hg.compute_node
+        def make_request(port: hg.TS[int]) -> hg.TS[HttpClientRequest]:
+            return HttpClientRequest(f"https://{host}:{port.value}/tls")
+
+        @hg.compute_node
+        def observe(response: hg.TS[HttpResponse]) -> None:
+            value = response.value
+            statuses.append((value.status, bytes(value.body)))
+            stop.request_stop()
+
+        @hg.graph
+        def application() -> None:
+            route()
+            observe(http_client(make_request(http_server())))
+
+        catalogue = hg.ServiceCatalogue()
+        register_http_server(
+            catalogue,
+            certificate_chain_file=str(certificate),
+            private_key_file=str(private_key),
+        )
+        if combined:
+            register_client_transports(
+                catalogue,
+                "python-https-ca-file",
+                ca_file=str(ca_file) if ca_file is not None else None,
+            )
+        else:
+            implementation = http_client_impl() if ca_file is None else http_client_impl(ca_file=str(ca_file))
+            catalogue.register_impl(http_client, implementation)
+        hg.run_graph(
+            application,
+            catalogue=catalogue,
+            engine=hg.EvaluationEngine.realtime,
+            run_time=timedelta(seconds=5),
+            stop_token=stop.get_token(),
+        )
+        return statuses
+
+    native_trust = os.environ.get("HG_WEB_TEST_NATIVE_TRUST") == "1"
+    assert [status for status, body in request_with()] == [204 if native_trust else 599]
+    assert request_with(certificate)[0][0] == 204
+    assert request_with(wrong_ca)[0][0] == 599
+    combined = request_with(certificate, combined=True)
+    assert combined[0][0] == 204, combined
+
+    if native_trust:
+        assert request_with(host="127.0.0.1")[0][0] == 599
+
+    if sys.platform.startswith("linux"):
+        monkeypatch.setenv("SSL_CERT_FILE", str(certificate))
+        assert request_with()[0][0] == 204
+        assert request_with(wrong_ca)[0][0] == 599
