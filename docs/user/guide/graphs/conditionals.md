@@ -74,7 +74,7 @@ Output:
 
 using namespace hg;
 
-auto calibrated_temperature(wp<TS<i64>> reading, bool apply_offset) {
+auto calibrated_temperature(auto reading, bool apply_offset) {
     auto offset = 0;
     if (apply_offset) {
         offset = 2;
@@ -82,12 +82,12 @@ auto calibrated_temperature(wp<TS<i64>> reading, bool apply_offset) {
     return reading + offset;
 }
 
-auto reported_temperature(wp<TS<i64>> reading) {
-    return calibrated_temperature(reading, true);
-}
-
 int main() {
-    const auto result = run_graph(reported_temperature, {18, 20, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            return calibrated_temperature(reading, true);
+        },
+        {18, 20, 19});
     std::cout << result << '\n';
 }
 ```
@@ -169,14 +169,14 @@ Output:
 using namespace hg;
 using namespace hg::operators;
 
-auto capped_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    const auto too_hot = calibrated > 21;
-    return if_then_else(too_hot, const_(21), calibrated);
-}
-
 int main() {
-    const auto result = run_graph(capped_temperature, {18, 20, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            const auto too_hot = calibrated > 21;
+            return if_then_else(too_hot, const_(21), calibrated);
+        },
+        {18, 20, 19});
     std::cout << result << '\n';
 }
 ```
@@ -258,13 +258,13 @@ Output:
 
 using namespace hg;
 
-auto temperature_in_range(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    return (calibrated >= 20) && (calibrated <= 21);
-}
-
 int main() {
-    const auto result = run_graph(temperature_in_range, {17, 18, 19, 20});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            return (calibrated >= 20) && (calibrated <= 21);
+        },
+        {17, 18, 19, 20});
     std::cout << result << '\n';
 }
 ```
@@ -345,16 +345,16 @@ Output:
 using namespace hg;
 using namespace hg::operators;
 
-auto temperature_band(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    return if_then_else(
-        calibrated < 20,
-        const_(-1),
-        if_then_else(calibrated > 21, const_(1), const_(0)));
-}
-
 int main() {
-    const auto result = run_graph(temperature_band, {17, 18, 20, 17});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            return if_then_else(
+                calibrated < 20,
+                const_(-1),
+                if_then_else(calibrated > 21, const_(1), const_(0)));
+        },
+        {17, 18, 20, 17});
     std::cout << result << '\n';
 }
 ```
@@ -441,14 +441,12 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto reported_temperature(wp<TS<i64>> reading, wp<TS<bool>> enabled) {
-    const auto calibrated = reading + 2;
-    return filter_(enabled, calibrated);
-}
-
 int main() {
     const auto result = run_graph(
-        reported_temperature,
+        [](auto reading, auto enabled) {
+            const auto calibrated = reading + 2;
+            return filter_(enabled, calibrated);
+        },
         {18, SKIP, 19, 20, SKIP, SKIP, SKIP, 20},
         {false, true, false, SKIP, true, false, true, SKIP});
     std::cout << result << '\n';
@@ -528,12 +526,12 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto configured(wp<TS<i64>> offset) {
-    return default_(offset, 2) + 18;
-}
-
 int main() {
-    const auto result = run_graph(configured, {SKIP, 0, 3});
+    const auto result = run_graph(
+        [](auto offset) {
+            return default_(offset, 2) + 18;
+        },
+        {SKIP, 0, 3});
     std::cout << result << '\n';
 }
 ```
@@ -611,12 +609,12 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto readings(wp<TS<i64>> primary, wp<TS<i64>> secondary) {
-    return merge(primary, secondary);
-}
-
 int main() {
-    const auto result = run_graph(readings, {10, SKIP, 12, 13}, {20, 21, SKIP, 23});
+    const auto result = run_graph(
+        [](auto primary, auto secondary) {
+            return merge(primary, secondary);
+        },
+        {10, SKIP, 12, 13}, {20, 21, SKIP, 23});
     std::cout << result << '\n';
 }
 ```
@@ -706,13 +704,12 @@ using namespace literal;
 auto accumulated(wp<TS<i64>> reading) { return sums(reading).as<TS<i64>>(); }
 auto current(wp<TS<i64>> reading) { return reading; }
 
-auto temperature(wp<TS<i64>> mode, wp<TS<i64>> reading) {
-    return switch_(mode, cases{case_(i64{1}, accumulated), case_(i64{2}, current)}, reading)
-        .as<TS<i64>>();
-}
-
 int main() {
-    const auto result = run_graph(temperature, {1, SKIP, 2, 1}, {18, 19, 20, 21});
+    const auto result = run_graph(
+        [](wp<TS<i64>> mode, wp<TS<i64>> reading) {
+            return switch_(mode, cases{case_(i64{1}, accumulated), case_(i64{2}, current)}, reading);
+        },
+        {1, SKIP, 2, 1}, {18, 19, 20, 21});
     std::cout << result << '\n';
 }
 ```

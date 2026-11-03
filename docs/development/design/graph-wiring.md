@@ -681,10 +681,22 @@ CHECK(run_graph(increment, 41).equals({42}));
 CHECK(run_graph(increment, {1, 2, 3}).equals({2, 3, 4}));
 ```
 
-Top-level parameter types must be concrete before argument interpretation.
-Specialize a generic graph before passing it to `run_graph`, or supply an
-explicitly typed [input descriptor](../testing.md#test-layout). Its internal node
-and graph calls use normal type resolution.
+Concrete top-level parameter types determine argument interpretation. A generic
+graph declaration needs a specialization or an explicitly typed
+[input descriptor](../testing.md#test-layout) when its signature remains unresolved.
+
+An inline generic C++ lambda receives one graph connection for every supplied
+argument. A scalar argument supplies one initial value; a range supplies ticks.
+The runner uses a typed C++ range's element type or infers the scalar stream's
+type from its literal values, ignoring `SKIP` and `INVALID`. Ranges of `Scalar<>`
+or `ScalarValue<>` use the values' runtime types. All literal values
+in that stream must have the same scalar type. Empty or sentinel-only literals
+and collection literals require an explicit input descriptor.
+Captured values and helper arguments provide fixed configuration. Normal graph
+invocation resolves the lambda's internal node and graph calls.
+
+The generic callable path returns `GraphRunResult<>` with a runtime-resolved
+captured value type.
 
 For a C++ graph function, normal graph invocation resolves its inputs before
 wiring its body. The returned wiring point determines the output type.

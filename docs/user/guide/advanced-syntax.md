@@ -84,6 +84,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
+C++ `wp<TS<i64>>` declares an input connection carrying 64-bit integers. Use an
+explicit connection type when a graph needs to restrict its accepted types or
+state a time series contract. An `auto` parameter lets the caller determine the
+connection's type.
+
 See [time series types](advanced-graphs/types.md) and
 [guarantees](advanced-graphs/guarantees.md).
 

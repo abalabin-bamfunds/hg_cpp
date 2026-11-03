@@ -67,13 +67,11 @@ const auto calibrated_temperature = node([](i64 reading, i64 offset) {
     return reading + offset;
 });
 
-auto display_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
-    return calibrated_temperature(reading, offset);
-}
-
 int main() {
     const auto result = run_graph(
-        display_temperature,
+        [](auto reading, auto offset) {
+            return calibrated_temperature(reading, offset);
+        },
         {18, SKIP, 19, SKIP},
         {SKIP, 2, SKIP, 3});
     std::cout << result << '\n';
@@ -154,7 +152,6 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/graph.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
@@ -171,12 +168,12 @@ const auto accepted = node([](i64 reading) -> std::optional<i64> {
     return reading + 2;
 });
 
-auto temperature(wp<TS<i64>> reading) {
-    return accepted(reading);
-}
-
 int main() {
-    const auto result = run_graph(graph(temperature), {18, -3, 0, -1, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            return accepted(reading);
+        },
+        {18, -3, 0, -1, 19});
     std::cout << result << '\n';
 }
 ```

@@ -325,19 +325,19 @@ Output:
 
 using namespace hg;
 
-auto calibrated_temperature(wp<TS<i64>> reading, int offset) {
+auto calibrated_temperature(auto reading, int offset) {
     return reading + offset;
-}
-
-auto display_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = calibrated_temperature(reading, 2);
-    return calibrated * 10;
 }
 
 int main() {
     using namespace literal;
 
-    const auto result = run_graph(display_temperature, {18, SKIP, 18, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = calibrated_temperature(reading, 2);
+            return calibrated * 10;
+        },
+        {18, SKIP, 18, 19});
     std::cout << result << '\n';
 }
 ```
@@ -365,8 +365,10 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 The repeated reading still produces an update. An empty output position means no
-publication; the last result remains available. In C++, `wp<TS<i64>>` declares an
-input connection carrying 64-bit integers. See [input sequences](graphs/updates.md).
+publication; the last result remains available. C++ `auto` parameters receive input
+connections, and `run_graph` infers their value types from the supplied sequences.
+The lambda connects those inputs to the calculation. See
+[input sequences](graphs/updates.md).
 
 ## Conditionals
 
@@ -420,14 +422,14 @@ Output:
 using namespace hg;
 using namespace hg::operators;
 
-auto capped_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    const auto too_hot = calibrated > 21;
-    return if_then_else(too_hot, const_(21), calibrated);
-}
-
 int main() {
-    const auto result = run_graph(capped_temperature, {18, 20, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            const auto too_hot = calibrated > 21;
+            return if_then_else(too_hot, const_(21), calibrated);
+        },
+        {18, 20, 19});
     std::cout << result << '\n';
 }
 ```
@@ -502,7 +504,6 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/graph.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
@@ -518,12 +519,12 @@ const auto correct = node([](i64 reading) {
     return reading + 2;
 });
 
-auto temperature(wp<TS<i64>> reading) {
-    return correct(reading);
-}
-
 int main() {
-    const auto result = run_graph(graph(temperature), {18, -3, SKIP, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            return correct(reading);
+        },
+        {18, -3, SKIP, 19});
     std::cout << result << '\n';
 }
 ```
