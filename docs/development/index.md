@@ -56,3 +56,6 @@ history and are marked `superseded`.
 - [hgraph services and feedback sweep, 2026-11-02](reports/hgraph-service-feedback-sweep-2026-11-02.md): nested service clients, delayed collections, and inferred graph outputs.
 - [hgraph service composition and scalar feedback sweep, 2026-11-03](reports/hgraph-service-composition-sweep-2026-11-03.md): service chains, recursive requests, multiservice ordering, and hierarchical scalar feedback.
 - [hgraph generic services and collection composition sweep, 2026-11-03](reports/hgraph-specialization-collection-sweep-2026-11-03.md): generic service specializations and collection conversion, accumulation, emission, and library reductions.
+- [hgraph reference composition sweep, 2026-11-03](reports/hgraph-reference-composition-sweep-2026-11-03.md): additional reference sources, consumers, and nested graph lifetimes.
+- [hgraph service queue sweep, 2026-11-03](reports/hgraph-service-queue-sweep-2026-11-03.md): service-owned queue sources and client lifecycle.
+- [hgraph reduce composition sweep, 2026-11-03](reports/hgraph-reduce-composition-sweep-2026-11-03.md): higher-order reducer graphs and collection lifecycle.
