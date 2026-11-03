@@ -1,4 +1,5 @@
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+import os
 import socket
 import sys
 from threading import Event, Thread
@@ -371,7 +372,7 @@ def test_https_client_ca_file_and_combined_transport_option(monkeypatch):
     private_key = test_data / "test_server_key.pem"
     wrong_ca = test_data / "test_wrong_ca.pem"
 
-    def request_with(ca_file=None, combined=False):
+    def request_with(ca_file=None, combined=False, host="localhost"):
         stop = hg.StopSource()
         statuses = []
 
@@ -383,7 +384,7 @@ def test_https_client_ca_file_and_combined_transport_option(monkeypatch):
 
         @hg.compute_node
         def make_request(port: hg.TS[int]) -> hg.TS[HttpClientRequest]:
-            return HttpClientRequest(f"https://localhost:{port.value}/tls")
+            return HttpClientRequest(f"https://{host}:{port.value}/tls")
 
         @hg.compute_node
         def observe(response: hg.TS[HttpResponse]) -> None:
@@ -420,11 +421,15 @@ def test_https_client_ca_file_and_combined_transport_option(monkeypatch):
         )
         return statuses
 
-    assert [status for status, body in request_with()] == [599]
+    native_trust = os.environ.get("HG_WEB_TEST_NATIVE_TRUST") == "1"
+    assert [status for status, body in request_with()] == [204 if native_trust else 599]
     assert request_with(certificate)[0][0] == 204
     assert request_with(wrong_ca)[0][0] == 599
     combined = request_with(certificate, combined=True)
     assert combined[0][0] == 204, combined
+
+    if native_trust:
+        assert request_with(host="127.0.0.1")[0][0] == 599
 
     if sys.platform.startswith("linux"):
         monkeypatch.setenv("SSL_CERT_FILE", str(certificate))

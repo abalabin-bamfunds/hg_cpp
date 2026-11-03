@@ -371,7 +371,12 @@ std::optional<std::string> Transfer::configure(const HttpClientOptions &options,
     set_easy_option(easy, CURLOPT_SSL_VERIFYHOST, 2L);
     if (options.ca_file) {
         set_easy_option(easy, CURLOPT_CAINFO, options.ca_file->c_str());
-        set_easy_option(easy, CURLOPT_CAPATH, nullptr);
+        // A backend without CA-directory support cannot have a default directory to combine here.
+        const auto clear_ca_path_result = curl_easy_setopt(easy, CURLOPT_CAPATH, nullptr);
+        if (clear_ca_path_result != CURLE_OK && clear_ca_path_result != CURLE_NOT_BUILT_IN) {
+            throw std::runtime_error{std::string{"libcurl option failed: "} +
+                                     curl_easy_strerror(clear_ca_path_result)};
+        }
         set_easy_option(easy, CURLOPT_SSL_OPTIONS, 0L);
     } else {
         if (ca_paths.file) set_easy_option(easy, CURLOPT_CAINFO, ca_paths.file->c_str());
