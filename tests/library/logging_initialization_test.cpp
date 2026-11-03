@@ -3,11 +3,16 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <fmt/chrono.h>
+
 #include <chrono>
 #include <cstdio>
+#include <cstdlib>
+#include <ctime>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <regex>
 #include <stdexcept>
 #include <string>
@@ -19,6 +24,42 @@
 #endif
 
 namespace {
+
+class NonUtcTimezone {
+  public:
+    NonUtcTimezone() {
+        if (const auto *previous = std::getenv("TZ")) {
+            previous_ = previous;
+        }
+#if defined(_WIN32)
+        REQUIRE(_putenv_s("TZ", "HGT-9") == 0);
+        _tzset();
+#else
+        REQUIRE(setenv("TZ", "HGT-9", 1) == 0);
+        tzset();
+#endif
+    }
+
+    NonUtcTimezone(const NonUtcTimezone &) = delete;
+    NonUtcTimezone &operator=(const NonUtcTimezone &) = delete;
+
+    ~NonUtcTimezone() {
+#if defined(_WIN32)
+        (void)_putenv_s("TZ", previous_ ? previous_->c_str() : "");
+        _tzset();
+#else
+        if (previous_) {
+            (void)setenv("TZ", previous_->c_str(), 1);
+        } else {
+            (void)unsetenv("TZ");
+        }
+        tzset();
+#endif
+    }
+
+  private:
+    std::optional<std::string> previous_;
+};
 
 std::filesystem::path log_path() {
     const auto nonce = std::chrono::steady_clock::now().time_since_epoch().count();
@@ -197,6 +238,7 @@ TEST_CASE("HG logging defaults to stdout with microsecond timestamps", "[library
 }
 
 TEST_CASE("HG logging can select stderr and UTC timestamps", "[library][logging]") {
+    const auto timezone = NonUtcTimezone{};
     const auto path = log_path();
     const auto cleanup = remove_file_on_exit(path);
     {
@@ -209,4 +251,63 @@ TEST_CASE("HG logging can select stderr and UTC timestamps", "[library][logging]
 
     const auto output = read_file(path);
     CHECK(std::regex_search(output, std::regex{R"(^\+0000\|UTC output\n$)"}));
+}
+
+TEST_CASE("HG logging formats UTC calendar fields and preserves escaped zones", "[library][logging]") {
+    const auto timezone = NonUtcTimezone{};
+    const auto path = log_path();
+    const auto cleanup = remove_file_on_exit(path);
+    hg::logging::initialize({.file = path.string(),
+                             .pattern = "{time}|{message}",
+                             .time_pattern = "%Y-%m-%dT%H:%M:%S.%Qus|%z|%Z|%%z|%%Z|%%%z|%%%Z|%%%%z|%%%%Z",
+                             .utc = true});
+    const auto before = fmt::format("{:%Y-%m-%dT%H:%M:%S}", fmt::gmtime(std::time(nullptr)));
+    hg::log::info("UTC fields");
+    hg::logging::flush();
+    const auto after = fmt::format("{:%Y-%m-%dT%H:%M:%S}", fmt::gmtime(std::time(nullptr)));
+
+    const auto output = read_file(path);
+    CHECK(output.substr(0, 19) >= before);
+    CHECK(output.substr(0, 19) <= after);
+    CHECK(std::regex_search(
+        output, std::regex{R"(\.\d{6}\|\+0000\|UTC\|%z\|%Z\|%\+0000\|%UTC\|%%z\|%%Z\|UTC fields\n$)"}));
+}
+
+TEST_CASE("HG logging formats UTC timezone modifiers", "[library][logging]") {
+    const auto timezone = NonUtcTimezone{};
+    const auto path = log_path();
+    const auto cleanup = remove_file_on_exit(path);
+    auto time_pattern = std::string{"%Qms|%Ez|%Oz|%EZ|%OZ|%%Ez|%%Oz|%%%Ez"};
+    auto expected = std::string{R"(^\d{3}\|\+0000\|\+0000\|UTC\|UTC\|%Ez\|%Oz\|%\+0000)"};
+#if defined(_WIN32)
+    time_pattern += "|%#z|%#Z|%#Ez|%#OZ|%%#z";
+    expected += R"(\|\+0000\|UTC\|\+0000\|UTC\|%#z)";
+#endif
+    expected += R"(\|UTC modifiers\n$)";
+    hg::logging::initialize({.file = path.string(),
+                             .pattern = "{time}|{message}",
+                             .time_pattern = time_pattern,
+                             .utc = true});
+    hg::log::info("UTC modifiers");
+    hg::logging::flush();
+
+    CHECK(std::regex_search(read_file(path), std::regex{expected}));
+}
+
+TEST_CASE("HG logging preserves local timestamps and timezone fields", "[library][logging]") {
+    const auto timezone = NonUtcTimezone{};
+    const auto path = log_path();
+    const auto cleanup = remove_file_on_exit(path);
+    hg::logging::initialize({.file = path.string(),
+                             .pattern = "{time}|{message}",
+                             .time_pattern = "%Y-%m-%dT%H:%M:%S.%Qns|%z|%Z|%%z|%%Z"});
+    const auto before = fmt::format("{:%Y-%m-%dT%H:%M:%S}", fmt::gmtime(std::time(nullptr) + 9 * 60 * 60));
+    hg::log::info("local fields");
+    hg::logging::flush();
+    const auto after = fmt::format("{:%Y-%m-%dT%H:%M:%S}", fmt::gmtime(std::time(nullptr) + 9 * 60 * 60));
+
+    const auto output = read_file(path);
+    CHECK(output.substr(0, 19) >= before);
+    CHECK(output.substr(0, 19) <= after);
+    CHECK(std::regex_search(output, std::regex{R"(\.\d{9}\|\+0900\|HGT\|%z\|%Z\|local fields\n$)"}));
 }

@@ -176,8 +176,40 @@ std::shared_ptr<quill::Sink> create_sink(const Config &config) {
 }
 
 quill::PatternFormatterOptions pattern_options(const Config &config) {
+    auto time_pattern = config.time_pattern;
+    if (config.utc) {
+        // Some C runtimes format timezone fields from process state even for Quill's gmtime result.
+        for (auto index = std::size_t{}; index < time_pattern.size();) {
+            if (time_pattern[index] != '%' || index + 1 == time_pattern.size()) {
+                ++index;
+                continue;
+            }
+            auto conversion = index + 1;
+            if (time_pattern[conversion] == '%') {
+                index += 2;
+                continue;
+            }
+#if defined(_WIN32)
+            if (time_pattern[conversion] == '#') {
+                ++conversion;
+            }
+#endif
+            if (conversion < time_pattern.size() &&
+                (time_pattern[conversion] == 'E' || time_pattern[conversion] == 'O')) {
+                ++conversion;
+            }
+            if (conversion < time_pattern.size() &&
+                (time_pattern[conversion] == 'z' || time_pattern[conversion] == 'Z')) {
+                const auto replacement = std::string_view{time_pattern[conversion] == 'z' ? "+0000" : "UTC"};
+                time_pattern.replace(index, conversion - index + 1, replacement);
+                index += replacement.size();
+                continue;
+            }
+            ++index;
+        }
+    }
     return quill::PatternFormatterOptions{
-        translate_pattern(config.pattern), config.time_pattern,
+        translate_pattern(config.pattern), std::move(time_pattern),
         config.utc ? quill::Timezone::GmtTime : quill::Timezone::LocalTime};
 }
 
