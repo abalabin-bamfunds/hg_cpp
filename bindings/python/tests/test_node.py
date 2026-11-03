@@ -65,6 +65,19 @@ def test_node_optional_scalar_input_receives_none():
     assert hg.run_graph(graph) == [4]
 
 
+def test_node_returning_invalid_is_rejected():
+    @hg.node
+    def invalidate(value: int) -> int:
+        return hg.INVALID
+
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        return invalidate(value)
+
+    with pytest.raises(ValueError, match="Python node returns cannot invalidate outputs"):
+        hg.run_graph(graph, [1])
+
+
 def test_node_does_not_run_at_start_for_an_invalid_optional_time_series_input():
     @hg.node
     def echo(value: int | None) -> int:

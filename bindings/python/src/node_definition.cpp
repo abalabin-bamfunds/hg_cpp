@@ -169,7 +169,10 @@ void apply_time_series_delta(Out<TS_T> output, nanobind::handle delta, allocator
         [&](Out<TSL<TS_T, SIZE>> *value) { apply_list_delta(*value, delta, memory); },
         [&](Out<TSB<SCHEMA>> *value) { apply_bundle_delta(*value, runtime_type, delta, memory); },
         [&](Out<TSD<SCALAR, TS_T>> *value) { apply_dictionary_delta(*value, runtime_type, delta, memory); },
-        [&](Out<REF<TS_T>> *value) { apply_reference_delta(*value, delta); }, ddv::noop);
+        [&](Out<REF<TS_T>> *value) { apply_reference_delta(*value, delta); },
+        [](Out<TS_T> *) {
+            throw std::invalid_argument{"Python node outputs do not support this time-series provider"};
+        });
 }
 
 class CallArguments {
@@ -315,6 +318,9 @@ void PythonNodeDefinition::CompiledData::apply_delta(Invocation invocation, nano
     }
     if (!has_output) {
         throw std::invalid_argument{"a Python sink node must return None"};
+    }
+    if (details::is_invalid(delta)) {
+        throw std::invalid_argument{"Python node returns cannot invalidate outputs"};
     }
 
     auto &memory = invocation.context().runtime_graph().allocation();
