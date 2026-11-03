@@ -20,18 +20,21 @@ TEST_CASE("map removes pending delayed output with its key",
     };
 
     const auto materialize = node([](In<TSD<i64, TS<i64>>> values,
-                                     Out<TSD<i64, TS<i64>>> output) { output.copy_tick(values); });
+                                     Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(values);
+    });
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return materialize(map(delay_value, values));
     };
 
-    const auto actual = run_graph(tested,
-                    {{{1, 10}, {2, 100}},
-                     {{1, literal::REMOVE}, {2, 101}},
-                     {{1, 11}},
-                     literal::SKIP,
-                     literal::SKIP});
+    const auto actual = run_graph(
+        tested,
+        {{{1, 10}, {2, 100}},
+         {{1, literal::REMOVE}, {2, 101}},
+         {{1, 11}},
+         literal::SKIP,
+         literal::SKIP});
     CHECK(actual.equals({{{1, literal::INVALID}, {2, literal::INVALID}},
                          {{1, literal::REMOVE}},
                          {{1, literal::INVALID}, {2, 100}},
@@ -47,18 +50,21 @@ TEST_CASE("map keeps throttling state independent across key removal and recreat
     };
 
     const auto materialize = node([](In<TSD<i64, TS<i64>>> values,
-                                     Out<TSD<i64, TS<i64>>> output) { output.copy_tick(values); });
+                                     Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(values);
+    });
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) {
         return materialize(map(throttle_value, values));
     };
 
-    const auto actual = run_graph(tested,
-                    {{{1, 10}, {2, 100}},
-                     {{1, literal::REMOVE}, {2, 101}},
-                     {{1, 11}},
-                     {{2, 102}},
-                     literal::SKIP});
+    const auto actual = run_graph(
+        tested,
+        {{{1, 10}, {2, 100}},
+         {{1, literal::REMOVE}, {2, 101}},
+         {{1, 11}},
+         {{2, 102}},
+         literal::SKIP});
     CHECK(actual.equals({{{1, 10}, {2, 100}},
                        {{1, literal::REMOVE}},
                        {{1, 11}},
@@ -82,13 +88,14 @@ TEST_CASE("mapped delays cancel nested collection deltas when an outer key is re
         return materialize(map(delay_collection, values));
     };
 
-    const auto actual = run_graph(tested,
-                    {{{1, {{10, 1}}}, {2, {{20, 2}}}},
-                     {{1, {{10, literal::REMOVE}}}, {2, {{20, 3}}}},
-                     {{1, literal::REMOVE}, {2, {{21, 4}}}},
-                     {{1, {{11, 5}}}},
-                     literal::SKIP,
-                     literal::SKIP});
+    const auto actual = run_graph(
+        tested,
+        {{{1, {{10, 1}}}, {2, {{20, 2}}}},
+         {{1, {{10, literal::REMOVE}}}, {2, {{20, 3}}}},
+         {{1, literal::REMOVE}, {2, {{21, 4}}}},
+         {{1, {{11, 5}}}},
+         literal::SKIP,
+         literal::SKIP});
     CHECK(actual.equals({{{1, literal::INVALID}, {2, literal::INVALID}},
                          literal::SKIP,
                          {{1, literal::REMOVE}},
@@ -110,7 +117,7 @@ TEST_CASE("a restarted nested delay publishes only values from its new lifetime"
     };
 
     CHECK(run_graph(tested, {true, false, true, true}, {10, 20, 30, 40})
-              .equals<i64>({std::nullopt, std::nullopt, std::nullopt, std::nullopt, 30, 40}));
+              .equals({literal::SKIP, literal::SKIP, literal::SKIP, literal::SKIP, 30, 40}));
 }
 
 TEST_CASE("switching one mapped key cancels only that branch's pending delay",
@@ -119,7 +126,9 @@ TEST_CASE("switching one mapped key cancels only that branch's pending delay",
     const auto delay_value = [](wp<TS<i64>> value) {
         return operators::delay(value, timedelta_t{4});
     };
+
     const auto identity = [](wp<TS<i64>> value) { return value; };
+
     const auto select_delay = [&](wp<TS<i64>> value, wp<TS<bool>> use_delay) {
         return switch_(use_delay,
                        cases{case_(true, delay_value), case_(false, identity)},
@@ -127,23 +136,26 @@ TEST_CASE("switching one mapped key cancels only that branch's pending delay",
     };
 
     const auto materialize = node([](In<TSD<i64, TS<i64>>> values,
-                                     Out<TSD<i64, TS<i64>>> output) { output.copy_tick(values); });
+                                     Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(values);
+    });
 
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values, wp<TSD<i64, TS<bool>>> use_delay) {
         return materialize(map(select_delay, values, use_delay));
     };
 
-    const auto actual = run_graph(tested,
-                    {{{1, 10}, {2, 20}},
-                     {{1, 11}, {2, 21}},
-                     {{1, 12}, {2, 22}},
-                     {{1, 13}, {2, 23}},
-                     literal::SKIP},
-                    {{{1, true}, {2, true}},
-                     {{1, false}},
-                     {{1, true}},
-                     {{2, false}},
-                     literal::SKIP});
+    const auto actual = run_graph(
+        tested,
+        {{{1, 10}, {2, 20}},
+         {{1, 11}, {2, 21}},
+         {{1, 12}, {2, 22}},
+         {{1, 13}, {2, 23}},
+         literal::SKIP},
+        {{{1, true}, {2, true}},
+         {{1, false}},
+         {{1, true}},
+         {{2, false}},
+         literal::SKIP});
     CHECK(actual.equals({{{1, literal::INVALID}, {2, literal::INVALID}},
                          {{1, 11}},
                          {{1, literal::INVALID}},

@@ -64,10 +64,8 @@ outer key cancels that branch's pending changes while the sibling continues.
 Restarting the nested graph discards events scheduled by its previous
 instance.
 
-Verification used the `hg-timed-lifecycle-tests` target built with
-`cmake --build build/timed-lifecycle/cmake -j2`, followed by
-`timeout 60s build/timed-lifecycle/hg-timed-lifecycle-tests`. All five test
-cases passed. The full HG suite was not run for this batch.
+The focused test runner passed all five cases. The full HG suite was not run
+for this batch.
 
 ## Scope limits
 
