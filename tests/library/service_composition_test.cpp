@@ -316,17 +316,14 @@ TEST_CASE("a service installation input stays bound to the root across map wirin
 TEST_CASE("mapped subscription clients handle late keys and recreation",
           "[feature:service][feature:map][feature:nested-graph]"
           "[series:tss][series:tsd][series:value][transition:addition][transition:removal]") {
-    const auto lookup = subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{"mapped_lookup", {"key"}};
+    const auto lookup =
+        subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{"mapped_lookup", {"key"}};
     const auto answer = node([](In<TSS<i64>> keys, Out<TSD<i64, TS<i64>>> replies) {
         keys.for_each_removed([&](const auto &key) { replies.erase(key); });
         keys.for_each_added([&](const auto &key) { replies[key].set(*key * 10); });
     });
 
-    const auto final_key = node([](In<TS<i64>> key, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
-        if (key.modified()) {
-            output.set(*key);
-        }
-    });
+    const auto final_key = node([](i64 key, Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(key); });
 
     const auto implementation = graph("name"_n = "mapped_lookup_impl",
                                       [&](wp<TSS<i64>> keys) { return answer(keys); });
