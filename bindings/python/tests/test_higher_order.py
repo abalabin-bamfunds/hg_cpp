@@ -37,8 +37,12 @@ def test_map_maps_scalar_dict_snapshots_with_named_arguments():
         return {1: trigger.value, 2: trigger.value * 10}
 
     @hg.graph
+    def add_named_amount(value: hg.TS[int], amount: int) -> hg.TS[int]:
+        return add_amount(value, amount)
+
+    @hg.graph
     def graph(trigger: hg.TS[int]) -> hg.TS[int]:
-        return hg.map(add_amount, make_dictionary(trigger), amount=5)[2]
+        return hg.map(add_named_amount, make_dictionary(trigger), amount=5)[2]
 
     assert hg.run_graph(graph, [1, 2]) == [15, 25]
 
