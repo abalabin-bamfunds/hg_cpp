@@ -495,6 +495,7 @@ TEST_CASE("map infers a leading key for a graph function with an output",
 TEST_CASE("map accepts a graph with an inferred output type",
           "[feature:map][feature:nested-graph][feature:graph-compilation][series:tsd][series:value]") {
     const auto add_one = node([](i64 value) { return value + 1; });
+
     const auto increment = graph(
         "name"_n = "inferred_map_output",
         [add_one](wp<TS<i64>> value) -> wp<> { return wp<>{add_one(value)}; });

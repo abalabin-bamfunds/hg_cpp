@@ -3,7 +3,8 @@
 This batch extends the [reference-consumer sweep](hgraph-reference-consumer-sweep-2026-11-02.md)
 with services and feedback across nested graph boundaries. The HG baseline is
 `362c103dd` (current `main` at the start of this batch). Changes are limited to
-tests and development reports.
+tests and development reports. The [2026-11-03 follow-up](#higher-order-output-resolution-follow-up-2026-11-03)
+records the subsequent wiring fix.
 
 ## Sources
 
@@ -66,28 +67,30 @@ observe graph output rather than external value logs.
 
 ## Finding: inferred outputs across a nested boundary
 
-A direct service implementation may infer its output from a mapped reply graph.
-Wrapping that implementation in `feedback_service_implementation` reaches
-`nested()` and fails during wiring with `type variable has no type map entry`.
-An explicit output declaration passes with the expected delayed result
-`[SKIP, 2]`. A second reproduction isolates `nested()` with a graph returning
-`operators::add(value, 1)`. Its declared-output counterpart produces `[2, 3]`;
-the inferred-output call fails before evaluation.
+At the reviewed baseline, a direct service implementation could infer its output
+from a mapped reply graph. Wrapping that implementation in
+`feedback_service_implementation` reached `nested()` and failed during wiring
+with `type variable has no type map entry`. An explicit output declaration
+passed with the expected delayed result `[SKIP, 2]`. A second reproduction
+isolated `nested()` with a graph returning `operators::add(value, 1)`. Its
+declared-output counterpart produced `[2, 3]`; the inferred-output call failed
+before evaluation.
 
 The [graph output-inference contract](../design/graph-wiring.md#graph-templates)
 requires wiring to invoke a graph body once when its output is still unmapped,
 then resolve that output from the returned wiring point.
-[`nested_details::wire`](../../../include/hg/nested.hpp) calls
+At that baseline, [`nested_details::wire`](../../../include/hg/nested.hpp) called
 `graph.signature().resolve_wiring_arguments(...)` before invoking the graph.
 [`Signature::resolve_wiring_arguments`](../../../src/signature.cpp) completes
-output resolution immediately. The body cannot provide the missing mapping.
+output resolution immediately. The body could not provide the missing mapping.
 `SignatureWiringTemplate` already forwards `allows_output_inference()`; the
-remaining early-resolution path belongs to `nested()`.
+early-resolution path belonged to `nested()`.
 
 Classification: wiring implementation bug under the existing graph contract.
-Both reproductions assert the intended successful output and fail with the
-same missing-type-mapping error. They use hidden `[.][repro]` cases. No runtime
-sampling defect was found in the tested compositions.
+Both reproductions assert the intended successful output. They initially failed
+with the same missing-type-mapping error and used hidden `[.][repro]` cases.
+The [follow-up](#higher-order-output-resolution-follow-up-2026-11-03) resolves
+this finding. No runtime sampling defect was found in the tested compositions.
 
 ## Verification
 
@@ -120,3 +123,54 @@ The 0.5 two-request/reply-service chain, recursive service implementations,
 remain unreviewed by this batch. Existing tests establish simpler multiservice
 combinations, not the full interface-order product. Polymorphic scalar feedback
 alternatives also remain unreviewed.
+
+## Higher-order output resolution follow-up, 2026-11-03
+
+`nested()` now prepares input boundaries without resolving the graph signature
+itself. It invokes the graph through the shared wiring machinery, which first
+tries signature output resolution, then infers remaining output mappings from
+the body result when necessary. The nested output boundary uses that validated
+result. Temporary variadic captures retain their existing ownership: scalar
+entries belong to the inner graph.
+
+Both hidden reproductions are ordinary regression tests after the fix.
+
+| Path | Output-resolution audit |
+| --- | --- |
+| `nested()` | Removed the eager signature resolution; uses normal graph invocation. |
+| `map()` | Invokes the graph through shared wiring after creating input boundaries in `MapGraphArgumentBuilder::build()`. |
+| `mesh()` | Uses the map graph builder and forwards output-inference support through `ScopedWiringTemplate`. Dependency selection still requires the output type before selection wiring. |
+| `switch_()` | Invokes each case through shared wiring before combining its validated output type with the other cases. |
+| `reduce()` | Invokes the reducer through shared wiring. Its documented compact-storage probe can wire a separate graph a second time. |
+| `dispatch_()` | Retains `infer_output` in the selected implementation resolution and uses shared result validation. Its declared output contract must resolve before branch wiring, as documented. |
+| Service wrappers | Their eager completion resolves the declared service contract. Implementation graphs use normal invocation; the feedback wrapper reaches the corrected `nested()` path. |
+
+No other instance of premature implementation-output resolution was found in
+these paths. Added cases exercise inferred outputs through `map`, `switch_`,
+and `reduce`. The nested regressions check both successful inference with one
+body invocation and preservation of an output resolver failure before body
+invocation.
+
+The review lane rebuilt the affected Release test runners against matching
+native libraries. All focused cases passed:
+
+| Group | Passing cases | Passing assertions |
+| --- | ---: | ---: |
+| Graph and engine behavior, including nested graphs and contexts | 458 | 1,213 |
+| Services and feedback | 85 | 165 |
+| Graph templates, variadic wiring, map/switch/reduce wiring, and dispatch | 174 | 538 |
+| Previous reference-consumer library group | 268 | 517 |
+| Total | 985 | 2,433 |
+
+The implementation lane also passed its combined service/map/switch/reduce
+runner: 205 cases and 336 assertions. Those cases overlap the review-lane groups
+and are not added to the total. The variadic group includes the existing check
+that captured scalars are owned only by the inner graph; the graph-template
+group includes seeded nested output types.
+
+All six added or promoted regression cases have valid coverage tags. The
+service-and-feedback group passes tag validation. The engine group retains its
+five baseline diagnostics. The additional wiring group has one existing
+diagnostic: `map retains named and unnamed scalar arguments from the caller
+tuple` uses the undocumented `lifetime` dimension. Whitespace and changed
+documentation links pass validation. The complete HG suite was not run.
