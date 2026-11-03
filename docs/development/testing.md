@@ -819,6 +819,9 @@ For each reusable node and graph, test:
 - WebSocket server and client schema wiring, binary message exchange, subprotocol negotiation, and reconnect
 - WebSocket rejected handshakes, pending-handshake cancellation, URL validation, and transport failures
 
+Windows TLS tests scope fixture trust to client options through `ca_file`.
+They must not add fixture certificates to Windows certificate stores.
+
 ### Installed SDK
 
 `tools/test_installed_sdk.py` without arguments builds and runs consumers against
