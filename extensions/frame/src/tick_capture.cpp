@@ -101,6 +101,18 @@ class RowHistoryMatcher {
         ++actual_counts_[1];
     }
 
+    void remap_actual(std::span<const RowIdRemapping> mappings) {
+        auto rows = std::vector<decltype(actual_by_id_)::node_type>{};
+        rows.reserve(mappings.size());
+        for (const auto [old_id, new_id] : mappings) {
+            auto row = actual_by_id_.extract(old_id);
+            row.key() = new_id;
+            rows.push_back(std::move(row));
+        }
+        for (auto &row : rows)
+            actual_by_id_.insert(std::move(row));
+    }
+
     void remove_actual(row_id_t id, std::size_t tick) {
         append(active_actual_history(id), RowEventKind::remove, {}, tick);
         actual_by_id_.erase(id);
@@ -249,6 +261,8 @@ void write_frame_tick(const hg::details::TimeSeriesInputData &input, ScalarBuffe
 
     hg::details::write_bytes(writer, storage.schema);
     hg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.rows.identity));
+    tick_codec::write_row_id_remappings(writer, storage.change_time == input.last_updated() &&
+        storage.row_identity != nullptr ? storage.row_identity->remappings : std::span<const RowIdRemapping>{});
     auto changed_columns = std::vector<std::size_t>{};
     if (storage.change_time == input.last_updated()) {
         storage.each_changed_column(std::addressof(changed_columns), [](void *context, std::size_t index) {
@@ -287,7 +301,8 @@ void write_frame_tick(const hg::details::TimeSeriesInputData &input, ScalarBuffe
     if (storage.changed != nullptr) {
         for (const auto id : *storage.changed) {
             if ((storage.added != nullptr && storage.added->contains(id)) ||
-                (storage.removed != nullptr && storage.removed->contains(id)))
+                (storage.rows.identity == storage.cycle_start_domain &&
+                 storage.removed != nullptr && storage.removed->contains(id)))
                 continue;
             hg::details::TickHeader{hg::details::TickOperation::tick}.write(writer);
             hg::details::write_bytes(writer, id);
@@ -317,6 +332,7 @@ void write_column_tick(const In<TSC<T>> &input, ScalarBufferWriteContext &writer
     const auto descriptor = input.extension_descriptor();
     const auto storage = ColumnSeriesView<T>{descriptor.storage};
     hg::details::write_bytes(writer, reinterpret_cast<std::uintptr_t>(storage.row_domain()));
+    tick_codec::write_row_id_remappings(writer, input.row_id_remappings());
     if (storage.change_time() != input.last_updated()) {
         hg::details::TickHeader{hg::details::TickOperation::end}.write(writer);
         return;
@@ -344,6 +360,7 @@ void write_column_tick(const In<TSC<T>> &input, ScalarBufferWriteContext &writer
 void discard_frame_tick(util::buffer_reader &reader) {
     const auto &schema = read_schema(reader);
     static_cast<void>(reader.read_raw<std::uintptr_t>());
+    tick_codec::skip_row_id_remappings(reader);
     tick_codec::skip_changed_columns(reader);
     const auto &layout = native_frame_layout(schema);
     for (;;) {
@@ -503,10 +520,11 @@ class FrameHistoryComparison final : public testing::TickLiteralComparisonState 
                  const literal::TimeSeriesLiteral &expected, std::size_t tick) override {
         const auto &schema = read_schema(reader);
         static_cast<void>(reader.read_raw<std::uintptr_t>());
+        auto remappings = tick_codec::read_row_id_remappings(reader);
         tick_codec::skip_changed_columns(reader);
         const auto &layout = native_frame_layout(schema);
         if (!layout.key_fields.empty())
-            return compare_keyed_frame_payload(reader, schema, expected);
+            return compare_keyed_frame_payload(reader, schema, expected, remappings);
 
         read_named_frame_expectations(expected, schema, layout, history_, tick);
         for (;;) {
@@ -538,13 +556,26 @@ class FrameHistoryComparison final : public testing::TickLiteralComparisonState 
 
   private:
     bool compare_keyed_frame_payload(util::buffer_reader &reader, const hg::Schema &schema,
-                                     const literal::TimeSeriesLiteral &expected) {
+                                     const literal::TimeSeriesLiteral &expected,
+                                     std::vector<RowIdRemapping> &remappings) {
         const auto &layout = native_frame_layout(schema);
         auto expected_changes = read_expected_changes(expected, schema, layout);
         auto matched = std::vector<bool>(expected_changes.size());
 
         for (;;) {
             const auto header = hg::details::TickHeader::read(reader);
+            if (header.operation != hg::details::TickOperation::remove && !remappings.empty()) {
+                auto rows = std::vector<decltype(keys_by_id_)::node_type>{};
+                rows.reserve(remappings.size());
+                for (const auto [old_id, new_id] : remappings) {
+                    auto row = keys_by_id_.extract(old_id);
+                    row.key() = new_id;
+                    rows.push_back(std::move(row));
+                }
+                for (auto &row : rows)
+                    keys_by_id_.insert(std::move(row));
+                remappings.clear();
+            }
             if (header.operation == hg::details::TickOperation::end)
                 return std::ranges::all_of(matched, [](bool value) { return value; });
             if (header.operation != hg::details::TickOperation::add &&
@@ -589,6 +620,7 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
     bool compare(util::buffer_reader &reader, const TimeSeriesType &,
                  const literal::TimeSeriesLiteral &expected, std::size_t tick) override {
         static_cast<void>(reader.read_raw<std::uintptr_t>());
+        auto remappings = tick_codec::read_row_id_remappings(reader);
         const auto entries = expected.visit(
             [](const literal::ScalarLiteralItem &) -> std::span<const literal::ScalarLiteral> {
                 throw std::invalid_argument{"TSC expectation must contain named row changes"};
@@ -619,6 +651,10 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
             if (header.operation == hg::details::TickOperation::end)
                 break;
             const auto id = reader.read_raw<row_id_t>();
+            if (header.operation != hg::details::TickOperation::remove && !remappings.empty()) {
+                history_.remap_actual(remappings);
+                remappings.clear();
+            }
             if (header.operation == hg::details::TickOperation::add)
                 history_.add_actual(id, {read_cell<T>(reader)}, tick);
             else if (header.operation == hg::details::TickOperation::tick)
@@ -641,6 +677,7 @@ template <cell_type T> class ColumnHistoryComparison final : public testing::Tic
 
 template <cell_type T> void discard_column_tick(util::buffer_reader &reader) {
     static_cast<void>(reader.read_raw<std::uintptr_t>());
+    tick_codec::skip_row_id_remappings(reader);
     for (;;) {
         const auto header = hg::details::TickHeader::read(reader);
         if (header.operation == hg::details::TickOperation::end)

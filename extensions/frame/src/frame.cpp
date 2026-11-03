@@ -1,6 +1,7 @@
 #include <hg/frame/frame.hpp>
 #include <hg/util/static_storage.hpp>
 #include <hg/frame/tsc.hpp>
+#include <hg/time_series/ref/ref_input.hpp>
 #include <hg/frame/literal.hpp>
 #include "format.hpp"
 #include <hg/type/type_registry.hpp>
@@ -374,15 +375,12 @@ void NativeFrameStorage::replay_copy_tick(util::buffer_reader &reader, Evaluatio
     if (std::addressof(schema) != layout_->schema)
         throw std::invalid_argument{"frame tick replay requires a matching schema"};
     const auto source_domain = reinterpret_cast<const void *>(reader.read_raw<std::uintptr_t>());
+    auto remappings = details::tick_codec::read_row_id_remappings(reader);
     const auto changed_columns = details::tick_codec::read_changed_columns(reader);
 
-    if (copy_source_domain_ != source_domain) {
-        clear(time, memory);
-        copy_source_domain_ = source_domain;
-    } else {
-        reserve_changed_columns(memory);
-        begin_cycle(time, memory);
-    }
+    copy_source_domain_ = source_domain;
+    reserve_changed_columns(memory);
+    begin_cycle(time, memory);
 
     const auto cell_value = [](const details::tick_codec::Cell &cell) -> const void * {
         return std::visit(
@@ -398,6 +396,10 @@ void NativeFrameStorage::replay_copy_tick(util::buffer_reader &reader, Evaluatio
 
     for (;;) {
         const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation != hg::details::TickOperation::remove && !remappings.empty()) {
+            details::tick_codec::remap_copied_rows(copied_rows_, remappings, memory);
+            remappings.clear();
+        }
         if (header.operation == hg::details::TickOperation::end)
             break;
         if (header.operation != hg::details::TickOperation::add &&
@@ -746,3 +748,41 @@ bool FrameScalarRuntimeType::equals_same_type(const void *value, const ScalarDat
 }
 
 } // namespace hg::frame
+
+namespace hg::frame::details {
+namespace {
+
+struct FrameColumnReference {
+    In<REF<TSF<SCHEMA>>, optional> source;
+    i64 index;
+    In<REF<TSC<SCALAR>>, dynamic_binding, optional> selected;
+    Out<REF<TSC<SCALAR>>> output;
+
+    static const Type *resolve(SCALAR, const WiringArguments &arguments) {
+        const auto &frame = static_cast<const FrameSeriesType &>(
+            type_cast<TimeSeriesType>(arguments.resolved_type("source")).dereferenced_type());
+        const auto field = scalar_cast<i64>(arguments.scalar("index").value()).value();
+        return &static_cast<const ColumnSeriesType &>(frame.item_type(static_cast<std::size_t>(field))).cell_type();
+    }
+
+    void evaluate() const {
+        if (!source.valid()) {
+            selected.unbind();
+            output.invalidate();
+            return;
+        }
+        const auto item = hg::details::fixed_item_reference_input(source.value(), static_cast<item_id_t>(index));
+        const auto input = In<REF<TSC<SCALAR>>>{*item.last_updated, item.binding, *item.runtime_type, item.modified};
+        selected.bind(input);
+        output.copy(selected);
+    }
+};
+
+} // namespace
+
+WiringPoint select_frame_column_reference(WiringPoint source, std::size_t index) {
+    static const auto select = node<FrameColumnReference>();
+    return select(source, static_cast<i64>(index));
+}
+
+} // namespace hg::frame::details

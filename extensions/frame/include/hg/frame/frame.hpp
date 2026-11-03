@@ -1,6 +1,7 @@
 #pragma once
 
 #include <hg/frame/export.hpp>
+#include <hg/frame/aggregation.hpp>
 #include <hg/frame/expression.hpp>
 #include <hg/frame/literal.hpp>
 #include <hg/frame/tsc.hpp>
@@ -16,6 +17,8 @@
 #include <hg/time_series/output_state.hpp>
 #include <hg/time_series/time_series_type.hpp>
 #include <hg/time_series/tsb/tsb_input.hpp>
+#include <hg/time_series/tsb/tsb.hpp>
+#include <hg/time_series/tsb/details/wiring.hpp>
 #include <hg/type/time_series_bundle_type.hpp>
 #include <hg/type/declaration_variables.hpp>
 #include <hg/type/schema.hpp>
@@ -26,6 +29,7 @@
 #include <hg/node/output_declaration_traits.hpp>
 #include <hg/schema/reflection.hpp>
 #include <hg/scalar/bundle/scalar_type.hpp>
+#include <hg/scalar/list/scalar.hpp>
 #include <hg/scalar/details/allocation_context.hpp>
 #include <hg/scalar/details/allocation_pool.hpp>
 #include <hg/util/compile_time_string.hpp>
@@ -150,6 +154,20 @@ using RowPatch = Schema<PatchCell>;
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 struct TSF : TimeSeriesDeclaration<TSF<Schema, Properties...>, Properties...> {};
 
+template <template <typename, auto...> typename Field> struct GroupBySchema {
+    Field<TSF<SCHEMA>> source;
+    Field<List<symbol>> keys;
+};
+
+using GroupByExpression = TSB<GroupBySchema>;
+
+template <template <typename, auto...> typename Field> struct AggregationExpressionSchema {
+    Field<AggregationOperation> operation;
+    Field<TS_T> operand;
+};
+
+using AggregationExpression = TSB<AggregationExpressionSchema>;
+
 template <template <typename, auto...> typename Field>
 using RESULT = SchemaVariableDeclaration<"RESULT">;
 
@@ -164,7 +182,38 @@ extern HG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> O
 extern HG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> select;
 extern HG_FRAME_EXPORT operator_<OUT, auto(frame::TSF<SCHEMA>, TSB<FIELDS>) -> OUT> rename;
 
+template <template <typename, auto...> typename Field>
+using AGGREGATIONS = BundleSchemaVariableDeclaration<"FRAME_AGGREGATIONS", Field>;
+
+extern HG_FRAME_EXPORT operator_<auto(frame::TSF<SCHEMA>, List<symbol>) -> frame::GroupByExpression>
+    group_by;
+extern HG_FRAME_EXPORT operator_<OUT, auto(frame::GroupByExpression, TSB<AGGREGATIONS>) -> OUT> agg;
+
 } // namespace hg::operators
+
+namespace hg {
+
+template <auto... Properties>
+struct wiring_point_methods<frame::GroupByExpression,
+                            wp<frame::GroupByExpression, Properties...>> {
+    using point_type = wp<frame::GroupByExpression, Properties...>;
+
+    auto agg(std::span<const WiringArgument> assignments) const {
+        return operators::agg(static_cast<const point_type &>(*this), kwargs(bundle(assignments)))
+            .template as<frame::TSF<frame::RESULT>>();
+    }
+
+    template <typename... Assignments>
+        requires(sizeof...(Assignments) != 0 &&
+                 (details::is_named_bundle_wiring_field<std::remove_cvref_t<Assignments>> && ...))
+    auto agg(Assignments &&...assignments) const {
+        return operators::agg(static_cast<const point_type &>(*this),
+                              std::forward<Assignments>(assignments)...)
+            .template as<frame::TSF<frame::RESULT>>();
+    }
+};
+
+} // namespace hg
 
 namespace hg::frame {
 
@@ -257,7 +306,8 @@ struct NativeFrameFieldLayout {
     using reset_function = void (*)(void *);
     using release_function = void (*)(void *, allocator);
     using modified_function = const util::index<> *(*)(const void *) noexcept;
-    using bind_storage_function = void (*)(void *, const void *, const NativeRows &) noexcept;
+    using bind_identity_function = void (*)(void *, const RowIdentity &) noexcept;
+    using bind_storage_function = void (*)(void *, const void *, const NativeRows &, const RowIdentity &) noexcept;
     using copy_column_storage_function = void (*)(void *, const void *) noexcept;
     using construct_function = void (*)(void *) noexcept;
     using destroy_function = void (*)(void *) noexcept;
@@ -308,6 +358,7 @@ struct NativeFrameFieldLayout {
     release_function release{};
     modified_function modified{};
     bind_storage_function bind_storage{};
+    bind_identity_function bind_identity{};
     copy_column_storage_function copy_column_storage{};
     construct_function construct{};
     destroy_function destroy{};
@@ -411,6 +462,7 @@ struct FrameReadStorage {
 
     const hg::Schema *schema{};
     RowSet rows{};
+    const RowIdentity *row_identity{};
     const void *cycle_start_domain{};
     bool valid{};
     bool modified{};
@@ -1253,6 +1305,7 @@ class NativeFrameStorage {
     bool contains(row_id_t id) const noexcept { return rows_.contains(id); }
     row_id_t id_at(std::size_t position) const { return rows_.id_at(position); }
     const void *row_domain() const noexcept { return rows_.identity(); }
+    const RowIdentity &row_identity() const noexcept { return row_identity_; }
     const util::index<> &added() const noexcept { return rows_.added(); }
     const util::index<> &removed() const noexcept { return rows_.removed(); }
     EvaluationTime change_time() const noexcept { return rows_.change_time(); }
@@ -1280,6 +1333,22 @@ class NativeFrameStorage {
         if (found == nullptr)
             return std::nullopt;
         return *found;
+    }
+
+    void append_key(row_id_t id, std::pmr::vector<KeyValue> &key) const {
+        if (contains(id)) {
+            append_row_key(id, key);
+            return;
+        }
+        const auto retained = removed_key(id);
+        for (const auto &cell : retained)
+            std::visit([&](const auto &value) {
+                using Value = std::remove_cvref_t<decltype(value)>;
+                if constexpr (std::same_as<Value, ScalarValue<string>>)
+                    key.emplace_back(ScalarValue<string>{value.view()});
+                else
+                    key.emplace_back(value);
+            }, cell);
     }
 
     std::span<const KeyValue> removed_key(row_id_t id) const noexcept {
@@ -1678,9 +1747,13 @@ class NativeFrameStorage {
     }
 
     void bind_column_storage() noexcept {
+        if (!layout_->key_fields.empty()) {
+            row_identity_.keys = {this, layout_};
+            row_identity_.cycle_start_keys = row_identity_.keys;
+        }
         for (std::size_t index = 0; index != layout_->fields.size(); ++index) {
             const auto &field = layout_->fields[index];
-            field.bind_storage(column_storage(index), native_field(index), rows_);
+            field.bind_storage(column_storage(index), native_field(index), rows_, row_identity_);
         }
     }
 
@@ -1692,6 +1765,7 @@ class NativeFrameStorage {
     }
 
     const details::NativeFrameLayout *layout_{};
+    RowIdentity row_identity_;
     NativeRows rows_;
     util::index<> changed_;
     util::index<> changed_columns_;
@@ -1738,6 +1812,7 @@ inline FrameReadStorage frame_read_storage(const NativeFrameStorage &frame, cons
     auto result = FrameReadStorage{};
     result.schema = frame.layout().schema;
     result.rows = RowSet::native(frame.rows());
+    result.row_identity = &frame.row_identity();
     result.cycle_start_domain = result.rows.identity;
     result.valid = scalar_value || frame.valid();
     result.size = frame.size();
@@ -2113,9 +2188,14 @@ template <cell_type Cell> NativeFrameFieldLayout make_native_frame_field_layout(
         .modified = [](const void *field) noexcept -> const util::index<> * {
             return std::addressof(static_cast<const NativeColumnData<Cell> *>(field)->modified());
         },
-        .bind_storage = [](void *destination, const void *field, const NativeRows &rows) noexcept {
-            *static_cast<ColumnStorage<Cell> *>(destination) =
-                ColumnStorage<Cell>{*static_cast<const NativeColumnData<Cell> *>(field), rows};
+        .bind_storage = [](void *destination, const void *field, const NativeRows &rows,
+                           const RowIdentity &identity) noexcept {
+            auto &column = *static_cast<ColumnStorage<Cell> *>(destination);
+            column = ColumnStorage<Cell>{*static_cast<const NativeColumnData<Cell> *>(field), rows};
+            column.row_identity = &identity;
+        },
+        .bind_identity = [](void *destination, const RowIdentity &identity) noexcept {
+            static_cast<ColumnStorage<Cell> *>(destination)->row_identity = &identity;
         },
         .copy_column_storage = &copy_frame_column_storage<Cell>,
         .construct = [](void *field) noexcept { std::construct_at(static_cast<NativeColumnData<Cell> *>(field)); },
@@ -2218,6 +2298,7 @@ struct RuntimeFrameViewFieldLayout {
 
 struct RuntimeFrameViewLayout {
     const hg::Schema *schema{};
+    const details::NativeFrameLayout *key_layout{};
     std::span<const std::size_t> key_fields;
     std::size_t size{};
     std::size_t alignment{};
@@ -2262,6 +2343,7 @@ class RuntimeFrameViewOutputStorage {
     };
 
     const RuntimeFrameViewLayout *layout{};
+    RowIdentity row_identity;
     SelectedRows previous_rows;
     SelectedRows selected_rows;
     util::sparse_bunch<row_id_t> selected_order;
@@ -2316,6 +2398,7 @@ class RuntimeFrameViewOutputStorage {
         }
         delta_time = time;
         cycle_start_domain = valid ? source_rows.identity : nullptr;
+        row_identity.cycle_start_keys = valid ? row_identity.keys : RowKeySource{};
         cycle_started = true;
     }
 
@@ -2766,6 +2849,10 @@ class RuntimeFrameViewOutputStorage {
         const auto new_cycle = !cycle_started || delta_time != time;
         if (new_cycle)
             begin_cycle(time);
+        row_identity.keys = layout->key_fields.empty() || input.row_identity == nullptr
+                                ? RowKeySource{} : input.row_identity->keys;
+        if (row_identity.keys.owner != nullptr)
+            row_identity.keys.layout = layout->key_layout;
         const auto rebuild_predicate = filtering &&
                                        (rebuild_requested_predicate || !valid || row_set_rebound ||
                                         row_domain_changed || (input.modified && !input_delta_current));
@@ -2954,6 +3041,8 @@ class RuntimeFrameViewOutputStorage {
         }
 
         this->filtering = filtering;
+        for (auto index = std::size_t{}; index != layout->fields.size(); ++index)
+            layout->fields[index].column.bind_identity(column_storage(this, index), row_identity);
         valid = true;
         return any_change;
     }
@@ -2989,6 +3078,7 @@ class RuntimeFrameViewOutputStorage {
         selected_rows.bind({});
         clear_selected_order();
         source_rows = {};
+        row_identity.keys = {};
         changed_rows.clear();
         predicate_rows.clear();
         changed_columns.clear();
@@ -3070,9 +3160,13 @@ class RuntimeFrameViewOutputStorage {
     }
 };
 
+namespace details {
+WiringPoint select_frame_column_reference(WiringPoint source, std::size_t index);
+} // namespace details
+
 template <typename Cell, template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select_column(wp<TSF<Schema, Properties...>> source, util::symbol name) {
-    const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type()));
+    const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type().dereferenced_type()));
     if (frame_type == nullptr)
         throw std::invalid_argument{"frame column selection requires a frame time series"};
 
@@ -3085,6 +3179,9 @@ auto select_column(wp<TSF<Schema, Properties...>> source, util::symbol name) {
     const auto fields = schema->fields();
     const auto index = static_cast<std::size_t>(field - fields.data());
 
+    if (type_cast<TimeSeriesReferenceType>(&source.type()) != nullptr)
+        return details::select_frame_column_reference(source, index).template as<TSC<Cell>>();
+
     const auto child = WiringContext::current().wiring().output_item(
         static_cast<WiringPoint>(source), static_cast<item_id_t>(index), frame_type->item_type(index));
     return child.template as<TSC<Cell>>();
@@ -3092,7 +3189,7 @@ auto select_column(wp<TSF<Schema, Properties...>> source, util::symbol name) {
 
 template <typename Cell, template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
-    const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type()));
+    const auto *frame_type = dynamic_cast<const frame::FrameSeriesType *>(std::addressof(source.type().dereferenced_type()));
     if (frame_type == nullptr)
         throw std::invalid_argument{"frame column selection requires a frame time series"};
     const auto *schema = dynamic_cast<const hg::Schema *>(std::addressof(frame_type->schema_type()));
@@ -3101,6 +3198,12 @@ auto select_column(wp<TSF<Schema, Properties...>> source, std::size_t index) {
     if (index >= schema->field_count())
         throw WiringError{"frame column selection index is outside the resolved schema"};
     return select_column<Cell>(source, schema->field(index).name);
+}
+
+template <typename Cell, template <template <typename, auto...> typename> typename Schema,
+          auto... Properties, auto... ReferenceProperties, typename Key>
+auto select_column(wp<REF<TSF<Schema, Properties...>, ReferenceProperties...>> source, Key key) {
+    return select_column<Cell>(source.template as<TSF<Schema, Properties...>>(), key);
 }
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
@@ -3198,6 +3301,47 @@ inline util::symbol frame_column_symbol(util::symbol name) { return name; }
 inline util::symbol frame_column_symbol(std::string_view name) { return util::symbol{name}; }
 
 } // namespace details
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+auto group_by(wp<TSF<Schema, Properties...>> source, std::span<const util::symbol> names) {
+    const auto keys = ScalarValue<List<symbol>>{names};
+    return wp<GroupByExpression>{operators::group_by(source, std::move(keys))};
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
+auto group_by(wp<TSF<Schema, Properties...>> source, std::initializer_list<std::string_view> names) {
+    auto symbols = std::vector<util::symbol>{};
+    symbols.reserve(names.size());
+    for (const auto name : names)
+        symbols.emplace_back(name);
+    return group_by(source, std::span<const util::symbol>{symbols});
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties,
+          typename... Names>
+    requires(sizeof...(Names) != 0 && (details::frame_column_name_argument<Names> && ...))
+auto group_by(wp<TSF<Schema, Properties...>> source, Names &&...names) {
+    const auto symbols = std::array<util::symbol, sizeof...(Names)>{
+        details::frame_column_symbol(std::forward<Names>(names))...};
+    return group_by(source, std::span<const util::symbol>{symbols});
+}
+
+template <template <template <typename, auto...> typename> typename Schema, auto... Properties, typename Range>
+    requires std::ranges::input_range<Range> &&
+             details::frame_column_name_argument<std::ranges::range_value_t<Range>> &&
+             (!details::frame_column_name_argument<Range>)
+auto group_by(wp<TSF<Schema, Properties...>> source, Range &&names) {
+    auto symbols = std::vector<util::symbol>{};
+    for (auto &&name : names)
+        symbols.emplace_back(details::frame_column_symbol(name));
+    return group_by(source, std::span<const util::symbol>{symbols});
+}
+
+template <template <template <typename, auto...> typename> typename Schema,
+          auto... Properties, auto... ReferenceProperties, typename... Names>
+auto group_by(wp<REF<TSF<Schema, Properties...>, ReferenceProperties...>> source, Names &&...names) {
+    return group_by(source.template as<TSF<Schema, Properties...>>(), std::forward<Names>(names)...);
+}
 
 template <template <template <typename, auto...> typename> typename Schema, auto... Properties>
 auto select(wp<TSF<Schema, Properties...>> source, std::span<const util::symbol> names) {
@@ -3374,7 +3518,7 @@ class NativeFrameSeriesRuntimeType final : public hg::frame::FrameSeriesRuntimeT
             fields_.emplace_back(*field.column_runtime, field.child_state_offset, field.column_storage_offset);
     }
 
-    ItemLayout item_layout(item_id_t id) const override { return fields_.at(id); }
+    std::optional<ItemLayout> try_item_layout(item_id_t id) const override { return fields_.at(id); }
     std::size_t item_count(const void *) const override { return fields_.size(); }
     ConstItem item(const void *value, item_id_t id) const override {
         const auto &field = fields_.at(id);
@@ -3505,7 +3649,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
             fields_.emplace_back(*field.column.column_runtime, field.state_offset, field.column_storage_offset);
     }
 
-    ItemLayout item_layout(item_id_t id) const override { return fields_.at(id); }
+    std::optional<ItemLayout> try_item_layout(item_id_t id) const override { return fields_.at(id); }
     std::size_t item_count(const void *) const override { return fields_.size(); }
     ConstItem item(const void *value, item_id_t id) const override {
         const auto &field = fields_.at(id);
@@ -3568,6 +3712,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
                           ? (storage.filtering ? storage.filter_rows() : storage.source_rows)
                           : RowSet{};
         result.cycle_start_domain = storage.cycle_start_domain;
+        result.row_identity = &storage.row_identity;
         result.valid = storage.valid;
         result.modified = storage.delta_time != MIN_DT && !storage.changed_columns.empty();
         result.size = result.rows.count();
@@ -3627,6 +3772,7 @@ class RuntimeSchemaFrameViewSeriesRuntimeType final : public FrameSeriesRuntimeT
         const auto &native = native_frame_layout(series->schema_type());
         auto result = RuntimeFrameViewLayout{};
         result.schema = native.schema;
+        result.key_layout = &native;
         result.key_fields = native.key_fields;
         result.alignment = alignof(Storage);
         auto offset = sizeof(Storage);
@@ -3940,7 +4086,8 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
 
   public:
     explicit In(const TimeSeriesInputData &data, bool *activity = nullptr)
-        : ActivityControl{activity}, data_{data}, field_ordinals_{extension_descriptor().template field_ordinals<Schema>()} {}
+        : ActivityControl{activity}, data_{data},
+          field_ordinals_{extension_descriptor().template field_ordinals<Schema>()} {}
 
     bool valid() const noexcept { return data_.valid(); }
     bool all_valid() const noexcept { return data_.valid() && data_.runtime_type().all_valid(data_); }
@@ -3962,11 +4109,7 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
         if (index >= resolved_schema.field_count() ||
             index > static_cast<std::size_t>(std::numeric_limits<item_id_t>::max()))
             throw std::out_of_range{"frame column index"};
-        const auto item = data_.runtime_type().item(data_.data(), static_cast<item_id_t>(index));
-        const auto child_modified = data_.modified() && item.last_updated.valid() &&
-                                    item.last_updated.time() == data_.last_updated();
-        return In<frame::TSC<SCALAR>>{
-            TimeSeriesInputData{item.runtime_type, item.last_updated, item.value, child_modified}};
+        return In<frame::TSC<SCALAR>>{data_.item(static_cast<item_id_t>(index))};
     }
     In<frame::TSC<SCALAR>> column(util::symbol name) const {
         return column(extension_descriptor().field_index(name));
@@ -3986,6 +4129,19 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
         return column->cell(id);
     }
     const void *row_domain() const { return valid() ? extension_descriptor().rows.identity : nullptr; }
+    bool has_row_id_remapping() const noexcept {
+        return !row_id_remappings().empty();
+    }
+    std::span<const frame::RowIdRemapping> row_id_remappings() const noexcept {
+        const auto input = extension_descriptor();
+        if (!changes_current(input) || input.row_identity == nullptr)
+            return {};
+        return input.row_identity->remappings;
+    }
+    template <typename Function> void for_each_row_id_remapping(Function &&function) const {
+        for (const auto [old_id, new_id] : row_id_remappings())
+            std::invoke(function, old_id, new_id);
+    }
     Scalar<frame::Frame<Schema>> value_view() const {
         const auto &series_runtime = static_cast<const frame::FrameSeriesRuntimeType &>(data_.runtime_type());
         return Scalar<frame::Frame<Schema>>::from(series_runtime.scalar_runtime_type(), data_.data());
@@ -3995,6 +4151,12 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
             return;
         auto position = std::size_t{};
         extension_descriptor().rows.each([&](frame::row_id_t id) { std::invoke(function, id, position++); });
+    }
+    frame::RowChanges changes() const noexcept {
+        const auto input = extension_descriptor();
+        if (!changes_current(input))
+            return {};
+        return {input.added, input.changed, input.removed};
     }
     template <typename Function> void for_each_changed(Function &&function) const {
         const auto input = extension_descriptor();
@@ -4023,8 +4185,14 @@ class In<frame::TSF<Schema, SeriesProperties...>, Properties...>
             std::invoke(function, id);
     }
     frame::FrameReadStorage extension_descriptor() const noexcept {
-        auto result = static_cast<const frame::FrameSeriesRuntimeType &>(data_.runtime_type())
-                          .input_storage(data_.data());
+        auto result = frame::FrameReadStorage{};
+        if (data_.data() == nullptr) {
+            const auto &type = static_cast<const frame::FrameSeriesType &>(runtime_type().type());
+            result.schema = &static_cast<const hg::Schema &>(type.schema_type());
+        } else {
+            result = static_cast<const frame::FrameSeriesRuntimeType &>(data_.runtime_type())
+                         .input_storage(data_.data());
+        }
         result.valid = valid();
         result.modified = modified();
         result.last_updated = last_updated();

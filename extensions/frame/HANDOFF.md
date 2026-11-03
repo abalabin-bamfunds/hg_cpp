@@ -1,8 +1,261 @@
 # Frame foundation handoff
 
-Updated: 2026-10-30.
+Updated: 2026-11-04.
 
-## Current verification
+## Arrow grouped-aggregation comparison
+
+The [comparison report](benchmarks/group_by_arrow.md) and raw CSVs compare the
+same ten workloads against Arrow Compute's `hash_sum` through Acero. Borrowed
+input has 15 chunks per column; dense copied input has one. Preparation, query,
+and total time through Arrow result/input destruction are recorded separately.
+Execution is single-threaded, using Arrow 24.0.0 Release with AVX2.
+
+Both Arrow layouts passed their independent final-state recomputation checks.
+The native benchmark was rerun from the same Release build. All ten native
+profile cases passed their per-sample cycle-containment checks, with 303 update
+samples per case. Runs were sequential. Raw results retain p95 and paired
+profiled-cycle timings; variation between runs is visible.
+
+Fresh medians: one-row updates take 0.024 ms in the BG node versus 1.456 ms
+for Arrow borrowed input. Scalar changes recalculating all rows take 5.472 ms
+versus 1.804 ms. Dense gathering adds about 1.1 ms and does not pay for itself
+at 15 chunks. Initial aggregation and updates affecting 10,000 groups favor
+Arrow in this run.
+
+The benchmark-only patch is committed as `77b109bcf` on
+`agent/frame-groupby-review` and applied here. Its build is
+`frame-groupby-review/build/group-by-arrow`; it uses the existing fixed engine
+installation and approved bitmap header overlay. Main is unchanged.
+
+## Group-by review and numerical fixes
+
+The implementation and test review is complete. An independent final review
+found no remaining correctness defect in the numerical changes. The review
+adds regressions for reference switches with swapped source row IDs, mixed
+mutations checked against independent full recomputation, custom kernel
+dispatch, duplicate registration, and group lifetimes. Duplicate aggregation
+registration now returns `false` and preserves the existing handler.
+
+Grouped and column double sums use Neumaier compensated accumulation for finite
+contributions. Retractions accumulate negative values. Regression tests cover
+retaining `1.0` after removing or nulling `1e16` from `1e16 + 1.0`, simultaneous
+key and operand changes, empty-state reset, and transient overflow of the
+combined sum and correction. Results remain dependent on update order.
+Integer accumulators use a separate specialization without floating-point
+bookkeeping.
+
+Grouped overflow recovery previously scanned current membership separately for
+each affected group. It now resets all affected groups and rebuilds them in
+one membership traversal per aggregation. A bitmap and count track pending
+groups; group deletion clears pending membership. Recovery remains O(source
+rows) when required. The aggregation API is unchanged.
+
+All 15 Arrow-enabled Release CTest suites pass. All six focused ASan/UBSan
+suites pass with leak detection: 95 cases and 847 assertions. Group-by passes
+24 cases and 232 assertions; column reductions pass 10 cases and 32 assertions.
+All 14 documentation tooling tests pass. The extension and test executables
+are instrumented; their fixed BG dependency uses matching Release configuration.
+LeakSanitizer required execution outside the sandbox for thread inspection.
+Logs are `build/frame-field-selection-release/review-ctest.log` and
+`build/frame-field-selection-asan/review-ctest-unsandboxed.log`.
+
+The user approved a reusable outside-sandbox sanitizer command prefix:
+`env LD_LIBRARY_PATH=/home/abalabin/miniforge3/envs/bg-build/lib ASAN_OPTIONS=detect_leaks=1 UBSAN_OPTIONS=print_stacktrace=1:halt_on_error=1 conda run --no-capture-output -n hg-build ctest`.
+Append the lane's `--test-dir`, filters, and `--output-on-failure` directly so
+the saved prefix matches. CTest retains its output under `Testing/Temporary`.
+Direct `gdb --nx --batch ...` calls already have a saved allowance.
+
+Review coverage is committed as `69adc01ff` and numerical fixes as `384de57e7`
+on `agent/frame-groupby-tests`. Only those result patches were applied here;
+the isolated lane's imported source checkpoint was not integrated.
+The [group-by benchmark report](benchmarks/group_by.md) specifies workload,
+timing, and configuration. Its harness uses native frame batches and separates
+complete-cycle time, profiler node time, and focused overflow recovery.
+Harness commits are `17e70e484` and `f2e420f87`; their result changes were
+applied here. Raw CSVs are under `benchmarks/results/2026-11-04`.
+
+On 100,000 rows, one-row sum updates take about 10 microseconds in the node;
+100-row updates take about 29 microseconds. Scalar-parameter changes reevaluate
+all rows and take about 3 milliseconds. Recovering 2,048 overflowing groups
+falls from 37.0 milliseconds to 0.097 milliseconds in the focused result sweep.
+The first profiling run contained unexplained slower cases; the repeated run
+records same-cycle durations, validates node containment, and aligns with
+unprofiled cycles. Both runs are retained in the report.
+
+Frame work remains on `agent/frame-build`. The separate free-TSB selection fix
+and bitmap utility remain unmerged. Root main has not changed.
+
+## Group-by initialization and parameter validity
+
+`GroupByState::evaluate()` now selects `initialize()` or `apply_changes()` once.
+Both paths share membership updates and aggregation block processing. Invalidation
+owns cache cleanup; initialization no longer clears that state a second time.
+
+A new graph regression delays a captured parameter's first value, invalidates it
+while the source changes, and then revalidates it. It exposed incorrect input
+gating: the former nested aggregation bundles passed `all_valid` while a parameter
+snapshot was invalid. Group-by now declares flat column and parameter bundles so
+the engine checks every consumed input. Expression compilation records each
+column's position in the flat column bundle.
+
+The separate BG fix in `.lanes/frame-free-bundle-field` selects materialised free
+TSB fields through existing reference selection when their actual runtime has no
+packed item layout. Packed selections retain physical child outputs.
+`GraphWiring::output_runtime_type()` resolves nested child runtimes from their
+parents. Frame runtimes now override `try_item_layout()`; the required
+`item_layout()` operation still fails for nonpacked storage. The standalone
+reproduction `/tmp/bg-materialized-bundle-field-probe-fixed` passes. The frame
+lane contains no field-selection workaround.
+
+The Arrow-enabled Release build passes all 15 frame CTest executables against
+the separately installed fixed BG dependency. Group-by passes 18 cases and
+102 assertions, including delayed parameter validity and revalidation.
+The build is `build/frame-field-selection-release`; its `ctest.log` records the
+result. Six focused ASan/UBSan suites pass with leak detection: column binding,
+reductions, column assembly, group-by, copying, and reference sampling. Together
+they cover 86 cases and 711 assertions. The extension and test targets are
+instrumented; their fixed BG dependency uses the matching Release configuration.
+The sanitizer build is `build/frame-field-selection-asan`; its
+`ctest-unsandboxed.log` records the successful run. Leak detection required
+execution outside the sandbox. The core fix's full Release CTest run passes all
+3,224 configured C++ tests. Independent review found no incremental correctness
+issue in the group-by cleanup. The historical results below precede this cleanup.
+
+The validation build uses `.lanes/frame-free-bundle-field/build/install` and
+the approved header-only bitmap union utility from this lane, staged under
+`build/frame-field-selection-dependency/include`. Neither BG fix nor bitmap
+utility has been merged into main. Both engine and extension use Release
+configuration, GCC 14.3, and ICU 78.
+
+The cleanup and BG fix remain uncommitted. Main has not been modified.
+
+## Explicit row-ID remapping
+
+`In<TSF<...>>` and typed/generic `In<TSC<...>>` expose
+`has_row_id_remapping()`, `row_id_remappings()`, and
+`for_each_row_id_remapping(callback)`. The callback receives `(old_id, new_id)`.
+Frame children share their parent's mapping span.
+
+Reference sampling matches complete keys when the ordered key names and cell
+types agree. Matched rows are modified in every column; only changed numeric IDs
+appear in the mapping. Other rows produce removals and additions. Unkeyed sources
+use removals and additions. Mappings apply simultaneously, including swaps and
+IDs occupied by removed rows. Ordinary updates use existing change bitmaps and
+perform no key matching.
+
+Shared identity metadata identifies current and cycle-start key owners. Sampling
+retains cycle-start membership for nested samples. Removed native keys remain
+available for the cycle; non-key removed cells are not retained. Physical
+compaction still preserves row IDs.
+
+Group-by and column sums remove cached contributions for removed and remapped
+old IDs before processing current IDs. Nonempty groups retain their output IDs.
+Retained capture, comparison, formatting, and replay support the mapping prefix.
+Column selection through a frame reference uses HG's fixed-item reference input
+API. An unbound TSF input exposes its resolved schema without reading storage.
+No HG core changes are included.
+
+Review `include/hg/frame/column.hpp` (`RowIdentity`), input methods in
+`include/hg/frame/tsc.hpp` and `include/hg/frame/frame.hpp`,
+`src/reference_sample.cpp`, and the removal phase in `src/group_by.cpp`.
+`src/tick_codec.hpp` defines the retained mapping prefix and simultaneous replay.
+The [node guide](../../docs/user/extensions/frame-nodes.md) specifies processing
+order.
+
+All 15 Arrow-enabled Release frame suites pass. Group-by passes 17 cases and
+98 assertions; sampling covers nested samples, composite nullable/string keys,
+same-cycle source removal, view invalidation, and separately selected columns.
+The Release log is `/tmp/frame-remapping-release-tests.log`.
+All six focused ASan/UBSan suites pass with leak checking: column binding,
+reductions, column assembly, group-by, copying, and reference sampling. Together
+they cover 85 cases and 707 assertions. The log is
+`/tmp/frame-remapping-asan-final-tests.log`.
+
+All 14 documentation tooling tests pass. The strict documentation site build
+could not run because the `hg-build` Python environment has no Sphinx module.
+
+A separate utility issue needs discussion: `util::index<>` iterates set bits,
+but its `size()` is the bit extent. C++ ranges therefore recognize an incorrect
+cardinality for `sized_range` algorithms. Tests compare enumerated IDs. No utility
+change is included for this issue.
+
+## Incremental grouped sums
+
+The current uncommitted work is on `agent/frame-build`, based on main
+`362c103dd`. It uses the current `hg` C++ namespace and headers. No core engine
+changes are required.
+
+`frame::group_by(source, names...).agg(assignments...)` now wires incremental
+numeric sums. Grouping names and aggregation assignments support wiring-time
+collections. Declared and anonymous source schemas share this implementation.
+The output schema contains the grouping columns and named sums; its ordered key
+tuple is the grouping columns. Null grouping cells use existing frame key
+equality.
+
+Review the [grouped aggregation design](../../docs/development/design/frame-group-by.md),
+the declarations in `include/hg/frame/frame.hpp`, and `src/group_by.cpp`.
+`src/numeric_sum.hpp` shares arithmetic with the existing column reduction.
+`tests/group_by_test.cpp` contains graph-level regressions.
+
+Expression structure must be retrievable as a scalar wiring argument. A mixed
+expression bundle retains that scalar separately from captured time series.
+The implementation rejects structure supplied only by a time-series field,
+including `TS<Expression, const_>`. It does not infer wiring-time availability
+from a time series guarantee.
+
+The group-by review led to an uncommitted refactor. Grouping now owns only
+membership and publication; operation registries contribute aggregation kernels
+through BG's `ScalarDispatch`. `include/hg/frame/aggregation.hpp` defines the
+extension-facing block interface. `src/aggregation_sum.cpp` supplies sum state
+and contribution storage. Grouping contains no numeric-type branches.
+
+Aggregation registration follows column block registration: typed implementations,
+generated erased adapters, and wiring-time dispatch. Extension implementations
+provide `update(..., const ColumnBatch<ARG>&)` and own their contributions; they
+do not derive from the erased state. `result` returns `cell_value_t<RESULT>` or
+its optional form. The generated adapter owns result scalar storage, including
+string storage, until its next result call or destruction. The group-by tests
+include a separately registered nullable string-result implementation.
+
+`src/expression_evaluation.hpp` shares compiled block evaluation with column
+arithmetic, filtering, and grouped aggregation. Group-by compiles operand
+expressions in its materialisation builder and consumes leaf columns and scalar
+parameters without creating computed operand columns. Input change bitmaps now
+come from `In<TSC>::changes()` and `In<TSF>::changes()`; group-by, column sums,
+and expression nodes no longer infer changes from binding addresses or storage
+timestamps. Physical compaction preserves row IDs.
+
+The approved `index<>::for_each_set_union(bitmaps, callback)` utility is committed
+separately as `72c1d9849` on `agent/frame-bitmap-union`, included here as
+`29e6b8f43`. It traverses bitmap words without allocating storage and visits each
+set position once in increasing order. The complete index suite passed 19 cases
+and 8,786,545 assertions in both optimized and ASan/UBSan builds, with leak checking.
+The utility has not been merged into main. The matching dependency installation
+is from `build/engine-icu78`; `build/frame-build-engine` has no built libraries.
+
+The Arrow-enabled Release build passed all 15 frame CTest executables. Group-by
+passed 16 cases and 84 assertions. The shared evaluator, independent aggregate
+updates, and nullable string results are verified through graph tests. The build
+log is `/tmp/frame-bitmap-frame-build.log`; the group-by test rebuild log is
+`/tmp/frame-bitmap-group-retest-build.log`. All four targeted ASan/UBSan suites
+passed with leak checking: group-by, expressions, reductions, and column assembly.
+The sanitizer build log is `/tmp/frame-bitmap-asan-build.log`.
+
+An independent adapter check compiled `src/aggregation_sum.cpp` and the public
+registration header against the matching installed HG. It passed ASan, UBSan,
+and LeakSanitizer. It covers integer and floating-point results, sparse row IDs,
+updates, removals, cached contribution moves, recycled group positions, packed
+Boolean operands, and nullable string result ownership. The source and executable
+are `/tmp/frame-aggregation-adapter-check.cpp` and
+`/tmp/frame-aggregation-adapter-check`. This checks the adapter interface only.
+
+New regressions exercise a separately supplied string-input aggregation,
+independent operand updates, cached contribution moves, and absence of computed
+operand nodes. Python frame bindings remain outstanding; a future module can
+export these operators and register `.agg` through
+`hg::python::register_wiring_method`.
+
+## Earlier integration verification
 
 The agreed standard library integration is complete: projection, row-count
 queries, copying, retained replay, formatting, reference sampling, and native

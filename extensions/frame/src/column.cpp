@@ -329,15 +329,18 @@ namespace hg {
 template <typename T>
 void frame::NativeColumn<T>::replay_copy_tick(util::buffer_reader &reader, EvaluationTime time, allocator memory) {
     const auto source_domain = reinterpret_cast<const void *>(reader.read_raw<std::uintptr_t>());
-    if (copy_source_domain_ != source_domain) {
-        clear(time, memory);
-        copy_source_domain_ = source_domain;
-    } else if (rows_.reset_changes(time)) {
+    auto remappings = frame::details::tick_codec::read_row_id_remappings(reader);
+    copy_source_domain_ = source_domain;
+    if (rows_.reset_changes(time)) {
         cells_.reset_changes();
     }
 
     for (;;) {
         const auto header = hg::details::TickHeader::read(reader);
+        if (header.operation != hg::details::TickOperation::remove && !remappings.empty()) {
+            frame::details::tick_codec::remap_copied_rows(copied_rows_, remappings, memory);
+            remappings.clear();
+        }
         if (header.operation == hg::details::TickOperation::end)
             return;
 

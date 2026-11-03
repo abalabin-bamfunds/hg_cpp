@@ -769,6 +769,17 @@ For each reusable node and graph, test:
 - Boolean graph operators, required-input gating, evaluation of both C++ operand
   expressions, rejection of native truth conversion, and explicit output-presence checks
 
+### Frame extension
+
+- grouped numeric sums through method and operator calls, declared and wiring-time
+  schemas, inferred result keys, null and composite grouping cells, captured scalar
+  time series, filtered membership, source invalidation, stable group row IDs,
+  recycled source row IDs, integer wraparound, floating-point special values, and
+  wiring-time failures
+- typed aggregation registration with generated adapters, independent operand
+  updates, cached contribution moves, nullable string result ownership across
+  groups and ticks, and expression evaluation without computed operand nodes
+
 ### Python integration
 
 - native wiring-point method registration, overlapping receiver constraints,

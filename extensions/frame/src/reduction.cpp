@@ -1,3 +1,6 @@
+#include "numeric_sum.hpp"
+#include "expression_evaluation.hpp"
+
 #include <hg/frame/tsc.hpp>
 #include <hg/graph.hpp>
 #include <hg/library/operators.hpp>
@@ -26,7 +29,7 @@ namespace {
 using namespace hg::literals;
 
 template <cell_type T> struct SumState {
-    explicit SumState(allocator memory) : memory_{memory}, changed_ids_{&memory.memory_resource()} {}
+    explicit SumState(allocator memory) : memory_{memory} {}
     SumState(const SumState &) = delete;
     SumState &operator=(const SumState &) = delete;
 
@@ -35,25 +38,8 @@ template <cell_type T> struct SumState {
     void clear() noexcept {
         contributions_.release(positions_, memory_.memory_resource());
         positions_.release(memory_.memory_resource());
-        total_ = T{};
-        contribution_count_ = 0;
-        changed_ids_.clear();
-        binding_.reset();
-        if constexpr (std::same_as<T, double>) {
-            finite_count_ = 0;
-            positive_infinity_count_ = 0;
-            negative_infinity_count_ = 0;
-            nan_count_ = 0;
-            finite_overflow_ = false;
-            finite_total_ = 0;
-        }
+        sum_ = {};
     }
-
-    bool same_binding(const ErasedColumnSeriesView &view) const noexcept {
-        return binding_ && binding_->same_binding(view);
-    }
-
-    void remember_binding(const ErasedColumnSeriesView &view) { binding_ = view; }
 
     void rebuild(const In<TSC<T>> &input) {
         clear();
@@ -67,17 +53,18 @@ template <cell_type T> struct SumState {
             recompute_finite_if_overflowed();
     }
 
-    void apply_changes(const In<TSC<T>> &input) {
-        changed_ids_.clear();
-        input.for_each_changed([&](row_id_t id) { changed_ids_.push_back(id); });
-        std::ranges::sort(changed_ids_);
-
-        if (!changed_ids_.empty()) {
-            const auto storage = input.extension_descriptor().storage;
-            const auto rows = changed_row_set(storage.visible_rows);
+    void apply_changes(const In<TSC<T>> &input, std::pmr::memory_resource &scratch) {
+        input.for_each_removed([&](row_id_t id) { erase(id); });
+        if (input.has_row_id_remapping())
+            input.for_each_row_id_remapping([&](row_id_t old_id, row_id_t) { erase(old_id); });
+        const auto storage = input.extension_descriptor().storage;
+        auto changed = details::EvaluationRows{storage.visible_rows, &scratch};
+        const auto changes = std::array{input.changes()};
+        changed.select_changes(changes);
+        if (!changed.ids.empty()) {
             const auto columns = std::array{ColumnSeriesView<T>{storage}};
             ColumnSeriesView<T>::for_each_aligned_batch(
-                std::span<const ColumnSeriesView<T>>{columns}, rows, memory_.memory_resource(),
+                std::span<const ColumnSeriesView<T>>{columns}, changed.requested, scratch,
                 [&](std::span<const row_id_t> ids, std::span<const ColumnBatch<T>> batches) {
                     const auto &cells = batches.front();
                     for (auto position = std::size_t{}; position != ids.size(); ++position) {
@@ -89,55 +76,20 @@ template <cell_type T> struct SumState {
                 });
         }
 
-        input.for_each_removed([&](row_id_t id) { erase(id); });
         if constexpr (std::same_as<T, double>)
             recompute_finite_if_overflowed();
     }
 
-    T result() const noexcept {
-        if constexpr (std::same_as<T, i64>) {
-            return contribution_count_ == 0 ? i64{} : total_;
-        } else {
-            if (contribution_count_ == 0)
-                return 0;
-            if (nan_count_ != 0 || (positive_infinity_count_ != 0 && negative_infinity_count_ != 0))
-                return std::numeric_limits<double>::quiet_NaN();
-            if (positive_infinity_count_ != 0)
-                return std::numeric_limits<double>::infinity();
-            if (negative_infinity_count_ != 0)
-                return -std::numeric_limits<double>::infinity();
-            return finite_total_;
-        }
-    }
+    T result() const noexcept { return sum_.result(); }
 
   private:
-    RowSet changed_row_set(const RowSet &source) const noexcept {
-        return {.context = std::addressof(changed_ids_),
-                .native_rows = source.native_rows,
-                .identity = source.identity,
-                .size = [](const void *context) noexcept {
-                    return static_cast<const std::pmr::vector<row_id_t> *>(context)->size();
-                },
-                .contains = [](const void *context, row_id_t id) noexcept {
-                    const auto &ids = *static_cast<const std::pmr::vector<row_id_t> *>(context);
-                    return std::ranges::binary_search(ids, id);
-                },
-                .id_at = [](const void *context, std::size_t position) {
-                    return (*static_cast<const std::pmr::vector<row_id_t> *>(context))[position];
-                },
-                .for_each = [](const void *context, void *target, RowSet::visit_function visit) {
-                    for (const auto id : *static_cast<const std::pmr::vector<row_id_t> *>(context))
-                        visit(target, id);
-                }};
-    }
-
     void update(row_id_t id, std::optional<T> value) {
         if (positions_.contains(id)) {
             if (value) {
                 const auto previous = contributions_[id];
-                remove_contribution(previous);
+                sum_.remove(previous);
                 contributions_[id] = *value;
-                add_contribution(*value);
+                sum_.add(*value);
                 return;
             }
             erase(id);
@@ -151,7 +103,7 @@ template <cell_type T> struct SumState {
         if (!positions_.contains(id))
             return;
 
-        remove_contribution(contributions_[id]);
+        sum_.remove(contributions_[id]);
         contributions_.erase_at(id, memory_.memory_resource());
         positions_.reset(id);
     }
@@ -161,89 +113,20 @@ template <cell_type T> struct SumState {
         auto rollback = util::scope_exit{[&]() noexcept { positions_.reset(id); }};
         contributions_.emplace_at(id, memory_.memory_resource(), value);
         rollback.release();
-        add_contribution(value);
+        sum_.add(value);
     }
 
-    void add_contribution(T value) noexcept {
-        ++contribution_count_;
-        if constexpr (std::same_as<T, i64>) {
-            total_ = std::bit_cast<i64>(static_cast<std::uint64_t>(total_) + static_cast<std::uint64_t>(value));
-        } else {
-            if (std::isnan(value)) {
-                ++nan_count_;
-            } else if (std::isinf(value)) {
-                if (std::signbit(value))
-                    ++negative_infinity_count_;
-                else
-                    ++positive_infinity_count_;
-            } else {
-                ++finite_count_;
-                if (!finite_overflow_) {
-                    finite_total_ += value;
-                    finite_overflow_ = !std::isfinite(finite_total_);
-                }
-            }
-        }
-    }
-
-    void remove_contribution(T value) noexcept {
-        --contribution_count_;
-        if constexpr (std::same_as<T, i64>) {
-            total_ = std::bit_cast<i64>(static_cast<std::uint64_t>(total_) - static_cast<std::uint64_t>(value));
-            if (contribution_count_ == 0)
-                total_ = 0;
-        } else {
-            if (std::isnan(value)) {
-                --nan_count_;
-            } else if (std::isinf(value)) {
-                if (std::signbit(value))
-                    --negative_infinity_count_;
-                else
-                    --positive_infinity_count_;
-            } else {
-                --finite_count_;
-                if (finite_count_ == 0) {
-                    finite_total_ = 0;
-                    finite_overflow_ = false;
-                } else if (!finite_overflow_) {
-                    finite_total_ -= value;
-                    finite_overflow_ = !std::isfinite(finite_total_);
-                }
-            }
-        }
-    }
-
-    void recompute_finite_if_overflowed() noexcept {
-        if (!finite_overflow_)
-            return;
-
-        finite_total_ = 0;
-        finite_overflow_ = false;
-        for (const auto id : positions_) {
-            const auto value = contributions_[id];
-            if (!std::isfinite(value))
-                continue;
-            finite_total_ += value;
-            if (!std::isfinite(finite_total_)) {
-                finite_overflow_ = true;
-                return;
-            }
-        }
+    void recompute_finite_if_overflowed() {
+        sum_.recompute_finite_if_overflowed([&](auto visit) {
+            for (const auto id : positions_)
+                visit(contributions_[id]);
+        });
     }
 
     allocator memory_;
     util::sparse_bunch<T> contributions_;
     util::index<> positions_;
-    std::optional<ErasedColumnSeriesView> binding_;
-    std::pmr::vector<row_id_t> changed_ids_;
-    T total_{};
-    std::size_t contribution_count_{};
-    std::size_t finite_count_{};
-    std::size_t positive_infinity_count_{};
-    std::size_t negative_infinity_count_{};
-    std::size_t nan_count_{};
-    double finite_total_{};
-    bool finite_overflow_{};
+    details::NumericSum<T> sum_;
 };
 
 template <cell_type T> struct sum_tsc_node {
@@ -256,20 +139,15 @@ template <cell_type T> struct sum_tsc_node {
             context->runtime_graph().allocation());
     }
 
-    void evaluate() const {
+    void evaluate(EvaluationContext *context) const {
         auto &cache = **state;
-        const auto descriptor = values.extension_descriptor();
-        const auto view = ErasedColumnSeriesView{descriptor.storage};
-        const auto binding_changed = !cache.same_binding(view);
-        const auto changes_current = values.modified() && view.change_time() == values.last_updated();
-        const auto rebuild = !output.valid() || binding_changed || (values.modified() && !changes_current);
-        if (rebuild) {
+        if (!output.valid()) {
             cache.rebuild(values);
-        } else if (changes_current) {
-            cache.apply_changes(values);
+        } else if (values.modified()) {
+            auto scratch = details::ScratchResource{context->scratch()};
+            cache.apply_changes(values, scratch);
         }
 
-        cache.remember_binding(view);
         output.set(cache.result());
     }
 

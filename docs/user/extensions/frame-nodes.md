@@ -18,6 +18,9 @@ reading their values.
 | `for_each_row(callback)` | Visit current rows |
 | `for_each_changed(callback)` | Visit added or modified rows in this cycle |
 | `for_each_removed(callback)` | Visit removed row IDs |
+| `has_row_id_remapping()` | Test whether surviving rows changed internal IDs |
+| `for_each_row_id_remapping(callback)` | Visit `(old_id, new_id)` pairs |
+| `row_id_remappings()` | Borrow the same pairs as a contiguous span |
 | `cell(id)` on a column | Read one nullable cell |
 | `cell<Index>(id)` on a frame | Read one nullable field |
 
@@ -90,6 +93,20 @@ by ID must discard removed entries. Removed IDs identify previous rows; use reta
 contributions when reversing a previous calculation. A node that misses updates or sees
 a new source must rebuild from current rows rather than assume that the latest delta
 contains every missed change.
+
+When a reference switches between keyed frames with the same ordered key names
+and cell types, matching key tuples identify surviving rows. The sampled input
+reports those rows as modified in every column. It reports an ID remapping only
+when a surviving row's numeric ID changes. The frame and its column inputs share
+these mappings. Unkeyed sources and sources with different key definitions report
+replacement through removals and additions.
+
+Nodes must process removed IDs in the previous ID domain, apply remappings
+simultaneously, and then process additions and modifications in the current domain.
+Mappings can swap IDs or target an ID occupied by a removed row. A node can also
+discard the cached contributions of remapped rows and recompute them from the
+reported modifications. The remapping query does not scan keys or rows; key
+matching occurs once when constructing the sampled reference change.
 
 Borrowed views, row spans, and batch descriptors are valid during the invocation and
 before mutation replaces their storage. Copy an owning scalar snapshot to retain values

@@ -285,6 +285,7 @@ template <typename Cell> void format_decoded_cell(const std::optional<Cell> &val
 void format_serialized_column(const TimeSeriesType &type, util::buffer_reader &reader,
                               fmt::format_context &context) {
     static_cast<void>(reader.read_raw<std::uintptr_t>());
+    tick_codec::skip_row_id_remappings(reader);
     const auto &cell_type = static_cast<const ColumnSeriesType &>(type).cell_type();
     write(context, "{{");
     auto first = true;
@@ -312,6 +313,7 @@ void format_serialized_frame(const TimeSeriesType &, util::buffer_reader &reader
                              fmt::format_context &context) {
     const auto *schema = reader.read_raw<const hg::Schema *>();
     static_cast<void>(reader.read_raw<std::uintptr_t>());
+    tick_codec::skip_row_id_remappings(reader);
     tick_codec::skip_changed_columns(reader);
     const auto &layout = native_frame_layout(*schema);
     write(context, "{{");

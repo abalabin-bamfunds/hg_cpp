@@ -69,13 +69,16 @@ struct BaselineRows {
 
 BaselineRows baseline_rows(RowSet rows, const util::index<> *added, const util::index<> *removed,
                            const void *cycle_start_domain, EvaluationTime change_time,
-                           bool valid_before, EvaluationTime evaluation_time) noexcept {
+                           bool valid_before, EvaluationTime evaluation_time,
+                           const RowIdentity *identity = nullptr) noexcept {
     if (!valid_before)
         return {};
     if (change_time != evaluation_time)
         return {rows, nullptr, nullptr, rows.identity, BaselineRows::BaselineForm::current};
     if (cycle_start_domain == nullptr)
         return {};
+    if (identity != nullptr && identity->cycle_start_rows != nullptr)
+        return {{}, nullptr, identity->cycle_start_rows, cycle_start_domain, BaselineRows::BaselineForm::removed};
     if (rows.identity == cycle_start_domain)
         return {rows, added, removed, cycle_start_domain, BaselineRows::BaselineForm::normalized};
     return {{}, nullptr, removed, cycle_start_domain, BaselineRows::BaselineForm::removed};
@@ -101,6 +104,59 @@ void compare_rows(const BaselineRows &baseline, RowSet current, util::index<> &a
     });
 }
 
+RowKeySource previous_keys(const RowIdentity *identity, EvaluationTime change_time, EvaluationTime time) {
+    if (identity == nullptr)
+        return {};
+    return change_time == time ? identity->cycle_start_keys : identity->keys;
+}
+
+bool same_key_definition(RowKeySource previous, RowKeySource current) {
+    if (previous.owner == nullptr || current.owner == nullptr)
+        return false;
+    const auto &before = *previous.layout;
+    const auto &after = *current.layout;
+    if (before.key_fields.size() != after.key_fields.size())
+        return false;
+    for (auto index = std::size_t{}; index != before.key_fields.size(); ++index) {
+        const auto &left = before.schema->field(before.key_fields[index]);
+        const auto &right = after.schema->field(after.key_fields[index]);
+        if (left.name != right.name || left.type != right.type)
+            return false;
+    }
+    return true;
+}
+
+void compare_rows(const BaselineRows &baseline, RowSet current, RowIdentity &identity,
+                  std::pmr::vector<RowIdRemapping> &remappings, util::index<> &baseline_ids,
+                  util::index<> &added, util::index<> &removed, util::index<> &modified, allocator memory) {
+    if (baseline.domain == nullptr || baseline.domain == current.identity ||
+        !same_key_definition(identity.cycle_start_keys, identity.keys)) {
+        compare_rows(baseline, current, added, removed, modified, memory);
+        return;
+    }
+
+    auto key = std::pmr::vector<KeyValue>{&memory.memory_resource()};
+    baseline.each([&](row_id_t old_id) {
+        baseline_ids.set(old_id, memory.memory_resource());
+        key.clear();
+        identity.cycle_start_keys.owner->append_key(old_id, key);
+        const auto found = identity.keys.owner->find_key(key);
+        if (!found || !current.has(*found)) {
+            removed.set(old_id, memory.memory_resource());
+            return;
+        }
+        modified.set(*found, memory.memory_resource());
+        if (old_id != *found)
+            remappings.push_back({old_id, *found});
+    });
+    current.each([&](row_id_t id) {
+        if (!modified.contains(id))
+            added.set(id, memory.memory_resource());
+    });
+    identity.remappings = remappings;
+    identity.cycle_start_rows = &baseline_ids;
+}
+
 FrameReadStorage frame_storage(ResolvedTimeSeries source, bool valid) noexcept {
     if (source.runtime_type == nullptr || source.storage == nullptr)
         return {};
@@ -122,11 +178,12 @@ template <cell_type Cell> struct SampledColumn final : hg::details::ReferenceSam
         : runtime_type{&column_view_time_series_runtime_type<Cell>(type)}, previous_source{previous},
           sampled_last_updated{TimeSeriesState::from_validity_transition(
               evaluation_time, previous.last_updated.valid_before(evaluation_time), current.last_updated.valid())},
-          memory{memory} {
+          remappings{&memory.memory_resource()}, memory{memory} {
         auto rollback = util::scope_exit{[&]() noexcept {
             added.release(memory.memory_resource());
             modified.release(memory.memory_resource());
             removed.release(memory.memory_resource());
+            baseline_ids.release(memory.memory_resource());
         }};
 
         const auto *current_runtime = current.runtime_type == nullptr
@@ -156,9 +213,15 @@ template <cell_type Cell> struct SampledColumn final : hg::details::ReferenceSam
                                                  std::addressof(previous_view->added()),
                                                  std::addressof(previous_view->removed()),
                                                  previous_storage->cycle_start_domain, previous_view->change_time(),
-                                                 previous_valid, evaluation_time);
+                                                 previous_valid, evaluation_time, previous_storage->row_identity);
         const auto current_rows = current_view && current_valid ? current_view->scalar_storage().visible_rows : RowSet{};
-        compare_rows(baseline, current_rows, added, removed, modified, memory);
+        row_identity.keys = current_valid && storage.row_identity != nullptr
+                                ? storage.row_identity->keys : RowKeySource{};
+        row_identity.cycle_start_keys = previous_storage == nullptr ? RowKeySource{} :
+            previous_keys(previous_storage->row_identity, previous_view->change_time(), evaluation_time);
+        compare_rows(baseline, current_rows, row_identity, remappings, baseline_ids,
+                     added, removed, modified, memory);
+        storage.row_identity = &row_identity;
 
         storage.visible_rows = current_rows;
         storage.added = std::addressof(added);
@@ -173,6 +236,7 @@ template <cell_type Cell> struct SampledColumn final : hg::details::ReferenceSam
         added.release(memory.memory_resource());
         modified.release(memory.memory_resource());
         removed.release(memory.memory_resource());
+        baseline_ids.release(memory.memory_resource());
     }
 
     void retain() noexcept override { ++reference_count; }
@@ -190,6 +254,9 @@ template <cell_type Cell> struct SampledColumn final : hg::details::ReferenceSam
     ResolvedTimeSeries previous_source;
     TimeSeriesState sampled_last_updated;
     ColumnStorage<Cell> storage;
+    RowIdentity row_identity;
+    std::pmr::vector<RowIdRemapping> remappings;
+    util::index<> baseline_ids;
     util::index<> added;
     util::index<> modified;
     util::index<> removed;
@@ -229,6 +296,9 @@ struct SampledFrame final : hg::details::ReferenceSample {
     TimeSeriesState sampled_last_updated;
     FrameReadStorage source_frame;
     RowSet sampled_rows{};
+    RowIdentity row_identity;
+    std::pmr::vector<RowIdRemapping> remappings;
+    util::index<> baseline_ids;
     std::pmr::vector<SampledFrameColumnStorage> columns;
     util::index<> added;
     util::index<> removed;
@@ -268,9 +338,6 @@ class SampledFrameRuntimeType final : public FrameSeriesRuntimeType {
         return *cache.back().runtime_type;
     }
 
-    ItemLayout item_layout(item_id_t) const override {
-        throw std::logic_error{"a sampled frame has no packed item layout"};
-    }
     const TimeSeriesRuntimeType &item_runtime_type(item_id_t id) const override {
         return *item_runtimes_.at(id);
     }
@@ -339,7 +406,7 @@ template <cell_type Cell>
 void bind_sampled_column(SampledFrameColumnStorage &destination, FrameColumnReadBinding binding, RowSet rows,
                          const util::index<> &added, const util::index<> &modified,
                          const util::index<> &removed, EvaluationTime evaluation_time,
-                         const void *cycle_start_domain) {
+                         const void *cycle_start_domain, const RowIdentity &identity) {
     auto &storage = destination.template emplace<ColumnStorage<Cell>>();
     if (binding.payload != nullptr && binding.copy_column_storage != nullptr)
         binding.copy_column_storage(std::addressof(storage), binding.payload);
@@ -349,16 +416,18 @@ void bind_sampled_column(SampledFrameColumnStorage &destination, FrameColumnRead
     storage.removed = std::addressof(removed);
     storage.change_time = evaluation_time;
     storage.cycle_start_domain = cycle_start_domain;
+    storage.row_identity = &identity;
 }
 
 void bind_sampled_column(SampledFrameColumnStorage &destination, FrameColumnReadBinding binding, RowSet rows,
                         const util::index<> &added, const util::index<> &modified,
                         const util::index<> &removed, EvaluationTime evaluation_time,
-                        const void *cycle_start_domain, const TimeSeriesRuntimeType &item_runtime) {
+                        const void *cycle_start_domain, const RowIdentity &identity,
+                        const TimeSeriesRuntimeType &item_runtime) {
     const auto &type = static_cast<const ColumnSeriesType &>(item_runtime.type());
     visit_cell_type(type.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
         bind_sampled_column<Cell>(destination, binding, rows, added, modified, removed, evaluation_time,
-                                  cycle_start_domain);
+                                  cycle_start_domain, identity);
     });
 }
 
@@ -404,12 +473,13 @@ SampledFrame::SampledFrame(const TimeSeriesType &type, ResolvedTimeSeries previo
       evaluation_time{time},
       sampled_last_updated{TimeSeriesState::from_validity_transition(
           time, previous.last_updated.valid_before(time), current.last_updated.valid())},
-      columns{&memory.memory_resource()}, memory{memory} {
+      remappings{&memory.memory_resource()}, columns{&memory.memory_resource()}, memory{memory} {
     auto rollback = util::scope_exit{[&]() noexcept {
         added.release(memory.memory_resource());
         removed.release(memory.memory_resource());
         common_modified.release(memory.memory_resource());
         changed.release(memory.memory_resource());
+        baseline_ids.release(memory.memory_resource());
     }};
 
     auto previous_frame = frame_storage(previous, previous.last_updated.valid_before(time));
@@ -421,10 +491,14 @@ SampledFrame::SampledFrame(const TimeSeriesType &type, ResolvedTimeSeries previo
 
     const auto baseline = baseline_rows(previous_frame.rows, previous_frame.added, previous_frame.removed,
                                         previous_frame.cycle_start_domain, previous_frame.change_time,
-                                        previous.last_updated.valid_before(time), time);
+                                        previous.last_updated.valid_before(time), time, previous_frame.row_identity);
     cycle_start_domain = baseline.domain;
     const auto current_rows = sampled_rows;
-    compare_rows(baseline, current_rows, added, removed, common_modified, memory);
+    row_identity.keys = current_source.last_updated.valid() && current_frame.row_identity != nullptr
+                            ? current_frame.row_identity->keys : RowKeySource{};
+    row_identity.cycle_start_keys = previous_keys(previous_frame.row_identity, previous_frame.change_time, time);
+    compare_rows(baseline, current_rows, row_identity, remappings, baseline_ids,
+                 added, removed, common_modified, memory);
     for (const auto id : added)
         changed.set(id, memory.memory_resource());
     for (const auto id : common_modified)
@@ -437,7 +511,7 @@ SampledFrame::SampledFrame(const TimeSeriesType &type, ResolvedTimeSeries previo
                                  ? current_frame.column(id)
                                  : FrameColumnReadBinding{};
         bind_sampled_column(columns[id], binding, current_rows, added, common_modified, removed, time,
-                            cycle_start_domain, field_runtime);
+                            cycle_start_domain, row_identity, field_runtime);
     }
     rollback.release();
 }
@@ -447,6 +521,7 @@ SampledFrame::~SampledFrame() {
     removed.release(memory.memory_resource());
     common_modified.release(memory.memory_resource());
     changed.release(memory.memory_resource());
+    baseline_ids.release(memory.memory_resource());
 }
 
 TimeSeriesRuntimeType::ConstItem SampledFrame::input() const noexcept {
@@ -496,6 +571,7 @@ FrameReadStorage SampledFrame::input_storage() const noexcept {
     result.modified = true;
     result.rows = result.valid ? sampled_rows : RowSet{};
     result.cycle_start_domain = cycle_start_domain;
+    result.row_identity = &row_identity;
     result.size = result.rows.count();
     result.added = std::addressof(added);
     result.removed = std::addressof(removed);

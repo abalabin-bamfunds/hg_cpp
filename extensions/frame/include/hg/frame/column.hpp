@@ -212,6 +212,36 @@ struct RowSet {
     }
 };
 
+// One surviving row whose ID changed when an input switched sources.
+struct RowIdRemapping {
+    row_id_t old_id;
+    row_id_t new_id;
+};
+
+class NativeFrameStorage;
+namespace details { struct NativeFrameLayout; }
+
+// Key columns are immutable. Their native owner retains removed keys until cycle end.
+struct RowKeySource {
+    const NativeFrameStorage *owner{};
+    const details::NativeFrameLayout *layout{};
+};
+
+// Shared by a frame and its columns. Ordinary outputs leave remappings empty.
+struct RowIdentity {
+    RowKeySource keys;
+    RowKeySource cycle_start_keys;
+    std::span<const RowIdRemapping> remappings;
+    const util::index<> *cycle_start_rows{};
+};
+
+// Change bitmaps observed by one input in the current evaluation cycle. Null pointers denote no changes.
+struct RowChanges {
+    const util::index<> *added{};
+    const util::index<> *modified{};
+    const util::index<> *removed{};
+};
+
 class SelectedRows {
   public:
     SelectedRows() noexcept = default;
@@ -512,6 +542,12 @@ template <> struct ColumnBatch<void> {
         : first_slot{first_slot}, size{size}, values{values}, value_bit_offset{value_bit_offset},
           value_bits_per_cell{value_bits_per_cell}, valid{valid} {}
 
+    // The selected kernel signature determines T; this operation preserves the batch's physical layout.
+    template <cell_type T> ColumnBatch<T> as() const noexcept {
+        return {first_slot, size, static_cast<typename ColumnValueTraits<T>::pointer>(values),
+                value_bit_offset, valid};
+    }
+
     bool is_valid(std::size_t position) const noexcept { return valid.contains(first_slot, position); }
     bool has_values() const noexcept { return values != nullptr; }
     ColumnBatch subspan(std::size_t offset, std::size_t count) const noexcept {
@@ -690,6 +726,7 @@ template <typename T> struct ColumnStorage {
     const util::index<> *removed{};
     EvaluationTime change_time{MIN_DT};
     const void *cycle_start_domain{};
+    const RowIdentity *row_identity{};
 };
 
 class RowDomain {
@@ -1872,6 +1909,7 @@ struct ColumnRowMembership {
     util::index<> added_rows;
     util::index<> removed_rows;
     Mapping mapping{};
+    RowIdentity row_identity;
     EvaluationTime delta_time{MIN_DT};
     const void *cycle_start_domain{};
     bool cycle_started{};
@@ -1921,6 +1959,7 @@ struct ColumnRowMembership {
         auto binding = bind_rows(input.visible_rows, source_modified, input_changes_current,
                                  std::addressof(source_view.added()), std::addressof(source_view.removed()), time,
                                  memory, std::forward<OnAdd>(on_add), std::forward<OnRemove>(on_remove));
+        row_identity.keys = input.row_identity == nullptr ? RowKeySource{} : input.row_identity->keys;
         mapping = next_mapping;
         binding.mapping_changed = mapping_changed;
         return binding;
@@ -2050,6 +2089,7 @@ struct ColumnRowMembership {
         delta_time = time;
         cycle_started = true;
         cycle_start_domain = valid ? previous_rows.source().identity : nullptr;
+        row_identity.cycle_start_keys = valid ? row_identity.keys : RowKeySource{};
         if (!valid) {
             previous_rows.clear();
             previous_rows.bind({});
@@ -2078,6 +2118,7 @@ struct ColumnRowMembership {
         }
         previous_rows.clear();
         previous_rows.bind({});
+        row_identity.keys = {};
         mapping = {};
         valid = false;
     }
@@ -2129,6 +2170,7 @@ template <typename T> struct ColumnViewOutputStorage {
         scalar.removed = std::addressof(membership.removed_rows);
         scalar.change_time = time;
         scalar.cycle_start_domain = membership.cycle_start_domain;
+        scalar.row_identity = &membership.row_identity;
         return binding.transitioned || !modified_rows.empty();
     }
 
@@ -2141,6 +2183,7 @@ template <typename T> struct ColumnViewOutputStorage {
         scalar.removed = std::addressof(membership.removed_rows);
         scalar.change_time = membership.delta_time;
         scalar.cycle_start_domain = membership.cycle_start_domain;
+        scalar.row_identity = &membership.row_identity;
     }
 
     void release(allocator memory) noexcept {
@@ -2173,6 +2216,7 @@ template <typename T> struct ColumnComputedOutputStorage {
             cells.reset_changes();
         scalar = ColumnStorage<T>{cells, physical_rows, input.visible_rows, membership.added_rows,
                                   cells.modified(), membership.removed_rows, time, membership.cycle_start_domain};
+        scalar.row_identity = &membership.row_identity;
         return binding.transitioned;
     }
 

@@ -169,6 +169,120 @@ TEST_CASE("TSC double sum recovers after overflow and non-finite changes",
     CHECK((result[8] && result[8]->view().value() == 2.0));
 }
 
+struct CompensatedSourceState {
+    row_id_t first{no_row};
+    row_id_t middle{no_row};
+    row_id_t last{no_row};
+};
+
+struct CompensatedSource {
+    In<TS<i64>> tick;
+    State<CompensatedSourceState> state;
+    Out<TSC<double>> output;
+
+    void evaluate() const {
+        switch (*tick) {
+        case 0:
+            state->first = output.add(1e16);
+            state->middle = output.add(1.0);
+            state->last = output.add(-1e16);
+            return;
+        case 1:
+            CHECK(output.erase(state->middle));
+            return;
+        case 2:
+            output.set(state->first, std::nullopt);
+            return;
+        case 3:
+            CHECK(output.erase(state->last));
+            return;
+        case 4:
+            state->first = output.add(1e16);
+            state->middle = output.add(1.0);
+            state->last = output.add(-1e16);
+            return;
+        default:
+            return;
+        }
+    }
+};
+
+TEST_CASE("TSC double sum compensates finite values and resets after an empty series",
+          "[feature:operator][series:value][scalar:floating-point][transition:update][transition:removal]") {
+    const auto source = node<CompensatedSource>();
+    const auto graph = [&](wp<TS<i64>> tick) -> wp<TS<double>> {
+        return operators::sum_(source(tick)).as<TS<double>>();
+    };
+
+    CHECK(run_graph(graph, std::array<i64, 5>{0, 1, 2, 3, 4}).equals<double>({1.0, 0.0, -1e16, 0.0, 1.0}));
+}
+
+struct TransientCombinedOverflowSource {
+    In<TS<i64>> tick;
+    Out<TSC<double>> output;
+
+    void evaluate() const {
+        if (*tick != 0)
+            return;
+        const auto maximum = std::numeric_limits<double>::max();
+        const auto quarter_ulp = std::ldexp(1.0, 969);
+        output.add(maximum);
+        output.add(quarter_ulp);
+        output.add(quarter_ulp);
+        output.add(-quarter_ulp);
+    }
+};
+
+TEST_CASE("TSC double sum retains compensation across a transient combined overflow",
+          "[feature:operator][series:value][scalar:floating-point][transition:addition]") {
+    const auto source = node<TransientCombinedOverflowSource>();
+    const auto graph = [&](wp<TS<i64>> tick) -> wp<TS<double>> {
+        return operators::sum_(source(tick)).as<TS<double>>();
+    };
+
+    CHECK(run_graph(graph, std::array<i64, 1>{0}).equals<double>({std::numeric_limits<double>::max()}));
+}
+
+struct RetractionSourceState {
+    row_id_t large{no_row};
+};
+
+struct RetractionSource {
+    In<TS<i64>> tick;
+    State<RetractionSourceState> state;
+    Out<TSC<double>> output;
+
+    void evaluate() const {
+        switch (*tick) {
+        case 0:
+            state->large = output.add(1e16);
+            output.add(1.0);
+            return;
+        case 1:
+            CHECK(output.erase(state->large));
+            return;
+        case 2:
+            state->large = output.add(1e16);
+            return;
+        case 3:
+            output.set(state->large, std::nullopt);
+            return;
+        default:
+            return;
+        }
+    }
+};
+
+TEST_CASE("TSC double sum retains a small contribution after large removals and null updates",
+          "[feature:operator][series:value][scalar:floating-point][transition:update][transition:removal]") {
+    const auto source = node<RetractionSource>();
+    const auto graph = [&](wp<TS<i64>> tick) -> wp<TS<double>> {
+        return operators::sum_(source(tick)).as<TS<double>>();
+    };
+
+    CHECK(run_graph(graph, std::array<i64, 4>{0, 1, 2, 3}).equals<double>({1e16, 1.0, 1e16, 1.0}));
+}
+
 struct RecyclingSourceState {
     row_id_t row{no_row};
 };

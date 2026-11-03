@@ -33,6 +33,7 @@ history and are marked `superseded`.
 | Nested graphs | [Boundaries and lifecycle](design/nested-graphs.md), [map](design/map.md), [reduce](design/reduce.md), [mesh](design/mesh.md), [switch](design/switch.md) |
 | Shared state and services | [Global state](design/global-state.md), [services](design/services.md) |
 | Authoring integration | [Python](design/python.md), [library contracts](design/library.md) |
+| Extensions | [Grouped frame aggregation](design/frame-group-by.md) |
 
 ## Contributor guidance
 

@@ -197,10 +197,7 @@ template <cell_type RESULT, cell_type... ARGS> struct ColumnBlockFunctionAdapter
         if (!source.is_column())
             return ColumnOperandBatch<ARG>{*static_cast<const cell_value_t<ARG> *>(source.scalar())};
         const auto &column = source.column();
-        return ColumnOperandBatch<ARG>{ColumnBatch<ARG>{column.first_slot, column.size,
-                                                        static_cast<typename ColumnValueTraits<ARG>::pointer>(
-                                                            column.values),
-                                                        column.value_bit_offset, column.valid}};
+        return ColumnOperandBatch<ARG>{column.template as<ARG>()};
     }
 
     template <std::size_t... INDEX>

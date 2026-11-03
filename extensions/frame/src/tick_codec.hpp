@@ -98,6 +98,47 @@ void write_cell(const std::optional<cell_value_t<T>> &cell, ScalarBufferWriteCon
     }
 }
 
+inline void write_row_id_remappings(ScalarBufferWriteContext &writer, std::span<const RowIdRemapping> mappings) {
+    hg::details::write_bytes(writer, static_cast<std::uint32_t>(mappings.size()));
+    for (const auto [old_id, new_id] : mappings) {
+        hg::details::write_bytes(writer, old_id);
+        hg::details::write_bytes(writer, new_id);
+    }
+}
+
+inline std::vector<RowIdRemapping> read_row_id_remappings(util::buffer_reader &reader) {
+    const auto count = reader.read_raw<std::uint32_t>();
+    auto result = std::vector<RowIdRemapping>{};
+    result.reserve(count);
+    for (auto index = std::uint32_t{}; index != count; ++index) {
+        const auto old_id = reader.read_raw<row_id_t>();
+        const auto new_id = reader.read_raw<row_id_t>();
+        result.push_back({old_id, new_id});
+    }
+    return result;
+}
+
+inline void skip_row_id_remappings(util::buffer_reader &reader) {
+    const auto count = reader.read_raw<std::uint32_t>();
+    for (auto index = std::uint32_t{}; index != count; ++index) {
+        static_cast<void>(reader.read_raw<row_id_t>());
+        static_cast<void>(reader.read_raw<row_id_t>());
+    }
+}
+
+// Remove obsolete rows before applying this simultaneous change of source IDs.
+inline void remap_copied_rows(util::hash_dictionary<row_id_t, row_id_t> &rows,
+                              std::span<const RowIdRemapping> mappings, allocator memory) {
+    auto destinations = std::vector<row_id_t>{};
+    destinations.reserve(mappings.size());
+    for (const auto [old_id, new_id] : mappings) {
+        destinations.push_back(rows.at(old_id));
+        rows.erase(old_id, memory.memory_resource());
+    }
+    for (auto index = std::size_t{}; index != mappings.size(); ++index)
+        rows.try_emplace(mappings[index].new_id, memory.memory_resource(), destinations[index]);
+}
+
 inline const hg::Schema &read_schema(util::buffer_reader &reader) {
     return *reader.read_raw<const hg::Schema *>();
 }

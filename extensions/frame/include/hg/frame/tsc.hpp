@@ -149,6 +149,17 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     bool contains(frame::row_id_t id) const noexcept { return valid() && storage().contains(id); }
     std::optional<frame::cell_value_t<T>> cell(frame::row_id_t id) const { return storage().cell(id); }
     const void *row_domain() const noexcept { return valid() ? storage().row_domain() : nullptr; }
+    bool has_row_id_remapping() const noexcept { return !row_id_remappings().empty(); }
+    std::span<const frame::RowIdRemapping> row_id_remappings() const noexcept {
+        if (!changes_current())
+            return {};
+        const auto *identity = storage().scalar_storage().row_identity;
+        return identity == nullptr ? std::span<const frame::RowIdRemapping>{} : identity->remappings;
+    }
+    template <typename Function> void for_each_row_id_remapping(Function &&function) const {
+        for (const auto [old_id, new_id] : row_id_remappings())
+            std::invoke(function, old_id, new_id);
+    }
     Scalar<frame::Column<T>> value_view() const noexcept {
         return Scalar<frame::Column<T>>::from(storage().scalar_storage());
     }
@@ -164,6 +175,12 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     template <typename Function> void for_each_batch(Function &&function) const {
         if (valid())
             storage().for_each_batch(std::forward<Function>(function));
+    }
+    frame::RowChanges changes() const noexcept {
+        if (!changes_current())
+            return {};
+        const auto view = storage();
+        return {&view.added(), &view.modified(), &view.removed()};
     }
     template <typename Function> void for_each_changed(Function &&function) const {
         if (!changes_current())
@@ -227,6 +244,16 @@ class In<frame::TSC<T, SeriesProperties...>, Properties...>
     EvaluationTime last_updated() const noexcept { return data_.last_updated(); }
     const TimeSeriesInputData &input_data() const noexcept { return data_; }
     std::size_t size() const noexcept { return valid() ? cell_count() : 0; }
+    bool has_row_id_remapping() const noexcept { return !row_id_remappings().empty(); }
+    std::span<const frame::RowIdRemapping> row_id_remappings() const noexcept {
+        return frame::visit_cell_type(column_type().cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+            return input<Cell>().row_id_remappings();
+        });
+    }
+    template <typename Function> void for_each_row_id_remapping(Function &&function) const {
+        for (const auto [old_id, new_id] : row_id_remappings())
+            std::invoke(function, old_id, new_id);
+    }
     const TimeSeriesRuntimeType &runtime_type() const noexcept { return data_.runtime_type(); }
 
     template <typename... Functions> decltype(auto) visit(Functions &&...functions) const {

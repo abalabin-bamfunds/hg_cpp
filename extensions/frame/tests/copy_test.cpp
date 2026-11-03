@@ -752,4 +752,61 @@ TEST_CASE("delay replays ordinary frame column and frame values",
         {std::nullopt, first_frame.view().value(), second_frame.view().value()}));
 }
 
+
+struct ReplayRemappedFrameTicks {
+    In<TSF<CopyFrame>> input;
+    In<TS<i64>> cycle;
+    State<RetainedFrameTicks *> ticks;
+    Out<TSF<CopyFrame>> output;
+
+    void start(EvaluationContext *context) const {
+        auto memory = context->runtime_graph().allocation();
+        auto bytes = util::buffer::chain(256, memory);
+        *ticks = memory.new_object<RetainedFrameTicks>(std::move(bytes), memory, output.runtime_type().type());
+    }
+    void evaluate(EvaluationContext *context) const {
+        auto &retained = **ticks;
+        static_cast<void>(retained.writer.write(input, context->evaluation_time()));
+        if (*cycle != 2)
+            return;
+        REQUIRE(retained.reader.replay(output));
+        REQUIRE(retained.reader.replay(output));
+    }
+    void stop(EvaluationContext *context) const noexcept {
+        context->runtime_graph().allocation().delete_object(*ticks);
+    }
+};
+
+TEST_CASE("retained keyed frame ticks replay simultaneous remapping after removals",
+          "[feature:frame][series:tsf][feature:sampling][feature:tick-replay]") {
+    const auto choose = node([](In<TS<bool>> select, In<REF<TSF<CopyFrame>>> first,
+                                In<REF<TSF<CopyFrame>>> second, Out<REF<TSF<CopyFrame>>> output) {
+        output.copy(*select ? second : first);
+    });
+    const auto replay = node<ReplayRemappedFrameTicks>();
+    const auto observe = node([](In<TSF<CopyFrame>, optional> input, In<TS<i64>> cycle, Out<TS<i64>> output) {
+        if (*cycle == 2) {
+            auto values = std::vector<std::pair<i64, i64>>{};
+            input.for_each_row([&](row_id_t id, std::size_t) {
+                values.emplace_back(*input.cell<0>(id), *input.cell<1>(id));
+            });
+            std::ranges::sort(values);
+            CHECK(values == std::vector<std::pair<i64, i64>>{{10, 110}, {20, 220}, {40, 400}});
+        }
+        output.set(*cycle);
+    });
+    const auto graph = [&](wp<TS<bool>> select, wp<TSF<CopyFrame>> first, wp<TSF<CopyFrame>> second,
+                           wp<TS<i64>> cycle) {
+        return observe(replay(choose(select, first, second), cycle), cycle);
+    };
+    const auto first = input<TSF<CopyFrame>>({
+        {{{"id", i64{10}}, {"value", i64{100}}}, {{"id", i64{20}}, {"value", i64{200}}},
+         {{"id", i64{30}}, {"value", i64{300}}}}, literal::SKIP, literal::SKIP});
+    const auto second = input<TSF<CopyFrame>>({
+        {{{"id", i64{20}}, {"value", i64{220}}}, {{"id", i64{40}}, {"value", i64{400}}},
+         {{"id", i64{10}}, {"value", i64{110}}}}, literal::SKIP, literal::SKIP});
+    CHECK(run_graph(graph, std::array{false, true, true}, first, second,
+                    std::array<i64, 3>{0, 1, 2}).equals<i64>({0, 1, 2}));
+}
+
 } // namespace

@@ -11,8 +11,8 @@ if(NOT TARGET hg::hg)
     find_package(hg CONFIG REQUIRED)
 endif()
 
-add_library(hg_frame SHARED src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/comparison.cpp
-                            src/expression.cpp src/frame.cpp src/literal.cpp src/logical.cpp src/reduction.cpp
+add_library(hg_frame SHARED src/aggregation_sum.cpp src/arithmetic.cpp src/column.cpp src/column_expression.cpp src/comparison.cpp
+                            src/expression.cpp src/frame.cpp src/group_by.cpp src/literal.cpp src/logical.cpp src/reduction.cpp
                             src/reference_sample.cpp src/tick_capture.cpp src/queue_operations.cpp
                             src/with_columns.cpp src/collection.cpp
                             src/format.cpp)
@@ -50,8 +50,18 @@ if(HG_FRAME_BUILD_BENCHMARKS)
     add_executable(hg_frame_incremental_sum_benchmark benchmarks/incremental_sum_benchmark.cpp)
     target_link_libraries(hg_frame_incremental_sum_benchmark PRIVATE hg::frame)
 
+    add_executable(hg_frame_group_by_benchmark benchmarks/group_by_benchmark.cpp)
+    target_link_libraries(hg_frame_group_by_benchmark PRIVATE hg::frame)
+
     if(HG_FRAME_BUILD_ARROW)
         find_package(ArrowCompute CONFIG REQUIRED)
+        find_package(ArrowAcero CONFIG REQUIRED)
+        add_executable(hg_frame_group_by_arrow_benchmark benchmarks/group_by_benchmark.cpp)
+        target_compile_definitions(hg_frame_group_by_arrow_benchmark PRIVATE HG_FRAME_GROUP_BY_ARROW_BENCHMARK)
+        target_link_libraries(hg_frame_group_by_arrow_benchmark PRIVATE hg::frame_arrow
+                                                                       ArrowCompute::arrow_compute_shared
+                                                                       ArrowAcero::arrow_acero_shared)
+
         add_executable(hg_frame_arrow_benchmark benchmarks/arrow_benchmark.cpp)
         target_link_libraries(hg_frame_arrow_benchmark PRIVATE hg::frame_arrow ArrowCompute::arrow_compute_shared)
         add_executable(hg_frame_compaction_benchmark benchmarks/compaction_benchmark.cpp)
@@ -93,6 +103,10 @@ if(BUILD_TESTING)
     add_executable(hg_frame_with_columns_test tests/with_columns_test.cpp)
     target_link_libraries(hg_frame_with_columns_test PRIVATE hg::frame Catch2::Catch2WithMain)
     add_test(NAME hg_frame_with_columns_test COMMAND hg_frame_with_columns_test)
+
+    add_executable(hg_frame_group_by_test tests/group_by_test.cpp)
+    target_link_libraries(hg_frame_group_by_test PRIVATE hg::frame Catch2::Catch2WithMain)
+    add_test(NAME hg_frame_group_by_test COMMAND hg_frame_group_by_test)
 
     add_executable(hg_frame_collection_test tests/collection_test.cpp)
     target_link_libraries(hg_frame_collection_test PRIVATE hg::frame Catch2::Catch2WithMain)

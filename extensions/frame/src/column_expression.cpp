@@ -1,3 +1,5 @@
+#include "expression_evaluation.hpp"
+
 #include <hg/frame/frame.hpp>
 #include <hg/frame/expression.hpp>
 #include <hg/frame/tsc.hpp>
@@ -29,41 +31,15 @@ namespace hg::frame {
 namespace {
 
 using namespace hg::literals;
-
-inline constexpr auto expression_batch_rows = std::size_t{128};
-
-template <template <typename, auto...> typename Field>
-using COLUMNS = BundleSchemaVariableDeclaration<"FRAME_EXPRESSION_COLUMNS", Field>;
-template <template <typename, auto...> typename Field>
-using PARAMETER_INPUTS = BundleSchemaVariableDeclaration<"FRAME_EXPRESSION_PARAMETER_INPUTS", Field>;
-template <template <typename, auto...> typename Field>
-using PARAMETERS = BundleSchemaVariableDeclaration<"FRAME_EXPRESSION_PARAMETERS", Field>;
-using PARAMETER_SCALAR = ScalarVariable<"FRAME_EXPRESSION_PARAMETER_SCALAR">;
-template <template <typename, auto...> typename Field> struct EmptyParameterSchema {};
-
-using CompiledExpressionOwner = std::shared_ptr<const struct CompiledExpression>;
-
-struct ColumnInputAdapter {
-    ErasedColumnSeriesView (*read)(const TimeSeriesInputData &);
-    bool (*bind)(const void *, const TimeSeriesInputData &);
-};
-
-struct ColumnBinding {
-    std::size_t field_index{};
-    ColumnInputAdapter adapter{};
-};
-
-struct ParameterBinding {
-    std::size_t field_index{};
-    std::size_t offset{};
-    std::size_t size{};
-    std::size_t alignment{};
-    void (*read)(Scalar<>, void *){};
-};
+using namespace hg::frame::details;
 
 template <cell_type CELL> ErasedColumnSeriesView read_column(const TimeSeriesInputData &data) {
     const auto input = In<TSC<CELL>>{data};
     return ErasedColumnSeriesView{input.extension_descriptor().storage};
+}
+
+template <cell_type CELL> RowChanges column_changes(const TimeSeriesInputData &data) {
+    return In<TSC<CELL>>{data}.changes();
 }
 
 template <cell_type CELL, cell_type RESULT>
@@ -82,11 +58,18 @@ template <cell_type RESULT> ColumnBinding column_binding(const Type &type, std::
         throw WiringError{"column expression input is not a concrete column"};
     try {
         return visit_cell_type(column->cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
-            return ColumnBinding{index, {&read_column<Cell>, &bind_column<Cell, RESULT>}};
+            return ColumnBinding{index, {&read_column<Cell>, &bind_column<Cell, RESULT>, &column_changes<Cell>}};
         });
     } catch (const std::invalid_argument &) {
         throw WiringError{"column expression input has an unsupported cell type"};
     }
+}
+
+ColumnBinding input_column_binding(const Type &type, std::size_t index) {
+    const auto &column = static_cast<const ColumnSeriesType &>(type);
+    return visit_cell_type(column.cell_type(), [&]<typename Cell>(std::type_identity<Cell>) {
+        return ColumnBinding{index, {&read_column<Cell>, nullptr, &column_changes<Cell>}};
+    });
 }
 
 ParameterBinding parameter_binding(const ScalarType &type, std::size_t index) {
@@ -124,250 +107,6 @@ const ScalarType *expression_cell_type(const Type &type) {
     }
     return nullptr;
 }
-
-struct Operand {
-    enum class Source { column, parameter, instruction };
-
-    std::size_t index{};
-    Source source{Source::column};
-};
-
-struct Instruction {
-    std::array<Operand, 2> operands;
-    std::size_t operand_count{};
-    ScalarValue<> callback;
-    const ColumnBlockFunctionAdapter *adapter{};
-    std::size_t result_offset{};
-};
-
-struct CompiledExpression {
-    Operand result;
-    std::vector<Instruction> instructions;
-    std::vector<ColumnBinding> columns;
-    std::vector<ParameterBinding> parameters;
-    std::size_t parameter_storage_size{};
-    std::size_t instruction_storage_size{};
-
-    template <typename Function>
-    void for_each_result_batch(std::span<const ErasedColumnSeriesView> views,
-                               std::span<const void *const> parameters, const RowSet &rows,
-                               std::pmr::memory_resource &memory, Function &&function) const {
-        constexpr auto max_rows = expression_batch_rows;
-        const auto validity_capacity = (max_rows + 7) / 8;
-        const auto value_bytes = instruction_storage_size;
-        auto *operation_values = value_bytes == 0 ? nullptr : memory.allocate(value_bytes, alignof(std::max_align_t));
-        auto release_operation_values = util::scope_exit{[&]() noexcept {
-            if (operation_values != nullptr)
-                memory.deallocate(operation_values, value_bytes, alignof(std::max_align_t));
-        }};
-        auto operation_validity =
-            std::pmr::vector<std::uint8_t>{instructions.size() * validity_capacity, 0, &memory};
-        auto operation_batches = std::pmr::vector<ColumnBatch<>>{instructions.size(), &memory};
-
-        for_each_aligned_column_batch(
-            views, rows, memory,
-            [&](std::span<const row_id_t> ids, std::span<const ColumnBatch<>> batches) {
-                for (auto offset = std::size_t{}; offset < ids.size(); offset += max_rows) {
-                    const auto count = std::min(max_rows, ids.size() - offset);
-                    const auto batch_ids = ids.subspan(offset, count);
-                    const auto validity_bytes = (count + 7) / 8;
-                    for (auto operation = std::size_t{}; operation != instructions.size(); ++operation) {
-                        const auto &instruction = instructions[operation];
-                        auto operands = std::array<ColumnOperandBatch<>, 2>{};
-                        for (auto operand_index = std::size_t{}; operand_index != instruction.operand_count;
-                             ++operand_index) {
-                            const auto operand = instruction.operands[operand_index];
-                            switch (operand.source) {
-                            case Operand::Source::column: {
-                                const auto &batch = batches[operand.index];
-                                operands[operand_index] =
-                                    ColumnOperandBatch<>{batch.subspan(offset, count)};
-                                break;
-                            }
-                            case Operand::Source::parameter:
-                                operands[operand_index] = ColumnOperandBatch<>{parameters[operand.index]};
-                                break;
-                            case Operand::Source::instruction: {
-                                const auto &batch = operation_batches[operand.index];
-                                operands[operand_index] = ColumnOperandBatch<>{batch};
-                                break;
-                            }
-                            }
-                        }
-
-                        auto *values = static_cast<std::byte *>(operation_values) + instruction.result_offset;
-                        auto *validity = operation_validity.data() + operation * validity_capacity;
-                        instruction.adapter->call(
-                            instruction.callback.view(), batch_ids,
-                            std::span<const ColumnOperandBatch<>>{operands.data(), instruction.operand_count},
-                            MutableColumnBatch<>{values, count,
-                                                 std::span<std::uint8_t>{validity, validity_bytes}});
-                        operation_batches[operation] = ColumnBatch<>{
-                            0, count, values, 0,
-                            instruction.adapter->packed_result ? 1 : instruction.adapter->result_size * 8,
-                            ColumnBatchValidity::from_bitmap(validity, 0)};
-                    }
-
-                    const auto result_batch = [&] {
-                        switch (result.source) {
-                        case Operand::Source::column:
-                            return batches[result.index].subspan(offset, count);
-                        case Operand::Source::instruction:
-                            return operation_batches[result.index];
-                        case Operand::Source::parameter:
-                            std::unreachable();
-                        }
-                        std::unreachable();
-                    }();
-                    function(batch_ids, result_batch);
-                }
-            });
-    }
-};
-
-struct BindingCache {
-    explicit BindingCache(std::pmr::memory_resource *memory) : columns{memory} {}
-    std::pmr::vector<ErasedColumnSeriesView> columns;
-};
-
-struct ColumnActivity {
-    bool modified{};
-    EvaluationTime last_updated{MIN_DT};
-};
-
-struct PreparedColumns {
-    PreparedColumns(const In<TSB<COLUMNS>, all_valid> &inputs, std::span<const ColumnBinding> bindings,
-                    std::span<const ErasedColumnSeriesView> cached_bindings, std::pmr::memory_resource *memory)
-        : views{memory}, activity{memory} {
-        views.reserve(bindings.size());
-        activity.reserve(bindings.size());
-        for (const auto &binding : bindings) {
-            const auto input = inputs[binding.field_index];
-            const auto &data = input.input_data();
-            views.push_back(binding.adapter.read(data));
-            activity.push_back({data.modified(), data.last_updated()});
-        }
-
-        mapping_changed = cached_bindings.size() != views.size();
-        if (!mapping_changed) {
-            for (auto index = std::size_t{}; index != views.size(); ++index) {
-                if (!cached_bindings[index].same_binding(views[index])) {
-                    mapping_changed = true;
-                    break;
-                }
-            }
-        }
-
-        for (std::size_t index = 0; index != views.size(); ++index) {
-            if (activity[index].modified && views[index].change_time() != activity[index].last_updated) {
-                delta_lost = true;
-                break;
-            }
-        }
-
-        const auto &rows = views.front().visible_rows();
-        for (std::size_t index = 1; index != views.size(); ++index)
-            if (views[index].visible_rows() != rows)
-                throw std::invalid_argument{"column expression inputs must share one visible row selection"};
-    }
-
-    std::pmr::vector<ErasedColumnSeriesView> views;
-    std::pmr::vector<ColumnActivity> activity;
-    bool mapping_changed{};
-    bool delta_lost{};
-};
-
-struct PreparedExpressionInputs {
-    struct ParameterStorageBlock {
-        alignas(std::max_align_t) std::byte bytes[sizeof(std::max_align_t)];
-    };
-
-    PreparedExpressionInputs(const CompiledExpression &expression, const In<TSB<COLUMNS>, all_valid> &columns,
-                             const In<TS<Bundle<PARAMETERS>>> &parameters, BindingCache &cache,
-                             std::pmr::memory_resource &memory)
-        : columns{columns, std::span{expression.columns}, std::span{cache.columns}, &memory},
-          parameter_storage{&memory},
-          parameter_addresses{std::pmr::polymorphic_allocator<const void *>{&memory}} {
-        parameter_storage.resize((expression.parameter_storage_size + sizeof(std::max_align_t) - 1) /
-                                 sizeof(std::max_align_t));
-        parameter_addresses.reserve(expression.parameters.size());
-        const auto parameter_bundle = parameters.value_view();
-        for (auto index = std::size_t{}; index != expression.parameters.size(); ++index) {
-            const auto &binding = expression.parameters[index];
-            auto *value = parameter_storage[binding.offset / sizeof(ParameterStorageBlock)].bytes +
-                          binding.offset % sizeof(ParameterStorageBlock);
-            const auto parameter = parameter_bundle[binding.field_index];
-            binding.read(Scalar<>::from(parameter), value);
-            parameter_addresses.push_back(value);
-        }
-    }
-
-    PreparedExpressionInputs(const PreparedExpressionInputs &) = delete;
-    PreparedExpressionInputs &operator=(const PreparedExpressionInputs &) = delete;
-
-    PreparedColumns columns;
-    std::pmr::vector<ParameterStorageBlock> parameter_storage;
-    std::pmr::vector<const void *> parameter_addresses;
-};
-
-struct EvaluationRows {
-    EvaluationRows(const RowSet &visible_rows, std::pmr::memory_resource *memory)
-        : ids{memory}, requested{visible_rows} {}
-
-    void select_changes(std::span<const ColumnActivity> activity, std::span<const ErasedColumnSeriesView> views) {
-        for (std::size_t index = 0; index != activity.size(); ++index) {
-            const auto &view = views[index];
-            if (!activity[index].modified || view.change_time() != activity[index].last_updated)
-                continue;
-            for (const auto id : view.added())
-                ids.push_back(id);
-            for (const auto id : view.modified())
-                ids.push_back(id);
-        }
-
-        std::ranges::sort(ids);
-        ids.erase(std::unique(ids.begin(), ids.end()), ids.end());
-        requested = RowSet{
-            .context = std::addressof(ids),
-            .native_rows = requested.native_rows,
-            .identity = requested.identity,
-            .size = [](const void *context) noexcept {
-                return static_cast<const std::pmr::vector<row_id_t> *>(context)->size();
-            },
-            .contains = [](const void *context, row_id_t id) noexcept {
-                const auto &ids = *static_cast<const std::pmr::vector<row_id_t> *>(context);
-                return std::ranges::binary_search(ids, id);
-            },
-            .id_at = [](const void *context, std::size_t index) {
-                return (*static_cast<const std::pmr::vector<row_id_t> *>(context))[index];
-            },
-            .for_each = [](const void *context, void *target, RowSet::visit_function visit) {
-                for (const auto id : *static_cast<const std::pmr::vector<row_id_t> *>(context))
-                    visit(target, id);
-            }};
-    }
-
-    std::pmr::vector<row_id_t> ids;
-    RowSet requested;
-};
-
-class ScratchResource final : public std::pmr::memory_resource {
-  public:
-    explicit ScratchResource(ScratchPad &scratch) noexcept : scratch_{&scratch} {}
-
-  private:
-    void *do_allocate(std::size_t bytes, std::size_t alignment) override {
-        return scratch_->allocate(bytes, alignment);
-    }
-    void do_deallocate(void *address, std::size_t bytes, std::size_t) override {
-        scratch_->release_last(address, bytes);
-    }
-    bool do_is_equal(const std::pmr::memory_resource &other) const noexcept override {
-        return this == std::addressof(other);
-    }
-
-    ScratchPad *scratch_;
-};
 
 struct ParameterUpdateNode {
     In<TSB<PARAMETER_INPUTS>, all_valid> parameters;
@@ -407,19 +146,15 @@ template <cell_type RESULT> struct ColumnExpressionNode {
     In<TSB<COLUMNS>, all_valid> columns;
     In<TS<Bundle<PARAMETERS>>> parameters;
     Out<TSC<RESULT>, computed<>> output;
-    State<BindingCache *> bindings;
 
     void evaluate(EvaluationContext *context) const {
         const auto &compiled_expression = **expression;
-        auto *cache = *bindings;
         auto memory = ScratchResource{context->scratch()};
-        auto prepared = PreparedExpressionInputs{compiled_expression, columns, parameters, *cache, memory};
+        auto prepared = PreparedExpressionInputs{
+            compiled_expression, columns.input_data(), parameters.input_data(), memory};
         const auto &views = prepared.columns.views;
 
-        const auto output_invalid = !output.valid();
-        const auto parameters_changed = parameters.modified();
-        const auto rebuild_values =
-            output_invalid || prepared.columns.mapping_changed || prepared.columns.delta_lost || parameters_changed;
+        const auto rebuild_values = !output.valid() || parameters.modified();
 
         const auto &first_binding = compiled_expression.columns.front();
         const auto first_input = columns[first_binding.field_index];
@@ -427,7 +162,7 @@ template <cell_type RESULT> struct ColumnExpressionNode {
         const auto &rows = views.front().visible_rows();
         auto selected_rows = EvaluationRows{rows, &memory};
         if (!rebuild_values)
-            selected_rows.select_changes(std::span{prepared.columns.activity}, std::span{views});
+            selected_rows.select_changes(prepared.columns.changes);
 
         if (rebuild_values || !selected_rows.ids.empty()) {
             compiled_expression.for_each_result_batch(
@@ -440,25 +175,14 @@ template <cell_type RESULT> struct ColumnExpressionNode {
                                                               result.valid});
                 });
         }
-
-        cache->columns.assign(views.begin(), views.end());
-    }
-
-    void start(EvaluationContext *context) const {
-        auto allocation = context->runtime_graph().allocation();
-        *bindings = allocation.new_object<BindingCache>(&allocation.memory_resource());
-    }
-
-    void stop(EvaluationContext *context) const noexcept {
-        auto allocation = context->runtime_graph().allocation();
-        allocation.delete_object(*bindings);
-        *bindings = nullptr;
     }
 };
 
-template <cell_type RESULT> class ExpressionCompiler {
+class ExpressionCompiler {
   public:
-    explicit ExpressionCompiler(GraphWiring &wiring) : wiring_{&wiring} {}
+    using BindingFactory = ColumnBinding (*)(const Type &, std::size_t);
+    explicit ExpressionCompiler(GraphWiring &wiring, BindingFactory binding_factory)
+        : wiring_{&wiring}, binding_factory_{binding_factory} {}
 
     Operand compile(WiringPoint point) {
         point = hg::details::WiringRecord::point(*point.record()->source_identity());
@@ -530,9 +254,11 @@ template <cell_type RESULT> class ExpressionCompiler {
 
     std::span<const WiringPoint> leaves() const noexcept { return leaves_; }
     std::span<const WiringPoint> parameters() const noexcept { return parameters_; }
-    std::shared_ptr<const CompiledExpression> finish(Operand result) && {
+    std::shared_ptr<const CompiledExpression> finish(Operand result, std::size_t first_column) && {
         expression_.result = result;
         expression_.columns = std::move(column_bindings_);
+        for (auto &binding : expression_.columns)
+            binding.field_index += first_column;
         expression_.parameters = std::move(parameter_bindings_);
         for (auto &binding : expression_.parameters) {
             if (binding.alignment > alignof(std::max_align_t))
@@ -582,7 +308,7 @@ template <cell_type RESULT> class ExpressionCompiler {
         const auto index = leaves_.size();
         leaf_indices_.emplace(identity, index);
         leaves_.push_back(materialized);
-        column_bindings_.push_back(column_binding<RESULT>(materialized.type().dereferenced_type(), index));
+        column_bindings_.push_back(binding_factory_(materialized.type().dereferenced_type(), index));
         return {index, Operand::Source::column};
     }
 
@@ -631,6 +357,7 @@ template <cell_type RESULT> class ExpressionCompiler {
     }
 
     GraphWiring *wiring_;
+    BindingFactory binding_factory_;
     CompiledExpression expression_;
     std::vector<WiringPoint> leaves_;
     std::vector<WiringPoint> parameters_;
@@ -655,23 +382,20 @@ template <template <template <typename, auto...> typename> typename Schema> stru
     In<TSB<COLUMNS>, all_valid> columns;
     In<TS<Bundle<PARAMETERS>>> parameters;
     Out<TSF<Schema>, view> output;
-    State<BindingCache *> bindings;
 
     void evaluate(EvaluationContext *context) const {
         const auto &compiled_expression = **expression;
-        auto *cache = *bindings;
         auto memory = ScratchResource{context->scratch()};
-        auto prepared = PreparedExpressionInputs{compiled_expression, columns, parameters, *cache, memory};
+        auto prepared = PreparedExpressionInputs{
+            compiled_expression, columns.input_data(), parameters.input_data(), memory};
         const auto &input_rows = source.extension_descriptor().rows;
         if (prepared.columns.views.front().visible_rows() != input_rows)
             throw std::invalid_argument{"frame filter predicate columns must share the source row selection"};
 
-        const auto rebuild_predicate = !output.valid() || prepared.columns.mapping_changed ||
-                                       prepared.columns.delta_lost || parameters.modified();
+        const auto rebuild_predicate = !output.valid() || parameters.modified();
         auto changed_rows = EvaluationRows{input_rows, &memory};
         if (!rebuild_predicate)
-            changed_rows.select_changes(std::span{prepared.columns.activity},
-                                        std::span{prepared.columns.views});
+            changed_rows.select_changes(prepared.columns.changes);
 
         const auto evaluate_predicate = [&](const RowSet &requested, auto consume) {
             compiled_expression.for_each_result_batch(
@@ -684,19 +408,8 @@ template <template <template <typename, auto...> typename> typename Schema> stru
                 });
         };
         output.bind_filter(source, rebuild_predicate, changed_rows.ids, evaluate_predicate);
-        cache->columns.assign(prepared.columns.views.begin(), prepared.columns.views.end());
     }
 
-    void start(EvaluationContext *context) const {
-        auto allocation = context->runtime_graph().allocation();
-        *bindings = allocation.new_object<BindingCache>(&allocation.memory_resource());
-    }
-
-    void stop(EvaluationContext *context) const noexcept {
-        auto allocation = context->runtime_graph().allocation();
-        allocation.delete_object(*bindings);
-        *bindings = nullptr;
-    }
 };
 
 template <template <template <typename, auto...> typename> typename Schema>
@@ -705,18 +418,12 @@ const auto &column_filter_node() {
     return node_template;
 }
 
-struct ExpressionNodeInputs {
-    ScalarValue<Opaque<CompiledExpressionOwner>> expression;
-    WiringPoint columns;
-    WiringPoint parameters;
-};
-
-template <cell_type RESULT>
 ExpressionNodeInputs prepare_expression_node_inputs(GraphWiring &graph_wiring,
-                                                    ExpressionCompiler<RESULT> &&compiler, Operand result) {
+                                                    ExpressionCompiler &&compiler, Operand result,
+                                                    std::size_t first_column = 0) {
     const auto leaf_points = std::vector<WiringPoint>{compiler.leaves().begin(), compiler.leaves().end()};
     const auto parameter_points = std::vector<WiringPoint>{compiler.parameters().begin(), compiler.parameters().end()};
-    auto expression = std::move(compiler).finish(result);
+    auto expression = std::move(compiler).finish(result, first_column);
 
     const auto named_fields = [](std::span<const WiringPoint> points, std::string_view prefix) {
         auto fields = std::vector<WiringArgument>{};
@@ -759,7 +466,7 @@ ExpressionNodeInputs prepare_expression_node_inputs(GraphWiring &graph_wiring,
 template <cell_type RESULT>
 WiringPoint materialize_column_expression_impl(WiringPoint result) {
     auto &graph_wiring = static_cast<WiringPoint>(result).record()->wiring();
-    auto compiler = ExpressionCompiler<RESULT>{graph_wiring};
+    auto compiler = ExpressionCompiler{graph_wiring, &column_binding<RESULT>};
     const auto root = compiler.compile_root(result);
     if (compiler.leaves().empty())
         throw WiringError{"column expression requires at least one column operand"};
@@ -771,7 +478,7 @@ WiringPoint materialize_column_expression_impl(WiringPoint result) {
 template <template <template <typename, auto...> typename> typename Schema>
 WiringPoint materialize_column_filter(WiringPoint condition, wp<TSF<Schema>> source) {
     auto &graph_wiring = static_cast<WiringPoint>(source).record()->wiring();
-    auto compiler = ExpressionCompiler<bool>{graph_wiring};
+    auto compiler = ExpressionCompiler{graph_wiring, &column_binding<bool>};
     const auto result = compiler.compile(condition);
     if (compiler.leaves().empty())
         throw WiringError{"frame filter predicate requires at least one column operand"};
@@ -816,6 +523,16 @@ const auto registered_filter = operators::filter_.overload(graph<schema_type<FIL
     }));
 
 } // namespace
+
+hg::frame::details::ExpressionNodeInputs hg::frame::details::compile_column_expression(WiringPoint point,
+                                                                                   std::size_t first_column) {
+    auto &wiring = point.record()->wiring();
+    auto compiler = ExpressionCompiler{wiring, &input_column_binding};
+    const auto result = compiler.compile(point);
+    if (compiler.leaves().empty())
+        throw WiringError{"aggregation expression requires at least one column operand"};
+    return prepare_expression_node_inputs(wiring, std::move(compiler), result, first_column);
+}
 
 bool hg::frame::details::is_column_expression_bundle_type(const Type &type) {
     const auto *bundle = dynamic_cast<const TimeSeriesBundleType *>(std::addressof(type));

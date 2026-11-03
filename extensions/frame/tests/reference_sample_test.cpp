@@ -788,4 +788,230 @@ TEST_CASE("zero-column TSF reference samples preserve valid empty rows",
     CHECK(observations[1].removed == std::vector<row_id_t>{0});
 }
 
+TEST_CASE("keyed frame reference switches remap surviving rows and share mappings with columns",
+          "[feature:frame][series:reference][feature:sampling][transition:update]") {
+    struct Observation {
+        bool remapped{};
+        std::vector<std::pair<row_id_t, row_id_t>> mappings;
+        std::vector<row_id_t> added;
+        std::vector<row_id_t> removed;
+        std::vector<row_id_t> modified;
+        bool shared{};
+    };
+    auto observations = std::vector<Observation>{};
+    const auto choose = node([](In<TS<bool>> select, In<REF<TSF<SCHEMA>>> first,
+                                In<REF<TSF<SCHEMA>>> second, Out<REF<TSF<SCHEMA>>> output) {
+        output.copy(*select ? second : first);
+    });
+    const auto inspect = node([&](In<TSF<SCHEMA>> input, In<TS<i64>> cycle, Out<TS<i64>> output) {
+        auto result = Observation{.remapped = input.has_row_id_remapping()};
+        input.for_each_row_id_remapping([&](row_id_t before, row_id_t after) {
+            result.mappings.emplace_back(before, after);
+        });
+        const auto changes = input.changes();
+        if (changes.added != nullptr)
+            for (const auto id : *changes.added)
+                result.added.push_back(id);
+        if (changes.removed != nullptr)
+            for (const auto id : *changes.removed)
+                result.removed.push_back(id);
+        if (changes.modified != nullptr)
+            for (const auto id : *changes.modified)
+                if (!changes.added->contains(id))
+                    result.modified.push_back(id);
+        const auto typed = input.column("price").input<double>();
+        result.shared = input.row_id_remappings().data() == typed.row_id_remappings().data() &&
+                        input.row_id_remappings().data() == input.column("price").row_id_remappings().data();
+        if (result.remapped) {
+            auto resource = std::pmr::monotonic_buffer_resource{};
+            auto memory = allocator{resource};
+            const auto source = hg::details::ResolvedTimeSeries{
+                input.input_data().last_updated_ref(), input.input_data().data(), &input.runtime_type()};
+            const auto factory = input.runtime_type().reference_sample_factory();
+            auto *sample = factory(input.runtime_type().type(), source, source, input.last_updated(), memory);
+            const auto release = util::scope_exit{[&]() noexcept { sample->release(); }};
+            const auto item = sample->input();
+            const auto nested = In<TSF<SCHEMA>>{
+                TimeSeriesInputData{item.runtime_type, item.last_updated, item.value, true}};
+            auto mappings = std::vector<std::pair<row_id_t, row_id_t>>{};
+            nested.for_each_row_id_remapping([&](row_id_t old_id, row_id_t new_id) {
+                mappings.emplace_back(old_id, new_id);
+            });
+            CHECK(mappings == result.mappings);
+            auto nested_added = std::vector<row_id_t>{};
+            auto nested_removed = std::vector<row_id_t>{};
+            for (const auto id : *nested.changes().added)
+                nested_added.push_back(id);
+            for (const auto id : *nested.changes().removed)
+                nested_removed.push_back(id);
+            CHECK(nested_added == result.added);
+            CHECK(nested_removed == result.removed);
+
+            const auto column_source = hg::details::ResolvedTimeSeries{
+                typed.input_data().last_updated_ref(), typed.input_data().data(), &typed.runtime_type()};
+            const auto column_factory = typed.runtime_type().reference_sample_factory();
+            auto *column_sample = column_factory(typed.runtime_type().type(), column_source, column_source,
+                                                  typed.last_updated(), memory);
+            const auto release_column = util::scope_exit{[&]() noexcept { column_sample->release(); }};
+            const auto column_item = column_sample->input();
+            const auto nested_column = In<TSC<double>>{
+                TimeSeriesInputData{column_item.runtime_type, column_item.last_updated, column_item.value, true}};
+            mappings.clear();
+            nested_column.for_each_row_id_remapping([&](row_id_t old_id, row_id_t new_id) {
+                mappings.emplace_back(old_id, new_id);
+            });
+            CHECK(mappings == result.mappings);
+        }
+        observations.push_back(std::move(result));
+        output.set(*cycle);
+    });
+    const auto graph = [&](wp<TS<bool>> select, wp<TSF<SCHEMA>> first, wp<TSF<SCHEMA>> second,
+                           wp<TS<i64>> cycle) {
+        return inspect(choose(select, first, second), cycle);
+    };
+    const auto first = input<TSF<SampleFrameBase>>({
+        {{{"id", i64{10}}, {"price", 100.0}}, {{"id", i64{20}}, {"price", 200.0}},
+         {{"id", i64{30}}, {"price", 300.0}}}, literal::SKIP, literal::SKIP, literal::SKIP});
+    const auto second = input<TSF<SampleFrameBase>>({
+        {{{"id", i64{20}}, {"price", 220.0}}, {{"id", i64{40}}, {"price", 400.0}},
+         {{"id", i64{10}}, {"price", 110.0}}}, literal::SKIP,
+        {{{"id", i64{10}}, {"price", 111.0}}}, literal::SKIP});
+    static_cast<void>(run_graph(graph, std::array{false, true, true, true}, first, second,
+                                std::array<i64, 4>{0, 1, 2, 3}));
+    REQUIRE(observations.size() == 4);
+    CHECK_FALSE(observations[0].remapped);
+    CHECK(observations[1].remapped);
+    CHECK(observations[1].mappings == std::vector<std::pair<row_id_t, row_id_t>>{{0, 2}, {1, 0}});
+    CHECK(observations[1].added == std::vector<row_id_t>{1});
+    CHECK(observations[1].removed == std::vector<row_id_t>{2});
+    CHECK(observations[1].modified == std::vector<row_id_t>{0, 2});
+    CHECK(observations[1].shared);
+    CHECK_FALSE(observations[2].remapped);
+    CHECK_FALSE(observations[3].remapped);
+}
+
+TEST_CASE("keyed frame remapping is preserved in retained tick comparisons",
+          "[feature:frame][series:reference][feature:sampling][operation:copy]") {
+    const auto choose = node([](In<TS<bool>> select, In<REF<TSF<SCHEMA>>> first,
+                                In<REF<TSF<SCHEMA>>> second, Out<REF<TSF<SCHEMA>>> output) {
+        output.copy(*select ? second : first);
+    });
+    const auto graph = [&](wp<TS<bool>> select, wp<TSF<SCHEMA>> first, wp<TSF<SCHEMA>> second) {
+        return choose(select, first, second);
+    };
+    const auto first = input<TSF<SampleFrameBase>>({
+        {{{"id", i64{10}}, {"price", 100.0}}, {{"id", i64{20}}, {"price", 200.0}},
+         {{"id", i64{30}}, {"price", 300.0}}}, literal::SKIP});
+    const auto second = input<TSF<SampleFrameBase>>({
+        {{{"id", i64{20}}, {"price", 220.0}}, {{"id", i64{40}}, {"price", 400.0}},
+         {{"id", i64{10}}, {"price", 110.0}}}, literal::SKIP});
+    const auto result = run_graph(graph, std::array{false, true}, first, second);
+    CHECK(result.equals({
+        {{{"id", i64{10}}, {"price", 100.0}}, {{"id", i64{20}}, {"price", 200.0}},
+         {{"id", i64{30}}, {"price", 300.0}}},
+        {literal::REMOVE({{"id", i64{30}}}), {{"id", i64{40}}, {"price", 400.0}},
+         {{"id", i64{10}}, {"price", 110.0}}, {{"id", i64{20}}, {"price", 220.0}}}}));
+}
+
+template <template <typename, auto...> typename Field> struct SampleCompositeKey {
+    Field<string> venue;
+    Field<i64> sequence;
+    Field<i64> value;
+
+    static SchemaMetadata metadata() { return key_metadata<"venue", "sequence">(); }
+};
+
+TEST_CASE("reference remapping reads retained composite keys after source removal",
+          "[feature:frame][series:reference][feature:sampling][transition:removal][scalar:string]") {
+    auto mappings = std::vector<std::pair<row_id_t, row_id_t>>{};
+    const auto choose = node([](In<TS<bool>> select, In<REF<TSF<SampleCompositeKey>>> first,
+                                In<REF<TSF<SampleCompositeKey>>> second, Out<REF<TSF<SampleCompositeKey>>> output) {
+        output.copy(*select ? second : first);
+    });
+    const auto observe = node([&](In<TSF<SampleCompositeKey>> input, In<TS<i64>> cycle, Out<TS<i64>> output) {
+        if (*cycle == 1) {
+            REQUIRE(input.has_row_id_remapping());
+            input.for_each_row_id_remapping([&](row_id_t before, row_id_t after) {
+                mappings.emplace_back(before, after);
+            });
+            CHECK(input.changes().added->empty());
+            CHECK(input.changes().removed->empty());
+        }
+        output.set(*cycle);
+    });
+    const auto graph = [&](wp<TS<bool>> select, wp<TSF<SampleCompositeKey>> first,
+                           wp<TSF<SampleCompositeKey>> second, wp<TS<i64>> cycle) {
+        return observe(choose(select, first, second), cycle);
+    };
+    const auto venue = std::string(96, 'v');
+    const auto first = input<TSF<SampleCompositeKey>>({
+        {{{"venue", venue}, {"sequence", NULL_VALUE}, {"value", i64{10}}},
+         {{"venue", venue}, {"sequence", i64{1}}, {"value", i64{20}}}},
+        {literal::REMOVE({{"venue", venue}, {"sequence", NULL_VALUE}})}});
+    const auto second = input<TSF<SampleCompositeKey>>({
+        {{{"venue", venue}, {"sequence", i64{1}}, {"value", i64{21}}},
+         {{"venue", venue}, {"sequence", NULL_VALUE}, {"value", i64{11}}}}, literal::SKIP});
+    CHECK(run_graph(graph, std::array{false, true}, first, second,
+                    std::array<i64, 2>{0, 1}).equals<i64>({0, 1}));
+    std::ranges::sort(mappings);
+    CHECK(mappings == std::vector<std::pair<row_id_t, row_id_t>>{{0, 1}, {1, 0}});
+}
+
+TEST_CASE("keyed frame and column samples retain mappings after view invalidation",
+          "[feature:frame][series:reference][feature:sampling][transition:invalidation]") {
+    const auto view = node([](In<TSF<SampleFrameBase>> source, In<TS<i64>> cycle,
+                              Out<TSF<SampleFrameBase>, frame::view> output) {
+        if (*cycle == 0)
+            static_cast<void>(output.bind_projection(source, columns<"id", "price">()));
+        else
+            output.invalidate();
+    });
+    const auto choose = node([](In<TS<i64>> cycle, In<REF<TSF<SampleFrameBase>>> previous,
+                                In<REF<TSF<SampleFrameBase>>> current, Out<REF<TSF<SampleFrameBase>>> output) {
+        output.copy(*cycle == 0 ? previous : current);
+    });
+    const auto choose_column = node([](In<TS<i64>> cycle, In<REF<TSC<double>>> previous,
+                                       In<REF<TSC<double>>> current, Out<REF<TSC<double>>> output) {
+        output.copy(*cycle == 0 ? previous : current);
+    });
+    const auto observe = node([](In<TSF<SampleFrameBase>> frame, In<TSC<double>> column,
+                                 In<TSC<double>> selected, In<TS<i64>> cycle, Out<TS<i64>> output) {
+        if (*cycle == 1) {
+            const auto expected = std::vector<std::pair<row_id_t, row_id_t>>{{0, 1}, {1, 0}};
+            auto mappings = std::vector<std::pair<row_id_t, row_id_t>>{};
+            frame.for_each_row_id_remapping([&](row_id_t old_id, row_id_t new_id) {
+                mappings.emplace_back(old_id, new_id);
+            });
+            CHECK(mappings == expected);
+            mappings.clear();
+            column.for_each_row_id_remapping([&](row_id_t old_id, row_id_t new_id) {
+                mappings.emplace_back(old_id, new_id);
+            });
+            CHECK(mappings == expected);
+            mappings.clear();
+            selected.for_each_row_id_remapping([&](row_id_t old_id, row_id_t new_id) {
+                mappings.emplace_back(old_id, new_id);
+            });
+            CHECK(mappings == expected);
+            CHECK(frame.changes().added->empty());
+            CHECK(frame.changes().removed->empty());
+            CHECK(column.changes().added->empty());
+            CHECK(column.changes().removed->empty());
+        }
+        output.set(*cycle);
+    });
+    const auto graph = [&](wp<TS<i64>> cycle, wp<TSF<SampleFrameBase>> first, wp<TSF<SampleFrameBase>> second) {
+        const auto previous = view(first, cycle);
+        const auto selected = choose(cycle, previous, second);
+        return observe(selected,
+                       choose_column(cycle, select_column<"price">(previous), select_column<"price">(second)),
+                       select_column<double>(selected, symbol{"price"}), cycle);
+    };
+    const auto first = input<TSF<SampleFrameBase>>({
+        {{{"id", i64{10}}, {"price", 100.0}}, {{"id", i64{20}}, {"price", 200.0}}}, literal::SKIP});
+    const auto second = input<TSF<SampleFrameBase>>({
+        {{{"id", i64{20}}, {"price", 220.0}}, {{"id", i64{10}}, {"price", 110.0}}}, literal::SKIP});
+    CHECK(run_graph(graph, std::array<i64, 2>{0, 1}, first, second).equals<i64>({0, 1}));
+}
+
 } // namespace

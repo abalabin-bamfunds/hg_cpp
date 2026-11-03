@@ -1,0 +1,4 @@
+scope,groups,rows,warmup_samples,sample_count,median_ms,p95_ms,validated_group_sum
+aggregation-kernel-result-only,32,64,2,9,0.0016,0.00174,0
+aggregation-kernel-result-only,256,512,2,9,0.012702,0.013132,0
+aggregation-kernel-result-only,2048,4096,2,9,0.097429,0.10089,0
