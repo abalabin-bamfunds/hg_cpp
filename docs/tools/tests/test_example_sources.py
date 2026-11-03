@@ -401,6 +401,7 @@ elapsed: ... ns
                 self.assertIn("find_package(hg CONFIG REQUIRED)", cmake)
                 self.assertIn("target_link_libraries(example PRIVATE hg::library)", cmake)
                 self.assertIn("## Build and run", readme)
+                self.assertIn("`hg-cpp` distribution provides the core C++ SDK.", readme)
                 self.assertIn(
                     "python -c \"from importlib.metadata import distribution; "
                     "print(distribution('hg-cpp').locate_file(''))\"",
@@ -443,6 +444,11 @@ elapsed: ... ns
                 self.assertIn(
                     'cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages" '
                     "-DHG_SOURCE_DIR=/path/to/hg/source",
+                    readme,
+                )
+                self.assertIn(
+                    "For extension projects, use an HG installation that provides every target listed in\n"
+                    "`CMakeLists.txt`; follow the extension's setup instructions.",
                     readme,
                 )
 
