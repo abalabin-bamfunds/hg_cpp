@@ -107,9 +107,10 @@ output.set(id, 11.0);
 output.erase(id);
 ```
 
-`clear()` removes current rows while keeping the output valid. `invalidate()` removes
-its current value. `apply(literal)` applies the same row literal syntax used by
-`run_graph` inputs. Frame keys enforce uniqueness and cannot be changed by a patch.
+To reset a table to an available empty result, use `clear()`; to withdraw its current
+value, use `invalidate()`. For updates already expressed as row literals, `apply(literal)`
+accepts the same syntax as `run_graph` inputs. Frame keys enforce uniqueness and cannot
+be changed by a patch.
 
 ## Copying and sampling
 

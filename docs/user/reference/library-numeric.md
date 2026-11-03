@@ -7,8 +7,10 @@ imports names from `hgraph.operators`. The fragments below use existing connecti
 
 ## Arithmetic
 
-Built-in operands can be scalars or time series. Numeric operands have exact types; an
-integer operand does not convert to double to match an overload.
+To express formulas and comparisons that update with their inputs, use the built-in
+arithmetic, comparison, and Boolean operators below. Operands can be scalars or time
+series, but numeric types must match exactly; an integer does not convert to double
+to match an overload.
 
 | Operators | Supported scalar types |
 | --- | --- |
@@ -222,7 +224,8 @@ operators reject `opt()` arguments.
 
 ## Wiring syntax
 
-C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+`,
+To write graph formulas with familiar expression syntax, use the overloaded operators
+on wiring points. C++ supports binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+`,
 `-`, and `~`, and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `floordiv()`, `pow()`, `round()`, and
 `abs()` for operations without C++ wiring syntax. These operations also accept scalar
 operands and return `wp<>`.

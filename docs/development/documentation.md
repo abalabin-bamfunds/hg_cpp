@@ -34,6 +34,12 @@ Use natural, connected sentences rather than a series of short definitions. Quic
 starts link to detailed chapters; avoid lesson narration, exercises, and instructions
 to modify an earlier program.
 
+Apply this structure to every feature introduction in guides, task pages, extension
+pages, and API and library reference entries. A page-level purpose does not replace
+the purpose of each feature introduced within it. For grouped operations, explain
+which need each operation addresses in the surrounding text or table. Vary the wording
+to suit the feature rather than repeating “If you need…” mechanically.
+
 ## Examples
 
 Use complete Python and C++ examples with equivalent inputs and expected behavior.

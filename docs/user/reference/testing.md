@@ -7,10 +7,11 @@ current graph value.
 
 ## Input sequences
 
-Python uses a sequence for each changing graph input. C++ literal sequences infer types
-from concrete receiving parameters. `input<TS<T>>({...})` supplies an explicit type
-when the declaration is unresolved. Generic Python definitions can use concrete
-specialization such as `definition[TS[int]]`.
+To reproduce updates and gaps without a live source, supply a sequence for each
+changing graph input. C++ literal sequences infer types from concrete receiving
+parameters; use `input<TS<T>>({...})` to supply an explicit type when the declaration
+is unresolved. Generic Python definitions can use a concrete specialization such as
+`definition[TS[int]]`.
 
 `input(time_series_type, {...})` accepts a semantic time series type selected at
 runtime. Literal sources use that type's default runtime representation, including
@@ -27,7 +28,8 @@ and engine selection.
 
 ## Python results
 
-`GraphRunResult` exposes:
+To compare Python publications with an expected sequence, use dense indexing or list
+comparison on `GraphRunResult`. For timestamps or large gaps, use its sparse events:
 
 | API | Result |
 | --- | --- |
@@ -41,12 +43,13 @@ and engine selection.
 | `result == expected_list` | Dense update comparison |
 
 Dense access fills empty positions with `None`; root invalidation also materializes
-as `None`. Observe `valid` when a test must distinguish them. Prefer sparse events
-for large time gaps.
+as `None`. Observe `valid` when a test must distinguish them.
 
 ## C++ results
 
-`GraphRunResult<T>` exposes `start_time()`, `size()`, `event_count()`, and `events()`.
+To check C++ publications, use result comparisons for expected updates or event
+access for timestamps and individual changes. `GraphRunResult<T>` exposes
+`start_time()`, `size()`, `event_count()`, and `events()`.
 An untyped `GraphRunResult<>` supports literal `equals({expected...})`, including
 `SKIP` and `INVALID`. A typed `GraphRunResult<T>` compares scalar values and
 `std::nullopt` positions with `equals`. A typed empty position does not distinguish

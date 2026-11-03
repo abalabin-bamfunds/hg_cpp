@@ -46,8 +46,8 @@ provides the SDK; building an application does not require an HG source checkout
 (cpp-example-project)=
 ## C++ example project
 
-Each C++ example is a complete `main.cpp`. This `CMakeLists.txt` links it to the
-installed `hg::library` target:
+To build any of the core C++ examples, save its complete source as `main.cpp` and
+use this `CMakeLists.txt` to link it to the installed `hg::library` target:
 
 ```cmake
 cmake_minimum_required(VERSION 3.31)

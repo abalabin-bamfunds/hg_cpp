@@ -5,7 +5,7 @@ creates runtime graph instances. Each instance owns those resources. Use ordinar
 runtime boundary is not required. C++ graph arguments need a concrete output type. Use
 `.as<TS<T>>()` when a library expression returns an untyped connection.
 
-Python imports `map`, `mesh`, `switch_`, `reduce`, and `pass_through` from `hg`. C++ imports
+Python imports `map`, `mesh`, `switch_`, `reduce`, and `pass_through` from `hgraph`. C++ imports
 `hg` and includes the corresponding `<hg/map.hpp>`, `<hg/mesh.hpp>`, `<hg/switch.hpp>`,
 or `<hg/reduce.hpp>` header.
 
@@ -17,9 +17,10 @@ whose item feeds that branch parameter. `pass_through(point)` supplies the whole
 series to each branch. Scalars remain fixed arguments. A TSS can supply keys for a
 source-like graph.
 
-The default key set is the union of mapped dictionaries. `__key_set_arg__` selects a
-particular mapped argument by index or name. `__key_arg__` identifies the branch
-parameter receiving its key as a const time series. Python uses named keywords; C++ uses
+If branch membership should follow one input rather than the union of mapped
+dictionaries, set `__key_set_arg__` to that argument's index or name. To let the branch
+use its own key in calculations, set `__key_arg__` to the parameter that should receive
+it as a const time series. Python uses named keywords; C++ uses
 `"__key_arg__"_n = ...` and corresponding named arguments.
 
 Adding a key creates and starts its branch. Removing it stops the branch and removes its

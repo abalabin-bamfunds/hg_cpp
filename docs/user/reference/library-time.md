@@ -168,7 +168,9 @@ output guarantee is ordinary. For event-by-event retention, see [`gate`](library
 
 ## Retained events
 
-Delay retains owning tick data for supported scalar, set, dictionary, bundle, and
+If later processing must see each event as it was received, choose an operator that
+retains event data rather than reading the source again. Delay retains owning tick
+data for supported scalar, set, dictionary, bundle, and
 fixed-list shapes, including invalidation. Contained references are dereferenced
 before capture. Delay rejects sparse TSL values. Initially unbound references are
 supported. A retained scalar refers to its owned value at the input event, not

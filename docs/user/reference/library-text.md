@@ -110,9 +110,10 @@ with `{fmt}` format specifications. The pattern
 and formatting arguments must be valid. Scalar-only calls evaluate at graph start.
 C++ named arguments use `"name"_n = value` with `hg::literals` imported.
 
-`print_(pattern, *values, **named)` writes formatted text followed by a newline and
-has no output. `__std_err__=True` selects standard error; this option is a fixed
-Boolean. Print calls produce separate nodes even when their arguments match.
+To display a message as the graph runs, use `print_(pattern, *values, **named)`.
+It writes formatted text followed by a newline and has no output.
+`__std_err__=True` selects standard error; this option is a fixed Boolean.
+Print calls produce separate nodes even when their arguments match.
 
 `print_(series)` prints a time-series tick. Formatting arguments can also be
 collection time series, for example `print_("book={}", book)`. Collections show
@@ -127,8 +128,9 @@ Passing a string series alone prints its tick data, including quotes around
 strings. A scalar string remains a format pattern. To format a string-series
 pattern, supply at least one formatting argument.
 
-`log_(series)` and `log_(pattern, *values, **named)` send the same tick data and
-formatted messages to the process-level `hg` logger. The fixed string option
+For application diagnostics with severity filtering, use `log_(series)` or
+`log_(pattern, *values, **named)` to send tick data and formatted messages to the
+process-level `hg` logger. The fixed string option
 `__level__` selects severity and defaults to `"info"`.
 Accepted values are `"trace"`, `"debug"`, `"info"`, `"warning"`, `"error"`,
 `"critical"`, and `"off"`. Unknown levels are wiring errors.
@@ -147,7 +149,8 @@ Disabled levels skip data capture. Enabled messages capture their data during
 graph evaluation and format it on a logging thread. Logging can finish after
 graph execution returns. Call `hg::logging::flush()` to wait for queued messages.
 
-C++ nodes log ordinary values through `<hg/logging.hpp>`:
+To report ordinary values from inside a C++ node callback, use the logging functions
+in `<hg/logging.hpp>`:
 
 ```cpp
 #include <hg/logging.hpp>
@@ -167,16 +170,18 @@ available until queued messages have been released. Use `log_` to capture time
 series ticks. Disabled calls skip argument capture; C++ still
 evaluates the argument expressions.
 
-Use `HG_LOG_TRACE`, `HG_LOG_DEBUG`, `HG_LOG_INFO`, `HG_LOG_WARNING`,
-`HG_LOG_ERROR`, or `HG_LOG_CRITICAL` to skip argument evaluation when the level
-is disabled. These statement macros accept the same arguments as the functions:
+If producing a log argument is expensive, use `HG_LOG_TRACE`, `HG_LOG_DEBUG`,
+`HG_LOG_INFO`, `HG_LOG_WARNING`, `HG_LOG_ERROR`, or `HG_LOG_CRITICAL` to skip argument
+evaluation when the level is disabled. These statement macros accept the same
+arguments as the functions:
 
 ```cpp
 HG_LOG_DEBUG("received {} items", expensive_count());
 HG_LOG_INFO("ready");
 ```
 
-Applications configure logging before its first use:
+To choose a log destination, message pattern, or initial severity, configure logging
+before its first use:
 
 ```cpp
 #include <hg/logging.hpp>
@@ -389,8 +394,9 @@ An explicit `TSL<TS<string>, N>` result requires `N > 0`. It consumes at most `N
 separators and retains the remaining text in the last item. A smaller `maxsplit`
 still limits splitting; fewer than `N` pieces raises an evaluation error.
 
-`join(values, separator)` joins a scalar list or fixed time series list in item
-order. A TSL requires a valid root and valid immediate items. `join(opt(values),
+To assemble fields or messages into one string, use `join(values, separator)` on a
+scalar list or fixed time series list. It joins items in their current order.
+A TSL requires a valid root and valid immediate items. `join(opt(values),
 separator)` skips invalid items and treats an invalid root as empty. Optional join
 has an ordinary output and evaluates on input changes. Empty input produces an
 empty string.

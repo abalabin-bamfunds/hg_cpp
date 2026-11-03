@@ -67,9 +67,10 @@ explicit time series output annotation. It can request `Scheduler` to schedule l
 evaluations. A plain `@node` with only scalar arguments also runs at start. C++
 aggregate sources use a start callback, startup evaluation, or explicit scheduling.
 
-Python injectables have `= None` defaults and are absent from graph-call arguments.
-`EvaluationClock` exposes `evaluation_time` and `now`. `Scheduler` provides
-`schedule_at`, `schedule_wall_clock_at`, `cancel`, and `timer_fired`. Clock and
+If a source needs to read time or request another evaluation, declare a clock or
+scheduler injectable. Python injectables have `= None` defaults and are absent from
+graph-call arguments. `EvaluationClock` exposes `evaluation_time` and `now`.
+`Scheduler` provides `schedule_at`, `schedule_wall_clock_at`, `cancel`, and `timer_fired`. Clock and
 scheduler objects expire after the callback. A schedule handle can be retained. A node
 may schedule only if it declares scheduling support; requesting a clock alone does not
 enable it.
@@ -104,6 +105,9 @@ Each handle has one writer cursor. Use a separate copy for each producer; do not
 overlap writes through one handle during a write. Python uses `copy.copy(q)`; C++ copies
 `Queue`. Retaining a queue handle beyond its callback is supported, unlike retaining an
 input view.
+
+Choose a queue mode according to whether consumers need every message, the latest
+pending state, or a batch of values:
 
 | Mode | Effect |
 | --- | --- |

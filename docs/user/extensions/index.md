@@ -18,6 +18,9 @@ The frame extension adds scalar and time series types. Its examples use
 
 ## Build requirements
 
+To use an extension, add its build dependencies and target to the core installation.
+The setup differs between web transports and the frame library.
+
 ### Web
 
 The `hg-cpp` Python wheel includes the web extension. A C++ source build enables it
@@ -45,8 +48,8 @@ target_link_libraries(example PRIVATE hg::web)
 
 ### Frame
 
-The frame extension currently builds from its source directory and has a C++ API.
-With HG installed, a consuming project adds the frame source and links its target:
+To use columns and frames in a C++ application, add the frame source directory to
+the consuming project and link its target against the installed HG SDK:
 
 ```cmake
 cmake_minimum_required(VERSION 3.31)

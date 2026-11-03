@@ -82,8 +82,9 @@ auto denied = auth::reject<i64>(response.view());
 ::::
 
 
-`http_handler(..., policy=policy)` in Python, or `http_handler(path, handler, policy)`
-in C++, adds the identity as the handler's second input. Remaining inputs still come
+To make an accepted caller's identity available to the handler, use
+`http_handler(..., policy=policy)` in Python or `http_handler(path, handler, policy)`
+in C++. The identity becomes the handler's second input; remaining inputs still come
 from the route call. While the policy has no decision, the per-request handler waits.
 A rejection completes the request without starting that handler.
 
