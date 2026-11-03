@@ -1,7 +1,7 @@
 # Input views
 
-Input views provide callback-scoped access to the current value and its change
-information. Use them when a calculation needs more than plain values.
+If a calculation needs validity or change information as well as a current value,
+request an input view. The view provides that access for the duration of the callback.
 
 ## Scalar values
 
@@ -24,6 +24,7 @@ owning representation or `ScalarValue`.
 
 ## Collection views
 
+To process partial updates or read individual items, use a collection view.
 Collection root validity and item validity are separate. A valid collection can contain
 invalid items. Changes expose the current cycle's delta; cumulative access exposes
 current membership and values.
@@ -75,8 +76,8 @@ from the presence of a reference object.
 
 ## Requiring complete items
 
-`all_valid` prevents evaluation until a collection root and every immediate item are
-valid. This is useful when a partial record cannot produce a correct result.
+If a partial record cannot produce a correct result, use `all_valid` to prevent
+evaluation until the collection root and every immediate item are valid.
 A valid root alone permits missing child values.
 
 <!-- runnable-example -->

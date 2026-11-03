@@ -1,8 +1,8 @@
 # Activity and dependency patterns
 
-Dependency controls separate maintaining a value from deciding when to use it.
-They support request-driven publication, selected sources, and calculations that depend
-on other keys. Input activity determines which updates schedule a calculation.
+A calculation may need to keep reading a value without publishing every change,
+follow only a selected source, or depend on another key's result. Dependency
+controls express those relationships and determine which updates cause work.
 
 ## Explicit triggers
 
@@ -18,9 +18,10 @@ Activity controls scheduling; validity controls whether evaluation is permitted.
 
 ## Selected dependencies
 
-Dynamic item selection follows the selected item's current source. Updates to
-unselected items do not become selected value updates. Membership changes can alter
-availability independently of value updates.
+If only one item's updates should reach a consumer, select that item dynamically
+rather than combining the complete collection. The consumer follows the selected
+source; changes to other items do not become selected value updates, though
+membership changes can affect the selected item's availability.
 
 The [reference example](references.md#selecting-a-changing-source) shows a key change,
 a target update, and removal. [Iteration](../graphs/iteration.md) describes independent
@@ -28,8 +29,9 @@ per-key calculations.
 
 ## Dependencies between keys
 
-`mesh` supports a per-key calculation that depends on another key's result. This
-expresses relationships such as a component total depending on its parent total.
+If a per-key calculation needs another key's result, use `mesh` to express that
+dependency. This supports relationships such as a component total depending on
+its parent total, while HG orders the calculations according to their dependencies.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -128,8 +130,9 @@ output access, and instance lifecycle.
 
 ## Feedback loops
 
-Feedback sends an output change to a later evaluation time. A handle lets the graph
-connect a loop before the calculation that supplies its input has been wired.
+To feed a result back into a later evaluation, use a feedback handle. It lets you
+connect the loop before its supplying calculation has been wired, and sends each
+output change to a later evaluation time.
 
 This loop starts from `1`, advances to `3`, and then stops publishing.
 

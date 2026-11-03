@@ -1,13 +1,15 @@
 # Iteration
 
-Iteration applies the same calculation to several items. Fixed items can use a native
-loop during construction. For changing membership, `map` maintains an independent graph
-instance for each current key, including its state and lifetime.
+If you need to apply the same transformation or computation to every item in a
+collection, use `map`. It maintains a separate graph instance for each key, so items
+can update independently and keep their own state. For a fixed set of calculations
+known during construction, an ordinary loop is enough.
 
 ## Fixed repetition
 
-Native loops run during graph construction when the items are fixed scalar values.
-Each iteration can add calculations to the graph.
+When the items are fixed configuration, use a native loop to connect a calculation
+for each one. The loop runs during graph construction, so the number of calculations
+stays fixed even if their inputs change later.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -90,14 +92,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-The loop executes once during construction. Its iteration count does not change
-when graph inputs update.
-
 ## Per-key calculations with map
 
-`map(graph, values)` applies a graph independently to each key. Updating one item
-updates that key's calculation. Adding a key starts an instance; removing it stops
-that instance.
+For collections whose items arrive, change, or disappear during a run,
+`map(graph, values)` applies the graph independently to each key. An item update reaches
+that key's calculation, while adding or removing a key starts or stops its instance.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -191,10 +190,10 @@ recalculate sensor 1. Re-adding sensor 1 creates a fresh instance.
 
 ## Shared and mapped arguments
 
-A scalar argument is fixed for all instances. `pass_through(value)` supplies one
-complete changing input to every instance. An unwrapped dictionary argument is
-mapped by key.
-
+If every item needs the same changing configuration, wrap that argument in
+`pass_through(value)` to send the complete input to every instance. Scalar arguments
+already supply a fixed value to all instances, while an unwrapped dictionary supplies
+each instance with its matching item.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -286,9 +285,10 @@ The [map reference](../../reference/higher-order.md#map) specifies these options
 
 ## Independent state
 
-Each key owns its calculation state. Removing a key discards that state; re-adding it
-starts from initialization. [Per-sensor totals](../../how-to/per-sensor-totals.md)
-shows the effect with running sums.
+To keep a separate running total or other history for each item, put the stateful
+calculation inside the mapped graph. Each key owns that state for its lifetime;
+removing and re-adding the key starts it again from initialization.
+[Per-sensor totals](../../how-to/per-sensor-totals.md) shows this with running sums.
 
 Use [aggregation](aggregation.md) to combine items. Use
 [`mesh`](../advanced-graphs/dependencies.md#dependencies-between-keys) when one key

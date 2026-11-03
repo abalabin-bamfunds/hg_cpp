@@ -1,8 +1,9 @@
 # Temperature alarm changes
 
-To notify an application when a sensor enters or leaves an alarm condition,
-compare its calibrated reading with a fixed limit and deduplicate the Boolean
-result. This publishes the initial alarm state and each transition.
+If an application should be notified when a sensor enters or leaves an alarm condition,
+compare its calibrated reading with a fixed limit and apply `dedup` to the Boolean
+result. The graph publishes the initial alarm state and each transition, without
+repeating notifications for readings that leave the state unchanged.
 
 Prerequisites: [Graph functions](../guide/graphs/composition.md#graph-functions),
 [comparisons](../guide/graphs/conditionals.md), [deduplication](../guide/graphs/updates.md#repeated-values).

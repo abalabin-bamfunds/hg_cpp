@@ -1,12 +1,14 @@
 # Binary WebSocket connections
 
-WebSocket connects a graph to a persistent stream of binary messages. Build the
-[web extension](index.md#web) and use the realtime engine.
+If your application exchanges a continuing stream of binary messages, use WebSocket
+to keep a connection open between the graph and its peer. Build the
+[web extension](index.md#web) and run the graph with the realtime engine.
 
 ## Serving a connection
 
-`websocket_handler(path, graph)` registers a route on the HTTP listener. Include
-`<hg/web/http_server.hpp>` in C++ or import the schemas from `hg_web` in Python.
+To accept WebSocket connections at an HTTP path, register the handling graph with
+`websocket_handler(path, graph)`. Include `<hg/web/http_server.hpp>` in C++, or import
+the schemas from `hg_web` in Python.
 
 ::::{tab-set}
 :sync-group: language
@@ -96,9 +98,10 @@ handlers and response bundles with extra outputs follow the HTTP handler pattern
 
 ## Connecting as a client
 
-Include `<hg/web/websocket_client.hpp>` in C++ or import `websocket_client` from
-`hg_web` in Python. Register the client implementation in the service catalogue,
-then connect a request bundle to `websocket_client`:
+To exchange messages with a remote WebSocket server, register a client implementation
+in the service catalogue and connect a request bundle to `websocket_client`.
+Include `<hg/web/websocket_client.hpp>` in C++, or import `websocket_client` from
+`hg_web` in Python:
 
 Python uses `TSB[WebSocketClientRequest]` and `TSB[WebSocketClientReply]`; these
 correspond to C++ `TSB<BinaryWebSocketClientRequest>` and

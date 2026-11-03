@@ -6,8 +6,8 @@ direct Python imports or C++ namespace imports.
 
 ## Collection reductions
 
-`sum_(values)`, `min_(values)`, `max_(values)`, and `mean(values)` calculate over the
-current items of a numeric fixed-size TSL, TSD, or TSS. They accept `i64` and `double`
+To summarize the current items, use `sum_(values)`, `min_(values)`, `max_(values)`,
+or `mean(values)` on a numeric fixed-size TSL, TSD, or TSS. They accept `i64` and `double`
 items. Sums and extrema retain the item scalar type. `mean` returns `double` and
 accumulates in `double`; integer sums use the [wrapping
 policy](library-numeric.md#arithmetic).
@@ -61,7 +61,8 @@ versions. Each evaluation takes O(N) work and O(1) auxiliary storage.
 
 ## Boolean reductions
 
-`all_(values)` and `any_(values)` reduce a Boolean fixed-size TSL, TSD, or TSS. `all_`
+To check a condition across a collection, use `all_(values)` or `any_(values)` on
+a Boolean fixed-size TSL, TSD, or TSS. `all_`
 tests whether every contributing value is true; `any_` tests whether at least one is
 true. They accept one collection argument. A required overload needs a valid root and
 valid immediate items. `opt(values)` selects an overload that skips invalid items and
@@ -108,7 +109,8 @@ case; TSS uses one Boolean membership lookup.
 
 ## Collection queries
 
-`keys_(dictionary)` returns a TSS with the dictionary's current keys. For a TSD,
+If a calculation depends on which keys exist, use `keys_(dictionary)` to obtain
+a TSS of the dictionary's current keys. For a TSD,
 it projects the existing key-set series, so value updates do not update the result.
 It follows dictionary reference changes and preserves the dictionary guarantee.
 For `TS<Dict<K, V>>`, it reconciles the current scalar dictionary's keys with the
@@ -342,8 +344,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Time series set operations
 
-Two `TSS<K>` inputs support union (`bit_or`, `|`), intersection (`bit_and`, `&`),
-difference (`sub`, `-`), and symmetric difference (`bit_xor`, `^`). Both inputs must
+To combine changing memberships, use union (`bit_or`, `|`), intersection (`bit_and`, `&`),
+difference (`sub`, `-`), or symmetric difference (`bit_xor`, `^`) on two `TSS<K>` inputs. Both inputs must
 have the same key type. `eq` and `ne` compare membership; `is_empty` tests whether a set
 has no members.
 
@@ -406,7 +408,8 @@ reevaluating the routing node.
 
 ## Dictionary transforms
 
-Key-routing transforms change keys or grouping without copying item values.
+If a consumer needs a different key or grouping, use key-routing transforms to
+reorganize a dictionary without copying its item values.
 Their reference outputs identify source items. Target updates reach downstream
 consumers without evaluating the transform again.
 
@@ -449,7 +452,8 @@ Key collapse and expansion support exactly two key levels. Python represents
 
 ## getitem and getattr
 
-`collection[key]` selects one TSL or TSD item. C++ also supports this syntax for a TSB
+To follow one item from a larger collection, use `collection[key]` to select a
+TSL or TSD item. C++ also supports this syntax for a TSB
 field; Python graph code uses `getattr(bundle, symbol("field"))`. A scalar key fixes the
 selection during construction; supported time series keys can retarget it.
 `getattr(bundle, field)` selects a named field; the field argument is a symbol. A
@@ -460,8 +464,9 @@ types; see [scalar values](scalars.md#python-object-scalars).
 
 ## Construction and conversion
 
-`convert[OUT](value)` in Python and `convert[type<OUT>](value)` in C++ copy a current
-value into the requested shape. Numeric conversion is specified in
+If two graph components use different collection shapes, use `convert[OUT](value)`
+in Python or `convert[type<OUT>](value)` in C++ to copy the current value into the
+required shape. Numeric conversion is specified in
 [convert](library-numeric.md#convert).
 
 | Source | Result |
@@ -562,9 +567,10 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Accumulation and emission
 
-`collect[OUT](value, reset=...)` accumulates valid ticks into a scalar List, scalar
-Set, or TSS. Dictionary results use `collect[OUT](key=key, value=value, reset=...)`
-and support scalar Dict and TSD. C++ supplies `type<OUT>` and `_n` named arguments.
+To build a collection from successive events, use `collect[OUT](value, reset=...)`. It accumulates
+valid ticks into a scalar List, scalar Set, or TSS. Dictionary results use `collect[OUT](key=key,
+value=value, reset=...)` and support scalar Dict and TSD. C++ supplies `type<OUT>` and `_n` named
+arguments.
 
 Only value ticks insert entries. The key input is passive; an invalid key ignores
 that value tick. Invalidation preserves collected history. A valid reset tick clears

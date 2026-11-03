@@ -1,14 +1,15 @@
 # Frame nodes and interchange
 
-Custom nodes can read current rows, process changed rows, or publish row updates.
-Use the [column operations](frame-expressions.md) for calculations that those operations
-already express.
+If your table calculation needs logic beyond the [column operations](frame-expressions.md),
+write a custom node to read current rows, process changed rows, or publish row updates.
+These interfaces also support copying snapshots and exchanging scalar data with Arrow.
 
 ## Reading current values and changes
 
-`In<TSC<T>>` and `In<TSF<Schema>>` provide the ordinary HG validity and modification
-queries plus row access. Null cell reads return `std::optional`; reading a missing row
-throws. Check optional cells before reading their values.
+To read rows in a custom node, accept `In<TSC<T>>` or `In<TSF<Schema>>`. These views
+combine ordinary validity and modification queries with row access; a null cell
+returns `std::optional`, while a missing row throws. Check optional cells before
+reading their values.
 
 | Read | Purpose |
 | --- | --- |
@@ -96,8 +97,9 @@ beyond that lifetime.
 
 ## Publishing rows
 
-Native outputs own their cells. Column outputs add or update nullable cells by row ID;
-frame outputs add rows and patch fields:
+To maintain a table from a custom node, publish through its native output, which
+owns the cells. Column outputs add or update nullable cells by row ID; frame outputs
+add rows and patch fields:
 
 ```cpp
 auto id = output.add(10.0);  // Out<TSC<double>>
@@ -111,12 +113,11 @@ its current value. `apply(literal)` applies the same row literal syntax used by
 
 ## Copying and sampling
 
-`output.copy(input)` copies the complete current value. Use it when taking a snapshot,
-sampling after a gap, or rebuilding state. `copy_tick(input)` forwards a consecutive
-update; it requires the consumer to have the preceding state. The standard
-`sample(signal, value)` operator handles complete-value sampling, including frame and
-column inputs. References follow the same [routing rules](../guide/advanced-graphs/references.md)
-as built-in time series.
+If a consumer needs a snapshot after a gap or must rebuild its state, use
+`output.copy(input)` to copy the complete current value. Use `copy_tick(input)` for
+a consecutive update when the consumer already has the preceding state. The standard
+`sample(signal, value)` operator handles complete-value sampling for frames and
+columns, and references follow the ordinary [routing rules](../guide/advanced-graphs/references.md).
 
 ```cpp
 auto snapshot = operators::sample(signal, quotes);
@@ -128,8 +129,9 @@ the [source and queue contracts](../reference/sources.md).
 
 ## Borrowed and computed outputs
 
-Most custom nodes use native outputs. A view output borrows source storage and retains
-its input connections:
+If an output can reuse source storage, a view output avoids copying those cells
+and keeps the input connections it borrows from. Native outputs remain the usual
+choice when a custom node owns and updates its result:
 
 `Out<TSC<double>, frame::view>` declares a column view;
 `Out<TSF<Quotes>, frame::view>` declares a frame view.
@@ -147,9 +149,10 @@ Computed outputs borrow source membership and own selected calculated cells. Use
 
 ## Arrow interchange
 
-Build with `HG_FRAME_BUILD_ARROW=ON`, provide an Arrow CMake package exporting
-`Arrow::arrow_shared`, and link `hg::frame_arrow`. Include `<hg/frame/arrow.hpp>`.
-The adapter converts scalar values; row IDs and time series deltas are not exported.
+To exchange scalar columns or frames with Arrow, build with `HG_FRAME_BUILD_ARROW=ON`,
+provide an Arrow package exporting `Arrow::arrow_shared`, and link `hg::frame_arrow`.
+Include `<hg/frame/arrow.hpp>` for the adapter, which converts scalar values rather
+than row IDs or time series deltas.
 
 | Operation | Result |
 | --- | --- |

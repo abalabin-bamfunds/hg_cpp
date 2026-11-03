@@ -29,6 +29,9 @@ reductions documented here support fixed TSL only.
 
 ## Guarantees
 
+If a calculation relies on how often a value can update, declare a guarantee to
+express that requirement and let HG check it:
+
 | Guarantee | Publication contract | Use |
 | --- | --- | --- |
 | ordinary | May publish repeatedly, including equal values | General changing data |

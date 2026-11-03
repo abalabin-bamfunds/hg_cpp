@@ -1,13 +1,14 @@
 # Expressions and composition
 
-Composition builds larger calculations from smaller ones. A named intermediate result
-can feed several consumers, and a graph function can reuse a calculation with different
-inputs. Both preserve the dependencies that HG uses to update results.
+As calculations grow, you can share intermediate results and group related expressions
+into graph functions. This lets you reuse both results and calculation definitions
+while HG keeps track of the dependencies between them.
 
 ## Expressions
 
-A shared intermediate result avoids repeating a calculation for each consumer.
-Here, the subtotal supplies both the tax calculation and the final total.
+If several calculations need the same intermediate result, assign it to a name and
+use that output wherever it is needed. In this example, the subtotal supplies both
+the tax calculation and the final total, so its multiplication is shared.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -90,8 +91,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-Both uses of `subtotal` refer to the same output. HG evaluates the multiplication
-before its consumers; each consumer sees the subtotal for that evaluation.
+HG evaluates the subtotal's multiplication before its consumers, so both receive
+the result for the current evaluation.
 
 The library supports arithmetic, comparisons, Boolean operations, text operations,
 and conversions. [Numeric reference](../../reference/library-numeric.md) specifies
@@ -99,8 +100,9 @@ supported types and numeric behavior.
 
 ## Graph functions
 
-A graph function names a reusable calculation. Each call connects it with the supplied
-arguments. This basket uses the same line-total calculation for two quantities.
+If you need the same calculation with different inputs, define a graph function and
+call it for each set of arguments. This basket reuses a line-total calculation for
+two quantities, with each call adding its expressions to the basket's graph.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -192,9 +194,9 @@ basket once; ordinary graph-function calls do not create separate runtime graphs
 
 ## Fixed parameters
 
-A scalar argument configures a calculation for the complete run. The `quantity`
-arguments above are fixed at construction. A connection instead supplies a value that
-can change; [changing inputs](updates.md) shows that form.
+For settings that stay the same throughout a run, pass a scalar argument such as the
+`quantity` values above. When an argument needs to change, pass a connection instead;
+[changing inputs](updates.md) shows how that preserves the dependency on its source.
 
 Fixed configuration can also choose which calculations to connect. Native `if` works
 for that choice; the [fixed-condition example](conditionals.md#fixed-conditions)

@@ -53,8 +53,8 @@ zero.
 
 ### Integer bitwise operators
 
-`bit_and`, `bit_or`, and `bit_xor` combine the 64-bit representations of two `i64`
-values. `invert` complements every bit. These operators accept scalar or time-series
+To combine integer flags or masks, use `bit_and`, `bit_or`, and `bit_xor` on the
+64-bit representations of two `i64` values. `invert` complements every bit. These operators accept scalar or time-series
 operands and do not convert `double` values. Their results retain the `i64` type.
 
 C++ wiring points support `&`, `|`, `^`, and `~`. Python graph values support the same
@@ -138,7 +138,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ### convert
 
-`convert` requires an explicit full result time-series type:
+If a calculation needs a different numeric type, use `convert` with the full
+result time series type:
 
 ::::{tab-set}
 :sync-group: language
@@ -181,7 +182,8 @@ concatenation calculates during construction.
 
 ## Optional arithmetic
 
-`opt()` selects optional overloads. Addition substitutes zero, or the empty string, for
+If arithmetic should still produce a result when an operand is unavailable, use
+`opt()` to select an optional overload. Addition substitutes zero, or the empty string, for
 invalid operands. Multiplication substitutes one. These overloads accept two optional
 operands and produce ordinary outputs. Marking either operand optional selects that
 behavior for both operands.
@@ -257,7 +259,8 @@ See [operator declarations](operators.md) for selection and extension.
 
 ## clip
 
-`clip(value, min_, max_)` clamps an integer or floating-point value to inclusive bounds.
+To keep a numeric result within allowed limits, use `clip(value, min_, max_)` to
+clamp an integer or floating-point value to inclusive bounds.
 All three arguments have the same numeric type and can be scalars or time series.
 Required inputs must be valid. `min_ > max_` raises an evaluation error. The output
 propagates the weakest observed input guarantee.

@@ -1,16 +1,16 @@
 # Runnable examples
 
-Each Python file contains the imports, definitions, and invocation for one
-checked example. Each C++ archive contains `main.cpp` and a CMake project linked
-to its required HG targets. Each download contains a complete program.
+To run an example outside the documentation, download its complete Python file or C++
+project. Python files include their imports, definitions, and invocation; C++ archives
+include `main.cpp` and a CMake project linked to the required HG targets.
 
 Python files use an [installed HG package](../guide/installation.md). For a C++
 archive, extract it and use the **Build and run** instructions in its README.
 The [C++ example project](../guide/installation.md#c-example-project)
 shows how to locate the SDK installed by pip.
 
-These examples use finite inputs and print their result. The application
-recipes combine several operations:
+The examples use finite inputs and print their results, while the application recipes
+show how several operations work together:
 
 - [Temperature alarm changes](temperature-monitor.md): calibration, comparison,
   and publication on transitions.

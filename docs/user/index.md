@@ -1,11 +1,13 @@
 # HG documentation
 
-HG maintains calculations whose inputs change over time. Use it for derived prices,
-sensor processing, running statistics, or independent calculations for many items.
+If your application needs to keep derived prices, sensor readings, or running
+statistics up to date, HG lets you describe the calculations and how they depend on
+one another. As inputs change, the graph updates the affected results without your
+application having to call each calculation in the right order.
 
-A graph records the dependencies between calculations. HG evaluates affected nodes
-when an input updates and retains their current results. Several consumers can share
-an intermediate result without repeating its calculation.
+Each node retains its current result, so several consumers can share an intermediate
+calculation without repeating its work. The graph below uses one subtotal for both
+a displayed value and the order total.
 
 ```mermaid
 flowchart LR
@@ -16,12 +18,13 @@ flowchart LR
     subtotal --> display[Subtotal display]
 ```
 
-The multiplication is a **node**. Its connections define its dependencies.
-The subtotal remains available to both consumers until it updates again.
+The multiplication is a **node**, and its incoming connections identify the price
+and quantity it depends on.
 
-The two functions below express the same arithmetic. `order_total` computes the value
-directly. `order_graph` connects a fixed price to multiplication and addition nodes;
-`run_graph` evaluates those nodes and captures the result.
+The functions below express the same arithmetic in ordinary code and graph code:
+`order_total` computes a value directly, while `order_graph` connects a fixed price
+to multiplication and addition nodes. Calling `run_graph` evaluates those nodes and
+captures their output.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -111,12 +114,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-`17` is an ordinary value. `[17]` is the sequence of captured graph output updates.
-The fixed input keeps the first example small. With
-[changing inputs](guide/graphs/updates.md), HG retains the current inputs and evaluates
-affected nodes in dependency order; application code does not need to call each
-dependent calculation. Graph functions construct those connections once per graph
-instance. Node code performs the calculations during evaluation.
+The ordinary call returns `17`, while `[17]` contains the graph's captured output
+update. This example uses a fixed input; with [changing inputs](guide/graphs/updates.md),
+the same connections maintain the result across successive values. A graph function
+constructs the connections once per graph instance, and node code calculates their
+values during evaluation.
 
 ::::{grid} 1 2 2 2
 :gutter: 3

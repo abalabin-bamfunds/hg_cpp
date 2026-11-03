@@ -1,8 +1,8 @@
 # Column expressions and table transformations
 
-Column expressions apply one calculation to all current rows and maintain the result
-when rows change. They return `TSC` connections that can feed ordinary graph nodes,
-reductions, and further expressions.
+If you need the same calculation for every row of a table, use column expressions
+to describe it once and keep the result current as rows change. Their `TSC` outputs
+can feed ordinary graph nodes, reductions, and further expressions.
 
 Include `<hg/frame/frame.hpp>`, `<hg/frame/expression.hpp>`, and
 `<hg/library.hpp>`. Import
@@ -11,9 +11,9 @@ the [frame extension](index.md#frame).
 
 ## Selecting and calculating columns
 
-`select_column<"name">(frame)` selects one typed column. Matching numeric columns
-support arithmetic and comparisons. A constant or a `TS<T>` can supply one value for
-every row:
+To calculate from a frame field, select its typed column with
+`select_column<"name">(frame)` and use arithmetic or comparisons on matching numeric
+columns. A constant or `TS<T>` can supply a shared value for every row:
 
 ```cpp
 auto bid = select_column<"bid">(quotes);
@@ -33,9 +33,9 @@ auto as_double = operators::convert[type<TSC<double>>](size_column);
 
 ## Expressions by name
 
-`col("name")` describes a column before a frame is available. `bind_expression` resolves
-names against a frame and creates the calculation. This separates reusable formulas
-from their graph inputs:
+If the same formula should work with different frame inputs, describe its columns
+by name with `col("name")`. `bind_expression` then resolves those names against a
+frame and connects the calculation:
 
 ```cpp
 auto spread_formula = col("ask") - col("bid");
@@ -64,8 +64,9 @@ its rows.
 
 ## Filtering rows
 
-`frame::filter(frame, predicate)` retains rows whose predicate is true. False and null
-exclude a row. Membership updates when cells or captured parameters change.
+To keep only rows that meet a changing condition, use `frame::filter(frame, predicate)`.
+Rows enter or leave the result as cells or captured parameters change; false and
+null predicates exclude a row.
 
 <!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
@@ -147,9 +148,9 @@ filtered frames have different selections, even when their current rows happen t
 
 ## Adding or replacing columns
 
-`with_columns` preserves the source rows and calculates a result schema from named
-assignments. Assignments can be column expressions, column connections, scalar values,
-or scalar time series:
+To attach calculated fields while keeping the source rows, use `with_columns` with
+named assignments. Each assignment can be a column expression, column connection,
+scalar value, or scalar time series:
 
 ```cpp
 auto priced = frame::with_columns(
@@ -165,6 +166,9 @@ Chain calls when a calculation needs a field added by an earlier call. Key field
 cannot be replaced.
 
 ## Selecting, renaming, and dropping fields
+
+To expose only the fields a consumer needs, use `select`, `rename`, or `drop` to
+shape the frame's schema while preserving its row identities:
 
 ```cpp
 auto prices = frame::select(priced, "bid", "ask", "mid");

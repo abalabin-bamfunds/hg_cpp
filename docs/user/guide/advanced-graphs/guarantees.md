@@ -1,11 +1,15 @@
 # Guarantees and advanced type matching
 
-Publication guarantees express requirements such as suppressing equal values or
-accepting a configuration that cannot change. HG checks these contracts when connecting
-and running calculations. Generic signatures reuse the calculation across value types
-while preserving the required guarantees.
+If a calculation relies on a value staying fixed or on repeated values being
+suppressed, express that requirement as a time series guarantee. Generic signatures
+let the same calculation work across value types while preserving these publication
+contracts.
 
 ## Publication guarantees
+
+Use a publication guarantee when the number or kind of allowed updates matters to
+your calculation. HG checks that contract rather than changing updates to fit it:
+for example, a final annotation rejects a second publication instead of filtering it.
 
 | Guarantee | Contract |
 | --- | --- |
@@ -13,9 +17,6 @@ while preserving the required guarantees.
 | Deduplicated | An equal requested mutation is suppressed |
 | Final | At most one value update; the value may remain unavailable |
 | Const | One value update at the time the time series starts |
-
-A guarantee is a contract. Adding a final annotation does not filter later updates;
-a violating publication fails.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -105,9 +106,10 @@ contained time series. References have a separate guarantee for changing targets
 
 ## Guarantee matching
 
-An input requirement must accept the source guarantee. A weaker requirement can
-accept a stronger source. Omitting an explicit input guarantee lets normal type
-resolution preserve the source guarantee where supported.
+To accept only sources with the publication behavior your node relies on, declare
+the required input guarantee. A weaker requirement can accept a stronger source;
+omitting an explicit guarantee lets normal type resolution preserve the source's
+guarantee where supported.
 
 Operations infer output guarantees from their inputs and publication behavior.
 Retargeting can cause repeated observed values even when individual targets are
@@ -115,8 +117,10 @@ final. [Type reference](../../reference/types.md#guarantees) specifies propagati
 
 ## Generic signatures
 
-A type variable binds to a concrete type when graph arguments are supplied. Repeated
-uses of one variable constrain those arguments together.
+If a calculation works for several value types, use a type variable rather than
+defining the graph separately for each one. HG binds it to a concrete type from
+the supplied arguments, and repeated uses of the variable require those arguments
+to agree.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -205,8 +209,9 @@ as scalar value type.
 
 ## Variadic parameters
 
-Variadic parameters accept a variable number of graph-code arguments. The graph
-constructs connections for the supplied argument list.
+When callers need to supply different numbers of inputs, use variadic parameters
+to capture and forward their graph-code arguments. The graph constructs connections
+for the argument list supplied at each call.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -298,11 +303,12 @@ defines capture and forwarding.
 
 ## Operators and runtime dispatch
 
-An operator selects a registered implementation from the supplied types. C++ extensions
-can define prototypes and overloads; Python graph code can call exported operators.
-[Operator reference](../../reference/operators.md) provides declaration syntax and a
-[complete dispatch example](../../reference/operators.md#runtime-dispatch).
+If one operation needs different implementations for different types, use an
+operator to select a registered implementation. C++ extensions can define prototypes
+and overloads, and Python graph code can call exported operators.
+The [operator reference](../../reference/operators.md) provides declaration syntax
+and a [complete dispatch example](../../reference/operators.md#runtime-dispatch).
 
-Runtime dispatch selects an implementation using concrete runtime scalar types.
-It is useful for hierarchical values whose declared input type admits derived values.
-Value-based cases belong to [conditionals](../graphs/conditionals.md).
+When a declared base type accepts derived values that need different calculations,
+runtime dispatch selects an implementation from their concrete scalar types.
+For choices based on values, use [conditionals](../graphs/conditionals.md).

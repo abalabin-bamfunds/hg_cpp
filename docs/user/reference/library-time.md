@@ -5,18 +5,17 @@ Timed operators use evaluation time. C++ durations use `timedelta_t`; Python use
 
 ## last_modified_time
 
-`last_modified_time(value)` publishes the input's latest update time on each
-valid input event. The output invalidates with the input and retains its
+To use a source's latest update time in another calculation, call `last_modified_time(value)`. It
+publishes that time on each valid input event. The output invalidates with the input and retains its
 guarantee. C++ returns `date_time_t`; Python returns a timezone-naive `datetime`.
 
 ## elapsed
 
-`elapsed(value)` publishes the duration between consecutive valid input update
-times. The first valid event establishes the baseline without publishing.
-Input invalidation resets the baseline and invalidates the output; the next
-valid event establishes a new baseline. Skipped cycles do not affect the
-duration. Ordinary equal-valued ticks are separate events. The output guarantee
-retains the input guarantee up to final.
+To measure the spacing between input events, use `elapsed(value)` to publish the duration between
+consecutive valid input update times. The first valid event establishes the baseline without
+publishing. Input invalidation resets the baseline and invalidates the output; the next valid event
+establishes a new baseline. Skipped cycles do not affect the duration. Ordinary equal-valued ticks
+are separate events. The output guarantee retains the input guarantee up to final.
 
 Measure spacing between input updates in microseconds. Each literal position is one microsecond:
 
@@ -103,16 +102,17 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## delay
 
-`delay(value, duration)` publishes each input event at its original evaluation time plus
-`duration`. It retains ticks, including invalidation and collection deltas, rather than
-sampling the value later. Equal ordinary ticks remain separate events. Zero duration
-returns the input; negative duration is a wiring error. Positive delay limits const
-guarantees to final, including contained time series. See
-[retained events](#retained-events) for supported types and restrictions.
+If each event should be replayed later, use `delay(value, duration)`. It publishes each input event
+at its original evaluation time plus `duration`. It retains ticks, including invalidation and
+collection deltas, rather than sampling the value later. Equal ordinary ticks remain separate
+events. Zero duration returns the input; negative duration is a wiring error. Positive delay limits
+const guarantees to final, including contained time series. See [retained events](#retained-events)
+for supported types and restrictions.
 
 ## schedule
 
-`schedule(period, initial_delay=true, max_ticks=...)` publishes ordinary `TS<bool>`
+To trigger a calculation periodically, use
+`schedule(period, initial_delay=true, max_ticks=...)`. It publishes ordinary `TS<bool>`
 ticks whose value is true. The first tick occurs one period after graph start.
 `initial_delay=false` produces the first tick at graph start. `max_ticks` limits the
 number of ticks; zero produces none. Without a limit, the source continues until its
@@ -120,8 +120,9 @@ graph stops. Period must be positive and `max_ticks` must be nonnegative.
 
 ## throttle
 
-`throttle(value, period, delay_first_tick=false)` passes the first event immediately and
-starts a period. Events during that period coalesce. At its end, throttle publishes the
+To limit publication frequency while keeping the latest pending value, use
+`throttle(value, period, delay_first_tick=false)`. It passes the first event immediately
+and starts a period. Events during that period coalesce. At its end, throttle publishes the
 latest pending state and starts another period. With no pending event, it stops
 scheduling until the input changes again. `delay_first_tick=true` also delays the first
 event by one period. Period must be positive.
@@ -134,7 +135,8 @@ copy of the input value.
 
 ## debounce
 
-`debounce(value, period)` publishes the complete latest value after the input has
+If a calculation should wait until a burst of updates settles, use
+`debounce(value, period)`. It publishes the complete latest value after the input has
 been unchanged for `period`. Every input event restarts the period, including
 equal ordinary ticks, invalidation, collection changes, and reference changes.
 An event at the expiry time restarts the period without publishing. Debounce
@@ -143,21 +145,21 @@ guarantee is limited to final, including contained time series.
 
 ## timeout
 
-`timeout(value, period)` publishes an ordinary `TS[bool]` tick with value true
-after a period without input events. Every input event restarts the period,
-including equal ordinary ticks, invalidation, collection changes, and reference
-changes. An event at expiry restarts the period without publishing. Timeout
-does not schedule an initial tick. After its first expiry, the output remains
-valid and true; each later expiry publishes another true tick. Period must be
-positive.
+To detect when a source stops sending updates, use `timeout(value, period)`. It publishes an
+ordinary `TS[bool]` tick with value true after a period without input events. Every input event
+restarts the period, including equal ordinary ticks, invalidation, collection changes, and reference
+changes. An event at expiry restarts the period without publishing. Timeout does not schedule an
+initial tick. After its first expiry, the output remains valid and true; each later expiry publishes
+another true tick. Period must be positive.
 
 Timed work uses evaluation time and stops with the owning graph, including inner
 graphs. Scheduling outside the supported [evaluation-time range](execution.md) fails.
 
 ## batch
 
-`batch(condition, value, delay, buffer_length=...)` collects valid scalar values into
-an owning `TS<List<V>>`. Opening publishes all queued values immediately. While open,
+To process several incoming values together, use
+`batch(condition, value, delay, buffer_length=...)`. It collects valid scalar values
+into an owning `TS<List<V>>`. Opening publishes all queued values immediately. While open,
 the first new value starts the timer; the timer publishes all queued values together.
 Repeated true condition ticks do not flush early. Closing cancels the timer and retains
 queued values; reopening publishes them immediately. Invalidated values are not
@@ -180,7 +182,8 @@ values.
 
 ## resample
 
-`resample(value, period)` composes a periodic `schedule` signal with `sample`.
+For a snapshot at regular intervals, use `resample(value, period)`, which composes
+a periodic `schedule` signal with `sample`.
 The first sample occurs one period after graph start. It republishes the current
 valid value on each signal; source changes alone do not publish a sample.
 The period must be positive. A finite run limit is required when no other stop

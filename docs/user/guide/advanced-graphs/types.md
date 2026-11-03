@@ -1,14 +1,15 @@
 # Time series types
 
-Plain value annotations are sufficient for ordinary calculations. Explicit time series
-types distinguish a complete snapshot from independently changing items, and a value
-from a reference that can follow different sources. They also express publication
-contracts such as a value that cannot change.
+Plain value annotations cover calculations that only need current values. When you
+need independently changing items, a selectable source, or a publication guarantee,
+explicit time series types describe that additional behavior in the connection's
+contract.
 
 ## Values and time series
 
-A time series retains its current value and last updated time. It does not retain
-past values. `TS[T]` in Python and `TS<T>` in C++ describe a time series value of type `T`.
+To describe a changing value explicitly, use `TS[T]` in Python or `TS<T>` in C++.
+A time series retains its current value and last updated time; calculations that
+need past observations must retain them separately.
 
 | Requirement | Declaration |
 | --- | --- |
@@ -19,10 +20,10 @@ past values. `TS[T]` in Python and `TS<T>` in C++ describe a time series value o
 
 ## Validity
 
-An input may not have arrived yet, or its source may withdraw its value. Validity lets
-a graph distinguish those states from a valid zero or empty collection. A time series
-is valid when it has a current value. Invalidation removes that value; skipping an
-update preserves it. `valid` exposes availability as a Boolean result.
+If a source has not arrived yet or withdraws its value, validity lets a graph
+distinguish that absence from a valid zero or empty collection. Use `valid` when
+the availability itself should become a Boolean result. Invalidation removes a
+current value, while skipping an update leaves it available.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -113,9 +114,10 @@ observe `valid` when the distinction matters. C++ literal comparisons distinguis
 
 ## Matching time series types
 
-The receiving input must accept the output's value type and time series shape.
-A scalar dictionary and a dictionary of time series require an explicit conversion
-when their shapes differ.
+When connecting calculations, check that the receiving input accepts both the
+output's value type and its time series shape. For example, a scalar dictionary
+and a dictionary of independently changing items need an explicit conversion
+between their shapes.
 
 The same value type can carry different [guarantees](guarantees.md). A reference can
 bind to an ordinary value input through automatic dereferencing. The
@@ -123,8 +125,10 @@ bind to an ordinary value input through automatic dereferencing. The
 
 ## Converting collection shapes
 
-`convert` copies the current value into a requested shape. This example gives a
-scalar sequence's two positions independent time series outputs.
+If one part of a graph supplies complete snapshots but another needs individual
+item connections, use `convert` to copy the current value into the required shape.
+This example exposes a scalar sequence's two positions as separate time series
+outputs.
 
 <!-- runnable-example -->
 ::::::{tab-set}
