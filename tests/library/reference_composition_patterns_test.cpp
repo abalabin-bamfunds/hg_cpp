@@ -189,26 +189,35 @@ TEST_CASE("a switch ignores inactive dictionary changes and samples a re-added n
 
     const auto tested = [&](wp<TS<bool>> choose_first, wp<TSD<i64, TSD<i64, TS<i64>>>> first,
                             wp<TSD<i64, TSD<i64, TS<i64>>>> second) {
-        const auto selected = switch_(choose_first,
-                                      cases{case_(true, [](auto left, auto) { return left; }),
-                                            case_(false, [](auto, auto right) { return right; })},
-                                      first, second);
-        return operators::count(map(inner_dictionary, selected)[i64{1}][i64{10}]);
+        const auto selected_values = switch_(choose_first,
+                                             cases{case_(true, [](auto left, auto) { return left; }),
+                                                   case_(false, [](auto, auto right) { return right; })},
+                                             first, second);
+        const auto selected_item = map(inner_dictionary, selected_values)[i64{1}][i64{10}];
+        return tsl(selected_item, operators::count(selected_item));
     };
 
     CHECK(run_graph(tested,
-                    {true, false, false, false, true, false},
+                    {true, false, false, false, true, true, false},
                     {{{1, {{10, 1}}}},
                      {{1, {{10, 2}}}},
                      {{1, {{10, 3}}}},
                      {{1, {{10, literal::REMOVE}}}},
                      {{1, {{10, 4}}}},
+                     literal::SKIP,
                      {{1, {{10, 5}}}}},
                     {{{1, {{10, 10}}}},
                      {{1, {{10, 20}}}},
-                     {{1, {{10, 21}}}},
+                     literal::SKIP,
                      {{1, {{10, 22}}}},
                      {{1, {{10, 23}}}},
-                     {{1, {{10, 24}}}}})
-              .equals<i64>({1, 2, 3, 4, 5, 6}));
+                     {{1, {{10, 24}}}},
+                     {{1, {{10, 25}}}}})
+              .equals({{{0, 1}, {1, 1}},
+                       {{0, 20}, {1, 2}},
+                       literal::SKIP,
+                       {{0, 22}, {1, 3}},
+                       {{0, 4}, {1, 4}},
+                       literal::SKIP,
+                       {{0, 25}, {1, 5}}}));
 }
