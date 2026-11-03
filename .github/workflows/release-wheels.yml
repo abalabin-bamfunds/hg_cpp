@@ -52,7 +52,7 @@ jobs:
       - name: Install build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libicu-dev
+          sudo apt-get install --yes libicu-dev libcurl4-openssl-dev libssl-dev
           python -m pip install --upgrade --only-binary=:all: \
             "build==1.5.0" "scikit-build-core==1.0.3" "nanobind==3.1.0" \
             "cmake>=3.31" "ninja==1.13.0" "packaging==26.3" "abi3audit==0.0.26"
@@ -61,6 +61,9 @@ jobs:
       - name: Audit source distribution
         run: python tools/audit_distribution.py dist
       - name: Build a wheel from the source distribution
+        env:
+          CMAKE_GENERATOR: Ninja
+          CMAKE_BUILD_PARALLEL_LEVEL: "2"
         run: python -m pip wheel --no-deps --no-build-isolation --wheel-dir sdist-wheel dist/*.tar.gz
       - name: Audit the wheel built from the source distribution
         run: |
@@ -85,7 +88,25 @@ jobs:
         with:
           persist-credentials: false
       - name: Install native build dependencies
-        run: dnf install --assumeyes libicu-devel
+        run: dnf install --assumeyes libicu-devel krb5-devel openssl-devel
+      - name: Build pinned libcurl with GSSAPI
+        shell: bash
+        run: |
+          archive=/tmp/curl-8.23.0.tar.xz
+          curl --fail --location --retry 3 --output "$archive" \
+            https://curl.se/download/curl-8.23.0.tar.xz
+          echo "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5  $archive" | sha256sum --check
+          tar -C /tmp -xf "$archive"
+          cd /tmp/curl-8.23.0
+          ./configure --prefix=/opt/curl --with-openssl --with-gssapi \
+            --with-ca-path=/etc/ssl/certs --without-ca-bundle --without-libpsl \
+            --enable-shared --disable-static
+          make --jobs=2
+          make install
+          /opt/curl/bin/curl-config --features | grep --fixed-strings GSS-API
+          echo "CMAKE_PREFIX_PATH=/opt/curl${CMAKE_PREFIX_PATH:+:$CMAKE_PREFIX_PATH}" >> "$GITHUB_ENV"
+          echo "PKG_CONFIG_PATH=/opt/curl/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}" >> "$GITHUB_ENV"
+          echo "LD_LIBRARY_PATH=/opt/curl/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" >> "$GITHUB_ENV"
       - name: Verify Linux compiler
         shell: bash
         run: |
@@ -114,6 +135,7 @@ jobs:
             --exclude libhg.so.0 \
             --exclude libhg_library.so.0 \
             --exclude libhg_python.so.0 \
+            --exclude libhg_web.so.0 \
             --exclude libfmt.so.12 \
             --wheel-dir dist \
             raw-wheel/*.whl

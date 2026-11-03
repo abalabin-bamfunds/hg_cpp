@@ -66,6 +66,7 @@ The [example downloads](../how-to/examples.md) include Python source and C++ pro
 
 ## Optional extensions
 
-The [web extension](../extensions/index.md#web) adds HTTP and WebSocket services.
-The [frame extension](../extensions/index.md#frame) adds C++ columns and tables.
-Their build options and example targets are documented separately.
+The `hg-cpp` Python wheel includes the [web extension](../extensions/index.md#web),
+which adds HTTP and WebSocket services. C++ source builds can enable it with its
+documented build option. The [frame extension](../extensions/index.md#frame) adds
+C++ columns and tables and currently builds from its source directory.
