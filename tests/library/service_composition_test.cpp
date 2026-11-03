@@ -17,6 +17,7 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <optional>
 #include <span>
 #include <utility>
 #include <vector>
@@ -245,7 +246,7 @@ TEST_CASE("service wiring preserves client order across mixed implementations",
 }
 
 TEST_CASE("a request reply service can call itself until its request reaches zero",
-          "[feature:service][feature:feedback][feature:nested-graph][series:tsd][series:value]") {
+          "[.][repro][feature:service][feature:feedback][feature:nested-graph][series:tsd][series:value]") {
     const auto add_until_zero = service<auto(TS<i64>)->TS<i64>>{"add_until_zero", {"value"}};
     const auto add_one = node([](i64 value) { return value + 1; });
 
@@ -297,11 +298,15 @@ TEST_CASE("a service installation input stays bound to the root across map wirin
         });
     });
 
+    const auto copy = node([](In<TSD<i64, TS<i64>>> values, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(values);
+    });
+
     auto catalogue = ServiceCatalogue{};
     const auto tested = [&](wp<TSD<i64, TS<i64>>> requests, wp<TS<i64>> setting,
                             wp<TS<i64>> child_setting) {
         catalogue.register_impl(contextual_value, implementation, setting);
-        return map(per_key, requests, child_setting);
+        return copy(map(per_key, requests, child_setting));
     };
 
     CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 5}}, {{1, 6}}}, {100, 200}, {7, 8})
@@ -311,11 +316,16 @@ TEST_CASE("a service installation input stays bound to the root across map wirin
 TEST_CASE("mapped subscription clients handle late keys and recreation",
           "[feature:service][feature:map][feature:nested-graph]"
           "[series:tss][series:tsd][series:value][transition:addition][transition:removal]") {
-    const auto lookup = subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{
-        "mapped_lookup", {"key"}};
+    const auto lookup = subscription_service<auto(TS<i64, TimeSeriesGuarantee::final>)->TS<i64>>{"mapped_lookup", {"key"}};
     const auto answer = node([](In<TSS<i64>> keys, Out<TSD<i64, TS<i64>>> replies) {
         keys.for_each_removed([&](const auto &key) { replies.erase(key); });
         keys.for_each_added([&](const auto &key) { replies[key].set(*key * 10); });
+    });
+
+    const auto final_key = node([](In<TS<i64>> key, Out<TS<i64, TimeSeriesGuarantee::final>> output) {
+        if (key.modified()) {
+            output.set(*key);
+        }
     });
 
     const auto implementation = graph("name"_n = "mapped_lookup_impl",
@@ -323,17 +333,15 @@ TEST_CASE("mapped subscription clients handle late keys and recreation",
     auto catalogue = ServiceCatalogue{};
     catalogue.register_impl(lookup, feedback_service_implementation(lookup, implementation));
 
-    const auto per_key = graph("name"_n = "mapped_lookup_client", [&](wp<TS<i64, TimeSeriesGuarantee::final>> key) {
-        return lookup(key);
+    const auto per_key = graph("name"_n = "mapped_lookup_client", [&](wp<TS<i64>> key) {
+        return lookup(final_key(key));
     });
 
     const auto copy = node([](In<TSD<i64, TS<i64>>> values, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(values);
     });
 
-    const auto tested = [&](wp<TSD<i64, TS<i64, TimeSeriesGuarantee::final>>> keys) {
-        return copy(map(per_key, keys));
-    };
+    const auto tested = [&](wp<TSD<i64, TS<i64>>> keys) { return copy(map(per_key, keys)); };
 
     const auto actual = run_graph(tested, GraphRunOptions{.services = &catalogue},
                                   {{{1, 7}}, {{2, 8}}, {{1, literal::REMOVE}}, {{1, 9}}});
