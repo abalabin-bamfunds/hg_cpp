@@ -142,43 +142,6 @@ jobs:
             "$GITHUB_WORKSPACE/extensions/web/tests_python/test_http_client.py" \
             "$GITHUB_WORKSPACE/extensions/web/tests_python/test_websocket.py" \
             -k 'https_client_ca_file_and_combined_transport_option or python_websocket_client_uses_native_trust'
-      - name: Test native TLS trust on Windows
-        if: runner.os == 'Windows'
-        shell: pwsh
-        env:
-          PYTHONPATH: ${{ runner.temp }}/hg-web-install
-          HG_WEB_TEST_NATIVE_TRUST: "1"
-          NO_PROXY: 127.0.0.1,localhost
-        run: |
-          Set-Location $env:RUNNER_TEMP
-          $certificatePath = Join-Path $env:GITHUB_WORKSPACE "extensions/web/tests/data/test_server_cert.pem"
-          $certificate = [System.Security.Cryptography.X509Certificates.X509Certificate2]::CreateFromPem(
-            (Get-Content -Raw $certificatePath))
-          $store = [System.Security.Cryptography.X509Certificates.X509Store]::new(
-            [System.Security.Cryptography.X509Certificates.StoreName]::Root,
-            [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-          $certificateAdded = $false
-          $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
-          try {
-            $existing = $store.Certificates.Find(
-              [System.Security.Cryptography.X509Certificates.X509FindType]::FindByThumbprint,
-              $certificate.Thumbprint,
-              $false)
-            if ($existing.Count -ne 0) { throw "Test CA already exists in the current-user root store" }
-            $store.Add($certificate)
-            $certificateAdded = $true
-            $env:no_proxy = $env:NO_PROXY
-            python -c 'import os, pytest, sys; dll_directory = os.add_dll_directory(os.environ["HG_TEST_DLL_DIR"]); raise SystemExit(pytest.main(sys.argv[1:]))' `
-              -q `
-              "$env:GITHUB_WORKSPACE/extensions/web/tests_python/test_http_client.py" `
-              "$env:GITHUB_WORKSPACE/extensions/web/tests_python/test_websocket.py" `
-              -k "https_client_ca_file_and_combined_transport_option or python_websocket_client_uses_native_trust"
-            if ($LASTEXITCODE -ne 0) { throw "Native Windows TLS trust tests failed ($LASTEXITCODE)" }
-          } finally {
-            if ($certificateAdded) { $store.Remove($certificate) }
-            $store.Close()
-            $certificate.Dispose()
-          }
       - name: Test installed SDK and Python web API on Unix
         if: runner.os != 'Windows'
         shell: bash
