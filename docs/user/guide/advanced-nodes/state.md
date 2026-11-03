@@ -1,7 +1,8 @@
 # State and lifecycle
 
-State retains application data between evaluations. Lifecycle callbacks initialize
-and release resources with a graph instance.
+A running peak or custom accumulator needs data from earlier evaluations. State retains
+that data for one node instance. Lifecycle callbacks initialize and release resources
+when the graph instance starts and stops.
 
 ## Retained state
 
@@ -101,7 +102,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -229,7 +230,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

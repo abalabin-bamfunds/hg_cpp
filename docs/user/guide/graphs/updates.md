@@ -1,7 +1,8 @@
 # Changing inputs
 
-`run_graph` can supply successive updates to graph inputs and capture output events.
-Each input retains its current value between updates.
+Changing inputs let a calculation maintain its result as new readings or prices arrive.
+HG retains each input's current value and evaluates affected nodes after an update.
+`run_graph` supplies finite input sequences to test that behavior without a live source.
 
 ## Input sequences
 
@@ -84,7 +85,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -192,7 +193,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -279,7 +280,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -372,7 +373,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

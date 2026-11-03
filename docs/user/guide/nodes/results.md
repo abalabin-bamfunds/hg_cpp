@@ -1,7 +1,8 @@
 # Results and evaluation
 
-A node publishes its returned value. Its output retains that value until another
-publication or invalidation.
+A node may need to wait for several inputs or reject a reading without replacing its
+last result. Required inputs control when it can evaluate; its return value controls
+whether it publishes.
 
 ## Required inputs
 
@@ -17,18 +18,17 @@ updates produce one evaluation with all current values.
 :sync: python
 
 ```python
-from hgraph import graph, run_graph
+from hgraph import graph, node, run_graph
 
 
-@graph
+@node
 def calibrated_temperature(reading: int, offset: int) -> int:
     return reading + offset
 
 
 @graph
 def display_temperature(reading: int, offset: int) -> int:
-    calibrated = calibrated_temperature(reading, offset)
-    return calibrated * 10
+    return calibrated_temperature(reading, offset)
 
 
 print(run_graph(
@@ -41,7 +41,7 @@ print(run_graph(
 Output:
 
 ```text
-[None, 200, 210, 220]
+[None, 20, 21, 22]
 ```
 :::::
 
@@ -55,19 +55,19 @@ Output:
 ```cpp
 #include <hg/library.hpp>
 #include <hg/run_graph.hpp>
+#include <hg/node.hpp>
 
 #include <iostream>
 
 using namespace hg;
 using namespace literal;
 
-auto calibrated_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
+const auto calibrated_temperature = node([](i64 reading, i64 offset) {
     return reading + offset;
-}
+});
 
 auto display_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
-    const auto calibrated = calibrated_temperature(reading, offset);
-    return calibrated * 10;
+    return calibrated_temperature(reading, offset);
 }
 
 int main() {
@@ -82,7 +82,7 @@ int main() {
 Output:
 
 ```text
-[None, 200, 210, 220]
+[None, 20, 21, 22]
 ```
 :::
 
@@ -91,7 +91,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -189,7 +189,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

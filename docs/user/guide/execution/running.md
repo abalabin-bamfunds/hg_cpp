@@ -1,7 +1,8 @@
 # Running applications
 
-`run_graph` constructs and runs a graph. It can capture an output, execute sinks,
-or do both. Simulation is the default engine.
+A graph declaration becomes an application when sources supply values and sinks consume
+results. `run_graph` constructs and runs that graph, with optional output capture for
+tests. Simulation processes finite inputs without waiting for wall-clock time.
 
 ## Sources and sinks
 
@@ -77,7 +78,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -102,10 +103,10 @@ to disable capture.
 [result reference](../../reference/testing.md) covers timestamps, dense positions,
 and large gaps.
 
-## Simulation and real-time execution
+## Simulation and realtime execution
 
 Simulation advances directly to the next scheduled evaluation time. Realtime execution
-waits for input or timers. Real-time graphs need a run limit or stop request when they
+waits for input or timers. Realtime graphs need a run limit or stop request when they
 can remain idle indefinitely.
 
 [Execution reference](../../reference/execution.md) lists engine selection, start times,

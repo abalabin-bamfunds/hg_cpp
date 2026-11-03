@@ -1,7 +1,8 @@
 # Types and connections
 
-A connection is valid when the output type satisfies the receiving parameter.
-HG checks connections while constructing the graph, before processing input values.
+Types catch incompatible connections before a graph processes values. Reusable graphs
+can therefore declare what they accept and what they produce. HG checks that each
+output type satisfies its receiving parameter during graph construction.
 
 ## Concrete value types
 
@@ -96,7 +97,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -180,7 +181,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

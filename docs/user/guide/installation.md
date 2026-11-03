@@ -1,9 +1,26 @@
 # Installation
 
-HG requires a C++23 compiler and CMake 3.31 or later. Python authoring requires
-Python 3.12 or later. The `hg-cpp` distribution provides the `hgraph` import package.
-The following commands build from a local repository checkout; configuration downloads
-build dependencies.
+The `hg-cpp` distribution includes the Python `hgraph` package and the C++ SDK:
+public headers, libraries, and CMake targets. Both languages use the same installation.
+Python 3.12 or later is required to install the package.
+
+## Install the package
+
+A virtual environment keeps the installation separate from other Python projects:
+
+```sh
+python -m venv .venv
+```
+
+Activate it with `source .venv/bin/activate` on Linux or macOS, or
+`.venv\Scripts\Activate.ps1` in Windows PowerShell.
+
+Set `USER` to the **Nexus user token** and `PASS` to its **token pass**. In the active
+environment:
+
+```sh
+pip install hg-cpp --index-url http://${USER}:${PASS}@artifacts.bamfunds.net/repository/bam-private-pypi-project-commodities-ac-enhanced/simple --trusted-host artifacts.bamfunds.net --trusted-host artifacts.cloud.bamfunds.net
+```
 
 ::::{tab-set}
 :sync-group: language
@@ -11,37 +28,26 @@ build dependencies.
 :::{tab-item} Python
 :sync: python
 
-```sh
-python -m venv .venv
-```
-
-Activate the environment with `source .venv/bin/activate` on Linux or macOS,
-or `.venv\Scripts\Activate.ps1` in Windows PowerShell.
+The distribution name is `hg-cpp`; Python code imports from `hgraph`:
 
 ```sh
-python -m pip install .
 python -c "from hgraph import graph, run_graph; print('HG is available')"
 ```
+
+[Basic syntax](getting-started.md) contains complete examples.
 :::
 
 :::{tab-item} C++
 :sync: cpp
 
-```sh
-cmake -S . -B build/cpp -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DCMAKE_INSTALL_PREFIX=install
-cmake --build build/cpp --config Release
-cmake --install build/cpp --config Release
-```
-
-The installation contains the `hg::library` CMake target, public headers, and libraries.
-:::
-::::
+C++ applications require a C++23 compiler and CMake 3.31 or later. The pip installation
+provides the SDK; building an application does not require an HG source checkout.
 
 (cpp-example-project)=
 ## C++ example project
 
-Each C++ example is a complete `main.cpp`. This `CMakeLists.txt` builds it against
-an installed HG package:
+Each C++ example is a complete `main.cpp`. This `CMakeLists.txt` links it to the
+installed `hg::library` target:
 
 ```cmake
 cmake_minimum_required(VERSION 3.31)
@@ -51,18 +57,26 @@ add_executable(example main.cpp)
 target_link_libraries(example PRIVATE hg::library)
 ```
 
+Find the SDK installation prefix in the environment where `hg-cpp` was installed:
+
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/hg/install
+python -c "from importlib.metadata import distribution; print(distribution('hg-cpp').locate_file(''))"
+```
+
+Replace `/path/to/site-packages` below with the printed directory:
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
 Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
-Shared-library installations may require the installation's library directory on the
-platform's library search path. On Windows, add its `bin` directory to `PATH`.
-For the SDK included in a Windows wheel, also add `hg_cpp.libs` from the same
-installation prefix.
+On Windows, add the `hgraph`, `bin`, and `hg_cpp.libs` directories under the printed
+prefix to `PATH` so the executable can load the wheel's DLLs.
 
-The [example downloads](../how-to/examples.md) include Python source and C++ projects.
+The [example downloads](../how-to/examples.md) include complete C++ projects.
+:::
+::::
 
 ## Optional extensions
 

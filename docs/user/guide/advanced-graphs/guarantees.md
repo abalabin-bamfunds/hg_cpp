@@ -1,7 +1,9 @@
 # Guarantees and advanced type matching
 
-A time series guarantee constrains publication. A generic signature reuses a
-calculation across types while retaining type checks.
+Publication guarantees express requirements such as suppressing equal values or
+accepting a configuration that cannot change. HG checks these contracts when connecting
+and running calculations. Generic signatures reuse the calculation across value types
+while preserving the required guarantees.
 
 ## Publication guarantees
 
@@ -87,7 +89,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -186,7 +188,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -280,7 +282,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

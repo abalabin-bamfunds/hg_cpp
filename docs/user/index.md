@@ -1,12 +1,11 @@
 # HG documentation
 
-HG connects calculations whose inputs change over time. Each node retains its
-current result. HG tracks the connections between nodes and evaluates affected
-calculations when an input updates. Shared intermediate results can feed several
-outputs without repeating the calculation.
+HG maintains calculations whose inputs change over time. Use it for derived prices,
+sensor processing, running statistics, or independent calculations for many items.
 
-This supports derived prices, sensor processing, running statistics, and
-calculations maintained independently for many items.
+A graph records the dependencies between calculations. HG evaluates affected nodes
+when an input updates and retains their current results. Several consumers can share
+an intermediate result without repeating its calculation.
 
 ```mermaid
 flowchart LR
@@ -19,9 +18,10 @@ flowchart LR
 
 The multiplication is a **node**. Its connections define its dependencies.
 The subtotal remains available to both consumers until it updates again.
-A **graph function** constructs these connections; node code computes their values.
 
-
+The two functions below express the same arithmetic. `order_total` computes the value
+directly. `order_graph` connects a fixed price to multiplication and addition nodes;
+`run_graph` evaluates those nodes and captures the result.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -34,20 +34,25 @@ A **graph function** constructs these connections; node code computes their valu
 from hgraph import graph, run_graph
 from hgraph.operators import const_
 
-@graph
-def subtotal(price: int, quantity: int) -> int:
-    return price * quantity
+
+def order_total(price: int, quantity: int, delivery: int) -> int:
+    return price * quantity + delivery
+
 
 @graph
-def total() -> int:
-    return subtotal(const_(5), 3) + 2
+def order_graph() -> int:
+    price = const_(5)
+    return price * 3 + 2
 
-print(run_graph(total))
+
+print(order_total(5, 3, 2))
+print(run_graph(order_graph))
 ```
 
 Output:
 
 ```text
+17
 [17]
 ```
 :::::
@@ -61,31 +66,32 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/node.hpp>
 #include <hg/run_graph.hpp>
+
 #include <iostream>
 
 using namespace hg;
 using namespace hg::operators;
-using namespace literal;
 
-auto subtotal(wp<TS<i64>> price, int quantity) {
-    return price * quantity;
+auto order_total(int price, int quantity, int delivery) {
+    return price * quantity + delivery;
 }
 
-auto total() {
-    return subtotal(const_(5).as<TS<i64>>(), 3) + 2;
+auto order_graph() {
+    const auto price = const_(5);
+    return price * 3 + 2;
 }
 
 int main() {
-    const auto result = run_graph(total);
-    std::cout << result << '\n';
+    std::cout << order_total(5, 3, 2) << '\n';
+    std::cout << run_graph(order_graph) << '\n';
 }
 ```
 
 Output:
 
 ```text
+17
 [17]
 ```
 :::
@@ -95,7 +101,7 @@ Output:
 The [C++ example project](guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -105,9 +111,12 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-The example has a fixed result. [Changing inputs](guide/graphs/updates.md) use the
-same connections with successive values. HG retains current values; history is
-provided by operations such as running totals and lag.
+`17` is an ordinary value. `[17]` is the sequence of captured graph output updates.
+The fixed input keeps the first example small. With
+[changing inputs](guide/graphs/updates.md), HG retains the current inputs and evaluates
+affected nodes in dependency order; application code does not need to call each
+dependent calculation. Graph functions construct those connections once per graph
+instance. Node code performs the calculations during evaluation.
 
 ::::{grid} 1 2 2 2
 :gutter: 3

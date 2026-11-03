@@ -58,7 +58,7 @@ target_link_libraries(example PRIVATE hg::frame)
 ```
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/absolute/path/to/hg/install -DHG_SOURCE_DIR=/absolute/path/to/hg
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages" -DHG_SOURCE_DIR=/absolute/path/to/hg
 cmake --build build --config Release
 ```
 

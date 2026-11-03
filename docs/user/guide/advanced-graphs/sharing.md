@@ -1,7 +1,9 @@
 # Shared dependencies and services
 
-A shared dependency can be passed explicitly, supplied by context, or implemented as
-a service. Shared scalar state stores application data rather than graph connections.
+Several calculations may need the same prices, configuration, or external service.
+Explicit arguments and context supply shared connections; services separate the graph's
+request from the application's implementation. Shared scalar state retains application
+data that an outer graph and its inner graphs need to access.
 
 ## Context time series
 
@@ -82,7 +84,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -189,7 +191,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -292,7 +294,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
