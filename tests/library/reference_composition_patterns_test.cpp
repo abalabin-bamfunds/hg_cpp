@@ -25,16 +25,6 @@ TEST_CASE("a map-selected dictionary item feeds its target value",
     CHECK(run_graph(tested, {{{1, {{10, 1}}}}, {{1, {{10, 2}}}}}).equals<i64>({1, 2}));
 }
 
-template <template <typename, auto...> typename Field> struct nested_reference_bundle {
-    Field<TS<i64>> left;
-    Field<TS<i64>> right;
-};
-
-template <template <typename, auto...> typename Field> struct reference_point {
-    Field<i64> count;
-    Field<string> label;
-};
-
 TEST_CASE("collect appends events from a nested map-selected reference",
           "[feature:reference][feature:map][feature:operator][series:tsd][series:value]"
           "[scalar:list][transition:update]") {
@@ -95,6 +85,11 @@ TEST_CASE("convert a dictionary selected through a nested map to a scalar snapsh
                        {{10, 6}}}));
 }
 
+template <template <typename, auto...> typename Field> struct reference_point {
+    Field<i64> count;
+    Field<string> label;
+};
+
 TEST_CASE("a compound scalar field follows a mapped item reference",
           "[feature:reference][feature:map][feature:getattr][series:tsd][series:value]"
           "[scalar:hierarchical][schema:named][transition:update]") {
@@ -153,6 +148,11 @@ TEST_CASE("sum a free fixed list built from items selected through a map",
                      {{1, {{10, 3}}}}})
               .equals<i64>({11, 12, 22, std::nullopt, 23}));
 }
+
+template <template <typename, auto...> typename Field> struct nested_reference_bundle {
+    Field<TS<i64>> left;
+    Field<TS<i64>> right;
+};
 
 TEST_CASE("recombine fields from a mapped bundle reference and observe each field",
           "[feature:reference][feature:map][series:tsd][series:tsb][series:value]"

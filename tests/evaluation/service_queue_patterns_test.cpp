@@ -73,6 +73,7 @@ TEST_CASE("separate reference implementations contribute queue sources to one gr
             throw std::logic_error{"bid queue write was rejected during start"};
         }
     });
+
     const auto ask_source = queue<TS<i64>>(start = [](Queue queue) {
         if (!queue.write(::literal::TimeSeriesLiteral(i64{2}))) {
             throw std::logic_error{"ask queue write was rejected during start"};
@@ -80,6 +81,7 @@ TEST_CASE("separate reference implementations contribute queue sources to one gr
     });
 
     const auto bid_impl = graph("name"_n = "queued_bid_impl", [&] { return bid_source(); });
+
     const auto ask_impl = graph("name"_n = "queued_ask_impl", [&] { return ask_source(); });
 
     auto catalogue = ServiceCatalogue{};
@@ -87,6 +89,7 @@ TEST_CASE("separate reference implementations contribute queue sources to one gr
     catalogue.register_impl(ask, ask_impl);
 
     const auto spread = node([](i64 bid, i64 ask) { return bid + ask; });
+
     const auto tested = [&] { return spread(bid(), ask()); };
 
     CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}).equals<i64>({42}));
@@ -112,9 +115,11 @@ TEST_CASE("subscription clients select their values from a queue-backed service"
     catalogue.register_impl(quotes, implementation);
 
     const auto key = node<FinalKeySource<i64>>();
+
     const auto copy = node([](In<TSL<TS<i64>, 2>> values, Out<TSL<TS<i64>, 2>> output) {
         output.copy_tick(values);
     });
+
     const auto tested = [&] { return copy(tsl(quotes(key(7)), quotes(key(8)))); };
 
     CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue})
@@ -146,8 +151,11 @@ TEST_CASE("switching between queue-backed subscriptions follows the selected key
     catalogue.register_impl(quotes, implementation);
 
     const auto key = node<FinalKeySource<i64>>();
+
     const auto key_seven = graph("name"_n = "subscribe_to_seven", [&](wp<TS<bool>>) { return quotes(key(7)); });
+
     const auto key_eight = graph("name"_n = "subscribe_to_eight", [&](wp<TS<bool>>) { return quotes(key(8)); });
+
     const auto tested = [&](wp<TS<bool>> select_seven) {
         return switch_(select_seven,
                        cases{case_(true, key_seven), case_(false, key_eight)},
@@ -174,12 +182,15 @@ TEST_CASE("mapped service clients observe queue updates through one shared imple
     catalogue.register_impl(feed, implementation);
 
     const auto add = node([](i64 value, i64 tick) { return value + tick; });
+
     const auto add_feed = graph("name"_n = "add_feed_to_value", [&](wp<TS<i64>> value) {
         return add(value, feed());
     });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> values, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(values);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) { return copy(map(add_feed, values)); };
 
     CHECK(run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 1}, {2, 2}}})
@@ -254,9 +265,11 @@ TEST_CASE("mapped request clients receive their queue replies under the original
     const auto client = graph("name"_n = "mapped_double_client", [&](wp<TS<i64>> value) {
         return double_value(value);
     });
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> values, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(values);
     });
+
     const auto tested = [&](wp<TSD<i64, TS<i64>>> values) { return copy(map(client, values)); };
 
     const auto actual = run_graph(tested, GraphRunOptions{.services = &catalogue}, {{{1, 2}, {2, 3}}});
