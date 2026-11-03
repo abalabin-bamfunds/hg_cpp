@@ -320,7 +320,8 @@ auto invoke_map_function(const TypeMap &type_map, SelectOverload &&select_overlo
         auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
         (void)resolve_map_call(Builder::name, call);
         throw WiringError{std::string{"a "} + Builder::name +
-                          " graph function requires typed TSD or TSS arguments; use a graph template with wp<>"};
+                          " graph function requires typed TSD, TSS, or scalar Dict arguments; "
+                          "use a graph template with wp<>"};
     } else {
         using StoredFunction = std::decay_t<Function>;
         auto stored_function = StoredFunction{std::forward<Function>(function)};

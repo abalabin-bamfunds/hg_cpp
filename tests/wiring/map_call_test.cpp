@@ -1,7 +1,11 @@
 #include <hg/graph.hpp>
 #include <hg/map.hpp>
 #include <hg/node.hpp>
+#include <hg/scalar/opaque.hpp>
 #include <hg/testing/test_wiring.hpp>
+#include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/type/time_series_reference_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 #include <catch2/matchers/catch_matchers.hpp>
@@ -43,6 +47,22 @@ TEST_CASE("map callable traits normalize named dictionary, key-set, and pass-thr
     static_assert(std::same_as<typename PassThroughTraits::parameter_type, ExpectedPassThroughParameter>);
 }
 
+TEST_CASE("map keeps ordinary item guarantees for scalar Dict values without equality",
+          "[feature:map][feature:wiring][series:value][series:tsd][scalar:opaque][guarantee:ordinary]") {
+    const auto values = node([](Out<TS<Dict<i64, Opaque<i64>>>>) {});
+    const auto identity = graph("name"_n = "identity_opaque_dictionary_item",
+                                [](wp<TS<Opaque<i64>>> value) { return value; });
+
+    testing::test_wiring([&] {
+        const auto result = map(identity, values());
+        const auto &dictionary = type_cast<TimeSeriesDictionaryType>(result.type());
+        const auto &item_reference = type_cast<TimeSeriesReferenceType>(dictionary.value_type());
+        const auto &item = type_cast<TimeSeriesValueType>(item_reference.target_type());
+
+        CHECK(item.guarantee().value() == TimeSeriesGuarantee::ordinary);
+    });
+}
+
 TEST_CASE("map validates collection key types for every graph form",
           "[feature:map][feature:wiring][feature:type-system][series:tsd]"
           "[definition:function][definition:runtime]") {
@@ -56,9 +76,9 @@ TEST_CASE("map validates collection key types for every graph form",
 
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(map(function, integers(), booleans()),
-                          "all map TSD and TSS arguments must have the same key type");
+                          "all map TSD, scalar Dict, and TSS arguments must have the same key type");
         CHECK_THROWS_WITH(map(graph_template, integers(), booleans()),
-                          "all map TSD and TSS arguments must have the same key type");
+                          "all map TSD, scalar Dict, and TSS arguments must have the same key type");
 
         const auto arguments = std::array{
             MapArgument{WiringArgument{integers()}},
@@ -66,7 +86,7 @@ TEST_CASE("map validates collection key types for every graph form",
         };
         const WiringTemplate &runtime_graph = graph_template;
         CHECK_THROWS_WITH(map(runtime_graph, std::span<const MapArgument>{arguments}),
-                          "all map TSD and TSS arguments must have the same key type");
+                          "all map TSD, scalar Dict, and TSS arguments must have the same key type");
     });
 }
 

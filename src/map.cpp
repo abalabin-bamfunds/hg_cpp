@@ -10,9 +10,12 @@
 #include <hg/node/node_template.hpp>
 #include <hg/scalar/type.hpp>
 #include <hg/scalar/value.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
 #include <hg/time_series/time_series_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 #include <hg/time_series/tsb/details/wiring.hpp>
 #include <hg/time_series/tsb/tsb_type.hpp>
+#include <hg/time_series/tsd/details/dict_conversion.hpp>
 #include <hg/type/time_series_bundle_type.hpp>
 #include <hg/type/time_series_dict_type.hpp>
 #include <hg/type/time_series_reference_type.hpp>
@@ -47,6 +50,22 @@ class MapCallResolver {
         }
 
         return &static_cast<const TimeSeriesType &>(argument.value.type()).target_type();
+    }
+
+    static const DictScalarType *dictionary_scalar(const TimeSeriesType &type) {
+        const auto *value = type_cast<TimeSeriesValueType>(&type);
+        return value == nullptr ? nullptr : type_cast<DictScalarType>(&value->value_type());
+    }
+
+    static const ScalarType *key_type(const TimeSeriesType &type) {
+        if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
+            return &dictionary->key_type();
+        }
+        if (const auto *set = type_cast<TimeSeriesSetType>(&type)) {
+            return &set->item_type();
+        }
+        const auto *dictionary = dictionary_scalar(type);
+        return dictionary == nullptr ? nullptr : &dictionary->key_type();
     }
 
     MapArgumentSelector selector(const WiringArgument &argument) const {
@@ -132,18 +151,14 @@ class MapCallResolver {
                 return;
             }
 
-            const ScalarType *candidate{};
-            if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(type)) {
-                candidate = &dictionary->key_type();
-            } else if (const auto *set = type_cast<TimeSeriesSetType>(type)) {
-                candidate = &set->item_type();
-            } else {
+            const auto *candidate = key_type(*type);
+            if (candidate == nullptr) {
                 return;
             }
 
             if (result_.key_type != nullptr && result_.key_type != candidate) {
                 throw WiringError{std::string{"all "} + operation_ +
-                                  " TSD and TSS arguments must have the same key type"};
+                                  " TSD, scalar Dict, and TSS arguments must have the same key type"};
             }
             result_.key_type = candidate;
         };
@@ -156,7 +171,7 @@ class MapCallResolver {
         }
 
         if (result_.key_type == nullptr) {
-            throw WiringError{std::string{"a "} + operation_ + " call requires a TSD or TSS argument"};
+            throw WiringError{std::string{"a "} + operation_ + " call requires a TSD, scalar Dict, or TSS argument"};
         }
         if (!result_.key_type->is_resolved()) {
             throw WiringError{std::string{"a "} + operation_ + " call requires a concrete key type"};
@@ -177,11 +192,14 @@ class MapCallResolver {
         const auto *type = collection_type(argument);
         const auto *dictionary = type == nullptr ? nullptr : type_cast<TimeSeriesDictionaryType>(type);
         const auto *set = type == nullptr ? nullptr : type_cast<TimeSeriesSetType>(type);
-        if (dictionary == nullptr && set == nullptr) {
-            throw WiringError{"__key_set_arg__ must select a mapped TSD or a TSS"};
+        const auto *scalar_dictionary = type == nullptr ? nullptr : dictionary_scalar(*type);
+        if (dictionary == nullptr && set == nullptr && scalar_dictionary == nullptr) {
+            throw WiringError{"__key_set_arg__ must select a mapped TSD, scalar Dict, or a TSS"};
         }
 
-        const auto &selected_key = dictionary != nullptr ? dictionary->key_type() : set->item_type();
+        const auto &selected_key = dictionary != nullptr ? dictionary->key_type()
+                                   : set != nullptr       ? set->item_type()
+                                                          : scalar_dictionary->key_type();
         if (&selected_key != result_.key_type) {
             throw WiringError{std::string{"the selected "} + operation_ + " key set has a different key type"};
         }
@@ -257,6 +275,7 @@ GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedM
         .graph = std::move(built.graph),
         .outer_signature = std::move(built.outer_signature),
         .outer_arguments = std::move(built.outer_arguments),
+        .dictionary_conversions = std::move(built.dictionary_conversions),
         .dictionary_key_set_parameter = built.dictionary_key_set_parameter,
     });
     return GraphArgument{std::move(structure), std::move(default_wiring)};
@@ -276,6 +295,10 @@ std::optional<WiringPoint> DefaultMapWiring::wire() const {
     const auto &owned = outer.own_node_template(std::move(node_template));
 
     auto arguments = outer_arguments;
+    for (const auto &conversion : dictionary_conversions) {
+        const auto input = arguments[conversion.parameter_index].time_series();
+        arguments[conversion.parameter_index] = WiringArgument{wire_dict_to_tsd(input, *conversion.output_type)};
+    }
     if (dictionary_key_set_parameter) {
         auto &key_set = arguments[*dictionary_key_set_parameter];
         const auto &key_set_type =

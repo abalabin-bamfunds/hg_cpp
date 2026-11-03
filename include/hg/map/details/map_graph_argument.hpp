@@ -21,6 +21,7 @@ struct MapGraphArgumentWiring {
     MapGraphWiring graph;
     ResolvedSignature outer_signature;
     std::vector<WiringArgument> outer_arguments;
+    std::vector<MapDictionaryConversion> dictionary_conversions;
     std::optional<std::size_t> dictionary_key_set_parameter;
 };
 

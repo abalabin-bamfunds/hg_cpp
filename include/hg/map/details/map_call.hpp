@@ -4,9 +4,11 @@
 #include <hg/graph/wiring_error.hpp>
 #include <hg/graph/wiring_point.hpp>
 #include <hg/map_argument.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
 #include <hg/time_series/time_series_type.hpp>
 #include <hg/time_series/tsd/tsd_type.hpp>
 #include <hg/time_series/tss/tss_type.hpp>
+#include <hg/type/time_series_value_type.hpp>
 #include <hg/util/named_argument.hpp>
 
 #include <concepts>
@@ -113,6 +115,14 @@ struct map_callable_reference_argument<Reference, TSD<K, Item, SeriesProperties.
     using key_type = K;
     using parameter_type = wp<REF<dereferenced_time_series_t<Item>, TimeSeriesGuarantee::ordinary>,
                               WiringProperties...>;
+
+    static constexpr bool key_set = false;
+};
+
+template <typename Reference, typename K, typename V, auto... SeriesProperties, auto... WiringProperties>
+struct map_callable_reference_argument<Reference, TS<Dict<K, V>, SeriesProperties...>, WiringProperties...> {
+    using key_type = K;
+    using parameter_type = wp<REF<TS<V>, TimeSeriesGuarantee::ordinary>, WiringProperties...>;
 
     static constexpr bool key_set = false;
 };

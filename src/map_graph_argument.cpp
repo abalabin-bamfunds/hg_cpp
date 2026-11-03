@@ -4,7 +4,9 @@
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/wiring_context.hpp>
 #include <hg/graph/wiring_template.hpp>
+#include <hg/scalar/dict/scalar_type.hpp>
 #include <hg/time_series/time_series_type.hpp>
+#include <hg/time_series/tsd/details/dict_conversion.hpp>
 #include <hg/type/time_series_dict_type.hpp>
 #include <hg/type/time_series_reference_type.hpp>
 #include <hg/type/time_series_value_type.hpp>
@@ -101,6 +103,7 @@ class MapGraphArgumentBuilder {
             .graph = std::move(graph),
             .outer_signature = std::move(signature),
             .outer_arguments = std::move(outer_arguments_),
+            .dictionary_conversions = std::move(dictionary_conversions_),
             .dictionary_key_set_parameter = dictionary_key_set_parameter_,
         };
     }
@@ -118,12 +121,32 @@ class MapGraphArgumentBuilder {
         return time_series_dictionary_type(dictionary.key_type(), reference, dictionary_guarantee);
     }
 
+    static const TimeSeriesDictionaryType *mapping_dictionary_type(const TimeSeriesType &type) {
+        if (const auto *dictionary = type_cast<TimeSeriesDictionaryType>(&type)) {
+            return dictionary;
+        }
+
+        const auto *value = type_cast<TimeSeriesValueType>(&type);
+        const auto *dictionary = value == nullptr ? nullptr : type_cast<DictScalarType>(&value->value_type());
+        if (dictionary == nullptr) {
+            return nullptr;
+        }
+
+        const auto source_guarantee = *type.guarantee().value();
+        const auto item_guarantee = strongest(
+            source_guarantee, dictionary->mapped_type().supports_equality() ? TimeSeriesGuarantee::deduplicated
+                                                                            : TimeSeriesGuarantee::ordinary);
+        const auto dictionary_guarantee = source_guarantee;
+        const auto &item_type = time_series_value_type(dictionary->mapped_type(), item_guarantee);
+        return &time_series_dictionary_type(dictionary->key_type(), item_type, dictionary_guarantee);
+    }
+
     std::size_t mapped_dictionary_count() const {
         const auto is_mapped_dictionary = [](const MapArgument &argument) {
             if (argument.pass_through || !argument.value.is_time_series()) {
                 return false;
             }
-            return type_cast<TimeSeriesDictionaryType>(&argument_time_series(argument.value)) != nullptr;
+            return mapping_dictionary_type(argument_time_series(argument.value)) != nullptr;
         };
 
         auto count = std::size_t{};
@@ -274,7 +297,9 @@ class MapGraphArgumentBuilder {
 
         const auto &supplied_type = static_cast<const TimeSeriesType &>(argument.type());
         const auto &supplied_target = supplied_type.target_type();
-        const auto *supplied_dictionary = type_cast<TimeSeriesDictionaryType>(&supplied_target);
+        const auto *supplied_dictionary = mapping_dictionary_type(supplied_target);
+        const auto *scalar_value = type_cast<TimeSeriesValueType>(&supplied_target);
+        const auto *scalar_dict = scalar_value == nullptr ? nullptr : type_cast<DictScalarType>(&scalar_value->value_type());
         const auto mapped = supplied_dictionary != nullptr && !supplied_argument.pass_through;
         const auto controls_lifetime = mapped && mapped_source_controls_lifetime(user_index);
         const auto *item_reference = mapped
@@ -291,7 +316,7 @@ class MapGraphArgumentBuilder {
             input_reference_guarantee =
                 weakest(input_reference_guarantee, *item_reference->guarantee().value());
         }
-        if (supplied_reference != nullptr) {
+        if (supplied_reference != nullptr && scalar_dict == nullptr) {
             input_reference_guarantee = weakest(input_reference_guarantee, supplied_reference->reference_limit());
         }
         const auto &input_reference = mapped
@@ -315,12 +340,16 @@ class MapGraphArgumentBuilder {
         }
 
         const auto parameter_index = parameters_.size();
-        if (mapped && supplied_reference != nullptr && call_.selected_key_set == user_index) {
+        if (mapped && call_.selected_key_set == user_index &&
+            (scalar_dict != nullptr || supplied_reference != nullptr)) {
             key_set_parameter_ = parameter_index;
+        }
+        if (mapped && scalar_dict != nullptr) {
+            dictionary_conversions_.push_back({parameter_index, supplied_dictionary});
         }
         const auto &mapped_type = mapped ? mapped_dictionary_type(*supplied_dictionary, input_reference_guarantee)
                                          : input_reference;
-        const auto &outer_type = mapped && supplied_reference != nullptr
+        const auto &outer_type = mapped && supplied_reference != nullptr && scalar_dict == nullptr
                                      ? mapped_type.with_guarantee_limit(supplied_reference->reference_limit())
                                      : mapped_type;
         parameters_.push_back({.name = argument_name(supplied_argument.value, parameter_index),
@@ -376,6 +405,7 @@ class MapGraphArgumentBuilder {
     std::vector<ResolvedParameter> parameters_;
     std::vector<WiringArgument> outer_arguments_;
     std::vector<MapInputBoundary> inputs_;
+    std::vector<MapDictionaryConversion> dictionary_conversions_;
     std::vector<WiringPoint> input_boundaries_;
     std::optional<std::size_t> key_parameter_;
     std::optional<std::size_t> key_input_node_;
