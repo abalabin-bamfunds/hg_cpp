@@ -83,6 +83,7 @@ add_executable(
     evaluation/time_series/tick_format_test.cpp
     evaluation/time_series/feedback_test.cpp
     evaluation/time_series/feedback_patterns_test.cpp
+    evaluation/time_series/feedback_alternatives_test.cpp
     evaluation/validity/input_activity_test.cpp
     evaluation/validity/invalidation_behavior_test.cpp
     evaluation/validity/optional_input_test.cpp
