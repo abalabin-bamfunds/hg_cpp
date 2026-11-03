@@ -106,6 +106,8 @@ The first reading produces no result because the offset is not available yet.
 The next offset update permits the calculation using that retained reading.
 [Optional inputs](../advanced-nodes/inputs.md#optional-inputs) permit evaluation
 without every input value.
+The [validity and activity guide](../advanced-nodes/inputs.md) also covers `all_valid`
+for complete collections and active/passive inputs for selecting evaluation triggers.
 
 ## Skipping publication
 

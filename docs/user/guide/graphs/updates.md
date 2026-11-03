@@ -388,7 +388,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 Repeated signals sample again even when the value is equal. A sample requires a
-valid current value. [Input activity](../advanced-nodes/inputs.md#activity) explains
+valid current value. [Input activity](../advanced-nodes/inputs.md#active-and-passive-inputs) explains
 how custom nodes express similar trigger rules.
 
 ## Selecting updates by count

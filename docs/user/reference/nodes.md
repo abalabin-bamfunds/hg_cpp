@@ -43,6 +43,11 @@ accept tuples of input names:
 | `valid=("reading",)` | Require a current value | Optional, unless selected by `all_valid` |
 | `all_valid=("items",)` | Require the root and every immediate item to be valid | Follow `valid` or the default |
 
+The [input validity and activity guide](../guide/advanced-nodes/inputs.md) explains
+when to choose required, optional, or `all_valid`, and how each combines with active
+or passive inputs. Its [request-driven example](../guide/advanced-nodes/inputs.md#active-and-passive-inputs)
+compares required and optional passive readings.
+
 Omitting `active` makes every time series input active. Omitting `valid` keeps
 annotation-derived validity: ordinary views are required, plain optional inputs
 permit absence. An explicit `valid` tuple replaces that selection. `all_valid`
@@ -75,12 +80,25 @@ can define `start`, `stop`, and `on_invalidation` callbacks. Fields such as
 `In<TS<i64>>` and `Out<TS<i64>>` provide access during callbacks. Aggregate callbacks
 can receive `EvaluationContext*`; callable node parameters do not currently expose it.
 
-`In<TS_T, ...>` requests a complete input view. Properties include `optional`,
-`all_valid`, `passive`, and a parameter name. `passive` suppresses scheduling by that
-input; it does not relax its validity requirement. `all_valid` requires the root and all
-immediate contained inputs to be valid. `make_active()` and `make_passive()` adjust a
-dynamic input's subscriptions during evaluation where supported by its declaration.
-Python selects these constraints with the decorator options above.
+To set either control on a C++ input view, add its property to `In<TS_T, ...>`:
+
+| Control | Declaration | Contract |
+| --- | --- | --- |
+| Required | `In<TS<i64>, required>` | Require root validity; this is the default |
+| Optional | `In<TS<i64>, optional>` | Permit an invalid input |
+| Complete collection | `In<TSL<TS<i64>, 2>, hg::all_valid>` | Require root and immediate-item validity |
+| Active | `In<TS<i64>, active>` | Input changes schedule evaluation; this is the default |
+| Passive | `In<TS<i64>, passive>` | Input changes do not schedule evaluation |
+
+Combine one validity property and one activity property, for example
+`In<TS<i64>, optional, passive>`. Property order has no meaning. `all_valid` checks
+immediate items rather than every descendant of a nested collection. A parameter
+name is independent of these controls. Python selects the same constraints with the
+decorator options above.
+
+For C++ inputs declared with `dynamic_activity`, `make_active()` and
+`make_passive()` adjust activity during callbacks without changing the validity
+constraint. See [input access](input-views.md).
 
 ## Scheduling and validity
 

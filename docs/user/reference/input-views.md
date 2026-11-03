@@ -11,13 +11,13 @@ and time queries along with its current value:
 | Query | Python | C++ |
 | --- | --- | --- |
 | Current value exists | `input.valid` | `input.valid()` |
-| Valid update in this evaluation | `input.modified` | `input.modified()` |
-| Last valid update time | `input.last_modified_time` | `input.last_updated()` |
+| Changed in this evaluation, including invalidation | `input.modified` | `input.modified()` |
+| Last change time, including invalidation | `input.last_modified_time` | `input.last_updated()` |
 | Current scalar value | `input.value` | `*input` or `input.value()` |
 | Current update | `input.delta_value` | Type-specific change access |
 
-Check validity before reading an optional input. `modified` is not an invalidation
-detector. On an unchanged valid scalar, current value access still returns its retained
+Check validity before reading an optional input, even when `modified` is true.
+On an unchanged valid scalar, current value access still returns its retained
 value; delta access has no new scalar update.
 
 Views, lazy values, and iterators expire when the callback returns. Materialize an
@@ -80,87 +80,7 @@ being read rather than inferring it from the presence of a reference object.
 
 ## Requiring complete items
 
-If a partial record cannot produce a correct result, use `all_valid` to prevent
-evaluation until the collection root and every immediate item are valid.
-A valid root alone permits missing child values.
-
-<!-- runnable-example -->
-::::::{tab-set}
-:sync-group: language
-
-:::::{tab-item} Python
-:sync: python
-
-```python
-from hgraph import INVALID, TS, TSL, compute_node, graph, run_graph
-
-@compute_node(all_valid=("values",))
-def total(values: TSL[TS[int], 2]) -> TS[int]:
-    return sum(item.value for item in values)
-
-@graph
-def complete_total(values: TSL[TS[int], 2]) -> int:
-    return total(values)
-
-print(run_graph(complete_total, [{0: 10}, {1: 20}, {0: INVALID}, {0: 5}]))
-```
-
-Output:
-
-```text
-[None, 30, None, 25]
-```
-:::::
-
-:::::{tab-item} C++
-:sync: cpp
-
-::::{tab-set}
-
-:::{tab-item} Code
-
-```cpp
-#include <hg/library.hpp>
-#include <hg/node.hpp>
-#include <hg/run_graph.hpp>
-#include <iostream>
-
-using namespace hg;
-using namespace hg::operators;
-using namespace literal;
-
-const auto total = node([](In<TSL<TS<i64>, 2>, hg::all_valid> values) {
-    return *values[0] + *values[1];
-});
-
-auto complete_total(wp<TSL<TS<i64>, 2>> values) {
-    return total(values);
-}
-
-int main() {
-    const auto result = run_graph(complete_total, {{{0, 10}}, {{1, 20}}, {{0, INVALID}}, {{0, 5}}});
-    std::cout << result << '\n';
-}
-```
-
-Output:
-
-```text
-[None, 30, None, 25]
-```
-:::
-
-:::{tab-item} Build and run
-
-The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
-
-```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
-cmake --build build --config Release
-```
-
-Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
-:::
-::::
-:::::
-::::::
+If a partial record cannot produce a correct result, use `all_valid` to require
+the root and every immediate item to be valid. This constraint does not recursively
+check every descendant. The [complete-item guide](../guide/advanced-nodes/inputs.md#requiring-complete-items)
+provides a Python and C++ example with partial updates, invalidation, and recovery.
