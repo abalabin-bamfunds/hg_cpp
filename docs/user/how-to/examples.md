@@ -6,8 +6,8 @@ to its required HG targets. Each download contains a complete program.
 
 Python files use an [installed HG package](../guide/installation.md). For a C++
 archive, extract it and use the **Build and run** instructions in its README.
-The [example project](../guide/installation.md#c-example-project)
-explains the CMake installation prefix.
+The [C++ example project](../guide/installation.md#c-example-project)
+shows how to locate the SDK installed by pip.
 
 These examples use finite inputs and print their result. The application
 recipes combine several operations:

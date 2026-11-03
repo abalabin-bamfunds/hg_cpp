@@ -48,6 +48,11 @@ Each C++ tab contains nested **Code** and **Build and run** tabs. The first show
 source and expected output; the second links to the example project and gives build
 commands. Existing chapters provide the full directive structure.
 
+Both languages use the `hg-cpp` installation documented on the installation page.
+Core C++ examples use its site-packages directory as the CMake prefix. Keep the project
+setup inside the installation page's C++ tab; link to it from individual examples.
+Extension examples state their additional source or installed-target requirements.
+
 Mark pages containing complete examples with `<!-- runnable-example -->`.
 Place `Output:` and a fenced `text` block immediately after each runnable source
 block. Signature fragments omit an output block and are not executed. Use

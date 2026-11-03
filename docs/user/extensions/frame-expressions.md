@@ -126,7 +126,7 @@ Output:
 The [C++ example project](index.md#frame) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install -DHG_SOURCE_DIR=/path/to/hg
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages" -DHG_SOURCE_DIR=/path/to/hg
 cmake --build build --config Release
 ```
 

@@ -1,100 +1,19 @@
 # Activity and dependency patterns
 
-Input activity determines which updates schedule a calculation. Source selection
-can also change which dependencies a calculation follows.
+Dependency controls separate maintaining a value from deciding when to use it.
+They support request-driven publication, selected sources, and calculations that depend
+on other keys. Input activity determines which updates schedule a calculation.
 
 ## Explicit triggers
 
-`sample` reads a current value when a signal updates. The value remains a dependency,
-but its updates alone do not publish a sample.
-
-<!-- runnable-example -->
-::::::{tab-set}
-:sync-group: language
-
-:::::{tab-item} Python
-:sync: python
-
-```python
-from hgraph import graph, run_graph
-from hgraph.operators import sample
-
-
-@graph
-def sampled_temperature(reading: int, signal: bool) -> int:
-    calibrated = reading + 2
-    return sample(signal, calibrated)
-
-
-print(run_graph(
-    sampled_temperature,
-    [18, 19, None, 20, 21, None],
-    [None, True, True, None, True, False],
-))
-```
-
-Output:
-
-```text
-[None, 21, 21, None, 23, 23]
-```
-:::::
-
-:::::{tab-item} C++
-:sync: cpp
-
-::::{tab-set}
-
-:::{tab-item} Code
-
-```cpp
-#include <hg/library.hpp>
-#include <hg/run_graph.hpp>
-
-#include <iostream>
-
-using namespace hg;
-using namespace hg::operators;
-using namespace literal;
-
-auto sampled_temperature(wp<TS<i64>> reading, wp<TS<bool>> signal) {
-    const auto calibrated = reading + 2;
-    return sample(signal, calibrated);
-}
-
-int main() {
-    const auto result = run_graph(
-        sampled_temperature,
-        {18, 19, SKIP, 20, 21, SKIP},
-        {SKIP, true, true, SKIP, true, false});
-    std::cout << result << '\n';
-}
-```
-
-Output:
-
-```text
-[None, 21, 21, None, 23, 23]
-```
-:::
-
-:::{tab-item} Build and run
-
-The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
-
-```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
-cmake --build build --config Release
-```
-
-Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
-:::
-::::
-:::::
-::::::
+A dashboard may need to publish on request while its source values keep changing.
+`sample(signal, value)` reads the current value when the signal updates. The
+[sampling example](../graphs/updates.md#signal-driven-publication) shows which updates
+publish; [running summaries on request](../../how-to/requested-summary.md) combines
+sampling with retained statistics.
 
 A custom node expresses this with an active signal and a passive value input.
-[Node input controls](../advanced-nodes/inputs.md#activity) defines those declarations.
+[Node input controls](../advanced-nodes/inputs.md#activity) gives the declarations.
 Activity controls scheduling; validity controls whether evaluation is permitted.
 
 ## Selected dependencies
@@ -192,7 +111,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -297,7 +216,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

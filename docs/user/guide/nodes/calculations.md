@@ -1,12 +1,14 @@
 # Calculation nodes
 
-A node implements a calculation unavailable in the library. Node code receives
-current values and can use ordinary language control flow and helper functions.
+A node connects application-specific value calculations to graph inputs. It lets an
+existing Python or C++ function participate in graph evaluation: HG supplies current
+input values and publishes the returned result.
 
 ## Value calculations
 
-Python `@node` declares plain value inputs and a result. C++ `node(callable)` infers
-them from the callable's signature.
+`node(callable)` wraps an ordinary value callable. The callable keeps its native
+`if`, loops, and helper calls. Python `@node` is the decorator form of the same
+declaration; C++ infers inputs and the result from the callable's signature.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -18,15 +20,16 @@ them from the callable's signature.
 ```python
 from hgraph import graph, node, run_graph
 
-@node
 def correct(reading: int) -> int:
     if reading < 0:
         return 0
     return reading + 2
 
+correct_node = node(correct)
+
 @graph
 def temperature(reading: int) -> int:
-    return correct(reading)
+    return correct_node(reading)
 
 print(run_graph(temperature, [18, -3, None, 19]))
 ```
@@ -47,7 +50,6 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/graph.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
@@ -56,19 +58,21 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-const auto correct = node([](i64 reading) {
+const auto correct = [](i64 reading) {
     if (reading < 0) {
         return i64{0};
     }
     return reading + 2;
-});
+};
+
+const auto correct_node = node(correct);
 
 auto temperature(wp<TS<i64>> reading) {
-    return correct(reading);
+    return correct_node(reading);
 }
 
 int main() {
-    const auto result = run_graph(graph(temperature), {18, -3, SKIP, 19});
+    const auto result = run_graph(temperature, {18, -3, SKIP, 19});
     std::cout << result << '\n';
 }
 ```
@@ -85,7 +89,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -187,7 +191,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

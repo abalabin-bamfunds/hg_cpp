@@ -4,9 +4,9 @@ To expose a native graph operation to Python, export its operator from a
 nanobind module linked to `hg::python`. The same native overloads can then serve
 C++ and Python graph code.
 
-Prerequisites: a HG installation built with the Python component, the same
-Python environment used to build it, and nanobind. This example exposes the
-existing `const_` operator and requires no new scalar conversions.
+Prerequisites: the [installed `hg-cpp` SDK](../guide/installation.md), its Python
+environment, and nanobind. This example exposes the existing `const_` operator and
+requires no new scalar conversions.
 
 ::::::{tab-set}
 :sync-group: language
@@ -64,12 +64,12 @@ nanobind_add_module(sensor_native NB_SHARED sensor_native.cpp)
 target_link_libraries(sensor_native PRIVATE hg::python hg::library)
 ```
 
-Use the HG installation and the selected environment's nanobind CMake directory
-in `CMAKE_PREFIX_PATH`. With `sensor_native.cpp` and `CMakeLists.txt` in the
-current directory, configure and build:
+Use the [pip SDK prefix](../guide/installation.md#c-example-project) in
+`CMAKE_PREFIX_PATH`. With `sensor_native.cpp` and `CMakeLists.txt` in the current
+directory, configure and build:
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install -DPython_EXECUTABLE=/path/to/python
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages" -DPython_EXECUTABLE=/path/to/python
 cmake --build build --config Release
 ```
 
@@ -77,7 +77,7 @@ The HG Python component finds nanobind in the selected Python environment.
 Put the module's output directory on `PYTHONPATH` before running the Python
 example; multi-configuration generators place it under `build/Release`.
 Use the same Python interpreter and compatible compiler as the HG installation.
-On Windows, import `hg` before the native module to register the wheel's DLL directories.
+On Windows, import `hgraph` before the native module to register the wheel's DLL directories.
 :::
 ::::
 :::::

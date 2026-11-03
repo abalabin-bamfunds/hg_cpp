@@ -1,8 +1,9 @@
 # Time series types
 
-Plain value annotations are sufficient for ordinary calculations. Explicit time
-series types are required when a connection must express collection shape,
-publication constraints, or reference behavior.
+Plain value annotations are sufficient for ordinary calculations. Explicit time series
+types distinguish a complete snapshot from independently changing items, and a value
+from a reference that can follow different sources. They also express publication
+contracts such as a value that cannot change.
 
 ## Values and time series
 
@@ -18,8 +19,10 @@ past values. `TS[T]` in Python and `TS<T>` in C++ describe a time series value o
 
 ## Validity
 
-A time series is valid when it has a current value. Invalidation removes that value.
-Skipping an update preserves it. `valid` exposes availability as a Boolean result.
+An input may not have arrived yet, or its source may withdraw its value. Validity lets
+a graph distinguish those states from a valid zero or empty collection. A time series
+is valid when it has a current value. Invalidation removes that value; skipping an
+update preserves it. `valid` exposes availability as a Boolean result.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -85,7 +88,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -189,7 +192,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

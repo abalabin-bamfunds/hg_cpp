@@ -1,12 +1,14 @@
 # Input views and controls
 
-Input views expose current values, validity, and update information. Use them when
-plain values cannot express the calculation's input requirements.
+Input views support calculations that need to distinguish a new event from a retained
+value, handle unavailable inputs, or choose which input schedules evaluation. A plain
+value parameter is sufficient when the calculation only needs the current value.
 
 ## Update information
 
-Python `@compute_node` passes a view for each time series parameter. C++
-`In<TS<T>>` requests the corresponding view.
+Update information lets a node handle a new input event differently from a value
+retained from an earlier evaluation. Python `@compute_node` passes a view for each
+time series parameter. C++ `In<TS<T>>` requests the corresponding view.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -79,7 +81,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -177,7 +179,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -265,7 +267,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -283,8 +285,9 @@ shows a partial input becoming complete, losing an item value, and recovering.
 
 ## Activity
 
-An active input schedules evaluation when it changes. A passive input supplies its
-current state when another input or a timer schedules evaluation.
+A request-driven node needs the latest reading without evaluating on every reading
+update. An active input schedules evaluation when it changes. A passive input supplies
+its current state when another input or a timer schedules evaluation.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -357,7 +360,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

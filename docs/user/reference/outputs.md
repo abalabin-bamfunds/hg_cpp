@@ -7,7 +7,8 @@ constraints.
 ## Returned values
 
 Python nodes publish by returning a scalar or collection delta. `None` leaves the output
-unchanged; `INVALID` invalidates supported types. C++ callable nodes publish returned
+unchanged. Python callbacks currently cannot return `INVALID` to invalidate an output.
+C++ callable nodes publish returned
 scalars; a disengaged `std::optional<T>` leaves output unchanged. No update preserves
 availability as well as the value.
 
