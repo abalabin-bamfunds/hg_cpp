@@ -591,6 +591,10 @@ name. Conversion to a scalar collection requires a valid root and valid immediat
 items. The [shape-conversion example](../guide/advanced-graphs/types.md#converting-collection-shapes)
 shows both languages.
 
+For scalar Dict to TSD conversion, request `deduplicated` on the TSD or its
+items to suppress unchanged output updates without deduplicating the input Dict.
+An omitted output guarantee retains the input guarantee.
+
 To present several existing connections as one collection, use `combine[OUT](...)`.
 It constructs a fixed TSL from positional time series or a TSB from named time series.
 Items alias the supplied sources and retain their validity and change information.

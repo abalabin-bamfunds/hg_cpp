@@ -83,10 +83,11 @@ The built-in overloads convert between `i64` and `double`. Converting `double`
 to `i64` truncates toward zero; NaN raises `domain_error`, and infinities or
 values outside the `i64` range raise `overflow_error`. The public operator
 accepts overloads for other source time-series types, including collections;
-each overload's output must be compatible with the requested result type. The
-requested type checks compatibility and does not replace the overload's
-inferred output guarantee. See [collection conversion](#collection-conversion-and-construction)
-for the collection overloads.
+each overload's output must be compatible with the requested result type.
+Usually the requested type only checks compatibility; scalar Dict to TSD
+conversion also uses its requested root and item guarantees. See
+[collection conversion](#collection-conversion-and-construction) for the
+collection overloads.
 
 Required operands gate evaluation. Their invalidation invalidates the result,
 and revalidation permits another calculation. Equal results from ordinary
@@ -146,8 +147,11 @@ Bundle-to-TSB conversion resolves field indices during wiring.
 
 Conversions to scalar collections or a scalar Bundle require a valid root and
 valid immediate time series items. Other conversions require a valid source
-value. Each conversion propagates the weakest observed input guarantee. The
-requested result must accept that guarantee. Publication and invalidation use
+value. Conversions propagate the weakest observed input guarantee by default.
+Scalar Dict to TSD conversion can instead request `deduplicated` on the TSD
+root or its items. The scalar Dict input keeps its guarantee; the TSD output
+applies the requested guarantee during normal item mutation. Each requested
+result must accept the resolved output type. Publication and invalidation use
 the destination's normal mutation rules.
 
 `combine[OUT](...)` constructs a free fixed TSL from positional time series
