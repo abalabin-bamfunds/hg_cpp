@@ -30,7 +30,8 @@ while `run` is true and stops it when `run` becomes false.
 
 Time series arguments cross the boundary as references. Scalar arguments become
 immutable data in the inner compiled graph. The node output is a reference to
-the graph output.
+the graph output. Output types follow the shared
+[graph output inference rules](graph-wiring.md#graph-templates).
 
 For a non-reference outer graph output `T`, the inner graph input has type
 `REF<T, const>`. It identifies that output for the inner graph's lifetime. An
