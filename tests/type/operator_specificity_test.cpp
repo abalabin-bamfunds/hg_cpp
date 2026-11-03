@@ -516,10 +516,10 @@ TEST_CASE("projected graph parameters ignore alternatives with different boundar
 TEST_CASE("extension predicates retain conservative function-identity ordering",
           "[feature:operator][feature:type-system][declaration:generic][scalar:generic]") {
     const auto accepts_any = +[](const ScalarType &) noexcept { return true; };
-    const auto also_accepts_any = +[](const ScalarType &) noexcept { return true; };
+    const auto accepts_resolved = +[](const ScalarType &type) noexcept { return type.is_resolved(); };
     const auto first = TypeVariableType<ScalarType>{util::symbol{"FIRST"}, {}, {accepts_any}};
     const auto same_predicate = TypeVariableType<ScalarType>{util::symbol{"SAME_PREDICATE"}, {}, {accepts_any}};
-    const auto other_predicate = TypeVariableType<ScalarType>{util::symbol{"OTHER_PREDICATE"}, {}, {also_accepts_any}};
+    const auto other_predicate = TypeVariableType<ScalarType>{util::symbol{"OTHER_PREDICATE"}, {}, {accepts_resolved}};
     const auto first_signature = Signature{util::symbol{"first"}, {{util::symbol{"value"}, &first}}};
     const auto same_signature = Signature{util::symbol{"same"}, {{util::symbol{"value"}, &same_predicate}}};
     const auto other_signature = Signature{util::symbol{"other"}, {{util::symbol{"value"}, &other_predicate}}};

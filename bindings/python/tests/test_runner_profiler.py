@@ -263,6 +263,7 @@ def test_run_graph_realtime_accepts_start_time_and_profile_recorder():
     _run_script(
         """
 import datetime
+import sys
 import hg
 
 default_observed = []
@@ -282,7 +283,11 @@ def default_graph() -> int:
 hg.run_graph(default_graph, engine=hg.EvaluationEngine.realtime, stop_token=default_stop.get_token())
 after = datetime.datetime.now(datetime.timezone.utc).replace(tzinfo=None)
 assert len(default_observed) == 1
-assert before <= default_observed[0] <= after
+# Python 3.12 on Windows samples the system clock at roughly 15.625 ms intervals.
+clock_tick = datetime.timedelta(
+    milliseconds=16 if sys.platform == "win32" and sys.version_info < (3, 13) else 0
+)
+assert before <= default_observed[0] <= after + clock_tick
 
 observed = []
 stop_source = hg.StopSource()

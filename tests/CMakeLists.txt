@@ -24,8 +24,6 @@ set_target_properties(test_shared_declarations_provider PROPERTIES WINDOWS_EXPOR
 add_executable(hg_declaration_identity_tests type/declaration_identity_test.cpp)
 target_link_libraries(hg_declaration_identity_tests PRIVATE hg::library Catch2::Catch2WithMain
                                                           test_shared_declarations_provider)
-target_compile_definitions(hg_declaration_identity_tests PRIVATE
-                           $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
 if(WIN32)
     add_custom_command(
         TARGET hg_declaration_identity_tests POST_BUILD
@@ -214,8 +212,6 @@ add_executable(
 target_link_libraries(hg_tests PRIVATE hg::hg Catch2::Catch2WithMain test_shared_schema_provider
                                       test_shared_literal_sentinel)
 target_compile_options(hg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj>)
-target_compile_definitions(hg_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
-
 if(WIN32)
     add_custom_command(
         TARGET hg_tests POST_BUILD
@@ -265,8 +261,6 @@ add_executable(
     library/tsd_transform_test.cpp)
 target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
 target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
-target_compile_definitions(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:CATCH_CONFIG_NO_CPP17_STRING_VIEW>)
-
 if(WIN32)
     add_custom_command(
         TARGET hg_library_tests POST_BUILD
@@ -292,6 +286,19 @@ if(WIN32)
     )
 endif()
 catch_discover_tests(hg_logging_initialization_tests DISCOVERY_MODE PRE_TEST)
+
+if(MSVC)
+    foreach(test_target hg_tests hg_library_tests hg_declaration_identity_tests hg_logging_initialization_tests)
+        target_compile_definitions(${test_target} PRIVATE CATCH_CONFIG_NO_CPP17_STRING_VIEW)
+        target_compile_options(${test_target} PRIVATE "/FI${CMAKE_CURRENT_SOURCE_DIR}/utils/msvc_catch_unique_name.hpp")
+        get_target_property(test_sources ${test_target} SOURCES)
+        foreach(test_source IN LISTS test_sources)
+            string(MAKE_C_IDENTIFIER "hg_${test_source}_" test_source_id)
+            set_property(SOURCE "${test_source}" APPEND PROPERTY COMPILE_DEFINITIONS
+                         "HG_TEST_SOURCE_ID=${test_source_id}")
+        endforeach()
+    endforeach()
+endif()
 
 find_package(Python3 3.13 COMPONENTS Interpreter QUIET)
 if(Python3_Interpreter_FOUND)
