@@ -1,12 +1,14 @@
 # Input views and controls
 
-Input views expose current values, validity, and update information. Use them when
-plain values cannot express the calculation's input requirements.
+If a node needs to know which input changed, handle a missing value, or choose which
+updates trigger evaluation, use input views and input controls. A plain value
+parameter remains enough when the calculation only needs the current value.
 
 ## Update information
 
-Python `@compute_node` passes a view for each time series parameter. C++
-`In<TS<T>>` requests the corresponding view.
+To handle a new event differently from a value retained from an earlier evaluation,
+request an input view and inspect its update information. Python `@compute_node`
+passes a view for each time series parameter, while C++ requests one with `In<TS<T>>`.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -79,7 +81,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -89,8 +91,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-`modified` reports a valid update in the current evaluation. Equal-valued updates
-are modified too. It is not a general invalidation detector.
+`modified` reports a valid update in the current evaluation, including an equal-valued
+update. It does not report every invalidation.
 
 | Information | Python | C++ |
 | --- | --- | --- |
@@ -101,8 +103,9 @@ are modified too. It is not a general invalidation detector.
 
 ## Optional inputs
 
-An optional input permits evaluation while it has no current value. Plain optional
-parameters are useful when only a fallback value is required.
+If a node can calculate without one of its inputs, make that input optional so its
+absence does not block evaluation. A plain optional parameter works well when you
+only need to substitute a fallback value.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -177,7 +180,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -187,13 +190,15 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-Zero is available. A skipped update preserves an available offset; it does not make
-that offset absent. Optionality does not schedule evaluation without another trigger.
+Zero is an available value, and skipping an update keeps any offset already supplied.
+Making an input optional allows evaluation while it is absent, but does not schedule
+the node without another trigger.
 
 ## Optional views
 
-Optional views retain their time series annotation. Check `.valid` or `.valid()`
-before accessing the value.
+If the node also needs update information from an optional input, use an optional
+view. It keeps the time series annotation and exposes validity, which you must check
+with `.valid` or `.valid()` before reading the value.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -265,7 +270,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -283,8 +288,10 @@ shows a partial input becoming complete, losing an item value, and recovering.
 
 ## Activity
 
-An active input schedules evaluation when it changes. A passive input supplies its
-current state when another input or a timer schedules evaluation.
+If a node should respond to requests while retaining the latest reading, make the
+request input active and the reading passive. Active input updates schedule
+evaluation; a passive input supplies its current state when another input or a
+timer schedules the node.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -357,7 +364,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -367,12 +374,14 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-The reading update at position 2 changes its retained value without evaluating the
-snapshot. The next request reads `19`. A required passive input still prevents
-evaluation while invalid. Activity and validity are independent controls.
+The reading update at position 2 changes the retained value without evaluating the
+snapshot, so the next request reads `19`. A required passive input still blocks
+evaluation while invalid: activity determines what schedules a node, while validity
+determines whether it can evaluate.
 
 ## View lifetime
 
-Views and their iterators expire when the callback returns. Store owning values in
-[state](state.md) when data must survive. [Input reference](../../reference/input-views.md)
-lists collection access and ownership rules.
+To keep data for a later evaluation, copy it into an owning value in
+[state](state.md). Views and their iterators expire when the callback returns;
+the [input reference](../../reference/input-views.md) covers collection access and
+ownership rules.

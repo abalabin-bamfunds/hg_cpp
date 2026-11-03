@@ -1,16 +1,17 @@
 # Operators and overloads
 
-An operator is a named graph callable with registered implementations. Use it when graph
-code should choose a node or graph implementation from supplied types. Use a direct node
-for one concrete calculation.
+If one operation needs different implementations for different input types, define
+an operator and register its node or graph implementations as overloads. A direct node
+is sufficient for one concrete calculation.
 
 ## Resolution
 
-A call binds positional and named arguments, resolves type variables, checks
-constraints, and selects a compatible overload. Exact scalar types matter; integer and
-floating-point operands do not implicitly mix. Required and optional parameter contracts
-also affect selection. A fixed-parameter overload is preferred over a variadic overload
-before type specificity is compared.
+To use an operation across supported types, call the operator and let HG select its
+implementation. Resolution binds positional and named arguments, resolves type
+variables, checks constraints, and selects a compatible overload. Exact scalar types
+matter; integer and floating-point operands do not implicitly mix. Required and optional
+parameter contracts also affect selection. A fixed-parameter overload is preferred
+over a variadic overload before type specificity is compared.
 
 Missing implementations, incompatible arguments, and ambiguous matches are construction
 errors. A failure reports the operator, argument types, candidate signatures, and
@@ -18,8 +19,8 @@ rejection context. See [errors](../how-to/errors.md).
 
 ## Extension
 
-C++ declares an operator prototype with `operator_` and registers implementations with
-`overload`:
+To add an operation or support another input type in C++, declare its prototype with
+`operator_` and register implementations with `overload`:
 
 ```cpp
 #include <hg/library.hpp>
@@ -48,9 +49,9 @@ explicit `convert` makes the resulting value type visible.
 
 ## Runtime dispatch
 
-Runtime dispatch selects an implementation from the concrete scalar types of valid
-inputs. Use it when a declared base type accepts derived values and each concrete
-type needs a different calculation. Value-based conditions use
+If a declared base type accepts derived values that need different calculations,
+use runtime dispatch to select an implementation from the concrete scalar types of
+valid inputs. Value-based conditions use
 [`switch_`](higher-order.md#switch_) instead.
 
 Python `@dispatch` declares a signature; `.overload` registers decorated node or graph
@@ -167,7 +168,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

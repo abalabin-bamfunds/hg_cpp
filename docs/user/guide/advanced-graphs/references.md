@@ -1,12 +1,14 @@
 # References and dynamic binding
 
-A time series reference identifies another time series. It allows a consumer to
-follow a selected source without copying each target value into a new source.
+If a calculation needs to follow a selected source as that source changes, use a
+time series reference. It identifies another time series, allowing the consumer to
+follow its updates without copying each target value into a new source.
 
 ## Selecting a changing source
 
-A changing dictionary key selects the source to follow. Target updates then reach
-the calculation even when the key does not change.
+To follow one item from a changing dictionary, select it with a changing key.
+The result follows that item's source, so later target updates reach the calculation
+even while the selected key stays the same.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -73,7 +75,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -92,9 +94,10 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Source identity and value updates
 
-`REF[TS[int]]` or `REF<TS<i64>>` declares a reference to an integer time series.
-The reference's value identifies its target. Retargeting and target value changes
-are separate events.
+If a node needs to inspect which source is selected, declare a reference input such
+as `REF[TS[int]]` or `REF<TS<i64>>`. An ordinary value input follows the target
+automatically, while the explicit reference exposes source identity separately
+from changes to the target's value.
 
 ```mermaid
 flowchart LR
@@ -104,17 +107,16 @@ flowchart LR
     ref --> calculation[+ 2]
 ```
 
-An ordinary value input follows the target automatically. An explicitly declared
-reference input observes the reference itself. `if_then_else`, dictionary selection,
-`map`, and `switch_` use references to connect selected or inner outputs.
+`if_then_else`, dictionary selection, `map`, and `switch_` use references to connect
+selected or inner outputs.
 
 ## Invalid and removed targets
 
-An existing target can become invalid without changing reference identity. A removed
-item no longer provides a valid value. Re-adding the selected key permits the value
-connection to recover.
+When following a selected item, check the target's availability before reading its
+value. The target can become invalid without changing reference identity, and a
+removed item no longer supplies a valid value. Re-adding the selected key allows
+the value connection to recover.
 
-Consumers must check the validity of the value they read. A reference object alone
-does not establish target validity. Callback views must not be retained after their
-callback. [Reference contracts](../../reference/types.md#references) specify binding
-and lifetime requirements.
+A reference object alone does not establish target validity, and its callback views
+must not be retained after the callback. The [reference contracts](../../reference/types.md#references)
+specify binding and lifetime requirements.

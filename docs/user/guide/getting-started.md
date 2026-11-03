@@ -1,12 +1,15 @@
 # Basic syntax
 
-These examples cover the syntax used in small graphs. Each example is complete;
-the linked chapters specify the behavior and additional forms.
+Graph code uses familiar Python or C++ expressions to describe calculations that HG
+keeps up to date as their inputs change. The [opening example](../index.md) compares
+this with an ordinary function call. The examples here cover the basic syntax, with
+links to the chapters that explain each feature in more detail.
 
 ## A fixed result
 
-A graph function connects calculations. `const_` supplies a fixed graph value;
-`run_graph` constructs and runs the graph and captures its output.
+If a calculation needs a known value, such as a fixed calibration or configuration
+setting, use `const_` to supply it. `run_graph` constructs the graph, evaluates its
+calculations, and captures the output so you can inspect the result.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -73,7 +76,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -83,14 +86,16 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-Python `@graph` declares the graph function and `-> int` declares its result type.
-C++ uses an ordinary function with an inferred return type. Python `print` and
-C++ `std::cout` display the captured output as a list.
+In Python, `@graph` declares the graph function and `-> int` gives its result type;
+C++ uses an ordinary function and infers the return type. Both examples print the
+captured updates as a list, using Python `print` or C++ `std::cout`.
 
 ## Expressions
 
-Arithmetic on graph values connects calculations. Native arithmetic on language
-literals, such as `18 + 2`, runs while the graph function executes.
+To derive a result from a graph input, use arithmetic expressions much as you would
+with ordinary values. HG records the calculation and its dependencies so the result
+can update with its inputs. An expression using only native literals, such as `18 + 2`,
+still computes immediately while the graph is being constructed.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -161,7 +166,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -175,8 +180,9 @@ See [expressions and composition](graphs/composition.md#expressions).
 
 ## Graph functions
 
-Parameters let a graph function reuse a calculation. Calling it from another graph
-function adds its calculations to the same graph.
+If several parts of an application need the same calculation, put it in a graph
+function. Each call connects that calculation to the supplied inputs and fixed
+configuration, just as an ordinary function call reuses value code.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -254,7 +260,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -268,8 +274,9 @@ See [graph functions](graphs/composition.md#graph-functions).
 
 ## Changing inputs
 
-A sequence passed to `run_graph` supplies successive input updates. `None` in Python
-and `SKIP` in C++ mean that the input has no update at that position.
+To see how a calculation responds to new readings, pass a sequence of input updates
+to `run_graph`. The graph keeps its connections and updates the result as each reading
+arrives; `None` in Python and `SKIP` in C++ leave the input unchanged at that position.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -328,10 +335,10 @@ auto display_temperature(wp<TS<i64>> reading) {
 }
 
 int main() {
-using namespace literal;
+    using namespace literal;
 
-const auto result = run_graph(display_temperature, {18, SKIP, 18, 19});
-std::cout << result << '\n';
+    const auto result = run_graph(display_temperature, {18, SKIP, 18, 19});
+    std::cout << result << '\n';
 }
 ```
 
@@ -347,7 +354,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -363,8 +370,10 @@ input connection carrying 64-bit integers. See [input sequences](graphs/updates.
 
 ## Conditionals
 
-A changing condition needs a graph operation. `if_then_else` selects one input's
-current value; both input calculations remain part of the graph.
+If a result needs to choose between values as a condition changes, use
+`if_then_else`. The example caps a reading at a fixed limit, choosing again whenever
+the reading changes. Both input calculations remain connected; native `if` chooses
+connections only while the graph is being constructed.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -435,7 +444,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -450,8 +459,9 @@ forwarding, fallbacks, and selecting graph instances with `switch_`.
 
 ## Calculation nodes
 
-Node code receives current values. Native `if`, loops, and helper functions work
-on those values during evaluation.
+When a calculation needs application logic that the library does not provide, write
+a node. Its callback receives current values, so you can use ordinary `if` statements,
+loops, and helper functions while the graph evaluates.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -530,7 +540,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

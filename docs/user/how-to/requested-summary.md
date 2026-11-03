@@ -1,8 +1,8 @@
 # Running summaries on request
 
-To refresh a dashboard only when requested while retaining every sensor reading
-in its statistics, calculate the running mean before sampling it. Reading
-updates maintain the mean; request updates publish its current value.
+If a dashboard should refresh only on request while its statistics include every
+sensor reading, calculate the running mean before sampling it. Readings keep the mean
+current, and each request publishes that current result.
 
 Prerequisites: [Sampling](../guide/graphs/updates.md#signal-driven-publication),
 [running calculations](../guide/graphs/aggregation.md#running-totals-and-means).

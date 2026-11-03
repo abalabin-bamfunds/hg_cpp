@@ -1,14 +1,16 @@
 # HTTP authentication
 
-Server policies control whether a request can start its handler graph. Client
-credentials supply authentication for requests to a registered origin. Both are graph
-calculations, so they can depend on changing graph inputs and services.
+If a route needs to identify its caller or a client needs credentials for a remote
+service, use server policies and client authentication scopes. Both use graph
+calculations, so authorization and credentials can depend on changing inputs and
+services.
 
 ## Authorizing a route
 
-A policy is a service that takes an `HttpServerRequest` and returns an
-`AuthDecision[User]`. Acceptance supplies a typed identity; rejection supplies an HTTP
-response. Register the service implementation in the same catalogue as the listener.
+To decide whether a request may start its handler graph, attach a policy service
+that takes `HttpServerRequest` and returns `AuthDecision[User]`. Acceptance supplies
+a typed identity and rejection supplies an HTTP response; register the policy
+implementation in the listener's catalogue.
 
 ::::{tab-set}
 :sync-group: language
@@ -80,8 +82,9 @@ auto denied = auth::reject<i64>(response.view());
 ::::
 
 
-`http_handler(..., policy=policy)` in Python, or `http_handler(path, handler, policy)`
-in C++, adds the identity as the handler's second input. Remaining inputs still come
+To make an accepted caller's identity available to the handler, use
+`http_handler(..., policy=policy)` in Python or `http_handler(path, handler, policy)`
+in C++. The identity becomes the handler's second input; remaining inputs still come
 from the route call. While the policy has no decision, the per-request handler waits.
 A rejection completes the request without starting that handler.
 
@@ -93,12 +96,11 @@ route wiring.
 
 ## Supplying client credentials
 
-`register_client_transports(catalogue, scope)` installs transports sharing an
-authentication scope. Use it in place of the standalone client implementations.
-It installs HTTP and WebSocket in both Python and C++.
-`register_client_auth(scope, origin, graph, ...)` associates an origin with a
-credential graph. The graph receives the normalized origin and any supplied ambient
-arguments. It returns `TS[Auth]` or a supported derived authentication type.
+If HTTP and WebSocket clients need credentials for registered origins, install them
+with `register_client_transports(catalogue, scope)` in place of standalone client
+implementations. In either language, `register_client_auth(scope, origin, graph, ...)`
+associates an origin with a credential graph that receives the normalized origin
+and any ambient arguments, then returns `TS[Auth]` or a supported derived type.
 
 ::::{tab-set}
 :sync-group: language
@@ -164,9 +166,10 @@ GSSAPI or Windows SSPI support; the application supplies and renews platform cre
 
 ## Origin matching and updates
 
-Origins use `http`, `https`, `ws`, or `wss`. Normalization lowercases the scheme and
-host and removes the default port. An absent path and `/` identify the same origin;
-other paths, credentials, queries, and fragments are rejected. HTTP and WebSocket
+To scope credentials to a destination, register its origin with scheme `http`,
+`https`, `ws`, or `wss`. Normalization lowercases the scheme and host and removes
+the default port; an absent path and `/` identify the same origin. Other paths,
+embedded credentials, queries, and fragments are rejected, and HTTP and WebSocket
 origins remain distinct.
 
 An exact registration takes precedence over a regular expression. Use Python

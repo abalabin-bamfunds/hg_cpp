@@ -1,24 +1,26 @@
 # Graph instances and collections
 
-Higher-order operations create runtime graph instances. Their state, timers, and
-lifecycle belong to those instances. Use ordinary graph calls when a runtime boundary is
-not required. C++ graph arguments need a concrete output type. Use
+When each item or selected case needs its own state, timers, or lifecycle, use an operation that
+creates runtime graph instances. Each instance owns those resources. Use ordinary graph calls when a
+runtime boundary is not required. C++ graph arguments need a concrete output type. Use
 `.as<TS<T>>()` when a library expression returns an untyped connection.
 
-Python imports `map`, `mesh`, `switch_`, `reduce`, and `pass_through` from `hg`. C++ imports
+Python imports `map`, `mesh`, `switch_`, `reduce`, and `pass_through` from `hgraph`. C++ imports
 `hg` and includes the corresponding `<hg/map.hpp>`, `<hg/mesh.hpp>`, `<hg/switch.hpp>`,
 or `<hg/reduce.hpp>` header.
 
 ## map
 
-`map(graph, arguments...)` applies a graph per selected key. A mapped argument is a TSD
+If you need the same computation for every item in a collection, use
+`map(graph, arguments...)` to apply a graph per selected key. A mapped argument is a TSD
 whose item feeds that branch parameter. `pass_through(point)` supplies the whole time
 series to each branch. Scalars remain fixed arguments. A TSS can supply keys for a
 source-like graph.
 
-The default key set is the union of mapped dictionaries. `__key_set_arg__` selects a
-particular mapped argument by index or name. `__key_arg__` identifies the branch
-parameter receiving its key as a const time series. Python uses named keywords; C++ uses
+If branch membership should follow one input rather than the union of mapped
+dictionaries, set `__key_set_arg__` to that argument's index or name. To let the branch
+use its own key in calculations, set `__key_arg__` to the parameter that should receive
+it as a const time series. Python uses named keywords; C++ uses
 `"__key_arg__"_n = ...` and corresponding named arguments.
 
 Adding a key creates and starts its branch. Removing it stops the branch and removes its
@@ -29,7 +31,8 @@ selected keys to create outputs.
 
 ## switch_
 
-`switch_(key, cases, arguments...)` runs the selected case graph. Python cases use a
+If each operating mode needs a different calculation, use
+`switch_(key, cases, arguments...)` to run the selected case graph. Python cases use a
 dictionary, with tuple keys for multiple keys in one case. C++ uses `cases{case_(key,
 graph), ...}`. `DEFAULT` selects fallback behavior for invalid or unmatched keys.
 Without a fallback those keys raise an error.
@@ -42,7 +45,8 @@ both computations should continue.
 
 ## mesh
 
-`mesh(graph, arguments..., name=...)` follows map's argument and key rules. Within a
+For per-key calculations that depend on other keys' results, use
+`mesh(graph, arguments..., name=...)`. It follows map's argument and key rules. Within a
 branch, `mesh()[key]` requests another branch's output and records its dependency.
 `mesh("name")[key]` selects a named enclosing mesh.
 
@@ -54,8 +58,9 @@ rather than supplying an old result.
 
 ## reduce
 
-`reduce(graph, values, default=...)` in Python and
-`reduce(graph, values, "default"_n = ...)` in C++ combine valid TSD items. Python accepts
+To combine current collection items with your own binary graph calculation, use
+`reduce(graph, values, default=...)` in Python or
+`reduce(graph, values, "default"_n = ...)` in C++. Both combine valid TSD items. Python accepts
 a decorated `@graph` reducer or a binary callable, including a lambda. A callable receives
 two wiring points during graph construction and must return a compatible wiring point.
 Its input types and expected result type come from the TSD item type. Plain scalar

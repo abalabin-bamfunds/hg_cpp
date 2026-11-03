@@ -1,9 +1,12 @@
 # Input views
 
-Input views provide callback-scoped access to the current value and its change
-information. Use them when a calculation needs more than plain values.
+If a calculation needs validity or change information as well as a current value,
+request an input view. The view provides that access for the duration of the callback.
 
 ## Scalar values
+
+To distinguish a fresh event from a retained reading, inspect the view's modification
+and time queries along with its current value:
 
 | Query | Python | C++ |
 | --- | --- | --- |
@@ -24,6 +27,7 @@ owning representation or `ScalarValue`.
 
 ## Collection views
 
+To process partial updates or read individual items, use a collection view.
 Collection root validity and item validity are separate. A valid collection can contain
 invalid items. Changes expose the current cycle's delta; cumulative access exposes
 current membership and values.
@@ -39,7 +43,8 @@ Python fixed TSL and TSB expose `modified_*()` and `valid_*()` traversals.
 
 ### Dictionary change selections
 
-TSD provides four change selections:
+If a node should process only changed dictionary items, choose the selection that
+matches its work. TSD separates new keys, changed existing keys, and removals:
 
 | Selection | Items visited |
 | --- | --- |
@@ -59,24 +64,24 @@ Use `modified` to process additions and updates together. Use separate `added` a
 A removed key is separate from an existing key whose child becomes invalid.
 TSD delta mappings use `REMOVE` for removals and `INVALID` for invalid child updates.
 
-An accepting Python dictionary parameter can use `Annotated[TSD[K, V], valid_items]`.
+If unavailable items should be excluded from traversal, request a `valid_items` view.
+An accepting Python dictionary parameter uses `Annotated[TSD[K, V], valid_items]`;
 C++ accepts `valid_items` on the corresponding `In<>` declaration. Calling
-`valid_items(point)` requests that view. It exposes only valid immediate items; validity
-changes appear as key additions/removals. Its physical `key_set` remains the underlying
-membership set.
+`valid_items(point)` requests that view. It exposes only valid immediate items, with
+validity changes appearing as key additions or removals. Its physical `key_set`
+remains the underlying membership set.
 
 ## References
 
-A value input follows a reference target automatically. Explicit `REF` inputs access
-reference values. A target may update or become invalid without the reference itself
-changing targets. Check the validity of the value being read, rather than inferring it
-from the presence of a reference object.
-
+If a node needs the identity of a selected source, request an explicit `REF` input.
+A value input follows the target automatically. The target may update or become
+invalid without the reference changing targets, so check the validity of the value
+being read rather than inferring it from the presence of a reference object.
 
 ## Requiring complete items
 
-`all_valid` prevents evaluation until a collection root and every immediate item are
-valid. This is useful when a partial record cannot produce a correct result.
+If a partial record cannot produce a correct result, use `all_valid` to prevent
+evaluation until the collection root and every immediate item are valid.
 A valid root alone permits missing child values.
 
 <!-- runnable-example -->
@@ -150,7 +155,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

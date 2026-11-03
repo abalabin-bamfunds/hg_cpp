@@ -1,12 +1,13 @@
 # HG documentation
 
-HG connects calculations whose inputs change over time. Each node retains its
-current result. HG tracks the connections between nodes and evaluates affected
-calculations when an input updates. Shared intermediate results can feed several
-outputs without repeating the calculation.
+If your application needs to keep derived prices, sensor readings, or running
+statistics up to date, HG lets you describe the calculations and how they depend on
+one another. As inputs change, the graph updates the affected results without your
+application having to call each calculation in the right order.
 
-This supports derived prices, sensor processing, running statistics, and
-calculations maintained independently for many items.
+Each node retains its current result, so several consumers can share an intermediate
+calculation without repeating its work. The graph below uses one subtotal for both
+a displayed value and the order total.
 
 ```mermaid
 flowchart LR
@@ -17,11 +18,13 @@ flowchart LR
     subtotal --> display[Subtotal display]
 ```
 
-The multiplication is a **node**. Its connections define its dependencies.
-The subtotal remains available to both consumers until it updates again.
-A **graph function** constructs these connections; node code computes their values.
+The multiplication is a **node**, and its incoming connections identify the price
+and quantity it depends on.
 
-
+The functions below express the same arithmetic in ordinary code and graph code:
+`order_total` computes a value directly, while `order_graph` connects a fixed price
+to multiplication and addition nodes. Calling `run_graph` evaluates those nodes and
+captures their output.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -34,20 +37,25 @@ A **graph function** constructs these connections; node code computes their valu
 from hgraph import graph, run_graph
 from hgraph.operators import const_
 
-@graph
-def subtotal(price: int, quantity: int) -> int:
-    return price * quantity
+
+def order_total(price: int, quantity: int, delivery: int) -> int:
+    return price * quantity + delivery
+
 
 @graph
-def total() -> int:
-    return subtotal(const_(5), 3) + 2
+def order_graph() -> int:
+    price = const_(5)
+    return price * 3 + 2
 
-print(run_graph(total))
+
+print(order_total(5, 3, 2))
+print(run_graph(order_graph))
 ```
 
 Output:
 
 ```text
+17
 [17]
 ```
 :::::
@@ -61,31 +69,32 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/node.hpp>
 #include <hg/run_graph.hpp>
+
 #include <iostream>
 
 using namespace hg;
 using namespace hg::operators;
-using namespace literal;
 
-auto subtotal(wp<TS<i64>> price, int quantity) {
-    return price * quantity;
+auto order_total(int price, int quantity, int delivery) {
+    return price * quantity + delivery;
 }
 
-auto total() {
-    return subtotal(const_(5).as<TS<i64>>(), 3) + 2;
+auto order_graph() {
+    const auto price = const_(5);
+    return price * 3 + 2;
 }
 
 int main() {
-    const auto result = run_graph(total);
-    std::cout << result << '\n';
+    std::cout << order_total(5, 3, 2) << '\n';
+    std::cout << run_graph(order_graph) << '\n';
 }
 ```
 
 Output:
 
 ```text
+17
 [17]
 ```
 :::
@@ -95,7 +104,7 @@ Output:
 The [C++ example project](guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -105,9 +114,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-The example has a fixed result. [Changing inputs](guide/graphs/updates.md) use the
-same connections with successive values. HG retains current values; history is
-provided by operations such as running totals and lag.
+The ordinary call returns `17`, while `[17]` contains the graph's captured output
+update. This example uses a fixed input; with [changing inputs](guide/graphs/updates.md),
+the same connections maintain the result across successive values. A graph function
+constructs the connections once per graph instance, and node code calculates their
+values during evaluation.
 
 ::::{grid} 1 2 2 2
 :gutter: 3

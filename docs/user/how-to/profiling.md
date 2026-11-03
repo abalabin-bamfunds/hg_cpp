@@ -1,14 +1,15 @@
 # Profiling
 
-To measure a run's computation cost, attach an `EvaluationProfiler` recorder.
-The profiler reports outer-cycle durations and per-node evaluation counts and
-checkpoint ticks. A recorder belongs to one graph run.
+If a graph does more work than expected, attach an `EvaluationProfiler` recorder to
+measure the run. Its outer-cycle durations, per-node evaluation counts, and checkpoint
+ticks help identify where the work occurs; each recorder belongs to one graph run.
 
 ## Finite run
 
-This run processes three reading updates, including a repeated value. The
-skipped position does not create evaluation work. A one-microsecond node period
-keeps the test's separate input times visible in the node history.
+To check how input events translate into evaluations, this finite run includes three
+reading updates, a repeated value, and a skipped position. The gap creates no evaluation
+work, while a one-microsecond node period keeps the separate input times visible in
+the recorded node history.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -124,6 +125,9 @@ also lists recent outer periods.
 
 ## Timing report
 
+To compare cycle costs or find occasional expensive cycles, inspect the outer timing
+report. It measures computation within each cycle rather than waits between inputs:
+
 | Field | Meaning | Useful for |
 | --- | --- | --- |
 | Cycles | Completed outer cycles | Checking the amount of input-driven work |
@@ -131,9 +135,9 @@ also lists recent outer periods.
 | Min | Shortest cycle duration | Identifying variation against the maximum |
 | Max | Longest cycle duration | Finding occasional expensive cycles |
 
-`outer_totals()` returns `cycles`, `total_nanoseconds`, `min_nanoseconds`, and
-`max_nanoseconds`. Python returns a dictionary; C++ returns a struct. An outer
-cycle includes work in its inner graphs. It excludes idle time between cycles.
+For programmatic access, `outer_totals()` returns `cycles`, `total_nanoseconds`,
+`min_nanoseconds`, and `max_nanoseconds` as a Python dictionary or C++ struct.
+An outer cycle includes work in its inner graphs.
 
 Simulation advances event time without wall-clock waits. The one-microsecond
 input spacing is an evaluation-time interval, not a promised computation time.
@@ -141,11 +145,11 @@ Realtime uses the same cycle measurements under its delivery schedule.
 
 ## Evaluation counts
 
-`node_periods(graph_id, period)` returns rows containing `node_index`,
-`evaluations`, and `checkpoint_ticks`. In Python these are dictionary entries;
-in C++ the counts are in each row's `totals` field. Compare evaluation counts
-when checking whether a filter, sample, or deduplication suppresses the intended
-work. The example prints per-node counts for each closed period. Node 1,
+To check whether a filter, sample, or deduplication suppresses the intended work,
+compare per-node evaluation counts from `node_periods(graph_id, period)`. It returns
+rows containing `node_index`, `evaluations`, and `checkpoint_ticks`. In Python these
+are dictionary entries; in C++ the counts are in each row's `totals` field.
+The example prints per-node counts for each closed period. Node 1,
 the addition in this compiled graph, evaluates once for each reading update,
 including the repeated `18`. Test inputs and output recording also contribute
 nodes: these indices are specific to this example.
@@ -156,20 +160,22 @@ from the owning node's interval. On x86 they use timestamp-counter ticks;
 other targets use steady-clock nanoseconds. Compare them as work indicators
 under the same clock and configuration; they are not isolated callback times.
 
-`graph_ids()` and `graph(id)` identify graph instances and their parent, owner,
-and label. Map branches use their key as the label. Node indices are local to
+To locate work inside a mapped branch or another inner graph, use `graph_ids()` and
+`graph(id)` to identify each instance's parent, owner, and label. Map branches use
+their key as the label. Node indices are local to
 a compiled graph; do not compare an index across changed graph constructions.
 C++ compiled-graph metadata is available only while the graph is active.
 
 ## History retention
 
-Period queries return closed periods. The runner finishes the recording before
-returning, so the finite run above can query its final periods. Node history
+If you need recent performance history, choose period lengths and retention before
+the run. Period queries return closed periods, and the runner finishes recording
+before returning, so the finite run above can query its final periods. Node history
 defaults to one-minute periods with 30 retained closed periods; outer timing
 defaults to one-second periods with 86,400 retained closed periods. A current
 period is retained in addition to those limits.
 
-Choose period lengths and retention before a run. After a graph stops, query
-retained node periods; cumulative active-node counters have been released.
+After a graph stops, query retained node periods; cumulative active-node counters
+have been released.
 Keep the workload, engine, profiling configuration, and machine consistent when
 comparing performance. See [execution reference](../reference/execution.md#results-and-profiling).

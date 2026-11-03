@@ -39,3 +39,4 @@ html_show_copyright = False
 html_theme_options = {"navigation_with_keys": True}
 html_static_path = ["_static"]
 html_css_files = ["documentation.css"]
+html_js_files = ["target-tabs.js"]

@@ -1,12 +1,14 @@
 # Collection inputs and publication
 
-Collection views expose both current items and the changes in this evaluation.
-They allow a node to process partial updates without rebuilding complete values.
+If a custom node processes independently changing items, collection views let it
+read both the current items and the changes in this evaluation. The node can use
+those changes to maintain its result without rebuilding complete values.
 
 ## Current items
 
-Current-item traversal computes a result from the collection's present state.
-Validity-aware traversal omits unavailable values.
+To compute from everything currently available, traverse the collection's current
+items and check validity before reading them. This product uses only valid values,
+so unavailable items do not contribute.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -91,7 +93,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -107,9 +109,9 @@ recompute the product from the current valid items.
 
 ## Change information
 
-Dictionary addition, item modification, invalidation, and key removal are distinct
-changes. Set updates expose added and removed members. Omitted items retain their
-current state.
+If recomputing every item would repeat work, use change information to process only
+additions, modifications, invalidations, and removals. Set views similarly expose
+added and removed members, while omitted items retain their current state.
 
 | Input | Python traversal | C++ access |
 | --- | --- | --- |
@@ -120,9 +122,9 @@ current state.
 | TSS membership changes | `added()` / `removed()` | Added/removed member traversal |
 
 The [input-view reference](../../reference/input-views.md#collection-views) specifies
-the methods for each shape. `valid_items` input views expose immediate item validity
-changes as key additions and removals.
-
+the methods for each shape. A calculation that uses only available readings can request
+a `valid_items` input view. It exposes an item becoming valid as an addition and an
+item becoming invalid as a removal, so the same delta logic handles both.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -132,29 +134,28 @@ changes as key additions and removals.
 :sync: python
 
 ```python
-from hgraph import REMOVE, TS, TSD, compute_node, graph, run_graph
+from typing import Annotated
+from hgraph import INVALID, REMOVE, TS, TSD, compute_node, graph, run_graph, valid_items
 from hgraph.operators import sum_
 
 @compute_node
-def adjust(readings: TSD[int, TS[int]]) -> TSD[int, TS[int]]:
+def adjust(readings: Annotated[TSD[int, TS[int]], valid_items]) -> TSD[int, TS[int]]:
     delta = {key: REMOVE for key in readings.removed_keys()}
     for key in readings.modified_keys():
-        item = readings[key]
-        if item.valid:
-            delta[key] = item.value + 2
+        delta[key] = readings[key].value + 2
     return delta
 
 @graph
 def total(readings: TSD[int, TS[int]]) -> int:
-    return sum_(adjust(readings))
+    return sum_(adjust(valid_items(readings)))
 
-print(run_graph(total, [{1: 10, 2: 20}, {1: 11}, {2: REMOVE}]))
+print(run_graph(total, [{1: 10, 2: 20}, {1: 11}, {2: INVALID}, {2: REMOVE}]))
 ```
 
 Output:
 
 ```text
-[34, 35, 13]
+[34, 35, 13, None]
 ```
 :::::
 
@@ -175,25 +176,17 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-const auto adjust = node([](In<TSD<i64, TS<i64>>> readings, Out<TSD<i64, TS<i64>>> output) {
-    const auto publish = [&](const auto& key) {
-        const auto item = readings[key];
-        if (item.valid()) {
-            output[key].set(*item + 2);
-        } else {
-            output[key].invalidate();
-        }
-    };
-    readings.for_each_modified(publish);
+const auto adjust = node([](In<TSD<i64, TS<i64>>, valid_items> readings, Out<TSD<i64, TS<i64>>> output) {
+    readings.for_each_modified([&](const auto& key) { output[key].set(*readings[key] + 2); });
     readings.for_each_removed([&](const auto& key) { output.erase(key); });
 });
 
 auto total(wp<TSD<i64, TS<i64>>> readings) {
-    return sum_(adjust(readings));
+    return sum_(adjust(valid_items(readings)));
 }
 
 int main() {
-    const auto result = run_graph(total, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, REMOVE}}});
+    const auto result = run_graph(total, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, INVALID}}, {{2, REMOVE}}});
     std::cout << result << '\n';
 }
 ```
@@ -201,7 +194,7 @@ int main() {
 Output:
 
 ```text
-[34, 35, 13]
+[34, 35, 13, None]
 ```
 :::
 
@@ -210,7 +203,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -220,111 +213,46 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-The adjustment node publishes only changed or removed keys. The downstream sum reads
-its current output collection. Removing key `2` removes its adjusted value from the sum.
+When key `2` becomes invalid, the view reports its removal and the adjustment node
+removes it from the output. The sum becomes `13`. Removing the already invalid key
+produces no further output update.
 
 ## Publication
 
-Python nodes return values or collection deltas. A returned `None` leaves the output
-unchanged. C++ nodes can return values or use an explicit `Out<>` field.
+To update only the items your node changed, publish a collection delta instead of
+reconstructing the complete output. Omitted items retain their current values;
+this dictionary delta updates key `1` and removes key `2`:
 
-<!-- runnable-example -->
-::::::{tab-set}
+::::{tab-set}
 :sync-group: language
 
-:::::{tab-item} Python
+:::{tab-item} Python
 :sync: python
 
 ```python
-from hgraph import graph, node, run_graph
-
-@node
-def accepted(reading: int) -> int:
-    if reading < 0:
-        return None
-    return reading + 2
-
-@graph
-def temperature(reading: int) -> int:
-    return accepted(reading)
-
-print(run_graph(temperature, [18, -3, 0, -1, 19]))
+return {1: 12, 2: REMOVE}
 ```
+:::
 
-Output:
-
-```text
-[20, None, 2, None, 21]
-```
-:::::
-
-:::::{tab-item} C++
+:::{tab-item} C++
 :sync: cpp
 
-::::{tab-set}
-
-:::{tab-item} Code
-
 ```cpp
-#include <hg/library.hpp>
-#include <hg/graph.hpp>
-#include <hg/node.hpp>
-#include <hg/run_graph.hpp>
-#include <iostream>
-#include <optional>
-
-using namespace hg;
-using namespace hg::operators;
-using namespace literal;
-
-const auto accepted = node([](i64 reading) -> std::optional<i64> {
-    if (reading < 0) {
-        return std::nullopt;
-    }
-    return reading + 2;
-});
-
-auto temperature(wp<TS<i64>> reading) {
-    return accepted(reading);
-}
-
-int main() {
-    const auto result = run_graph(graph(temperature), {18, -3, 0, -1, 19});
-    std::cout << result << '\n';
-}
+output[i64{1}].set(i64{12});
+output.erase(i64{2});
 ```
-
-Output:
-
-```text
-[20, None, 2, None, 21]
-```
-:::
-
-:::{tab-item} Build and run
-
-The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
-
-```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
-cmake --build build --config Release
-```
-
-Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
 :::
 ::::
-:::::
-::::::
 
-`INVALID` removes the output's current value. A collection delta updates only supplied
-items. `REMOVE` removes a dictionary key; omitted keys remain unchanged.
-[Literal reference](../../reference/literals.md) specifies each delta format.
+The [publication reference](../../reference/outputs.md) specifies returned values and
+explicit outputs; [literal forms](../../reference/literals.md) specify collection deltas.
 
 ## Explicit C++ outputs
 
-`Out<TS<T>>` provides `set(value)` and `invalidate()`. Collection outputs provide child
-outputs and removal operations. Python publication uses returned deltas; its injected
-`Output` view is read-only.
+If a C++ node needs to publish several item changes or explicitly invalidate a
+value, use `Out` to access its output. `Out<TS<T>>` provides `set(value)` and
+`invalidate()`, while collection outputs provide child outputs and removal
+operations. Python publishes returned deltas; its injected `Output` view is read-only.
 
 The [state example](state.md#retained-state) declares `In`, `State`, and `Out` fields in
 a C++ aggregate. [Output reference](../../reference/outputs.md) specifies mutation,

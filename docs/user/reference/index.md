@@ -1,7 +1,8 @@
 # API and library reference
 
-Use the guide for complete task examples. These pages specify accepted declarations,
-input behavior, retained output and state, and errors.
+When you need an exact signature, input contract, or publication rule, use these
+reference pages. They cover accepted declarations, retained output and state, and
+errors; the guide provides complete task examples.
 
 ## Graph-author API
 

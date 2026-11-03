@@ -1,10 +1,14 @@
 # Node declarations
 
-A node performs one calculation or side effect when HG evaluates it. A required input
-needs a current value. An active input schedules evaluation when it changes. Inputs are
-active and required unless declared otherwise.
+When a graph needs application logic or an action such as sending a result, declare a
+node. HG calls it during evaluation with its current inputs. Inputs are active and
+required by default: changes schedule evaluation, and each input needs a current value
+before the callback can run.
 
 ## Python declarations
+
+Use `@node` for ordinary value code, `@compute_node` when the calculation needs input
+views, or a source declaration when the node introduces its own events:
 
 | Declaration | Parameters | Result | Initial evaluation |
 | --- | --- | --- | --- |
@@ -23,13 +27,15 @@ its output as `-> int` and may return `None` to leave that output unchanged; an 
 supported.
 
 A callback returning a valid scalar publishes an update even if equal to the previous
-value, unless the output's guarantee suppresses it. Returning `INVALID` removes a
-supported output's current value. Collection results are deltas; see
-[literals](literals.md).
+value, unless the output's guarantee suppresses it. Python callbacks currently cannot
+return `INVALID` to invalidate an output. Collection results are deltas; see
+[output publication](outputs.md#returned-values) and [literals](literals.md).
 
 ### Input activity and validity
 
-`@node` and `@compute_node` accept tuples of input names:
+If a node should run only on selected updates or continue while some inputs are
+unavailable, set its activity and validity options. Both `@node` and `@compute_node`
+accept tuples of input names:
 
 | Option | Selected inputs | Other time series inputs |
 | --- | --- | --- |
@@ -57,16 +63,17 @@ provides the required request-driven read.
 
 ## C++ declarations
 
-`node(callable)` infers a node from a callable. Plain scalar parameters receive fixed
-arguments or current input values. `std::optional<T>` permits absence. A scalar return
-declares `TS<T>`; `std::optional<T>` returns no update when disengaged. A `void` return
-declares no output unless an `Out<>` parameter supplies it.
+To connect an existing C++ calculation, pass its callable to `node(callable)`, which
+infers the node declaration. Plain scalar parameters receive fixed arguments or
+current input values, and `std::optional<T>` permits absence. A scalar return declares
+`TS<T>`; `std::optional<T>` returns no update when disengaged. A `void` return declares
+no output unless an `Out<>` parameter supplies it.
 
-`node<Definition>()` uses an aggregate with input, scalar, state, and output fields. Its
-`evaluate()` method is `const`. It can define `start`, `stop`, and `on_invalidation`
-callbacks. Fields such as `In<TS<i64>>` and `Out<TS<i64>>` provide access during
-callbacks. Aggregate callbacks can receive `EvaluationContext*`; callable node
-parameters do not currently expose it.
+For a node whose inputs, state, output, and lifecycle are clearer as one definition,
+use `node<Definition>()` with an aggregate. Its `evaluate()` method is `const`, and it
+can define `start`, `stop`, and `on_invalidation` callbacks. Fields such as
+`In<TS<i64>>` and `Out<TS<i64>>` provide access during callbacks. Aggregate callbacks
+can receive `EvaluationContext*`; callable node parameters do not currently expose it.
 
 `In<TS_T, ...>` requests a complete input view. Properties include `optional`,
 `all_valid`, `passive`, and a parameter name. `passive` suppresses scheduling by that
@@ -77,18 +84,19 @@ Python selects these constraints with the decorator options above.
 
 ## Scheduling and validity
 
-An input update schedules at most one evaluation in the outer cycle. Evaluation reads
-dependency results from that cycle. All required input constraints must hold before the
-callback runs. A node can also be scheduled at start or by a timer. Startup scheduling
-does not bypass required inputs.
+When a calculation combines inputs that change together, HG schedules at most one
+evaluation in the outer cycle and supplies the dependency results from that cycle.
+All required input constraints must hold before the callback runs. A node can also be
+scheduled at start or by a timer; startup scheduling does not bypass required inputs.
 
 C++ `schedule_on_start` selects initial evaluation explicitly. Aggregate sources with no
 inputs need `static constexpr bool schedule_on_start = true` when they rely on initial
 evaluation rather than a start callback or timer.
 
-Required-input invalidation normally invalidates the output without evaluating the
-ordinary callback. C++ `on_invalidation = preserve_output` keeps it; a custom
-invalidation callback can implement another policy. Python registers
+If losing a required input needs a policy such as retaining the last result, use an
+invalidation callback. Required-input invalidation normally invalidates the output
+without evaluating the ordinary callback. C++ `on_invalidation = preserve_output`
+keeps it; a custom invalidation callback can implement another policy. Python registers
 `@definition.on_invalidation`; it runs when required-input invalidation prevents
 ordinary evaluation. Optional inputs permit the ordinary callback to handle absence
 itself. See [output access](outputs.md) and [state](state.md).

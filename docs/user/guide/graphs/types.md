@@ -1,12 +1,14 @@
 # Types and connections
 
-A connection is valid when the output type satisfies the receiving parameter.
-HG checks connections while constructing the graph, before processing input values.
+Type declarations let you state which values a calculation accepts and produces,
+so incompatible connections are caught before the graph processes inputs. HG checks
+each output against its receiving parameter while constructing the graph.
 
 ## Concrete value types
 
-Plain annotations describe the values used by a calculation. Python `int` maps to
-HG's signed 64-bit integer; examples use `i64` for the corresponding C++ value.
+For calculations that only need current values, plain annotations describe the
+required types. Python `int` maps to HG's signed 64-bit integer, written `i64` in
+the C++ examples.
 
 | Python | C++ | Value |
 | --- | --- | --- |
@@ -96,7 +98,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -112,9 +114,10 @@ until it has a current value.
 
 ## Operator matching and conversion
 
-Operators select an implementation from argument types. Built-in numeric operations
-use matching numeric types. Multiplying an integer graph value by `0.5` requires
-an explicit conversion to floating point.
+If a calculation combines different numeric types, use `convert` to make the intended
+conversion explicit. Built-in numeric operations select an implementation for matching
+types, so multiplying an integer graph value by `0.5` first requires a floating-point
+input.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -180,7 +183,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -196,9 +199,10 @@ connection's type and does not convert its values.
 
 ## Type errors
 
-A mismatch identifies the operation and supplied types. A failed connection is a
-graph-construction error; no input sequence can repair it. A concrete example and
-the diagnostic appear in [errors and diagnostics](../../how-to/errors.md#type-errors).
+If HG cannot connect a calculation, its diagnostic identifies the operation and the
+supplied types. The connection must be corrected before any input sequence can run;
+[errors and diagnostics](../../how-to/errors.md#type-errors) shows a mismatch and its
+correction.
 
 [Advanced type matching](../advanced-graphs/guarantees.md) covers generic types and
 publication constraints. [Scalar reference](../../reference/scalars.md) specifies

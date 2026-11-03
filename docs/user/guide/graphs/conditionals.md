@@ -1,7 +1,8 @@
 # Conditionals
 
-A conditional can choose a value, control forwarding, or select which graph instance
-runs. The choice determines branch evaluation and retained state.
+When a calculation needs to make a choice, the operation depends on what should
+change: a selected value, the updates sent downstream, or the graph instance that
+runs. These forms have different effects on branch evaluation and retained state.
 
 | Requirement | Operation | Behavior |
 | --- | --- | --- |
@@ -20,8 +21,9 @@ runs. The choice determines branch evaluation and retained state.
 
 ## Fixed conditions
 
-A scalar setting is available during construction. Native `if` selects the
-connections for the complete run.
+If a fixed setting determines which calculations your graph needs, use ordinary `if`
+while constructing it. The selected connections remain in place for the complete run,
+so this works for configuration such as enabling a calibration step.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -102,7 +104,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -118,8 +120,9 @@ raises a truth-conversion error; the equivalent C++ expression cannot convert to
 
 ## Value selection
 
-`if_then_else(condition, true_value, false_value)` follows one input according to a
-changing Boolean condition. A condition change exposes the selected current value.
+If the choice needs to change while the graph runs, use
+`if_then_else(condition, true_value, false_value)`. It follows the selected input and
+exposes that input's current value whenever the condition changes.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -190,7 +193,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -207,9 +210,10 @@ input makes the observed result invalid.
 
 ## Boolean combinations
 
-Graph Boolean operations combine changing conditions. Python uses `and_`, `or_`, and
-`not_`; native `and`, `or`, and `not` require immediate truth conversion. C++ supports
-the corresponding overloaded operators on connections.
+To make a choice depend on several changing conditions, combine them with graph
+Boolean operations. Python uses `and_`, `or_`, and `not_` because native `and`, `or`,
+and `not` require an immediate Boolean value; C++ supports the corresponding
+overloaded operators on connections.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -277,7 +281,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -289,7 +293,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Multiple outcomes
 
-Nested selections express a small set of value outcomes. Each result must have a
+If a result has more than two possible values, nested selections can express a small
+set of outcomes, such as low, normal, and high readings. Each result must have a
 compatible value type.
 
 <!-- runnable-example -->
@@ -366,7 +371,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -382,9 +387,10 @@ inclusive lower and upper limit directly. For substantial case-specific calculat
 
 ## Conditional forwarding
 
-`filter_(condition, value)` forwards updates while the condition is true. Closing the
-filter retains its current output. Reopening forwards the current source value if
-it has changed since the last forwarding.
+If updates should reach downstream calculations only while a condition holds, use
+`filter_(condition, value)`. Closing the filter keeps its last output available;
+reopening it forwards the current source value if that value has changed since the
+last forwarding.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -461,7 +467,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -471,13 +477,14 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-A repeated true condition does not republish an unchanged value. Closing a filter
-preserves the output's current value; it does not stop the upstream calculation.
+A repeated true condition does not republish an unchanged value, and the upstream
+calculation continues to run while the filter is closed.
 
 ## Fallback values
 
-`default_(value, fallback)` produces a fallback while the source has no current value.
-The source remains unavailable; only the derived result receives the fallback.
+If a result should remain available before a source arrives or after it becomes
+invalid, use `default_(value, fallback)` to supply a replacement. The fallback belongs
+to the derived result and does not change the source's availability.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -543,7 +550,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -558,8 +565,9 @@ A zero value is available and must not select the fallback.
 
 ## Alternative publishers
 
-`merge` combines update sources. On each evaluation it publishes the leftmost valid
-input that changed. A retained primary value does not block a secondary update.
+To accept updates from several sources into one result, use `merge`. On each
+evaluation it publishes the leftmost valid input that changed, so a retained primary
+value does not block a new update from a secondary source.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -625,7 +633,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -640,9 +648,9 @@ This differs from a fallback that always prefers an available primary value.
 
 ## Graph selection
 
-`switch_` runs one case graph selected by a changing key. A different case stops the
-current instance and starts a new instance. Returning to a previous case creates
-fresh state.
+If each mode needs its own calculation, state, or resources, use `switch_` to run the
+case graph selected by a changing key. Changing to a different case stops the current
+instance and starts a new one; returning to an earlier case starts it with fresh state.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -721,7 +729,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

@@ -1,107 +1,27 @@
 # Activity and dependency patterns
 
-Input activity determines which updates schedule a calculation. Source selection
-can also change which dependencies a calculation follows.
+A calculation may need to keep reading a value without publishing every change,
+follow only a selected source, or depend on another key's result. Dependency
+controls express those relationships and determine which updates cause work.
 
 ## Explicit triggers
 
-`sample` reads a current value when a signal updates. The value remains a dependency,
-but its updates alone do not publish a sample.
-
-<!-- runnable-example -->
-::::::{tab-set}
-:sync-group: language
-
-:::::{tab-item} Python
-:sync: python
-
-```python
-from hgraph import graph, run_graph
-from hgraph.operators import sample
-
-
-@graph
-def sampled_temperature(reading: int, signal: bool) -> int:
-    calibrated = reading + 2
-    return sample(signal, calibrated)
-
-
-print(run_graph(
-    sampled_temperature,
-    [18, 19, None, 20, 21, None],
-    [None, True, True, None, True, False],
-))
-```
-
-Output:
-
-```text
-[None, 21, 21, None, 23, 23]
-```
-:::::
-
-:::::{tab-item} C++
-:sync: cpp
-
-::::{tab-set}
-
-:::{tab-item} Code
-
-```cpp
-#include <hg/library.hpp>
-#include <hg/run_graph.hpp>
-
-#include <iostream>
-
-using namespace hg;
-using namespace hg::operators;
-using namespace literal;
-
-auto sampled_temperature(wp<TS<i64>> reading, wp<TS<bool>> signal) {
-    const auto calibrated = reading + 2;
-    return sample(signal, calibrated);
-}
-
-int main() {
-    const auto result = run_graph(
-        sampled_temperature,
-        {18, 19, SKIP, 20, 21, SKIP},
-        {SKIP, true, true, SKIP, true, false});
-    std::cout << result << '\n';
-}
-```
-
-Output:
-
-```text
-[None, 21, 21, None, 23, 23]
-```
-:::
-
-:::{tab-item} Build and run
-
-The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
-
-```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
-cmake --build build --config Release
-```
-
-Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
-:::
-::::
-:::::
-::::::
+A dashboard may need to publish on request while its source values keep changing.
+`sample(signal, value)` reads the current value when the signal updates. The
+[sampling example](../graphs/updates.md#signal-driven-publication) shows which updates
+publish; [running summaries on request](../../how-to/requested-summary.md) combines
+sampling with retained statistics.
 
 A custom node expresses this with an active signal and a passive value input.
-[Node input controls](../advanced-nodes/inputs.md#activity) defines those declarations.
+[Node input controls](../advanced-nodes/inputs.md#activity) gives the declarations.
 Activity controls scheduling; validity controls whether evaluation is permitted.
 
 ## Selected dependencies
 
-Dynamic item selection follows the selected item's current source. Updates to
-unselected items do not become selected value updates. Membership changes can alter
-availability independently of value updates.
+If only one item's updates should reach a consumer, select that item dynamically
+rather than combining the complete collection. The consumer follows the selected
+source; changes to other items do not become selected value updates, though
+membership changes can affect the selected item's availability.
 
 The [reference example](references.md#selecting-a-changing-source) shows a key change,
 a target update, and removal. [Iteration](../graphs/iteration.md) describes independent
@@ -109,8 +29,9 @@ per-key calculations.
 
 ## Dependencies between keys
 
-`mesh` supports a per-key calculation that depends on another key's result. This
-expresses relationships such as a component total depending on its parent total.
+If a per-key calculation needs another key's result, use `mesh` to express that
+dependency. This supports relationships such as a component total depending on
+its parent total, while HG orders the calculations according to their dependencies.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -192,7 +113,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -209,8 +130,9 @@ output access, and instance lifecycle.
 
 ## Feedback loops
 
-Feedback sends an output change to a later evaluation time. A handle lets the graph
-connect a loop before the calculation that supplies its input has been wired.
+To feed a result back into a later evaluation, use a feedback handle. It lets you
+connect the loop before its supplying calculation has been wired, and sends each
+output change to a later evaluation time.
 
 This loop starts from `1`, advances to `3`, and then stops publishing.
 
@@ -297,7 +219,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

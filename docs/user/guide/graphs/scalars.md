@@ -1,12 +1,14 @@
 # Scalar collections
 
-A scalar can hold several values. Each update replaces the complete collection.
-This fits sources that publish a complete record, snapshot, or batch.
+If your source publishes a complete record, snapshot, or batch on each update, use a
+scalar collection. HG treats the collection as one value, so each new snapshot
+replaces the previous one.
 
 ## Sequences
 
-Python `tuple[int, ...]` and C++ `List<i64>` describe homogeneous scalar sequences.
-`len_` computes the size of the current sequence.
+For a sequence whose items all have the same type, use Python `tuple[int, ...]` or
+C++ `List<i64>`. Collection operations such as `len_` derive a result from the current
+sequence and update it when a new sequence arrives.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -72,7 +74,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -88,8 +90,9 @@ annotations are unsupported.
 
 ## Dictionaries
 
-A scalar dictionary holds a complete key/value mapping. Keys and values have declared
-types. `contains_` tests the current mapping for a key.
+If values are identified by keys, a scalar dictionary holds the complete mapping in
+one update. Declare its key and value types, then use operations such as `contains_`
+to test the current mapping for a key.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -155,7 +158,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -170,10 +173,10 @@ retained in a scalar dictionary.
 
 ## Fixed tuples
 
-Fixed tuples declare a type for each position. A value node can extract a position
-with ordinary language operations. The [node guide](../nodes/calculations.md)
-explains the node declaration used here. C++ `In<TS<...>>` receives a changing input;
-`value_view()` borrows its current scalar value.
+When a record has a fixed number of positions with different types, use a fixed tuple.
+A value node can read a position with ordinary language operations, as in the example
+below; the [node guide](../nodes/calculations.md) explains its declaration. C++
+`In<TS<...>>` receives the changing input and `value_view()` borrows its current value.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -246,7 +249,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -258,9 +261,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Named fields
 
-Schemas name fields and declare their types. `Bundle[Schema]` in Python and
-`Bundle<Schema>` in C++ represent one structured scalar value. A node reads its
-fields from the current record.
+For records whose fields are clearer with names, define a schema and use
+`Bundle[Schema]` in Python or `Bundle<Schema>` in C++. The bundle holds one complete
+record, and a node reads its fields from the current value.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -345,7 +348,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

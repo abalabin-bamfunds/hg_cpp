@@ -1,14 +1,16 @@
 # Errors and diagnostics
 
-A wiring failure means HG could not construct a compatible graph. An evaluation
-failure means a callback or library calculation failed while processing values.
-The runner propagates either failure after cleanup.
+If a graph fails to construct or stops while processing values, use the diagnostic
+to identify the operation and the inputs involved. A wiring failure means HG could
+not construct a compatible graph; an evaluation failure comes from a callback or
+library calculation during the run. The runner propagates either failure after cleanup.
 
 ## Type errors
 
-An integer input multiplied by a floating-point scalar has no matching numeric
-overload. The error names the operation and the supplied types. Convert the
-integer input explicitly when the required result is floating point.
+If an expression has no matching overload, compare its supplied types with the
+operation's accepted types. For example, multiplying an integer input by a
+floating-point scalar requires an explicit conversion of the integer input.
+The error names the operation and both supplied types.
 
 The example prints the first two diagnostic lines, then runs the corrected graph.
 The full error also lists the rejected overloads and their reasons.
@@ -123,9 +125,11 @@ Keep the complete diagnostic when reporting a failure.
 
 ## Evaluation errors
 
-A zero divisor is a valid integer input to HG. Application code must decide
-whether to reject it, publish a fallback, or skip publication. This example
-first rejects zero, then implements a policy that skips the result for zero.
+If a value is valid for its type but unsuitable for the calculation, handle it in
+node code before performing the operation. A zero divisor, for example, is a valid
+integer input to HG; application code must decide whether to reject it, publish a
+fallback, or skip publication. This example first rejects zero, then skips the result
+for zero.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -254,6 +258,9 @@ See [output publication](../guide/nodes/results.md#skipping-publication) for no-
 
 ## Other wiring failures
 
+If the types appear correct but construction still fails, check the connection
+contracts, service registrations, and dependency structure:
+
 | Failure | Check | Correction |
 | --- | --- | --- |
 | Optional argument rejected | Receiver's validity constraint | Declare an optional parameter or supply a fallback |
@@ -267,9 +274,11 @@ Read candidate rejection reasons before changing a signature.
 
 ## Missing or unexpected updates
 
-An invalid required input normally prevents evaluation; it does not raise an
-exception. A skipped test position preserves a previous value. Invalidation
-removes it. [Testing](testing.md) records those events without application sources.
+If the graph runs but a result is missing or arrives unexpectedly, check what
+schedules the calculation and whether its inputs are available. An invalid required
+input normally prevents evaluation without raising an exception. A skipped test
+position preserves a previous value, while invalidation removes it.
+[Testing](testing.md) records those events without application sources.
 
 - Check whether all required inputs have current values.
 - Check which inputs schedule evaluation and which merely retain values.
