@@ -76,17 +76,11 @@ TEST_CASE("convert a dictionary selected through a nested map to a scalar snapsh
           "[feature:reference][feature:map][feature:operator][series:tsd][scalar:dict]"
           "[transition:update][transition:removal]") {
     const auto inner_dictionary = graph([](wp<TSD<i64, TS<i64>>> values) { return values; });
-    const auto sum = node([](In<TS<Dict<i64, i64>>> values) {
-        auto total = i64{};
-        values.value_view().for_each([&](const auto &, const auto &value) { total += value.value(); });
-        return total;
-    });
 
-    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
+    const auto tested = graph([&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
         const auto selected = map(inner_dictionary, values)[i64{1}];
-        const auto snapshot = operators::convert[type<TS<Dict<i64, i64>>>](selected);
-        return sum(snapshot);
-    };
+        return operators::convert[type<TS<Dict<i64, i64>>>](selected);
+    });
 
     CHECK(run_graph(tested,
                     {{{1, {{10, 1}, {20, 2}}}, {2, {{30, 3}}}},
@@ -94,7 +88,11 @@ TEST_CASE("convert a dictionary selected through a nested map to a scalar snapsh
                      {{2, {{30, 5}}}},
                      {{1, {{20, literal::REMOVE}}}},
                      {{1, {{10, 6}}}}})
-              .equals<i64>({3, 6, std::nullopt, 4, 6}));
+              .equals({{{10, 1}, {20, 2}},
+                       {{10, 4}, {20, 2}},
+                       literal::SKIP,
+                       {{10, 4}},
+                       {{10, 6}}}));
 }
 
 TEST_CASE("a compound scalar field follows a mapped item reference",
@@ -107,10 +105,9 @@ TEST_CASE("a compound scalar field follows a mapped item reference",
     };
 
     CHECK(run_graph(tested,
-                    input<TSD<i64, TS<Bundle<reference_point>>>>(
-                        {{{1, {{"count", 1}, {"label", "one"}}}},
-                         {{1, {{"count", 2}, {"label", "two"}}}},
-                         {{1, {{"count", 3}, {"label", "three"}}}}}))
+                    {{{1, {{"count", 1}, {"label", "one"}}}},
+                     {{1, {{"count", 2}, {"label", "two"}}}},
+                     {{1, {{"count", 3}, {"label", "three"}}}}})
               .equals<i64>({1, 2, 3}));
 }
 
@@ -129,17 +126,12 @@ TEST_CASE("collect scalar ticks routed through mesh item references",
 
 TEST_CASE("convert a directly selected dictionary reference to a scalar snapshot",
           "[feature:reference][feature:operator][series:tsd][scalar:dict]") {
-    const auto sum = node([](In<TS<Dict<i64, i64>>> values) {
-        auto total = i64{};
-        values.value_view().for_each([&](const auto &, const auto &value) { total += value.value(); });
-        return total;
+    const auto tested = graph([](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
+        return operators::convert[type<TS<Dict<i64, i64>>>](values[i64{1}]);
     });
 
-    const auto tested = [&](wp<TSD<i64, TSD<i64, TS<i64>>>> values) {
-        return sum(operators::convert[type<TS<Dict<i64, i64>>>](values[i64{1}]));
-    };
-
-    CHECK(run_graph(tested, {{{1, {{10, 1}, {20, 2}}}}, {{1, {{10, 4}}}}}).equals<i64>({3, 6}));
+    CHECK(run_graph(tested, {{{1, {{10, 1}, {20, 2}}}}, {{1, {{10, 4}}}}})
+              .equals({{{10, 1}, {20, 2}}, {{10, 4}, {20, 2}}}));
 }
 
 TEST_CASE("sum a free fixed list built from items selected through a map",
@@ -189,7 +181,7 @@ TEST_CASE("recombine fields from a mapped bundle reference and observe each fiel
                        {{"left", 2}}}));
 }
 
-TEST_CASE("a switched outer dictionary routes nested mapped item updates",
+TEST_CASE("a switch ignores inactive dictionary changes and samples a re-added nested item",
           "[feature:reference][feature:map][feature:switch][feature:state]"
           "[series:tsd][series:value][binding:reference-to-value][transition:update]"
           "[transition:removal][transition:addition]") {

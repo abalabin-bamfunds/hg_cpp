@@ -37,13 +37,13 @@ The ten cases are in
 | Mapped dictionary item to target value | A selected nested item follows target updates. |
 | `collect` over a nested mapped reference | Appends selected target events, ignores unrelated keys, and preserves history across invalidation and revalidation. |
 | `merge` over two nested mapped references | Forwards updates from either selected item in input order. |
-| Dictionary conversion after nested selection | Emits scalar snapshots after updates, unrelated-key changes, and item removal. |
+| Dictionary conversion after nested selection | Emits complete `Dict` snapshots after selected-item updates and removal; unrelated outer-key updates produce no output. |
 | Compound scalar field through mapped selection | A field projection follows complete scalar updates. |
 | `collect` over mesh item references | Accumulates selected mesh outputs as their items update. |
-| Direct dictionary selection before conversion | Provides a direct-selection control for the nested-map snapshot case. |
+| Direct dictionary selection before conversion | Provides a control case that asserts complete `Dict` snapshots directly. |
 | Free fixed list built from mapped selections | A reduction observes sparse item updates, invalidation, and revalidation. |
 | Free bundle recombined from mapped reference fields | Independent field counts reflect partial field updates. |
-| Switch outer dictionary before nested map selection | The selected nested item follows branch changes, updates, removal, and recreation. |
+| Switch outer dictionary before nested map selection | Changes to the inactive first source are ignored; switching back samples its re-added nested item. |
 
 ## Findings
 
@@ -51,13 +51,6 @@ All ten new cases pass. No implementation defect or design gap was reproduced.
 The cases exercise selected combinations, not the full product of reference
 producers, consumers, and higher-level graphs. The selected patterns require no
 unimplemented functionality, so none were excluded on that basis.
-
-An early test draft declared a node template inside its graph callable. Graph
-compilation retains references to node templates, so that test object must
-outlive compilation. Moving the node definition to the surrounding scope
-resolved the test crash. A compound-scalar input also had to provide all fields
-on every tick; the test now supplies complete values. Neither issue indicates
-a product defect.
 
 ## Verification
 
