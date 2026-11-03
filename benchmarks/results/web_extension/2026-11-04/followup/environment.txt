@@ -1,7 +1,8 @@
 BG web extension follow-up benchmark environment
 Captured: 2026-11-04
 Engine revision: a2f3d723d695eeca5e4399fb7cc850349c5dd0ef
-Benchmark branch commit: 46b91f6a9f4ca72f3f58e9a013f974df2ad7447f
+Benchmark branch starting commit: 46b91f6a9f4ca72f3f58e9a013f974df2ad7447f
+  Selector changes were uncommitted during these measurements.
 Working directory: /home/abalabin/_bg/.lanes/web-http-server
 
 Build
