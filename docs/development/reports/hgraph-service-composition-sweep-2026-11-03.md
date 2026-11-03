@@ -96,7 +96,7 @@ the separately installed root value. Automatic capture of registration-time
 lexical context remains an API/design gap relative to the upstream pattern;
 this batch does not introduce that behavior.
 
-## Finding: recursive service replies cross their own nested owner
+## Recursive service adaptation requires reply feedback
 
 The recursive request/reply case still fails during compilation after applying
 `feedback_service_implementation`. Its terminating branch returns `1`; the
@@ -121,25 +121,36 @@ materializes the reply reference; resolving inherited inputs makes the outer
 node depend on that reference. The resulting two-node cycle remains even
 though requests are delayed.
 
-Classification: wiring limitation in the feedback wrapper and nested reply
-boundary. The compiler correctly rejects the topology it receives. Supporting
-this upstream recursive pattern requires a design decision about the reply
-boundary. The hidden `[.][repro]` case asserts the intended successful
-trace. No graph evaluation starts, and no production code changed.
+The upstream service infrastructure also supplies a reply feedback boundary.
+In 0.5, `RequestReplyServiceNodeClass.wire_outside_stubs` creates a
+`last_value_source_node` for `replies_fb`; `write_service_replies` applies
+implementation reply deltas to that source. In the 0.8 snapshot,
+`include/hgraph/types/keyed_service_transport.h` defines `FullFeedback` as a
+next-cycle request relay and feedback response relay. Service-dependent
+request/reply implementations select that transport, as specified in
+`docs/source/developer_guide/services.rst`.
+
+The HG adaptation supplies request feedback only. It omits the reply feedback
+needed to break the observed cycle. Classification: incomplete adaptation of
+upstream service transport; this rejection does not establish a defect in HG.
+Recursive behavior with explicit reply feedback remains unverified. The hidden
+`[.][repro]` case currently records this incomplete adaptation; its expected
+five-position output trace must be revised for the additional feedback delay.
+No graph evaluation starts, and no production code changed.
 
 ## Verification
 
 The batch adds 12 test cases: six service-composition cases and six
-hierarchical-scalar feedback cases. Eleven pass; the recursive service case
-is a hidden reproduction. The multiservice case runs all 18 selected interface
+hierarchical-scalar feedback cases. Eleven pass; the incomplete recursive
+adaptation is hidden. The multiservice case runs all 18 selected interface
 orders.
 
 The focused runner includes the new cases and their existing service,
 multiservice, subscription, reference-service, and feedback neighbors:
 
 - Ordinary run: **96 cases, 249 assertions passed**.
-- Explicit recursive reproduction: **one case fails** with the dependency
-  cycle above.
+- Explicit recursive adaptation: **one case fails** with the dependency cycle
+  above because reply feedback is absent.
 - Structured coverage tags validate with `tools/test_coverage.py --check`.
 - `git diff --check`, the new C++ files' 120-column limit, and the report/index
   local link targets and anchors pass.
