@@ -6,10 +6,15 @@
 #include <hg/python/node.hpp>
 #include <hg/python/operator.hpp>
 #include <hg/python/object.hpp>
+#include <hg/python/graph_definition.hpp>
 #include <hg/python/schema.hpp>
 #include <hg/python/scalar_conversion.hpp>
 #include <hg/python/service.hpp>
 #include <hg/python/wiring_point.hpp>
+#include <hg/graph/compiled_graph.hpp>
+#include <hg/graph/graph_wiring.hpp>
+#include <hg/graph/wiring_argument.hpp>
+#include <hg/graph/wiring_context.hpp>
 #include <hg/graph/runtime_graph.hpp>
 #include <hg/library/operators.hpp>
 #include <hg/scalar/builtins.hpp>
@@ -26,6 +31,8 @@
 #include <hg/util/scope_exit.hpp>
 
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/string.h>
+#include <nanobind/stl/vector.h>
 
 #include <array>
 #include <atomic>
@@ -33,6 +40,9 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
+#include <string>
+#include <vector>
 #include <stdexcept>
 #include <string_view>
 
@@ -78,6 +88,14 @@ const auto alternate_native_python_service =
 
 std::array<std::atomic<int>, 4> native_node_lifecycle{};
 std::array<std::atomic<std::uint64_t>, 2> native_interruption_lifecycle{};
+
+struct custom_labeled_source_definition {
+    hg::Out<hg::TS<hg::i64>> output;
+
+    void evaluate() const { output.set(1); }
+};
+
+const auto custom_labeled_source = hg::node<custom_labeled_source_definition>([] { return "native-custom"; });
 
 struct native_continuous_timer_node {
     static constexpr bool uses_timed_scheduling = true;
@@ -364,6 +382,26 @@ nanobind::object extension_scalar_to_python(hg::Scalar<>, const hg::python::Pyth
 } // namespace
 
 NB_MODULE(_hg_test_extension, module) {
+    module.def("compiled_wiring_paths", [](const hg::python::PythonGraphDefinition &definition) {
+        auto wiring = hg::GraphWiring{};
+        auto context = hg::WiringContext{wiring};
+        auto scope = hg::python::PythonWiringScope{wiring};
+        (void)static_cast<const hg::WiringTemplate &>(definition)(std::span<const hg::WiringArgument>{});
+        wiring.finalize();
+
+        auto compiled = hg::CompiledGraph{wiring};
+        auto paths = std::vector<std::string>{};
+        paths.reserve(compiled.node_count());
+        for (auto index = std::size_t{}; index < compiled.node_count(); ++index) {
+            paths.push_back(compiled.wiring_path(index).text());
+        }
+        return paths;
+    });
+    module.def("custom_labeled_source", [] {
+        const auto point = custom_labeled_source();
+        return nanobind::cast(hg::python::PythonWiringPoint{
+            point, hg::python::PythonWiringScope::current()});
+    });
     module.def("export_native_pair_schema", [](nanobind::handle python_type) {
         hg::python::export_schema(python_type, native_pair_time_series_schema(), &native_pair_scalar_schema());
     });

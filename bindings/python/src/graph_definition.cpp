@@ -5,6 +5,7 @@
 #include <hg/python/wiring_point.hpp>
 #include <hg/graph/wiring_context.hpp>
 #include <hg/graph/context.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include "python_context.hpp"
 #include "wiring_argument.hpp"
@@ -13,17 +14,20 @@
 #include <memory_resource>
 #include <span>
 #include <stdexcept>
+#include <string_view>
 #include <utility>
 #include <vector>
 
 namespace hg::python {
+namespace nb = nanobind;
+
 namespace {
 
 thread_local std::shared_ptr<PythonWiringLifetime> active_wiring_lifetime;
 
 } // namespace
 
-PythonWiringScope::PythonWiringScope(const GraphWiring &wiring) {
+PythonWiringScope::PythonWiringScope(GraphWiring &wiring) {
     if (active_wiring_lifetime != nullptr && active_wiring_lifetime->is_active_for(wiring)) {
         lifetime_ = active_wiring_lifetime;
         return;
@@ -49,6 +53,91 @@ std::shared_ptr<PythonWiringLifetime> PythonWiringScope::current() {
         throw std::logic_error{"Python wiring points can only be created during graph construction"};
     }
     return active_wiring_lifetime;
+}
+
+void PythonWiringLifetime::enter_graph(nanobind::handle function, const WiringPath *path) {
+    auto code = nb::getattr(function, "__code__", nb::none());
+    graph_calls_.push_back({Object{code}, path, {}});
+}
+
+void PythonWiringLifetime::leave_graph() noexcept { graph_calls_.pop_back(); }
+
+void PythonWiringLifetime::observe() {
+    if (graph_calls_.empty()) {
+        return;
+    }
+
+    auto &graph_call = graph_calls_.back();
+    if (graph_call.frame) {
+        return;
+    }
+    if (!graph_call.code || graph_call.code.get().ptr() == Py_None) {
+        return;
+    }
+
+    auto *current_frame = PyEval_GetFrame();
+    if (current_frame == nullptr) {
+        return;
+    }
+
+    auto frame = nb::borrow<nb::object>(nb::handle{reinterpret_cast<PyObject *>(current_frame)});
+    while (frame && frame.ptr() != Py_None) {
+        auto code = nb::getattr(frame, "f_code", nb::none());
+        if (code.ptr() == graph_call.code.get().ptr()) {
+            graph_call.frame = Object{frame};
+            return;
+        }
+
+        frame = nb::getattr(frame, "f_back", nb::none());
+    }
+}
+
+void PythonWiringLifetime::label_graph() {
+    auto &graph_call = graph_calls_.back();
+    if (!graph_call.frame) {
+        return;
+    }
+
+    auto locals = nb::steal<nb::object>(PyObject_GetAttrString(graph_call.frame.get().ptr(), "f_locals"));
+    if (!locals) {
+        nb::raise_python_error();
+    }
+    auto items = nb::steal<nb::object>(PyMapping_Items(locals.ptr()));
+    if (!items) {
+        nb::raise_python_error();
+    }
+
+    const auto count = PySequence_Size(items.ptr());
+    if (count < 0) {
+        nb::raise_python_error();
+    }
+    for (auto index = Py_ssize_t{}; index < count; ++index) {
+        auto *item = PySequence_GetItem(items.ptr(), index);
+        if (item == nullptr) {
+            nb::raise_python_error();
+        }
+        auto entry = nb::steal<nb::object>(item);
+        const auto key = PyTuple_GetItem(entry.ptr(), 0);
+        const auto value = PyTuple_GetItem(entry.ptr(), 1);
+        if (key == nullptr || value == nullptr || !PyUnicode_Check(key) ||
+            !nb::isinstance<PythonWiringPoint>(value)) {
+            continue;
+        }
+
+        const auto point = nb::cast<const PythonWiringPoint &>(nb::handle{value}).get(*wiring_);
+        const auto identity = wiring_->node_call_identity(point);
+        if (!identity) {
+            continue;
+        }
+
+        auto name_size = Py_ssize_t{};
+        const auto *name = PyUnicode_AsUTF8AndSize(key, &name_size);
+        if (name == nullptr) {
+            nb::raise_python_error();
+        }
+        wiring_->set_default_node_label(
+            *identity, graph_call.path, util::symbol{std::string_view{name, static_cast<std::size_t>(name_size)}});
+    }
 }
 
 PythonGraphDefinition::PythonGraphDefinition(
@@ -128,11 +217,14 @@ std::optional<WiringPoint> PythonGraphDefinition::wire(GraphWiring &wiring, Reso
     }
     auto call_arguments = tuple.commit();
     const auto function = function_.lock();
+    scope.lifetime()->enter_graph(function.get(), WiringContext::current().path());
+    auto leave_graph = util::scope_exit{[&]() noexcept { scope.lifetime()->leave_graph(); }};
     auto *result = PyObject_CallObject(function.get().ptr(), call_arguments.ptr());
     if (result == nullptr) {
         nanobind::raise_python_error();
     }
     auto returned = nanobind::steal<nanobind::object>(result);
+    scope.lifetime()->label_graph();
 
     const auto *expected_output = signature_->signature.output();
     if (returned.is_none()) {

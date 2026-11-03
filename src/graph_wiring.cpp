@@ -31,10 +31,11 @@ struct GraphWiring::PendingNodeCall {
     PendingNodeCall(const NodeTemplate &node_template, ResolvedSignature signature, const TypeMap &type_map,
                     std::span<const WiringArgument> arguments, const TimeSeriesRuntimeType *output_runtime_type,
                     const WiringPath *path,
-                    details::MultiservicePorts *multiservice_ports)
+                    details::MultiservicePorts *multiservice_ports, bool generated_label)
         : node_template{&node_template}, signature{std::move(signature)}, type_map{type_map.copy()},
           arguments{arguments.begin(), arguments.end()}, output_runtime_type{output_runtime_type},
-          context{details::ContextSnapshot::capture()}, path{path}, multiservice_ports{multiservice_ports} {
+          context{details::ContextSnapshot::capture()}, path{path}, multiservice_ports{multiservice_ports},
+          generated_label{generated_label} {
         const auto diagnostic_contexts = details::WiringDiagnosticContext::current(WiringContext::current().wiring());
         this->diagnostic_contexts.assign(diagnostic_contexts.begin(), diagnostic_contexts.end());
     }
@@ -47,6 +48,7 @@ struct GraphWiring::PendingNodeCall {
     details::ContextSnapshot context;
     const WiringPath *path;
     details::MultiservicePorts *multiservice_ports;
+    bool generated_label;
     std::vector<WiringErrorContext> diagnostic_contexts;
     State state{State::pending};
     std::optional<WiringPoint> pending_output;
@@ -491,9 +493,10 @@ std::optional<WiringPoint> GraphWiring::invoke_resolved(const WiringTemplate &wi
     const auto *expected_output = signature.output;
     const auto *declared_output = wiring_template.signature().output();
     const auto infer_output = resolution.infer_output;
-    const auto label = wiring_template.label(signature, arguments, default_label());
-    const auto &path = make_path(path_name, label);
-    auto context = WiringContext{*this, path};
+    const auto label = wiring_template.label(signature, arguments);
+    const auto generated_label = !label.has_value();
+    const auto &path = make_path(path_name, label.value_or(default_label()));
+    auto context = WiringContext{*this, path, generated_label};
     auto call_context = WiringErrorContext{.stage = WiringFailureStage::callback,
                                            .path = path.text(),
                                            .operation = signature.name};
@@ -562,7 +565,8 @@ WiringPoint GraphWiring::defer_node_call(const NodeTemplate &node_template, Reso
     }
     auto pending = std::make_unique<PendingNodeCall>(node_template, std::move(signature), type_map, arguments,
                                                      output_runtime_type, WiringContext::current().path(),
-                                                     WiringContext::current().multiservice_ports_if_available());
+                                                     WiringContext::current().multiservice_ports_if_available(),
+                                                     WiringContext::current().generated_label());
     for (auto index = std::size_t{}; index < pending->arguments.size(); ++index) {
         const auto &argument = pending->arguments[index];
         if (!argument.is_time_series()) {
@@ -624,8 +628,8 @@ WiringPoint GraphWiring::resolve_pending_node_call(std::size_t identity) {
     auto context = call.context.activate();
     auto diagnostics = details::WiringDiagnosticContext{*this, call.diagnostic_contexts};
     auto wiring_context = call.multiservice_ports == nullptr
-                              ? WiringContext{*this, *call.path}
-                              : WiringContext{*this, *call.path, *call.multiservice_ports};
+                              ? WiringContext{*this, *call.path, call.generated_label}
+                              : WiringContext{*this, *call.path, *call.multiservice_ports, call.generated_label};
     const auto expected_output = call.signature.output;
     auto output = call.node_template->bind(*this, call.signature, call.type_map, call.arguments,
                                           call.output_runtime_type);
@@ -1361,6 +1365,21 @@ std::optional<NodeCallIdentity> GraphWiring::node_call_identity(WiringPoint poin
         return std::nullopt;
     }
     return point.record()->node_call_identity();
+}
+
+void GraphWiring::set_default_node_label(NodeCallIdentity identity, const WiringPath *parent, util::symbol label) {
+    ensure_open();
+    if (identity.value >= pending_node_calls_.size()) {
+        throw WiringError{"a node label identity is not in this GraphWiring"};
+    }
+
+    auto &call = *pending_node_calls_[identity.value];
+    if (call.path->parent != parent || !call.generated_label) {
+        return;
+    }
+
+    const_cast<WiringPath *>(call.path)->label = std::move(label);
+    call.generated_label = false;
 }
 
 void GraphWiring::register_service_binding_consumer(const details::NestedBindingIdentity &identity,

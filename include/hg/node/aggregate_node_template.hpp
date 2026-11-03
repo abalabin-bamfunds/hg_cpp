@@ -99,10 +99,10 @@ class AggregateNodeTemplate final
         return nullptr;
     }
 
-    util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,
-                       util::symbol default_label) const override {
+    std::optional<util::symbol> label(const ResolvedSignature &signature,
+                                      std::span<const WiringArgument> arguments) const override {
         if constexpr (std::same_as<Label, details::default_wiring_label>) {
-            return default_label;
+            return std::nullopt;
         } else {
             if (!details::wiring_parameters_match<Label>(this->signature(), signature)) {
                 throw WiringError{"a node label function does not match its resolved signature"};

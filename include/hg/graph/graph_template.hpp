@@ -110,10 +110,10 @@ class GraphTemplate final
     }
 
   private:
-    util::symbol label(const ResolvedSignature &signature, std::span<const WiringArgument> arguments,
-                       util::symbol default_label) const override {
+    std::optional<util::symbol> label(const ResolvedSignature &signature,
+                                      std::span<const WiringArgument> arguments) const override {
         if constexpr (std::same_as<LabelFunction, details::default_wiring_label>) {
-            return default_label;
+            return std::nullopt;
         } else {
             const auto &label_function = [&]() -> const LabelFunction & {
                 if constexpr (requires { options_.label_function(); }) {

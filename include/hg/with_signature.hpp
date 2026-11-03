@@ -89,6 +89,11 @@ template <typename Target> class SignatureWiringTemplate final : public WiringTe
     bool allows_output_inference() const noexcept override { return target_.allows_output_inference(); }
 
   private:
+    std::optional<util::symbol> label(const ResolvedSignature &signature,
+                                      std::span<const WiringArgument> arguments) const override {
+        return static_cast<const WiringTemplate &>(target_).label(signature, arguments);
+    }
+
     std::optional<WiringPoint> wire(GraphWiring &wiring, ResolvedSignature, const WiringArguments &call,
                                     std::span<const WiringArgument> arguments) const override {
         const auto public_fixed_count = signature_.first_variadic_parameter().value_or(signature_.parameter_count());

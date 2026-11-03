@@ -43,14 +43,15 @@ class WiringContext {
 
     static WiringContext &current();
 
-    WiringContext(GraphWiring &wiring, const WiringPath &path) noexcept;
+    WiringContext(GraphWiring &wiring, const WiringPath &path, bool generated_label = false) noexcept;
     WiringContext(GraphWiring &wiring, details::MultiservicePorts &multiservice_ports) noexcept;
-    WiringContext(GraphWiring &wiring, const WiringPath &path,
-                  details::MultiservicePorts &multiservice_ports) noexcept;
+    WiringContext(GraphWiring &wiring, const WiringPath &path, details::MultiservicePorts &multiservice_ports,
+                  bool generated_label = false) noexcept;
 
     GraphWiring &wiring() const noexcept { return *wiring_; }
 
     const WiringPath *path() const noexcept { return path_; }
+    bool generated_label() const noexcept { return generated_label_; }
 
     details::MultiservicePorts &multiservice_ports() const;
     details::MultiservicePorts *multiservice_ports_if_available() const noexcept { return multiservice_ports_; }
@@ -58,6 +59,7 @@ class WiringContext {
   private:
     GraphWiring *wiring_;
     const WiringPath *path_{};
+    bool generated_label_{};
     WiringContext *previous_;
     details::MultiservicePorts *multiservice_ports_{};
 };

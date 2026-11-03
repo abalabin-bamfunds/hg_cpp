@@ -174,6 +174,9 @@ Node and graph functions accept positional and named arguments according to
 their Python signatures, including positional-only, keyword-only, `*args`, and
 `**kwargs` parameters. A graph function expands into the active graph while it
 is being wired; it does not create a runtime nested-graph boundary.
+Python graph wiring uses the local variable name of an assigned wiring point as
+its node label. A node without an assigned local name keeps the generated label.
+An explicit template label takes precedence.
 
 For `@graph` and `@node`, a plain scalar annotation such as `int` accepts an
 `int` scalar or a `TS[int]` wiring point. A graph function receives the scalar

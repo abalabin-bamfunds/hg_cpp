@@ -160,6 +160,7 @@ class GraphWiring {
                                               const TimeSeriesRuntimeType *output_runtime_type);
     [[nodiscard]] std::size_t node_index(NodeCallIdentity identity) const;
     [[nodiscard]] std::optional<NodeCallIdentity> node_call_identity(WiringPoint point) const noexcept;
+    void set_default_node_label(NodeCallIdentity identity, const WiringPath *parent, util::symbol label);
     bool pending_node_call_ready(std::size_t identity) const noexcept;
     [[nodiscard]] WiringPoint resolve_pending_node_call(std::size_t identity);
     [[nodiscard]] std::size_t register_node(WiredNode node);

@@ -56,8 +56,9 @@ WiringContext::WiringContext(GraphWiring &wiring)
     active_context().set(this);
 }
 
-WiringContext::WiringContext(GraphWiring &wiring, const WiringPath &path) noexcept
-    : wiring_(&wiring), path_(&path), previous_(static_cast<WiringContext *>(active_context().get())),
+WiringContext::WiringContext(GraphWiring &wiring, const WiringPath &path, bool generated_label) noexcept
+    : wiring_(&wiring), path_(&path), generated_label_(generated_label),
+      previous_(static_cast<WiringContext *>(active_context().get())),
       multiservice_ports_(previous_ == nullptr || previous_->wiring_ != &wiring ? nullptr
                                                                                : previous_->multiservice_ports_) {
     active_context().set(this);
@@ -70,8 +71,9 @@ WiringContext::WiringContext(GraphWiring &wiring, details::MultiservicePorts &mu
 }
 
 WiringContext::WiringContext(GraphWiring &wiring, const WiringPath &path,
-                             details::MultiservicePorts &multiservice_ports) noexcept
-    : wiring_(&wiring), path_(&path), previous_(static_cast<WiringContext *>(active_context().get())),
+                             details::MultiservicePorts &multiservice_ports, bool generated_label) noexcept
+    : wiring_(&wiring), path_(&path), generated_label_(generated_label),
+      previous_(static_cast<WiringContext *>(active_context().get())),
       multiservice_ports_(&multiservice_ports) {
     active_context().set(this);
 }

@@ -3,10 +3,13 @@
 #include <hg/graph/graph_wiring.hpp>
 #include <hg/graph/wiring_point.hpp>
 #include <hg/python/export.hpp>
+#include <hg/python/object.hpp>
 
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <unordered_map>
+#include <vector>
 
 namespace hg {
 class NodeTemplate;
@@ -17,7 +20,7 @@ namespace hg::python {
 
 class HG_PYTHON_API PythonWiringLifetime {
   public:
-    explicit PythonWiringLifetime(const GraphWiring &wiring) noexcept : wiring_{&wiring} {}
+    explicit PythonWiringLifetime(GraphWiring &wiring) noexcept : wiring_{&wiring} {}
 
     void end() noexcept { active_ = false; }
 
@@ -44,18 +47,32 @@ class HG_PYTHON_API PythonWiringLifetime {
         }
     }
 
+    void enter_graph(nanobind::handle function, const WiringPath *path);
+    void label_graph();
+    void leave_graph() noexcept;
+    void observe();
+
   private:
-    const GraphWiring *wiring_;
+    struct GraphCall {
+        Object code;
+        const WiringPath *path{};
+        Object frame;
+    };
+
+    GraphWiring *wiring_;
     std::unordered_map<const void *, const NodeTemplate *> node_templates_;
+    std::vector<GraphCall> graph_calls_;
     bool active_{true};
 };
 
 class HG_PYTHON_API PythonWiringPoint {
   public:
     PythonWiringPoint(WiringPoint point, std::shared_ptr<PythonWiringLifetime> lifetime,
-                      bool requires_optional = false, bool requires_valid_items = false) noexcept
+                      bool requires_optional = false, bool requires_valid_items = false)
         : point_{point}, lifetime_{std::move(lifetime)}, requires_optional_{requires_optional},
-          requires_valid_items_{requires_valid_items} {}
+          requires_valid_items_{requires_valid_items} {
+        lifetime_->observe();
+    }
 
     WiringPoint get(const GraphWiring &wiring) const {
         lifetime_->check(wiring);
@@ -86,7 +103,7 @@ class HG_PYTHON_API PythonWiringPoint {
 
 class HG_PYTHON_API PythonWiringScope {
   public:
-    explicit PythonWiringScope(const GraphWiring &wiring);
+    explicit PythonWiringScope(GraphWiring &wiring);
     ~PythonWiringScope();
 
     PythonWiringScope(const PythonWiringScope &) = delete;

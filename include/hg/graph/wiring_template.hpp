@@ -43,9 +43,8 @@ class WiringTemplate {
     [[nodiscard]] virtual std::optional<WiringPoint>
     invoke(GraphWiring &wiring, std::span<const WiringArgument> arguments, const TypeMap *seed_type_map) const;
 
-    virtual util::symbol label(const ResolvedSignature &, std::span<const WiringArgument>,
-                               util::symbol default_label) const {
-        return default_label;
+    virtual std::optional<util::symbol> label(const ResolvedSignature &, std::span<const WiringArgument>) const {
+        return std::nullopt;
     }
 
     [[nodiscard]] virtual std::optional<WiringPoint>
