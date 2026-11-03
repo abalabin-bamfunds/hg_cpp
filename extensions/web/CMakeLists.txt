@@ -68,6 +68,7 @@ target_link_libraries(
 )
 target_include_directories(hg_web SYSTEM PRIVATE ${certify_SOURCE_DIR}/include)
 if(WIN32)
+    target_compile_definitions(hg_web PRIVATE NOMINMAX)
     target_link_libraries(hg_web PRIVATE Crypt32)
 elseif(APPLE)
     target_link_libraries(hg_web PRIVATE "-framework CoreFoundation" "-framework Security")
