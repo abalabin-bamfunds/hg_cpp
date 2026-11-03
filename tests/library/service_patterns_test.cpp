@@ -13,8 +13,10 @@
 #include <hg/time_series/tss/tss_type.hpp>
 
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_string.hpp>
 
 #include <optional>
+#include <stdexcept>
 
 using namespace hg;
 using namespace hg::literals;
@@ -247,7 +249,7 @@ TEST_CASE("subscription requests stay active while another map branch uses the s
 }
 
 TEST_CASE("feedback service wrapper infers a mapped implementation output",
-          "[.][repro][feature:feedback][feature:service][series:tsd][series:value]") {
+          "[feature:feedback][feature:service][series:tsd][series:value]") {
     const auto adjust = service<auto(TS<i64>)->TS<i64>>{"inferred_adjust", {"value"}};
     const auto add_one = node([](i64 value) { return value + 1; });
 
@@ -265,8 +267,10 @@ TEST_CASE("feedback service wrapper infers a mapped implementation output",
 }
 
 TEST_CASE("nested graphs infer an operator output type",
-          "[.][repro][feature:graph-compilation][feature:nested-graph][series:value][scalar:i64]") {
-    const auto inferred = graph("name"_n = "inferred_increment", [](wp<TS<i64>> value) {
+          "[feature:graph-compilation][feature:nested-graph][series:value][scalar:i64]") {
+    auto body_calls = std::size_t{};
+    const auto inferred = graph("name"_n = "inferred_increment", [&](wp<TS<i64>> value) {
+        ++body_calls;
         return operators::add(value, i64{1});
     });
 
@@ -285,4 +289,29 @@ TEST_CASE("nested graphs infer an operator output type",
 
     CHECK(run_graph(declared_call, {1, 2}).equals<i64>({2, 3}));
     CHECK(run_graph(inferred_call, {1, 2}).equals<i64>({2, 3}));
+    CHECK(body_calls == 1);
+}
+
+TEST_CASE("nested graphs preserve output resolver failures before wiring the body",
+          "[feature:graph-compilation][feature:nested-graph][feature:type-system]") {
+    using OUTPUT_VALUE = ScalarVariable<"NESTED_OUTPUT_VALUE">;
+    auto resolver_calls = std::size_t{};
+    auto body_calls = std::size_t{};
+    const auto unresolved = graph(
+        "name"_n = "unresolved_nested_output",
+        resolve<OUTPUT_VALUE> = [&](const TypeMap &) -> const ScalarType & {
+            ++resolver_calls;
+            throw std::runtime_error{"nested output resolver rejected the graph"};
+        },
+        [&](wp<TS<i64>> value) -> wp<TS<OUTPUT_VALUE>> {
+            ++body_calls;
+            return wp<TS<OUTPUT_VALUE>>{value};
+        });
+
+    const auto tested = [&](wp<TS<i64>> value, wp<TS<bool>> run) { return nested(unresolved, run, value); };
+
+    CHECK_THROWS_WITH(run_graph(tested, {1}, {true}),
+                      Catch::Matchers::ContainsSubstring("nested output resolver rejected the graph"));
+    CHECK(resolver_calls == 1);
+    CHECK(body_calls == 0);
 }
