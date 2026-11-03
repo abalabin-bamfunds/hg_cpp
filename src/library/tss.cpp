@@ -513,7 +513,7 @@ struct tsd_set_overloads {
         return raw_lhs[keys].template as<TSD<K, REF<TS_T>>>();
     }
 
-    template <bool SYMMETRIC> struct reference_routing_node {
+    template <bool SYMMETRIC> struct select_item_references_impl {
         In<TSD<K, REF<TS_T>, G>> lhs;
         In<TSD<K, REF<TS_T>, G>> rhs;
         In<TSS<K, G>> lhs_keys;
@@ -593,7 +593,7 @@ struct tsd_set_overloads {
         const auto rhs_keys = operators::keys_(rhs);
         const auto lhs_references = static_cast<WiringPoint>(lhs).template as<TSD<K, REF<TS_T>, G>>();
         const auto rhs_references = static_cast<WiringPoint>(rhs).template as<TSD<K, REF<TS_T>, G>>();
-        static const auto select_item_references = hg::node<reference_routing_node<SYMMETRIC>>();
+        static const auto select_item_references = hg::node<select_item_references_impl<SYMMETRIC>>();
         return select_item_references(lhs_references, rhs_references, lhs_keys, rhs_keys);
     }
 
