@@ -2,7 +2,7 @@
 
 This sweep checks runtime dispatch inside map and switch graphs, per-key state,
 structured outputs, and inherited context. It adds four tests and records two
-API limitations. No production code was changed. Integration uses HG baseline
+wiring and declaration gaps. No production code was changed. Integration uses HG baseline
 `54cdfda71`.
 
 ## Sources and existing coverage
@@ -44,7 +44,7 @@ All four cases pass. Combined verification is recorded in the
 
 ## Findings
 
-### Free bundle output: documented dispatch restriction
+### Free bundle output: switch compatibility not applied in dispatch
 
 The [dispatch contract](../design/operators.md#runtime-dispatch) requires
 collection outputs to have identical dereferenced types. A free
@@ -59,8 +59,18 @@ first checks compatibility, then rejects this collection type difference with
 an already compatible free bundle, so `.as<TSB<...>>()` does not materialize it.
 The native TSB-producing node control passes and is used in the added test.
 
-Classification: a documented collection output restriction. Generalizing this
-boundary requires a separate design decision. No runtime defect was reproduced.
+Switch already handles this difference. Commit `c11a9c1d8` removes references
+recursively before computing its common output target, then publishes a
+reference to that target. This follows the accepted
+[switch output compatibility decision](../decisions/0094-switch-output-reference-compatibility.md).
+Dispatch constructs switch branches, but its wrapper rejects the compatible
+collection before switch output inference can apply that rule.
+
+Classification: a wiring inconsistency with the accepted switch compatibility
+rule. The dispatch documentation records the current restriction, but this
+case does not require a new representation design. Dispatch should retain its
+declared-output compatibility check and allow compatible free and native
+collection outputs through the existing switch boundary. No fix is included.
 
 ### Callable node state: C++ API implementation gap
 
