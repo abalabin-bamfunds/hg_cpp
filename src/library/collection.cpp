@@ -12,6 +12,7 @@
 #include <hg/time_series/tsl/tsl_type.hpp>
 
 #include <cstddef>
+#include <ranges>
 #include <string_view>
 #include <type_traits>
 #include <vector>
@@ -424,10 +425,185 @@ struct collection_overloads {
     }};
 };
 
+struct scalar_list_overloads {
+    using ITEM = ScalarVariable<"SCALAR_LIST_ITEM">;
+    using EQUALITY_ITEM = ScalarVariable<"SCALAR_LIST_EQUALITY_ITEM", EqualityComparable>;
+
+    // List addition.
+    template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE> struct add_list_list_impl {
+        In<TS<List<ITEM>, G>, VALIDITY> lhs;
+        In<TS<List<ITEM>, G>, VALIDITY> rhs;
+        Out<TS<List<ITEM>, OUTPUT_GUARANTEE>> output;
+
+        void evaluate() const {
+            if constexpr (VALIDITY == optional) {
+                if (!lhs.valid()) {
+                    if (rhs.valid()) {
+                        output.copy(rhs);
+                    } else {
+                        output.set(std::views::empty<Scalar<ITEM>>);
+                    }
+                    return;
+                }
+
+                if (!rhs.valid()) {
+                    output.copy(lhs);
+                    return;
+                }
+            }
+
+            const auto lhs_values = lhs.value_view();
+            const auto rhs_values = rhs.value_view();
+            const auto lhs_size = lhs_values.size();
+            auto result = std::views::iota(std::size_t{}, lhs_size + rhs_values.size()) |
+                          std::views::transform([lhs_values, rhs_values, lhs_size](std::size_t index) {
+                              return index < lhs_size ? lhs_values[index] : rhs_values[index - lhs_size];
+                          });
+            output.set(result);
+        }
+    };
+
+    overload<add, add_list_list_impl<required, G>> add_list_list;
+    overload<add, add_list_list_impl<optional, TimeSeriesGuarantee::ordinary>> add_list_list_optional;
+    overload<add> add_list_scalar_list{graph(
+        [](wp<TS<List<ITEM>, G>> lhs, Scalar<List<ITEM>> rhs) { return operators::add(lhs, operators::const_(rhs)); })};
+    overload<add> add_list_scalar_list_optional{graph(
+        [](wp<TS<List<ITEM>, G>, optional> lhs, Scalar<List<ITEM>> rhs) {
+            return operators::add(lhs, operators::const_(rhs));
+        })};
+
+    template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE> struct add_list_item_impl {
+        In<TS<List<ITEM>, G>, VALIDITY> lhs;
+        In<TS<ITEM, G>, VALIDITY> rhs;
+        Out<TS<List<ITEM>, OUTPUT_GUARANTEE>> output;
+
+        void evaluate() const {
+            if constexpr (VALIDITY == optional) {
+                if (!lhs.valid()) {
+                    if (rhs.valid()) {
+                        output.set(std::views::single(rhs.value_view()));
+                    } else {
+                        output.set(std::views::empty<Scalar<ITEM>>);
+                    }
+                    return;
+                }
+
+                if (!rhs.valid()) {
+                    output.copy(lhs);
+                    return;
+                }
+            }
+
+            const auto lhs_values = lhs.value_view();
+            const auto rhs_value = rhs.value_view();
+            const auto lhs_size = lhs_values.size();
+            auto result = std::views::iota(std::size_t{}, lhs_size + 1) |
+                          std::views::transform([lhs_values, rhs_value, lhs_size](std::size_t index) {
+                              return index < lhs_size ? lhs_values[index] : rhs_value;
+                          });
+            output.set(result);
+        }
+    };
+
+    overload<add, add_list_item_impl<required, G>> add_list_item;
+    overload<add, add_list_item_impl<optional, TimeSeriesGuarantee::ordinary>> add_list_item_optional;
+    overload<add> add_list_scalar_item{graph(
+        [](wp<TS<List<ITEM>, G>> lhs, Scalar<ITEM> rhs) { return operators::add(lhs, operators::const_(rhs)); })};
+    overload<add> add_list_scalar_item_optional{graph(
+        [](wp<TS<List<ITEM>, G>, optional> lhs, Scalar<ITEM> rhs) {
+            return operators::add(lhs, operators::const_(rhs));
+        })};
+
+    // List repetition.
+    template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE> struct mul_list_i64_impl {
+        In<TS<List<ITEM>, G>, VALIDITY> lhs;
+        In<TS<i64, G>, VALIDITY> rhs;
+        Out<TS<List<ITEM>, OUTPUT_GUARANTEE>> output;
+
+        void evaluate() const {
+            if constexpr (VALIDITY == optional) {
+                if (!rhs.valid()) {
+                    return;
+                }
+
+                if (!lhs.valid()) {
+                    output.set(std::views::empty<Scalar<ITEM>>);
+                    return;
+                }
+            }
+
+            const auto source = lhs.value_view();
+            const auto repetitions = rhs.value();
+            if (repetitions <= 0 || source.empty()) {
+                output.set(std::views::empty<Scalar<ITEM>>);
+                return;
+            }
+
+            auto result = std::views::iota(i64{}, repetitions) |
+                          std::views::transform([source](i64) {
+                              return std::views::iota(std::size_t{}, source.size()) |
+                                     std::views::transform([source](std::size_t index) { return source[index]; });
+                          }) |
+                          std::views::join;
+            output.set(result);
+        }
+    };
+
+    overload<mul, mul_list_i64_impl<required, G>> mul_list_i64;
+    overload<mul, mul_list_i64_impl<optional, TimeSeriesGuarantee::ordinary>> mul_list_i64_optional;
+    overload<mul> mul_list_scalar_i64{graph(
+        [](wp<TS<List<ITEM>, G>> lhs, Scalar<i64> rhs) { return operators::mul(lhs, operators::const_(rhs)); })};
+    overload<mul> mul_list_scalar_i64_optional{graph(
+        [](wp<TS<List<ITEM>, G>, optional> lhs, Scalar<i64> rhs) {
+            return operators::mul(lhs, operators::const_(rhs));
+        })};
+
+    // List item removal.
+    template <InputValidity VALIDITY, auto OUTPUT_GUARANTEE> struct sub_list_item_impl {
+        In<TS<List<EQUALITY_ITEM>, G>, VALIDITY> lhs;
+        In<TS<EQUALITY_ITEM, G>, VALIDITY> rhs;
+        Out<TS<List<EQUALITY_ITEM>, OUTPUT_GUARANTEE>> output;
+
+        void evaluate() const {
+            if constexpr (VALIDITY == optional) {
+                if (!lhs.valid()) {
+                    output.set(std::views::empty<Scalar<EQUALITY_ITEM>>);
+                    return;
+                }
+
+                if (!rhs.valid()) {
+                    output.copy(lhs);
+                    return;
+                }
+            }
+
+            const auto values = lhs.value_view();
+            const auto item = rhs.value_view();
+            auto remaining = std::views::iota(std::size_t{}, values.size()) |
+                             std::views::filter([values, item](std::size_t index) {
+                                 return !(values[index] == item);
+                             }) |
+                             std::views::transform([values](std::size_t index) { return values[index]; });
+            output.set(remaining);
+        }
+    };
+
+    overload<sub, sub_list_item_impl<required, G>> sub_list_item;
+    overload<sub, sub_list_item_impl<optional, TimeSeriesGuarantee::ordinary>> sub_list_item_optional;
+    overload<sub> sub_list_scalar_item{graph([](wp<TS<List<EQUALITY_ITEM>, G>> lhs, Scalar<EQUALITY_ITEM> rhs) {
+        return operators::sub(lhs, operators::const_(rhs));
+    })};
+    overload<sub> sub_list_scalar_item_optional{graph(
+        [](wp<TS<List<EQUALITY_ITEM>, G>, optional> lhs, Scalar<EQUALITY_ITEM> rhs) {
+            return operators::sub(lhs, operators::const_(rhs));
+        })};
+};
+
 } // namespace
 
 void register_collection_operators() {
     register_overloads<collection_overloads>();
+    register_overloads<scalar_list_overloads>();
 }
 
 } // namespace hg::operators::details

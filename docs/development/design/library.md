@@ -795,6 +795,21 @@ an invalid root as empty. Optional join publishes an ordinary output on
 input changes; it does not schedule an initial evaluation. Empty input
 produces an empty string. Both strings and symbols produce string output.
 
+## Scalar list operators
+
+The [scalar list operator reference](../../user/reference/library-collections.md#scalar-list-operators)
+defines concatenation, append, repetition, and item removal for `TS<List<T>>`.
+The implementations read borrowed scalar views and construct the complete output
+through `Out<TS<List<T>>>::set(range)`. They retain no state. Concatenation,
+append, and removal use lazy indexed ranges; repetition uses a joined range.
+
+Right-hand scalar item, list, and repeat-count arguments are converted to const
+time series during wiring and use the same runtime overloads as time-series
+operands.
+Required overloads propagate the weakest observed guarantee. Optional overloads
+produce ordinary outputs and use the empty-list behavior documented in the
+reference.
+
 ## Scalar set operations
 
 The [scalar set operation reference](../../user/reference/library-collections.md#scalar-set-operations)

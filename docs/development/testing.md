@@ -665,6 +665,9 @@ For each reusable node and graph, test:
   selections, and unselected-input updates
 - arithmetic across scalar and time series arguments, exact type matching,
   integer and temporal wraparound, and borrowed string construction
+- scalar List concatenation, append, repetition, and removal with scalar and
+  time series operands; test optional invalid inputs, guarantees, nested values,
+  equal-result suppression, and reference retargeting
 - `type_` publication of concrete scalar types, repeated-type deduplication, and validity transitions
 - conversion between scalar time series, full target type matching including
   guarantees and collection results, reference-observed guarantees, and

@@ -1,6 +1,104 @@
 import hgraph as hg
 
 
+def test_scalar_list_operators_concatenate_append_repeat_and_remove():
+    @hg.graph
+    def concatenate(lhs: hg.TS[tuple[int, ...]], rhs: hg.TS[tuple[int, ...]]) -> hg.TS[tuple[int, ...]]:
+        return lhs + rhs
+
+    @hg.graph
+    def append(values: hg.TS[tuple[int, ...]], item: hg.TS[int]) -> hg.TS[tuple[int, ...]]:
+        return values + item
+
+    @hg.graph
+    def repeat(values: hg.TS[tuple[int, ...]], count: hg.TS[int]) -> hg.TS[tuple[int, ...]]:
+        return values * count
+
+    @hg.graph
+    def remove(values: hg.TS[tuple[int, ...]], item: hg.TS[int]) -> hg.TS[tuple[int, ...]]:
+        return values - item
+
+    assert hg.run_graph(concatenate, [(1, 2), (), (4,)], [(3,), (5, 6), ()]) == [
+        (1, 2, 3), (5, 6), (4,)
+    ]
+    assert hg.run_graph(append, [(1, 2), (), (4,)], [3, 5, 6]) == [(1, 2, 3), (5,), (4, 6)]
+    assert hg.run_graph(repeat, [(1, 2), (), (3,), (4,)], [3, 100, 0, -2]) == [
+        (1, 2, 1, 2, 1, 2), (), (), ()
+    ]
+    assert hg.run_graph(remove, [(1, 2, 2, 3), (4, 4), ()], [2, 4, 7]) == [(1, 3), (), ()]
+
+
+def test_optional_scalar_list_operators_handle_invalid_values():
+    @hg.graph
+    def concatenate(lhs: hg.TS[tuple[int, ...]], rhs: hg.TS[tuple[int, ...]]) -> hg.TS[tuple[int, ...]]:
+        return hg.operators.add(hg.opt(lhs), rhs)
+
+    @hg.graph
+    def repeat(values: hg.TS[tuple[int, ...]], count: hg.TS[int]) -> hg.TS[tuple[int, ...]]:
+        return hg.operators.mul(hg.opt(values), count)
+
+    @hg.graph
+    def optional_count(values: hg.TS[tuple[int, ...]], count: hg.TS[int]) -> hg.TS[tuple[int, ...]]:
+        return hg.operators.mul(values, hg.opt(count))
+
+    @hg.graph
+    def remove(values: hg.TS[tuple[int, ...]], item: hg.TS[int]) -> hg.TS[tuple[int, ...]]:
+        return hg.operators.sub(values, hg.opt(item))
+
+    assert hg.run_graph(concatenate, [(1,), hg.INVALID, (3,), hg.INVALID], [(2,), (4,), hg.INVALID, hg.INVALID]) == [
+        (1, 2), (4,), (3,), ()
+    ]
+    assert hg.run_graph(repeat, [(1, 2), hg.INVALID, (3,), (4,)], [2, 3, 3, hg.INVALID]) == [
+        (1, 2, 1, 2), (), (3, 3, 3), None
+    ]
+    assert hg.run_graph(optional_count, [(1, 2), (3,), (4,)], [2, hg.INVALID, 0]) == [
+        (1, 2, 1, 2), None, ()
+    ]
+    assert hg.run_graph(remove, [(1, 2, 2), hg.INVALID, (3, 3), (4,)], [2, 2, hg.INVALID, hg.INVALID]) == [
+        (1,), (), (3, 3), (4,)
+    ]
+
+
+def test_scalar_list_operators_accept_scalar_right_arguments():
+    @hg.graph
+    def append(values: hg.TS[tuple[str, ...]]) -> hg.TS[tuple[str, ...]]:
+        return values + "end"
+
+    @hg.graph
+    def repeat(values: hg.TS[tuple[int, ...]]) -> hg.TS[tuple[int, ...]]:
+        return hg.operators.mul(lhs=values, rhs=2)
+
+    @hg.graph
+    def remove(values: hg.TS[tuple[int, ...]]) -> hg.TS[tuple[int, ...]]:
+        return values - 2
+
+    @hg.graph
+    def optional_append(values: hg.TS[tuple[str, ...]]) -> hg.TS[tuple[str, ...]]:
+        return hg.opt(values) + "end"
+
+    assert hg.run_graph(append, [(), ("start",)]) == [("end",), ("start", "end")]
+    assert hg.run_graph(repeat, [(1, 2), ()]) == [(1, 2, 1, 2), ()]
+    assert hg.run_graph(remove, [(1, 2, 2, 3), (2,)]) == [(1, 3), ()]
+    assert hg.run_graph(optional_append, [hg.INVALID, ("start",)]) == [("end",), ("start", "end")]
+
+
+def test_nested_scalar_list_operators_keep_list_items_intact():
+    @hg.graph
+    def concatenate(
+        lhs: hg.TS[tuple[tuple[int, ...], ...]], rhs: hg.TS[tuple[tuple[int, ...], ...]]
+    ) -> hg.TS[tuple[tuple[int, ...], ...]]:
+        return lhs + rhs
+
+    @hg.graph
+    def append(
+        values: hg.TS[tuple[tuple[int, ...], ...]], item: hg.TS[tuple[int, ...]]
+    ) -> hg.TS[tuple[tuple[int, ...], ...]]:
+        return values + item
+
+    assert hg.run_graph(concatenate, [((1,), (2,))], [((3,), (4,))]) == [((1,), (2,), (3,), (4,))]
+    assert hg.run_graph(append, [((1,), (2,))], [(3, 4)]) == [((1,), (2,), (3, 4))]
+
+
 def test_scalar_set_operators_publish_complete_results():
     @hg.graph
     def union(lhs: hg.TS[frozenset[int]], rhs: hg.TS[frozenset[int]]) -> hg.TS[frozenset[int]]:

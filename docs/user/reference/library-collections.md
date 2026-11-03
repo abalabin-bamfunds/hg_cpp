@@ -374,6 +374,60 @@ symmetric difference take O(N + M) work, intersection takes O(min(N, M)), and
 difference takes O(N). Temporary borrowed item views use storage bounded by the same
 input counts, in addition to the result storage.
 
+## Scalar list operators
+
+For `TS<List<T>>` values, use `+` to concatenate two lists or append one item,
+`*` with an `i64` count to repeat a list, and `-` with an item to remove every
+equal item. Python uses `TS[tuple[T, ...]]` for the list value. List items may
+be nested collections; subtraction requires equality-comparable items. The
+list is the left operand. Item and count operands may be scalars or time
+series. C++ also accepts a scalar `List<T>` on the right of concatenation.
+Python scalar tuples do not currently resolve as `List<T>` operator operands;
+pass both concatenated lists as `TS[tuple[T, ...]]` values.
+
+Required inputs invalidate the result when any input is invalid. Revalidation
+calculates from the current values. `opt()` on either operand selects an
+optional overload and makes both operands optional. An invalid list contributes
+no items to concatenation or repetition. An invalid appended or removed item
+leaves the list unchanged. An invalid optional repeat count produces no tick and
+preserves the current output. Before the first result, the output remains
+invalid. A valid nonpositive count produces an empty list.
+
+Required overloads propagate the weakest observed input guarantee. Optional
+overloads produce ordinary outputs. Ordinary outputs publish equal results on
+separate evaluations; deduplicated outputs suppress equal lists. These
+implementations keep no auxiliary state. Concatenation takes O(N + M) work for
+input lengths N and M. Append and removal take O(N). Repetition takes O(N × R)
+work for N items and a positive repeat count R. The output requires O(N + M)
+storage for concatenation, O(N) for append and removal, and O(N × R) for
+repetition. An empty source list returns immediately for any count.
+
+::::{tab-set}
+:sync-group: language
+
+:::{tab-item} Python
+:sync: python
+
+```python
+combined = lhs + rhs
+with_item = values + item
+repeated = values * count
+without_item = values - item
+```
+:::
+
+:::{tab-item} C++
+:sync: cpp
+
+```cpp
+auto combined = lhs + rhs;
+auto with_item = values + item;
+auto repeated = values * count;
+auto without_item = values - item;
+```
+:::
+::::
+
 ## Scalar dictionary subtraction
 
 `TS<Dict<K, L>> - TS<Dict<K, R>>` keeps each left key-value entry whose key is absent

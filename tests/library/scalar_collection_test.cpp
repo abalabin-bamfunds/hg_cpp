@@ -10,6 +10,7 @@
 #include <utility>
 
 using namespace hg;
+using namespace hg::literals;
 
 TEST_CASE("scalar set operations calculate complete set results",
           "[feature:operator][series:value][scalar:set][transition:update]") {
@@ -36,6 +37,199 @@ TEST_CASE("scalar set operations calculate complete set results",
               .equals({{1}, {}, literal::INVALID, {}, {}}));
     CHECK(hg::run_graph(symmetric_difference, input_lhs, input_rhs)
               .equals({{1, 3}, {4}, literal::INVALID, {4}, {4}}));
+}
+
+TEST_CASE("scalar list addition concatenates lists and appends an item",
+          "[feature:operator][series:value][scalar:list][transition:update]") {
+    const auto concatenate = [](wp<TS<List<i64>>> lhs, wp<TS<List<i64>>> rhs) { return lhs + rhs; };
+    const auto concatenate_scalar = [](wp<TS<List<i64>>> lhs) {
+        return lhs + ScalarValue<List<i64>>{std::array<i64, 2>{3, 4}};
+    };
+    const auto append = [](wp<TS<List<i64>>> lhs, wp<TS<i64>> rhs) { return lhs + rhs; };
+    const auto append_scalar = [](wp<TS<List<i64>>> lhs) { return lhs + i64{7}; };
+
+    CHECK(hg::run_graph(concatenate, hg::input<TS<List<i64>>>({{1, 2}, {}, {4}}),
+                        hg::input<TS<List<i64>>>({{3}, {5, 6}, {}}))
+              .equals({{1, 2, 3}, {5, 6}, {4}}));
+    CHECK(hg::run_graph(concatenate_scalar, hg::input<TS<List<i64>>>({{1, 2}, {}}))
+              .equals({{1, 2, 3, 4}, {3, 4}}));
+    CHECK(hg::run_graph(append, hg::input<TS<List<i64>>>({{1, 2}, {}, {4}}),
+                        hg::input<TS<i64>>({3, 5, 6}))
+              .equals({{1, 2, 3}, {5}, {4, 6}}));
+    CHECK(hg::run_graph(append_scalar, hg::input<TS<List<i64>>>({{1, 2}, {}})).equals({{1, 2, 7}, {7}}));
+}
+
+TEST_CASE("scalar list multiplication repeats items and handles empty or nonpositive counts",
+          "[feature:operator][series:value][scalar:list][scalar:i64][transition:update]") {
+    const auto repeat = [](wp<TS<List<i64>>> values, wp<TS<i64>> count) { return values * count; };
+    const auto repeat_scalar = [](wp<TS<List<i64>>> values) {
+        return operators::mul("lhs"_n = values, "rhs"_n = i64{2});
+    };
+
+    CHECK(hg::run_graph(repeat, hg::input<TS<List<i64>>>({{1, 2}, {}, {3}, {4}}),
+                        hg::input<TS<i64>>({3, std::numeric_limits<i64>::max(), 0, -2}))
+              .equals({{1, 2, 1, 2, 1, 2}, {}, {}, {}}));
+    CHECK(hg::run_graph(repeat_scalar, hg::input<TS<List<i64>>>({{1, 2}, {}})).equals({{1, 2, 1, 2}, {}}));
+}
+
+TEST_CASE("scalar list subtraction removes every equal item",
+          "[feature:operator][series:value][scalar:list][transition:update]") {
+    const auto remove = [](wp<TS<List<i64>>> values, wp<TS<i64>> item) { return values - item; };
+    const auto remove_scalar = [](wp<TS<List<i64>>> values) { return values - i64{2}; };
+
+    CHECK(hg::run_graph(remove, hg::input<TS<List<i64>>>({{1, 2, 2, 3}, {4, 4}, {}}),
+                        hg::input<TS<i64>>({2, 4, 7}))
+              .equals({{1, 3}, {}, {}}));
+    CHECK(hg::run_graph(remove_scalar, hg::input<TS<List<i64>>>({{1, 2, 2}, {2}})).equals({{1}, {}}));
+}
+
+TEST_CASE("optional scalar list operators handle invalid values",
+          "[feature:operator][series:value][scalar:list][validity:optional]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto concatenate = [](wp<TS<List<i64>>> lhs, wp<TS<List<i64>>> rhs) {
+        return operators::add(opt(lhs), rhs);
+    };
+    const auto append = [](wp<TS<List<i64>>> lhs, wp<TS<i64>> rhs) { return operators::add(lhs, opt(rhs)); };
+    const auto repeat = [](wp<TS<List<i64>>> values, wp<TS<i64>> count) { return operators::mul(opt(values), count); };
+    const auto optional_count = [](wp<TS<List<i64>>> values, wp<TS<i64>> count) {
+        return operators::mul(values, opt(count));
+    };
+    const auto remove = [](wp<TS<List<i64>>> values, wp<TS<i64>> item) { return operators::sub(values, opt(item)); };
+
+    CHECK(hg::run_graph(concatenate,
+                        hg::input<TS<List<i64>>>({{1}, literal::INVALID, {3}, literal::INVALID}),
+                        hg::input<TS<List<i64>>>({{2}, {4}, literal::INVALID, literal::INVALID}))
+              .equals({{1, 2}, {4}, {3}, {}}));
+    CHECK(hg::run_graph(append,
+                        hg::input<TS<List<i64>>>({{1}, literal::INVALID, {3}, literal::INVALID}),
+                        hg::input<TS<i64>>({2, 4, literal::INVALID, literal::INVALID}))
+              .equals({{1, 2}, {4}, {3}, {}}));
+    CHECK(hg::run_graph(repeat,
+                        hg::input<TS<List<i64>>>({{1, 2}, literal::INVALID, {3}, {4}}),
+                        hg::input<TS<i64>>({2, 3, 3, literal::INVALID}))
+              .equals({{1, 2, 1, 2}, {}, {3, 3, 3}, literal::SKIP}));
+    CHECK(hg::run_graph(optional_count, hg::input<TS<List<i64>>>({{1, 2}, {3}, {4}}),
+                        hg::input<TS<i64>>({2, literal::INVALID, 0}))
+              .equals({{1, 2, 1, 2}, literal::SKIP, {}}));
+    CHECK(hg::run_graph(optional_count, hg::input<TS<List<i64>>>({{1, 2}, {1, 2}}),
+                        hg::input<TS<i64>>({literal::INVALID, 2}))
+              .equals({literal::SKIP, {1, 2, 1, 2}}));
+    CHECK(hg::run_graph(remove,
+                        hg::input<TS<List<i64>>>({{1, 2, 2}, literal::INVALID, {3, 3}, {4}}),
+                        hg::input<TS<i64>>({2, 2, literal::INVALID, literal::INVALID}))
+              .equals({{1}, {}, {3, 3}, {4}}));
+}
+
+TEST_CASE("nested scalar lists support concatenation and appending a list item",
+          "[feature:operator][series:value][scalar:list][shape:nested]") {
+    const auto concatenate = [](wp<TS<List<List<i64>>>> lhs, wp<TS<List<List<i64>>>> rhs) { return lhs + rhs; };
+    const auto append = [](wp<TS<List<List<i64>>>> lhs, wp<TS<List<i64>>> rhs) {
+        return operators::add(lhs, rhs);
+    };
+
+    CHECK(hg::run_graph(concatenate, hg::input<TS<List<List<i64>>>>({{{1}, {2}}}),
+                        hg::input<TS<List<List<i64>>>>({{{3}, {4}}}))
+              .equals({{{1}, {2}, {3}, {4}}}));
+    CHECK(hg::run_graph(append, hg::input<TS<List<List<i64>>>>({{{1}, {2}}}),
+                        hg::input<TS<List<i64>>>({{3, 4}}))
+              .equals({{{1}, {2}, {3, 4}}}));
+}
+
+TEST_CASE("scalar list addition follows reference retargeting",
+          "[feature:operator][feature:reference][series:value][series:reference][scalar:list]"
+          "[binding:reference-to-value][transition:update]") {
+    const auto graph = [](wp<TS<bool>> select_lhs, wp<TS<List<i64>>> lhs, wp<TS<List<i64>>> rhs,
+                          wp<TS<i64>> suffix) {
+        return operators::add(operators::if_then_else(select_lhs, lhs, rhs), suffix);
+    };
+
+    CHECK(hg::run_graph(graph, hg::input<TS<bool>>({false, true, false}),
+                        hg::input<TS<List<i64>>>({{1}, {1, 2}, {3}}),
+                        hg::input<TS<List<i64>>>({{4}, {5}, {6, 7}}), hg::input<TS<i64>>({9, 9, 9}))
+              .equals({{4, 9}, {1, 2, 9}, {6, 7, 9}}));
+}
+
+TEST_CASE("scalar list operations support string and nested equality-comparable items",
+          "[feature:operator][series:value][scalar:list][shape:nested]") {
+    const auto remove_string = [](wp<TS<List<string>>> values, wp<TS<string>> item) { return values - item; };
+    const auto remove_list = [](wp<TS<List<List<i64>>>> values, wp<TS<List<i64>>> item) { return values - item; };
+
+    CHECK(hg::run_graph(remove_string, hg::input<TS<List<string>>>({{"a", "b", "a"}}),
+                        hg::input<TS<string>>({"a"}))
+              .equals({{"b"}}));
+    CHECK(hg::run_graph(remove_list, hg::input<TS<List<List<i64>>>>({{{1}, {2}, {1}}}),
+                        hg::input<TS<List<i64>>>({{1}}))
+              .equals({{{2}}}));
+}
+
+TEST_CASE("required scalar list operators invalidate and revalidate with their inputs",
+          "[feature:operator][series:value][scalar:list][transition:invalidation][transition:revalidation]") {
+    const auto concatenate = [](wp<TS<List<i64>>> lhs, wp<TS<List<i64>>> rhs) { return lhs + rhs; };
+
+    CHECK(hg::run_graph(concatenate,
+                        hg::input<TS<List<i64>>>({{1}, literal::INVALID, {3}, {4}}),
+                        hg::input<TS<List<i64>>>({{2}, {2}, literal::INVALID, {5}}))
+              .equals({{1, 2}, literal::INVALID, literal::SKIP, {4, 5}}));
+}
+
+TEST_CASE("scalar list operators resolve output guarantees and preserve ordinary equal ticks",
+          "[feature:operator][series:value][scalar:list][guarantee:const][guarantee:final]"
+          "[guarantee:deduplicated][validity:optional]") {
+    const auto const_list = node([](Out<TS<List<i64>, TimeSeriesGuarantee::const_>> output) {
+        output.set(std::array<i64, 2>{1, 2});
+    });
+    const auto final_list = node([](Out<TS<List<i64>, TimeSeriesGuarantee::final>> output) {
+        output.set(std::array<i64, 1>{3});
+    });
+    const auto const_item = node([](Out<TS<i64, TimeSeriesGuarantee::const_>> output) { output.set(4); });
+
+    testing::test_wiring([&] {
+        CHECK(&operators::add(const_list(), const_list()).type() ==
+              &TS<List<i64>, TimeSeriesGuarantee::const_>::type());
+        CHECK(&operators::add(final_list(), final_list()).type() == &TS<List<i64>, TimeSeriesGuarantee::final>::type());
+        CHECK(&operators::add(const_list(), const_item()).type() ==
+              &TS<List<i64>, TimeSeriesGuarantee::const_>::type());
+        CHECK(&operators::add(opt(const_list()), const_list()).type() == &TS<List<i64>>::type());
+        CHECK(&operators::mul(opt(const_list()), const_item()).type() == &TS<List<i64>>::type());
+        CHECK(&(opt(const_list()) + i64{5}).type() == &TS<List<i64>>::type());
+    });
+
+    const auto ordinary = [](wp<TS<List<i64>>> values, wp<TS<i64>> item) { return values + item; };
+    CHECK(hg::run_graph(ordinary, hg::input<TS<List<i64>, TimeSeriesGuarantee::const_>>({{1}}),
+                        hg::input<TS<i64>>({2, 2}))
+              .equals({{1, 2}, {1, 2}}));
+
+    const auto deduplicated = [](wp<TS<List<i64>>> values, wp<TS<i64>> item) {
+        return operators::add(operators::dedup(values), operators::dedup(item));
+    };
+    CHECK(hg::run_graph(deduplicated, hg::input<TS<List<i64>>>({{1}}), hg::input<TS<i64>>({2, 2}))
+              .equals({{1, 2}, literal::SKIP}));
+
+    const auto deduplicated_removal = [](wp<TS<List<i64>>> values, wp<TS<i64>> item) {
+        return operators::sub(operators::dedup(values), operators::dedup(item));
+    };
+    CHECK(hg::run_graph(deduplicated_removal, hg::input<TS<List<i64>>>({{1}}), hg::input<TS<i64>>({2, 3}))
+              .equals({{1}, literal::SKIP}));
+}
+
+TEST_CASE("scalar list operators work inside maps and switches",
+          "[feature:operator][feature:map][feature:switch][feature:nested-graph][series:value][scalar:list]") {
+    const auto append = graph([](wp<TS<List<i64>>> values) { return values + i64{10}; });
+    const auto double_list = graph([](wp<TS<List<i64>>> values) { return values * i64{2}; });
+    const auto materialize = node([](In<TSD<i64, TS<List<i64>>>> input, Out<TSD<i64, TS<List<i64>>>> output) {
+        output.copy_tick(input);
+    });
+    const auto map_values = [&](wp<TSD<i64, TS<List<i64>>>> values) { return materialize(map(append, values)); };
+    const auto switch_values = [&](wp<TS<i64>> selector, wp<TS<List<i64>>> values) {
+        return switch_(selector, cases{case_(i64{0}, append), case_(i64{1}, double_list)}, values);
+    };
+
+    CHECK(hg::run_graph(map_values,
+                        hg::input<TSD<i64, TS<List<i64>>>>({{{1, {1}}, {2, {2, 3}}}, {{1, {4}}}}))
+              .equals({{{1, {1, 10}}, {2, {2, 3, 10}}}, {{1, {4, 10}}}}));
+    CHECK(hg::run_graph(switch_values, hg::input<TS<i64>>({0, 1, 0}),
+                        hg::input<TS<List<i64>>>({{1}, {2, 3}, {4}}))
+              .equals({{1, 10}, {2, 3, 2, 3}, {4, 10}}));
 }
 
 TEST_CASE("optional scalar set operations treat invalid operands as empty",
