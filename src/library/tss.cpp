@@ -593,8 +593,8 @@ struct tsd_set_overloads {
         const auto rhs_keys = operators::keys_(rhs);
         const auto lhs_references = static_cast<WiringPoint>(lhs).template as<TSD<K, REF<TS_T>, G>>();
         const auto rhs_references = static_cast<WiringPoint>(rhs).template as<TSD<K, REF<TS_T>, G>>();
-        static const auto route_node = hg::node<reference_routing_node<SYMMETRIC>>();
-        return route_node(lhs_references, rhs_references, lhs_keys, rhs_keys);
+        static const auto select_item_references = hg::node<reference_routing_node<SYMMETRIC>>();
+        return select_item_references(lhs_references, rhs_references, lhs_keys, rhs_keys);
     }
 
     overload<bit_and> bit_and_tsd{graph([](wp<TSD<K, TS_T, G>> lhs, wp<TSD<K, TS_T, G>> rhs) {
