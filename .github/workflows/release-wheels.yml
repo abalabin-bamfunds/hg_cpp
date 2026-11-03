@@ -88,7 +88,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Install native build dependencies
-        run: dnf install --assumeyes libicu-devel krb5-devel openssl-devel
+        run: dnf install --assumeyes libicu-devel krb5-devel openssl3-devel
       - name: Build pinned libcurl with GSSAPI
         shell: bash
         run: |
@@ -98,7 +98,8 @@ jobs:
           echo "8dadd7d2536a314f982ad05a651b713f426bf7d02cc2c76cffb9796f2218e6c5  $archive" | sha256sum --check
           tar -C /tmp -xf "$archive"
           cd /tmp/curl-8.23.0
-          ./configure --prefix=/opt/curl --with-openssl --with-gssapi \
+          CPPFLAGS="-I/usr/include/openssl3" LDFLAGS="-L/usr/lib64/openssl3" \
+            ./configure --prefix=/opt/curl --with-openssl --with-gssapi \
             --with-ca-path=/etc/ssl/certs --without-ca-bundle --without-libpsl \
             --enable-shared --disable-static
           make --jobs=2
@@ -127,7 +128,11 @@ jobs:
           CMAKE_GENERATOR: Ninja
           CMAKE_BUILD_TYPE: Release
           CMAKE_BUILD_PARALLEL_LEVEL: "2"
-        run: /opt/python/cp312-cp312/bin/python -m build --wheel --no-isolation --outdir raw-wheel
+        run: |
+          /opt/python/cp312-cp312/bin/python -m build --wheel --no-isolation --outdir raw-wheel \
+            --config-setting cmake.define.OPENSSL_INCLUDE_DIR=/usr/include/openssl3 \
+            --config-setting cmake.define.OPENSSL_SSL_LIBRARY=/usr/lib64/openssl3/libssl.so \
+            --config-setting cmake.define.OPENSSL_CRYPTO_LIBRARY=/usr/lib64/openssl3/libcrypto.so
       - name: Repair for manylinux 2.28
         run: |
           auditwheel repair \
