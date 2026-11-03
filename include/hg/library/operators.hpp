@@ -54,6 +54,7 @@ extern HG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
 extern HG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> invert;
 
 // Conversion.
+extern HG_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
 extern HG_LIBRARY_EXPORT operator_<OUT, auto(TS_T) -> OUT> combine;
 extern HG_LIBRARY_EXPORT operator_<OUT, auto(TS_T, Union<"reset", SIGNAL>) -> OUT> collect;
 extern HG_LIBRARY_EXPORT operator_<OUT, auto(TS_T) -> OUT> emit;
