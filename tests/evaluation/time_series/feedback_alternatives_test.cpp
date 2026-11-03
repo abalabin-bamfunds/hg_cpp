@@ -36,7 +36,8 @@ TEST_CASE("feedback delays a base Bundle by one cycle",
     const auto graph = [](wp<TS<Bundle<FeedbackEvent>>> input) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
         delayed = input;
-        return wp<TS<Bundle<FeedbackEvent>>>{delayed};
+        wp<TS<Bundle<FeedbackEvent>>> output = delayed;
+        return output;
     };
 
     const auto actual = run_graph(graph, {{{"kind", symbol{"base"}}}});
@@ -85,7 +86,8 @@ TEST_CASE("feedback preserves a small derived Bundle",
     const auto graph = [&](wp<TS<i64>> selection) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
         delayed = publish_event(selection, base, small, large);
-        return wp<TS<Bundle<FeedbackEvent>>>{delayed};
+        wp<TS<Bundle<FeedbackEvent>>> output = delayed;
+        return output;
     };
 
     const auto actual = run_graph(graph, {1});
@@ -106,7 +108,8 @@ TEST_CASE("feedback preserves a large derived Bundle",
     const auto graph = [&](wp<TS<i64>> selection) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
         delayed = publish_event(selection, base, small, large);
-        return wp<TS<Bundle<FeedbackEvent>>>{delayed};
+        wp<TS<Bundle<FeedbackEvent>>> output = delayed;
+        return output;
     };
 
     const auto actual = run_graph(graph, {2});
@@ -127,7 +130,8 @@ TEST_CASE("feedback switches concrete Bundle alternatives across sparse updates"
     const auto graph = [&](wp<TS<i64>> selection) {
         auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
         delayed = publish_event(selection, base, small, large);
-        return wp<TS<Bundle<FeedbackEvent>>>{delayed};
+        wp<TS<Bundle<FeedbackEvent>>> output = delayed;
+        return output;
     };
 
     const auto actual = run_graph(graph, {0, literal::SKIP, 2, literal::SKIP, 1});
@@ -159,7 +163,8 @@ TEST_CASE("feedback preserves a derived Bundle sampled through a reference",
         const auto reference = publish_event(selection, base, small, large)
                                    .as<REF<TS<Bundle<FeedbackEvent>>>>();
         delayed = copy_value(reference);
-        return wp<TS<Bundle<FeedbackEvent>>>{delayed};
+        wp<TS<Bundle<FeedbackEvent>>> output = delayed;
+        return output;
     };
 
     const auto actual = run_graph(graph, {2, 1});
@@ -183,7 +188,8 @@ TEST_CASE("a nested graph delays and preserves derived Bundle alternatives",
         [](wp<TS<Bundle<FeedbackEvent>>> input) {
             auto delayed = feedback<TS<Bundle<FeedbackEvent>>>();
             delayed = input;
-            return wp<TS<Bundle<FeedbackEvent>>>{delayed};
+            wp<TS<Bundle<FeedbackEvent>>> output = delayed;
+            return output;
         });
 
     const auto tested = [&](wp<TS<i64>> selection) {
