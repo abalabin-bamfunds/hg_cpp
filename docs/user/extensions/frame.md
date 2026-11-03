@@ -1,9 +1,9 @@
 # Columns and frames
 
-The frame extension maintains calculations over nullable columns and tables.
-Use scalar columns and frames when each update replaces a complete value. Use
-incremental columns and frames when rows arrive, change, or disappear independently.
-The extension currently provides a C++ API. See [build requirements](index.md#frame).
+If your calculations work across rows of nullable data, use the frame extension for
+columns and tables. Scalar columns and frames suit complete snapshots, while their
+incremental forms let rows arrive, change, or disappear independently. The extension
+currently provides a C++ API; see the [build requirements](index.md#frame).
 
 | Type | Current value | Update |
 | --- | --- | --- |
@@ -18,9 +18,10 @@ and from an invalid time series. An empty string is a valid value.
 
 ## Scalar values
 
-`Column<T>` and `Frame<Schema>` are immutable owning scalars. A frame schema declares
-the name and cell type of each column. Include `<hg/frame/column.hpp>`,
-`<hg/frame/frame.hpp>`, and `<hg/frame/literal.hpp>`.
+For a complete column or table that updates as one value, use `Column<T>` or
+`Frame<Schema>`. These immutable owning scalars keep the data together, with the
+frame schema declaring each column's name and cell type. Include
+`<hg/frame/column.hpp>`, `<hg/frame/frame.hpp>`, and `<hg/frame/literal.hpp>`.
 
 ```cpp
 using namespace hg;
@@ -48,9 +49,9 @@ An owning `ScalarValue` copied from a mutable frame view retains a snapshot for 
 
 ## Keyed row updates
 
-Use a keyed `TSF` when application keys identify records. Schema metadata declares the
-key columns. An update inserts an absent key or patches a present key. Omitted
-non-key fields are null on insertion and unchanged on a patch. `REMOVE` deletes a row.
+If application keys identify records, use a keyed `TSF` so updates can insert or patch
+those records. Schema metadata declares the key columns; omitted non-key fields are
+null on insertion and unchanged on a patch, while `REMOVE` deletes a row.
 
 <!-- example-libraries: hg::frame -->
 <!-- example-source: extensions/frame -->
@@ -126,7 +127,9 @@ Remove the old row and insert the new key to change it.
 
 ## Appending rows
 
-An unkeyed `TSF` appends each literal row. A `TSC<T>` literal appends nullable cells:
+For incoming rows that do not have application keys, use an unkeyed `TSF` to append
+each literal row. If only one column is needed, a `TSC<T>` literal appends nullable
+cells in the same way:
 
 ```cpp
 auto sizes = [](wp<TSC<i64>> values) { return operators::len_(values); };
@@ -140,9 +143,10 @@ application keys. Consumers must discard removed IDs.
 
 ## Empty, skipped, and invalid inputs
 
-For incremental inputs, an empty literal validates an invalid input as an empty value.
-It makes no change to an already valid value. `SKIP` leaves the input unchanged;
-`INVALID` removes its current value. These markers come from `literal`.
+To distinguish an empty table from an update gap or a withdrawn value, use the
+incremental input markers. An empty literal makes an invalid input valid and empty,
+but leaves an already valid input unchanged; `SKIP` leaves the input as it is, and
+`INVALID` removes its current value. The markers come from `literal`.
 
 ```cpp
 using namespace literal;
@@ -155,7 +159,8 @@ empty literal starts a new valid empty column.
 
 ## Queries and reductions
 
-The extension supplies overloads of existing library operators:
+To summarize current rows or inspect their membership, use the frame overloads of
+the existing library operators:
 
 | Operator | Result |
 | --- | --- |
@@ -172,9 +177,10 @@ incremental arithmetic and can differ from a fresh scan through rounding.
 
 ## Testing and printing
 
-`run_graph` captures row deltas. Keyed frame expectations match rows by key and patches
-by modified field. Unkeyed expectations assign names to rows so later expectations can
-refer to the same row without predicting internal IDs:
+To check how row updates affect a graph, pass row literals to `run_graph` and compare
+its captured deltas. Keyed frame expectations match rows by key and patches by
+modified field; unkeyed expectations name rows so later updates can refer to them
+without predicting internal IDs:
 
 ```cpp
 auto matches = actual.equals({

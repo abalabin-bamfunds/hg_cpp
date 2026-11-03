@@ -1,7 +1,7 @@
 # State and lifecycle
 
-State belongs to one runtime node. Use it for data that must survive callbacks without
-becoming a time series output.
+If a calculation needs to retain data between callbacks without publishing it, use
+node state. Each runtime node owns its state for its own lifetime.
 
 ## State
 
@@ -21,7 +21,8 @@ not automatically reset arbitrary state. Define that transition explicitly. `sum
 
 ## Lifecycle
 
-Start prepares a node before evaluation. Stop releases resources during cleanup. A
+For resources that must be acquired before evaluation and released when a node
+ends, use start and stop callbacks. A
 selected inner graph starts on creation and stops on replacement or removal. Stopping a
 graph cancels its pending work. C++ stop cleanup must not throw. Python reports stop
 exceptions through the unraisable-exception hook after cleanup.
@@ -34,7 +35,8 @@ Invalidation hooks address required-input invalidation that prevents normal eval
 
 ## Shared application state
 
-C++ `GlobalState` stores scalar values shared by the outer graph and its inner graphs.
+If outer and inner C++ graphs need the same application data, use `GlobalState`
+to share scalar values between them.
 Supply an object through `GraphRunOptions.global_state` to retain it beyond one run;
 otherwise the runner creates one. The caller must keep a supplied object alive until
 graph destruction. Python does not expose this API.

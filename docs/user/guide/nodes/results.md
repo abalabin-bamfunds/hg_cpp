@@ -1,14 +1,15 @@
 # Results and evaluation
 
-A node may need to wait for several inputs or reject a reading without replacing its
-last result. Required inputs control when it can evaluate; its return value controls
-whether it publishes.
+When a calculation needs several inputs, HG can wait until they are all available.
+Once it evaluates, the node can publish a result or keep its previous output, which
+is useful when a reading should be rejected without discarding the last good value.
 
 ## Required inputs
 
-By default, each changing input must have a current value before evaluation. An
-input update schedules the node after its dependencies evaluate. Simultaneous input
-updates produce one evaluation with all current values.
+If your calculation needs every input, the default required-input behavior handles
+the wait: each changing input must have a current value before the node evaluates.
+Updates at the same time produce one evaluation with all current values, after the
+node's dependencies have evaluated.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -108,8 +109,9 @@ without every input value.
 
 ## Skipping publication
 
-A calculation can accept an input without publishing a new result. Python returns
-`None`; a C++ callable returns a disengaged `std::optional<T>`.
+To reject a reading while keeping the last published result, return `None` in Python
+or a disengaged `std::optional<T>` in C++. The node still processes the input, but
+leaves its output unchanged.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -205,10 +207,11 @@ and its availability.
 
 ## Errors
 
-An exception fails the evaluation and returns control to the runner's caller.
-[Error handling](../../how-to/errors.md#evaluation-errors) shows a failing node and a
-publication rule that excludes invalid operations. Value selection in graph code
-does not prevent unselected branch calculations from evaluating.
+If an input makes a calculation impossible, the node can raise an exception or apply
+an explicit policy such as skipping publication. An exception ends evaluation and
+returns control to the runner's caller; [error handling](../../how-to/errors.md#evaluation-errors)
+shows both approaches. Value selection in graph code does not prevent unselected
+branch calculations from evaluating.
 
 Nodes needing update information use [input views](../advanced-nodes/inputs.md).
 Nodes performing application effects use the same input rules and return no graph

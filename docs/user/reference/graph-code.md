@@ -1,8 +1,8 @@
 # Graph declarations and calls
 
-Graph code constructs connections between calculations. It runs during graph
-construction; node callbacks run during evaluation. Use graph functions to name and
-compose calculations without creating a runtime graph boundary.
+To reuse connected calculations, define graph functions and call them from other
+graph code. These calls construct connections without creating a runtime graph
+boundary; node callbacks perform the calculations later, during evaluation.
 
 ## Declarations
 
@@ -40,7 +40,8 @@ series where the receiving signature permits it.
 
 ## Optional arguments
 
-`opt(point)` requests an optional receiving parameter. It creates no node and supplies
+If a caller needs a calculation to accept an unavailable input, `opt(point)`
+requests an optional receiving parameter. It creates no node and supplies
 no fallback. It leaves the original connection unchanged. A receiver that requires a
 current value rejects that request.
 
@@ -53,7 +54,8 @@ or optional connection. See [nodes](nodes.md).
 
 ## Context inputs
 
-C++ `In<TS_T, "name"_n, context>` requests a named time series. A graph parameter can
+To share a named dependency through an enclosing C++ graph scope, request a context
+input with `In<TS_T, "name"_n, context>`. A graph parameter can
 request the same binding through `wp<TS_T, "name"_n, context>`. `with_context("name"_n =
 point, callable)` establishes a lexical binding while constructing the callable's graph.
 The nearest binding wins. A named argument supplied directly to the receiving call takes
@@ -67,8 +69,9 @@ example](../guide/advanced-graphs/sharing.md#context-time-series).
 
 ## Generic signatures
 
-Python `TypeVar("VALUE")` declares a scalar variable. Use it in `TS[VALUE]` or a plain
-scalar signature. Bind a TypeVar to `TimeSeries` for a complete time series type.
+To reuse a calculation across scalar types, declare a Python type variable with
+`TypeVar("VALUE")` and use it in `TS[VALUE]` or a plain scalar signature.
+Bind a TypeVar to `TimeSeries` for a complete time series type.
 `definition[TS[int], ...]` specializes a generic graph by its resolved input types, as
 required by `run_graph`.
 
@@ -80,7 +83,8 @@ overload exists.
 
 ## Variadic parameters
 
-Variadic declarations capture arguments into one collection. Python bodies receive that
+If a graph accepts a variable number of arguments, use a variadic declaration to
+capture them into one collection. Python bodies receive that
 collection, rather than normal expanded `args` or `kwargs`.
 
 | Capture | Python annotation | C++ declaration |

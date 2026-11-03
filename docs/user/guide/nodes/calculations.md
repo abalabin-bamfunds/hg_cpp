@@ -1,14 +1,15 @@
 # Calculation nodes
 
-A node connects application-specific value calculations to graph inputs. It lets an
-existing Python or C++ function participate in graph evaluation: HG supplies current
-input values and publishes the returned result.
+If a graph needs a calculation that is specific to your application, write a node or
+wrap an existing value callable. HG supplies its current inputs during evaluation
+and publishes the returned result for downstream calculations.
 
 ## Value calculations
 
-`node(callable)` wraps an ordinary value callable. The callable keeps its native
-`if`, loops, and helper calls. Python `@node` is the decorator form of the same
-declaration; C++ infers inputs and the result from the callable's signature.
+To reuse ordinary value code in a graph, wrap it with `node(callable)`. The callback
+can keep its native `if` statements, loops, and helper calls because it receives values
+during evaluation. Python also provides the decorator form `@node`; C++ infers the
+inputs and result from the callable's signature.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -112,8 +113,9 @@ A fixed argument remains unchanged for that node throughout the run.
 
 ## Scalar collections
 
-A scalar collection arrives as one current value. Ordinary iteration can process it
-inside the callback.
+If your calculation needs to inspect every item in a complete snapshot, accept a
+scalar collection and iterate inside the callback. The collection arrives as one
+current value, so ordinary value code can process it in a single evaluation.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -208,6 +210,7 @@ the total from the current complete list. Independently updating items use
 
 ## Callback lifetime
 
-Arguments and borrowed views belong to the current callback. Store an owning value
-in [node state](../advanced-nodes/state.md) when it must survive between evaluations.
-Graph code cannot read current values while constructing connections.
+If data needs to survive between evaluations, store an owning value in
+[node state](../advanced-nodes/state.md). Callback arguments and borrowed views are
+valid only for the current callback; graph code constructs connections and cannot
+read their current values.

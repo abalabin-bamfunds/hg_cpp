@@ -1,9 +1,8 @@
 # Per-sensor running totals
 
-To accumulate quantities independently for a changing set of sensors, map a
-running-total graph over a dictionary. Each key owns a graph instance and its
-accumulator. Removing a key ends that accumulation; adding the key again
-starts a new total.
+If each sensor needs its own running total, use `map` to apply a running-total graph
+to a dictionary of readings. Each key owns its graph instance and accumulator, so
+removing a sensor ends that accumulation and adding it again starts a new total.
 
 Prerequisites: [Dictionaries](../guide/advanced-graphs/collections.md#dictionaries),
 [running calculations](../guide/graphs/aggregation.md#running-totals-and-means), [map](../guide/graphs/iteration.md#per-key-calculations-with-map).

@@ -1,6 +1,7 @@
 # Inputs and captured results
 
-`run_graph` captures sparse output events by default. A captured event is a publication
+To test which updates a graph publishes, use the sparse output events captured
+by `run_graph` by default. A captured event is a publication
 or invalidation at an evaluation time. A skipped position can still have a retained
 current graph value.
 
@@ -60,10 +61,10 @@ Captured data remains owned by the result.
 
 ## Printing results
 
-Python `print(result)` and C++ `std::cout << result` display results with at most
-32 positions as lists. A skipped position or root invalidation prints `None`.
-Larger results display `GraphRunResult(start_time=..., event_count=..., size=...)`
-without expanding the gaps between events. Printing preserves captured values.
+For a quick view of captured updates, use Python `print(result)` or C++ `std::cout << result`.
+Results with at most 32 positions display as lists. A skipped position or root invalidation prints
+`None`. Larger results display `GraphRunResult(start_time=..., event_count=..., size=...)` without
+expanding the gaps between events. Printing preserves captured values.
 
 C++ values use [tick formatting](library-text.md#formatting-and-printing): booleans print
 as `true` and `false`, strings use double quotes, and floating-point values can

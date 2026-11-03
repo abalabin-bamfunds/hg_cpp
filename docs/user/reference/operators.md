@@ -1,8 +1,8 @@
 # Operators and overloads
 
-An operator is a named graph callable with registered implementations. Use it when graph
-code should choose a node or graph implementation from supplied types. Use a direct node
-for one concrete calculation.
+If one operation needs different implementations for different input types, define
+an operator and register its node or graph implementations as overloads. A direct node
+is sufficient for one concrete calculation.
 
 ## Resolution
 
@@ -48,9 +48,9 @@ explicit `convert` makes the resulting value type visible.
 
 ## Runtime dispatch
 
-Runtime dispatch selects an implementation from the concrete scalar types of valid
-inputs. Use it when a declared base type accepts derived values and each concrete
-type needs a different calculation. Value-based conditions use
+If a declared base type accepts derived values that need different calculations,
+use runtime dispatch to select an implementation from the concrete scalar types of
+valid inputs. Value-based conditions use
 [`switch_`](higher-order.md#switch_) instead.
 
 Python `@dispatch` declares a signature; `.overload` registers decorated node or graph

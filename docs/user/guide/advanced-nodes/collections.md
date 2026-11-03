@@ -1,12 +1,14 @@
 # Collection inputs and publication
 
-Collection views expose both current items and the changes in this evaluation.
-They allow a node to process partial updates without rebuilding complete values.
+If a custom node processes independently changing items, collection views let it
+read both the current items and the changes in this evaluation. The node can use
+those changes to maintain its result without rebuilding complete values.
 
 ## Current items
 
-Current-item traversal computes a result from the collection's present state.
-Validity-aware traversal omits unavailable values.
+To compute from everything currently available, traverse the collection's current
+items and check validity before reading them. This product uses only valid values,
+so unavailable items do not contribute.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -107,9 +109,9 @@ recompute the product from the current valid items.
 
 ## Change information
 
-Dictionary addition, item modification, invalidation, and key removal are distinct
-changes. Set updates expose added and removed members. Omitted items retain their
-current state.
+If recomputing every item would repeat work, use change information to process only
+additions, modifications, invalidations, and removals. Set views similarly expose
+added and removed members, while omitted items retain their current state.
 
 | Input | Python traversal | C++ access |
 | --- | --- | --- |
@@ -217,9 +219,9 @@ produces no further output update.
 
 ## Publication
 
-A collection node can publish only the rows or keys it changed. Omitted items retain
-their current values, so the node does not need to reconstruct the complete output.
-For a dictionary output, the following delta updates key `1` and removes key `2`:
+To update only the items your node changed, publish a collection delta instead of
+reconstructing the complete output. Omitted items retain their current values;
+this dictionary delta updates key `1` and removes key `2`:
 
 ::::{tab-set}
 :sync-group: language
@@ -247,9 +249,10 @@ explicit outputs; [literal forms](../../reference/literals.md) specify collectio
 
 ## Explicit C++ outputs
 
-`Out<TS<T>>` provides `set(value)` and `invalidate()`. Collection outputs provide child
-outputs and removal operations. Python publication uses returned deltas; its injected
-`Output` view is read-only.
+If a C++ node needs to publish several item changes or explicitly invalidate a
+value, use `Out` to access its output. `Out<TS<T>>` provides `set(value)` and
+`invalidate()`, while collection outputs provide child outputs and removal
+operations. Python publishes returned deltas; its injected `Output` view is read-only.
 
 The [state example](state.md#retained-state) declares `In`, `State`, and `Out` fields in
 a C++ aggregate. [Output reference](../../reference/outputs.md) specifies mutation,

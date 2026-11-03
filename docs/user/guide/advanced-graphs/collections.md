@@ -1,8 +1,8 @@
 # Time series collections
 
-Use independently changing items when sources publish partial updates or consumers
-need dependencies on individual items. A scalar collection instead replaces its
-complete value on each update.
+If a source sends partial updates, or a calculation needs to follow individual
+items, use a time series collection. Its items keep their own values and update
+information, so one item can change without replacing the complete collection.
 
 | Shape | Type | Item identity |
 | --- | --- | --- |
@@ -13,8 +13,9 @@ complete value on each update.
 
 ## Lists
 
-A fixed `TSL` holds a declared number of time series. Each position has its own
-current value and update information.
+For values identified by position, such as a fixed group of sensor channels, use
+a `TSL`. Its fixed-size form declares the number of positions, with a separate
+current value and update information for each one.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -96,8 +97,9 @@ see [list types](../../reference/types.md#declarations).
 
 ## Bundles
 
-A bundle has named items whose time series types can differ. Its schema fixes the
-field names and types.
+If a record's named fields need to update independently, use a time series bundle.
+Its schema fixes the field names and their time series types, which may differ
+from one field to another.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -192,8 +194,9 @@ A scalar `Bundle` stores the fields in one value.
 
 ## Dictionaries
 
-A `TSD` maintains a changing set of keys and a separate time series for each key.
-A supplied mapping is a delta: omitted keys remain unchanged.
+For items identified by keys that can arrive or disappear during a run, use a `TSD`.
+Each key has a separate time series, and updates are deltas: omitted keys keep their
+current state until another update changes or removes them.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -275,8 +278,9 @@ maintain per-key graph instances.
 
 ## Sets
 
-A `TSS` stores scalar members and exposes membership changes. Python uses `Removed`
-for removal; C++ literals use `REMOVED`.
+If you only need to track membership, use a `TSS` to report which scalar members
+were added or removed. Python uses `Removed` for a removal, while C++ literals use
+`REMOVED`.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -358,8 +362,10 @@ rather than individually valued time series.
 
 ## Aggregation and validity
 
-Collection root validity and item validity are separate. Ordinary reductions require
-valid immediate items. An optional reduction ignores unavailable items.
+When some items are unavailable, decide whether a total should wait for all of them
+or use the available items. Ordinary reductions require valid immediate items;
+optional reductions ignore unavailable ones. The collection root and its items
+have separate validity, so a collection can be present with an invalid item.
 
 <!-- runnable-example -->
 ::::::{tab-set}

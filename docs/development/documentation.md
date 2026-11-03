@@ -26,10 +26,13 @@ the site. Paths in the following table are relative to `docs/user/`.
 | `reference/` | API contracts and library operations |
 | `extensions/` | Optional extension setup, graph patterns, and node APIs |
 
-Use relative Markdown links and descriptive anchors. Keep one primary explanation
-for each concept. Introduce its purpose, show code and results, then state constraints.
-Quick starts link to detailed chapters. Avoid lesson narration, exercises, and
-instructions to modify an earlier program.
+Use relative Markdown links and descriptive anchors, and keep one primary explanation
+for each concept. Introduce each feature through a concrete need before describing its
+API: “If you need to apply the same calculation to every item in a collection, use
+`map`.” Follow with code, results, and the constraints needed to use it correctly.
+Use natural, connected sentences rather than a series of short definitions. Quick
+starts link to detailed chapters; avoid lesson narration, exercises, and instructions
+to modify an earlier program.
 
 ## Examples
 

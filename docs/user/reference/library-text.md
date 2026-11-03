@@ -1,12 +1,16 @@
 # Text operations
 
-Python imports text operators from `hgraph.operators`. C++ imports `hg::operators` from
-`<hg/library.hpp>`. Text operands can be scalar strings or string time series.
+To construct messages, inspect text, or extract fields from changing strings, use the
+text operators from Python `hgraph.operators` or C++ `hg::operators` in
+`<hg/library.hpp>`. Operands can be scalar strings or string time series.
 Symbol operands are accepted by character and case operations; produced text is a
 string. Required input invalidation invalidates the result. Operations propagate
 the weakest observed input guarantee unless stated otherwise.
 
 ## Construction and queries
+
+To build or inspect text that changes with graph inputs, use string expressions
+and the following query operators:
 
 | Expression | Result |
 | --- | --- |
@@ -101,7 +105,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Formatting and printing
 
-`format_(pattern, *values, **named)` uses `{fmt}` format specifications. The pattern
+To produce a message from changing graph values, use `format_(pattern, *values, **named)`
+with `{fmt}` format specifications. The pattern
 and formatting arguments must be valid. Scalar-only calls evaluate at graph start.
 C++ named arguments use `"name"_n = value` with `hg::literals` imported.
 
@@ -281,6 +286,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Regular expressions
 
+If a text condition needs a pattern rather than a fixed substring, use `matches`,
+`match_`, or `replace` to test, extract, or transform matching text:
+
 | Call | Result |
 | --- | --- |
 | `matches(pattern, text)` | Whether a match occurs anywhere; use anchors to constrain its position |
@@ -372,7 +380,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Split and join
 
-`split(text, separator, maxsplit=-1)` returns a scalar list of strings. A negative
+To break incoming text into fields, use `split(text, separator, maxsplit=-1)`,
+which returns a scalar list of strings. A negative
 limit means unlimited splitting. The separator must be nonempty. Leading, trailing,
 and adjacent separators produce empty pieces. Splitting and joining preserve bytes.
 

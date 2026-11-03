@@ -1,6 +1,7 @@
 # Services
 
-Services separate a shared graph contract from its installed implementation. Declare the
+If a graph should request data or work while the application chooses its provider,
+use a service to separate the contract from its installed implementation. Declare the
 contract in graph code and supply a `ServiceCatalogue` to the runner.
 
 ## Declarations
@@ -24,11 +25,11 @@ implementations follow the shared key set.
 
 ## Catalogue registration
 
-`catalogue.register_impl(declaration, implementation, ...arguments)` installs an
-implementation. Named arguments matching scalar service parameters filter its selection.
-Other arguments configure the implementation. Service identity, resolved type mappings,
-scalar values, and registration specificity determine matching. Missing or ambiguous
-matches are wiring errors.
+To choose a service provider for a run, install it with `catalogue.register_impl(declaration,
+implementation, ...arguments)`. Named arguments matching scalar service parameters filter its
+selection. Other arguments configure the implementation. Service identity, resolved type mappings,
+scalar values, and registration specificity determine matching. Missing or ambiguous matches are
+wiring errors.
 
 Python passes `catalogue=catalogue` to the runner. C++ uses `GraphRunOptions{.services =
 &catalogue}`. Keep the catalogue and its definitions alive through graph construction
@@ -36,15 +37,17 @@ and execution.
 
 ## Feedback implementations
 
-`feedback_service_implementation(service, implementation)` wraps a request or
-subscription implementation to delay requests by one cycle before delivery. Register the
+If service requests need to cross into a later cycle, use
+`feedback_service_implementation(service, implementation)` to wrap a request or
+subscription implementation and delay requests by one cycle before delivery. Register the
 wrapper with the same filters and installation arguments. The service must accept
 requests and have an output; the implementation must have an output. Feedback changes
 request delivery; it is not a general permission for same-cycle dependency cycles.
 
 ## Multiservice implementations
 
-`register_multiservice(graph)` registers one graph implementing several service claims.
+To let several services share one implementation graph, use
+`register_multiservice(graph)` to register its service claims.
 Its registration object's `register_impl(service, ...filters)` adds claims. Inside that
 graph, each service exposes `implementation_requests` where it has requests, and
 `implementation_replies(output, ...scalar_arguments)` where it has replies. Ports take
@@ -57,11 +60,10 @@ claims fail during wiring.
 
 ## Queue-backed implementations
 
-A service implementation graph can dispatch requests to an external worker and return a
-queue source carrying its replies. The request sink retains the client id; the worker
-writes `{client_id: reply}` to a queue declared as `TSD<service_client_id_t, ReplyType>`
-in C++. Python can use a queue source with the corresponding integer-keyed reply
-dictionary.
+If an external worker handles a service request, the implementation graph can dispatch the request
+and return a queue source carrying the worker's replies. The request sink retains the client id; the
+worker writes `{client_id: reply}` to a queue declared as `TSD<service_client_id_t, ReplyType>` in
+C++. Python can use a queue source with the corresponding integer-keyed reply dictionary.
 
 Use realtime execution to wait for replies, retain one queue-handle copy per producer,
 and stop or join workers through lifecycle cleanup. Queue closure rejects writes before

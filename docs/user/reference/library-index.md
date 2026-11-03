@@ -1,8 +1,8 @@
 # Library alphabetical index
 
 Library operators are available in `hgraph.operators` in Python and `hg::operators` in C++.
-Graph composition helpers use `hg` in both languages. The linked entries specify
-imports and headers.
+Graph composition helpers use `hgraph` in Python and `hg` in C++. The linked entries
+specify imports and headers.
 
 | Name | Contract |
 | --- | --- |

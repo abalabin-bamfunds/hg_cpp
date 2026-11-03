@@ -1,8 +1,9 @@
 # Testing
 
-To check a calculation independently of its sources, pass update sequences to
-`run_graph`. Include repeated values and skipped positions when their behavior
-matters to downstream users.
+If you want to check a calculation without connecting its live sources, pass update
+sequences to `run_graph` and compare the captured results. Repeated values and gaps
+between updates can matter to downstream calculations, so include them when they are
+part of the behavior being tested.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -73,9 +74,9 @@ builds this example as `main.cpp`, linked to `hg::library`.
 :::::
 ::::::
 
-The first result establishes the current output. A skipped input supplies no
-new event. An equal-valued reading still supplies an event and publishes an
-equal output. Compare recorded updates, not only the final retained value.
+The first result establishes the current output, which remains available when the
+input skips a position. A repeated equal reading still supplies an event and publishes
+an equal output, so the recorded updates contain more information than the final value.
 
 For optional inputs, include absence, zero, invalidation, and recovery. For
 collections, include adding, changing, invalidating, removing, and re-adding an

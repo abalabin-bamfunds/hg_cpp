@@ -1,13 +1,14 @@
 # State and lifecycle
 
-A running peak or custom accumulator needs data from earlier evaluations. State retains
-that data for one node instance. Lifecycle callbacks initialize and release resources
-when the graph instance starts and stops.
+If your calculation needs earlier observations, such as a running peak, keep them
+in node state. Lifecycle callbacks complement that state by initializing resources
+when the graph instance starts and releasing them when it stops.
 
 ## Retained state
 
-Python `State[Factory]` creates one state object per runtime node. C++ `State<T>`
-provides access to that node's retained value.
+To carry data from one evaluation to the next, request `State[Factory]` in Python
+or `State<T>` in C++. Each runtime node owns a separate state value, so the peak
+calculation below can retain its highest reading across updates.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -122,9 +123,10 @@ parameter; graph code does not supply it.
 
 ## Independent instances
 
-Python stateful nodes use separate state for each call. C++ normally reuses equal
-node calls; `deduplicate_wiring = false` requests independent runtime nodes when
-independent state is required. This differs from suppressing equal value updates.
+If repeated uses of a stateful calculation need separate histories, give them
+independent node instances. Python stateful nodes do this for each call; C++ normally
+reuses equal node calls, so `deduplicate_wiring = false` requests independent runtime
+nodes. This setting concerns node identity rather than equal value updates.
 
 Each mapped key owns its graph instance. Removing and re-adding a key creates new
 state. A switch starts fresh state when it changes case. The
@@ -132,8 +134,9 @@ state. A switch starts fresh state when it changes case. The
 
 ## Start and stop
 
-Start callbacks initialize state or acquire resources. Stop callbacks release those
-resources when the instance stops, including an instance selected by `switch_`.
+If a node owns a resource or needs initialization before its first evaluation, use
+start and stop callbacks. Start initializes state or acquires the resource, and stop
+releases it when the instance ends, including when `switch_` changes to another case.
 
 <!-- runnable-example -->
 ::::::{tab-set}

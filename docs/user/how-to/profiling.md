@@ -1,14 +1,15 @@
 # Profiling
 
-To measure a run's computation cost, attach an `EvaluationProfiler` recorder.
-The profiler reports outer-cycle durations and per-node evaluation counts and
-checkpoint ticks. A recorder belongs to one graph run.
+If a graph does more work than expected, attach an `EvaluationProfiler` recorder to
+measure the run. Its outer-cycle durations, per-node evaluation counts, and checkpoint
+ticks help identify where the work occurs; each recorder belongs to one graph run.
 
 ## Finite run
 
-This run processes three reading updates, including a repeated value. The
-skipped position does not create evaluation work. A one-microsecond node period
-keeps the test's separate input times visible in the node history.
+To check how input events translate into evaluations, this finite run includes three
+reading updates, a repeated value, and a skipped position. The gap creates no evaluation
+work, while a one-microsecond node period keeps the separate input times visible in
+the recorded node history.
 
 <!-- runnable-example -->
 ::::::{tab-set}

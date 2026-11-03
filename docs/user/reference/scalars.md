@@ -1,7 +1,8 @@
 # Scalar values and schemas
 
-A scalar is one current value, including a compound object or scalar collection. Use
-scalar types inside `TS` when the complete value should update together.
+When a complete record or collection should update together, use a scalar type
+inside `TS`. HG treats it as one current value, even when it contains multiple fields
+or items.
 
 ## Built-in mappings
 
@@ -40,11 +41,11 @@ owning values beyond a callback or allocation scope.
 
 ## Schemas
 
-Python `@schema` declares named fields. `Bundle[Schema]` is a scalar compound value;
-`TSB[Schema]` projects fields to separate time series. Explicit time series fields pass
-through to the TSB projection. Scalar `Optional[T]` fields preserve absence in the
-scalar bundle; that optional presence is not projected to TSB fields, which use ordinary
-time series validity.
+To give record fields names and checked types, declare them with Python `@schema`. `Bundle[Schema]`
+is a scalar compound value; `TSB[Schema]` projects fields to separate time series. Explicit time
+series fields pass through to the TSB projection. Scalar `Optional[T]` fields preserve absence in
+the scalar bundle; that optional presence is not projected to TSB fields, which use ordinary time
+series validity.
 
 C++ schema templates declare `Field<T>` members. `Bundle<Schema>` supplies the scalar
 projection and `TSB<Schema>` the time series projection. Schema identity, field types,
@@ -54,7 +55,8 @@ mutually recursive declarations and recursive collections are unsupported.
 
 ## Python object scalars
 
-Other Python classes can be scalar annotations. Inheritance determines scalar
+To pass an application object through a graph, use its Python class as a scalar
+annotation. Inheritance determines scalar
 compatibility; the graph retains the actual Python object by reference. Objects used
 this way must be immutable, including state affecting hashing or equality. `None`
 remains a no-update sentinel and cannot be stored as an object scalar.

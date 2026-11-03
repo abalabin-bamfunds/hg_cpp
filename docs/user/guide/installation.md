@@ -1,8 +1,8 @@
 # Installation
 
-The `hg-cpp` distribution includes the Python `hgraph` package and the C++ SDK:
-public headers, libraries, and CMake targets. Both languages use the same installation.
-Python 3.12 or later is required to install the package.
+For either Python or C++ development, install the `hg-cpp` distribution with Python
+3.12 or later. It includes the Python `hgraph` package together with the C++ SDK's
+public headers, libraries, and CMake targets, so both languages use the same installation.
 
 ## Install the package
 

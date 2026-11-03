@@ -1,14 +1,15 @@
 # Basic syntax
 
-Graph code uses Python or C++ expressions to connect calculations. The
-[opening example](../index.md) compares a graph with an ordinary value calculation.
-This syntax overview starts with fixed inputs, then adds changing values, conditionals,
-and custom nodes. Each example is complete; links lead to detailed contracts.
+Graph code uses familiar Python or C++ expressions to describe calculations that HG
+keeps up to date as their inputs change. The [opening example](../index.md) compares
+this with an ordinary function call. The examples here cover the basic syntax, with
+links to the chapters that explain each feature in more detail.
 
 ## A fixed result
 
-Fixed graph values supply configuration and known inputs. `const_` creates one;
-`run_graph` constructs and runs the graph and captures its output.
+If a calculation needs a known value, such as a fixed calibration or configuration
+setting, use `const_` to supply it. `run_graph` constructs the graph, evaluates its
+calculations, and captures the output so you can inspect the result.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -85,15 +86,16 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-Python `@graph` declares the graph function and `-> int` declares its result type.
-C++ uses an ordinary function with an inferred return type. Python `print` and
-C++ `std::cout` display the captured output as a list.
+In Python, `@graph` declares the graph function and `-> int` gives its result type;
+C++ uses an ordinary function and infers the return type. Both examples print the
+captured updates as a list, using Python `print` or C++ `std::cout`.
 
 ## Expressions
 
-Arithmetic on a graph value derives another graph value. HG records the dependency
-so it can evaluate the calculation when needed. Arithmetic on native literals, such as
-`18 + 2`, computes immediately while the graph function constructs the connections.
+To derive a result from a graph input, use arithmetic expressions much as you would
+with ordinary values. HG records the calculation and its dependencies so the result
+can update with its inputs. An expression using only native literals, such as `18 + 2`,
+still computes immediately while the graph is being constructed.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -178,8 +180,9 @@ See [expressions and composition](graphs/composition.md#expressions).
 
 ## Graph functions
 
-A graph function packages connected calculations for reuse. Parameters supply their
-inputs and fixed configuration; a call adds those calculations to the caller's graph.
+If several parts of an application need the same calculation, put it in a graph
+function. Each call connects that calculation to the supplied inputs and fixed
+configuration, just as an ordinary function call reuses value code.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -271,9 +274,9 @@ See [graph functions](graphs/composition.md#graph-functions).
 
 ## Changing inputs
 
-Changing inputs let the same graph maintain a result across updates. A sequence passed
-to `run_graph` supplies those updates for a finite run. `None` in Python
-and `SKIP` in C++ mean that the input has no update at that position.
+To see how a calculation responds to new readings, pass a sequence of input updates
+to `run_graph`. The graph keeps its connections and updates the result as each reading
+arrives; `None` in Python and `SKIP` in C++ leave the input unchanged at that position.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -367,9 +370,10 @@ input connection carrying 64-bit integers. See [input sequences](graphs/updates.
 
 ## Conditionals
 
-To cap a changing reading, the result must select a value again when the condition
-changes. `if_then_else` selects one input's current value; both input calculations
-remain part of the graph. Native `if` selects connections only during construction.
+If a result needs to choose between values as a condition changes, use
+`if_then_else`. The example caps a reading at a fixed limit, choosing again whenever
+the reading changes. Both input calculations remain connected; native `if` chooses
+connections only while the graph is being constructed.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -455,8 +459,9 @@ forwarding, fallbacks, and selecting graph instances with `switch_`.
 
 ## Calculation nodes
 
-A node adds a value calculation that the library does not provide. It receives current
-values, so native `if`, loops, and helper functions work during evaluation.
+When a calculation needs application logic that the library does not provide, write
+a node. Its callback receives current values, so you can use ordinary `if` statements,
+loops, and helper functions while the graph evaluates.
 
 <!-- runnable-example -->
 ::::::{tab-set}

@@ -1,7 +1,8 @@
 # Extensions
 
-Extensions connect graphs to external systems or add value types and operations.
-Each extension has its own build requirements.
+If your graph needs to serve network requests or process changing tables, extensions
+add those capabilities alongside the core library. Each extension has its own build
+requirements and provides types and operations for its use case.
 
 | Extension | Use | Python | C++ |
 | --- | --- | --- | --- |
