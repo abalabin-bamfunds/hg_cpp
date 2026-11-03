@@ -1,27 +1,31 @@
 # State and lifecycle
 
-State belongs to one runtime node. Use it for data that must survive callbacks without
-becoming a time series output.
+If a calculation needs to retain data between callbacks without publishing it, use
+node state. Each runtime node owns its state for its own lifetime.
 
 ## State
 
-Python declares `state: State[Factory] = None`. The factory is called without arguments
-on the first invocation of that runtime node; the callback receives the object directly.
-A node can request at most one state parameter. C++ aggregate fields `State<T>` access
-the node's retained value with `*state` or `state->member`. Scalar collections expose
-their supported mutable state interfaces.
+To retain a running total, cache, or other callback data, request
+`state: State[Factory] = None` in Python. The factory is called without arguments on
+the first invocation of that runtime node, and the callback receives the object
+directly. A node can request at most one state parameter. C++ aggregate fields
+`State<T>` access the node's retained value with `*state` or `state->member`.
+Scalar collections expose their supported mutable state interfaces.
 
-Each runtime node owns its state. Calls that reuse one wired node share that state.
-Python disables wiring reuse for nodes requesting `State` and for generators. C++
-disables it with `deduplicate_wiring = false` on a callable node or `static constexpr
-bool deduplicate_wiring = false` on an aggregate definition. Separate graph runs and
-separate inner graph instances have independent state. Required-input invalidation does
-not automatically reset arbitrary state. Define that transition explicitly. `sums`,
-`count`, and other library operators specify their own reset rules.
+If equal calls need independent histories, they must create separate runtime nodes;
+calls that reuse one wired node share its state. Python disables wiring reuse for
+nodes requesting `State` and for generators. C++ disables it with
+`deduplicate_wiring = false` on a callable node or
+`static constexpr bool deduplicate_wiring = false` on an aggregate definition.
+Separate graph runs and separate inner graph instances have independent state.
+Required-input invalidation does not automatically reset arbitrary state, so define
+that transition explicitly. `sums`, `count`, and other library operators specify their
+own reset rules.
 
 ## Lifecycle
 
-Start prepares a node before evaluation. Stop releases resources during cleanup. A
+For resources that must be acquired before evaluation and released when a node
+ends, use start and stop callbacks. A
 selected inner graph starts on creation and stops on replacement or removal. Stopping a
 graph cancels its pending work. C++ stop cleanup must not throw. Python reports stop
 exceptions through the unraisable-exception hook after cleanup.
@@ -34,7 +38,8 @@ Invalidation hooks address required-input invalidation that prevents normal eval
 
 ## Shared application state
 
-C++ `GlobalState` stores scalar values shared by the outer graph and its inner graphs.
+If outer and inner C++ graphs need the same application data, use `GlobalState`
+to share scalar values between them.
 Supply an object through `GraphRunOptions.global_state` to retain it beyond one run;
 otherwise the runner creates one. The caller must keep a supplied object alive until
 graph destruction. Python does not expose this API.

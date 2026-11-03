@@ -1,13 +1,15 @@
 # Results and evaluation
 
-A node publishes its returned value. Its output retains that value until another
-publication or invalidation.
+When a calculation needs several inputs, HG can wait until they are all available.
+Once it evaluates, the node can publish a result or keep its previous output, which
+is useful when a reading should be rejected without discarding the last good value.
 
 ## Required inputs
 
-By default, each changing input must have a current value before evaluation. An
-input update schedules the node after its dependencies evaluate. Simultaneous input
-updates produce one evaluation with all current values.
+If your calculation needs every input, the default required-input behavior handles
+the wait: each changing input must have a current value before the node evaluates.
+Updates at the same time produce one evaluation with all current values, after the
+node's dependencies have evaluated.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -17,18 +19,17 @@ updates produce one evaluation with all current values.
 :sync: python
 
 ```python
-from hgraph import graph, run_graph
+from hgraph import graph, node, run_graph
 
 
-@graph
+@node
 def calibrated_temperature(reading: int, offset: int) -> int:
     return reading + offset
 
 
 @graph
 def display_temperature(reading: int, offset: int) -> int:
-    calibrated = calibrated_temperature(reading, offset)
-    return calibrated * 10
+    return calibrated_temperature(reading, offset)
 
 
 print(run_graph(
@@ -41,7 +42,7 @@ print(run_graph(
 Output:
 
 ```text
-[None, 200, 210, 220]
+[None, 20, 21, 22]
 ```
 :::::
 
@@ -55,19 +56,19 @@ Output:
 ```cpp
 #include <hg/library.hpp>
 #include <hg/run_graph.hpp>
+#include <hg/node.hpp>
 
 #include <iostream>
 
 using namespace hg;
 using namespace literal;
 
-auto calibrated_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
+const auto calibrated_temperature = node([](i64 reading, i64 offset) {
     return reading + offset;
-}
+});
 
 auto display_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
-    const auto calibrated = calibrated_temperature(reading, offset);
-    return calibrated * 10;
+    return calibrated_temperature(reading, offset);
 }
 
 int main() {
@@ -82,7 +83,7 @@ int main() {
 Output:
 
 ```text
-[None, 200, 210, 220]
+[None, 20, 21, 22]
 ```
 :::
 
@@ -91,7 +92,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -108,8 +109,9 @@ without every input value.
 
 ## Skipping publication
 
-A calculation can accept an input without publishing a new result. Python returns
-`None`; a C++ callable returns a disengaged `std::optional<T>`.
+To reject a reading while keeping the last published result, return `None` in Python
+or a disengaged `std::optional<T>` in C++. The node still processes the input, but
+leaves its output unchanged.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -189,7 +191,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -205,10 +207,11 @@ and its availability.
 
 ## Errors
 
-An exception fails the evaluation and returns control to the runner's caller.
-[Error handling](../../how-to/errors.md#evaluation-errors) shows a failing node and a
-publication rule that excludes invalid operations. Value selection in graph code
-does not prevent unselected branch calculations from evaluating.
+If an input makes a calculation impossible, the node can raise an exception or apply
+an explicit policy such as skipping publication. An exception ends evaluation and
+returns control to the runner's caller; [error handling](../../how-to/errors.md#evaluation-errors)
+shows both approaches. Value selection in graph code does not prevent unselected
+branch calculations from evaluating.
 
 Nodes needing update information use [input views](../advanced-nodes/inputs.md).
 Nodes performing application effects use the same input rules and return no graph

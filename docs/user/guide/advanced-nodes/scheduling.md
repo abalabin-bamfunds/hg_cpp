@@ -1,12 +1,14 @@
 # Time, scheduling, and sources
 
-A scheduled node can evaluate at a later time without another input update.
-Sources introduce values from timers, finite sequences, or external producers.
+Timeouts, delayed results, and periodic work need to run even when no input updates.
+Scheduling lets a node request a later evaluation, while sources bring values into
+the graph from timers, finite sequences, or external producers.
 
 ## Evaluation time
 
-The evaluation clock identifies the time of the work being processed. An input's
-last update time can be older than the current evaluation time.
+If a calculation needs the time of the work being processed, read the evaluation
+clock. This time can differ from an input's last update time, because the input may
+still hold a value from an earlier evaluation.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -88,7 +90,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -104,8 +106,9 @@ one microsecond apart. Python uses `EvaluationClock`; a C++ aggregate receives
 
 ## Scheduled sources
 
-A source with no changing input can publish at requested evaluation times. A finite
-source makes simulation termination explicit.
+To publish a sequence without waiting for another input, write a source that requests
+its evaluation times. A finite source also gives a simulation a clear end once its
+scheduled work is complete.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -192,7 +195,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -208,8 +211,9 @@ instance cancels its remaining scheduled work.
 
 ## External producers
 
-Queue handles allow external producers to supply graph updates. The handle's lifetime
-and stop behavior must be respected when the owning graph ends.
+If updates come from application code outside the graph, use a queue handle to send
+them into a source. The handle follows the owning graph's lifetime, so producers
+must respect its stop behavior when that graph ends.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -282,7 +286,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

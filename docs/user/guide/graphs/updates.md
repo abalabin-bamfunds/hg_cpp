@@ -1,12 +1,14 @@
 # Changing inputs
 
-`run_graph` can supply successive updates to graph inputs and capture output events.
-Each input retains its current value between updates.
+When readings or prices arrive over time, the graph can maintain the result without
+your application calling each dependent calculation. To check this behavior without
+a live source, give `run_graph` a finite sequence of updates for each input.
 
 ## Input sequences
 
-Each sequence position represents an evaluation time, one microsecond after the
-previous position. `None` in Python and `SKIP` in C++ supply no input update.
+To describe both updates and gaps between them, use one sequence position per
+evaluation time. Positions are one microsecond apart by default; `None` in Python
+and `SKIP` in C++ mean that no new input arrives at that time.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -84,7 +86,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -107,8 +109,9 @@ output at every position.
 
 ## Multiple inputs
 
-One sequence per input describes independent updates. HG evaluates a calculation
-when its required inputs have values and an active dependency updates.
+If a calculation combines sources that update independently, supply a separate
+sequence for each input. HG retains their current values and evaluates the calculation
+when its required inputs are available and an active dependency updates.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -192,7 +195,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -208,8 +211,9 @@ calculations evaluate; they do not produce intermediate partial results.
 
 ## Repeated values
 
-`dedup` suppresses an update whose value equals the current value. Placement controls
-which downstream calculations observe repeated input values.
+If repeated equal readings should not cause more work, use `dedup` to suppress updates
+whose values equal the current value. Its position in the graph determines which
+calculations receive those repeated updates.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -279,7 +283,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -294,8 +298,9 @@ Apply it after a calculation when only equal results should be suppressed.
 
 ## Signal-driven publication
 
-`sample(signal, value)` publishes the current value when the signal updates.
-Changes to `value` alone do not publish a sampled result.
+If a dashboard should refresh on request while its underlying values keep changing,
+use `sample(signal, value)`. It publishes the current value when the signal updates,
+so changes to the value alone do not refresh the dashboard.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -372,7 +377,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -388,15 +393,16 @@ how custom nodes express similar trigger rules.
 
 ## Selecting updates by count
 
-`take` forwards an initial number of valid ticks. `drop` skips an initial number.
-`step` selects ticks at a fixed count interval. Counts advance on valid input
-updates, including equal values, rather than on elapsed time. The
+To keep only the first few updates, skip a warm-up period, or process every nth update,
+use `take`, `drop`, or `step`. Their counts advance on valid input updates, including
+equal values, rather than elapsed time. The
 [tick-selection reference](../../reference/library-selection.md#take-drop-step)
 gives a complete example and invalidation rules.
 
 ## Captured results
 
-Both languages return `GraphRunResult` and retain sparse output events. Printing
-a small result displays its updates as a list, with `None` at skipped positions.
+To inspect which updates a graph actually published, use the `GraphRunResult` returned
+by `run_graph` in either language. It stores sparse output events, but prints a small
+result as a list with `None` at skipped positions.
 See [result capture](../../reference/testing.md) for comparisons, timestamps,
 large time gaps, indexing, and invalidation.

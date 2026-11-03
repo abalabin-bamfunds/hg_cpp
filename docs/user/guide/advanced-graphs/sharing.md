@@ -1,13 +1,16 @@
 # Shared dependencies and services
 
-A shared dependency can be passed explicitly, supplied by context, or implemented as
-a service. Shared scalar state stores application data rather than graph connections.
+When several calculations need the same prices, configuration, or external service,
+you can share a connection through arguments or context, or request an implementation
+through a service. Shared scalar state covers application data that an outer graph
+and its inner graphs need to access together.
 
 ## Context time series
 
-An explicit argument makes a dependency visible at the call. C++ context inputs allow
-a named dependency to be supplied by an enclosing graph scope. Python currently uses
-explicit arguments for the equivalent calculation.
+If passing the same dependency through several C++ graph functions obscures their
+main calculation, a context input can obtain it by name from an enclosing graph
+scope. Explicit arguments keep the dependency visible at the call and are currently
+the equivalent form available in Python.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -82,7 +85,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -98,8 +101,9 @@ construction. An explicit named argument can supply that requirement.
 
 ## Shared scalar state
 
-C++ `GlobalState` makes scalar application data available across outer and inner
-graphs. Python applications can retain application-owned storage in sink callbacks.
+If outer and inner C++ graphs need access to the same application data, use
+`GlobalState` to share scalar storage. Python applications can retain
+application-owned storage in sink callbacks for application effects.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -189,7 +193,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -205,8 +209,9 @@ ownership and access.
 
 ## Services
 
-A service separates a graph's dependency from its implementation. A catalogue supplies
-the implementation selected for the run.
+To write a graph against a data or request interface while choosing its implementation
+for each run, use a service. The graph requests the service, and a catalogue supplies
+the matching implementation.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -292,7 +297,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

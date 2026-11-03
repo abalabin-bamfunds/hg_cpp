@@ -1,15 +1,15 @@
 # HTTP clients and servers
 
-The web extension connects HTTP requests and responses to graph calculations.
-HTTP has Python and C++ APIs. Build the [web extension](index.md#web), import from
-`hg_web` in Python, or include `<hg/web/http_server.hpp>` and
-`<hg/web/http_client.hpp>` in C++.
+If a graph needs to answer HTTP requests or call an external HTTP service, use the
+web extension to connect requests and responses to graph calculations. The
+[`hg-cpp` installation](../guide/installation.md) includes both APIs: import `hg_web`
+in Python or include `<hg/web/http_server.hpp>` and `<hg/web/http_client.hpp>` in C++.
 
 ## Serving a request
 
-`http_handler(path, graph)` connects one route to a graph. The graph receives a request
-and returns a response. Each active request gets a separate graph instance, so it can
-wait for other graph inputs before responding.
+To expose a graph calculation at an HTTP path, register it with
+`http_handler(path, graph)`. Each active request gets a separate graph instance,
+which can wait for other inputs before returning its response.
 
 ::::::{tab-set}
 :sync-group: language
@@ -87,7 +87,7 @@ int main() {
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -121,6 +121,10 @@ listener and its connections.
 
 ## Request and response values
 
+To read incoming request data or construct a reply, use these value types. Their
+fields carry the method, destination, headers, and body between graph calculations
+and the transport:
+
 | Value | Fields |
 | --- | --- |
 | `HttpServerRequest` | `method`, `target`, `path`, `query`, `headers`, `body`, `peer` |
@@ -139,9 +143,11 @@ schemas are compound scalars, for example `TS<Bundle<HttpResponse>>`.
 
 ## Route lifetime and extra outputs
 
-Routes match decoded paths exactly. An unmatched path returns 404. The first response
-completes a request. Completion, disconnection, route removal, and timeout remove its
-graph instance; later responses for it are ignored.
+When a handler owns state or resources, its request lifetime determines how long
+they remain active. The first response completes the request; completion,
+disconnection, route removal, or timeout removes its graph instance, and later
+responses are ignored. Routes match decoded paths exactly, with unmatched paths
+returning 404.
 
 A handler's first argument receives the request. Remaining arguments come from the
 route call, so all request instances can use shared changing values:
@@ -185,8 +191,9 @@ same request IDs.
 
 ## Making a request
 
-`http_client(request)` returns responses for that service client. Register
-`http_client_impl()` in the catalogue before running the graph.
+To call an HTTP service from a graph, send request values to `http_client(request)`
+and connect its responses to your calculations. Register `http_client_impl()` in
+the catalogue before running the graph to provide the transport.
 
 ::::::{tab-set}
 :sync-group: language
@@ -271,7 +278,7 @@ int main() {
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -292,8 +299,9 @@ retries are disabled. HTTPS verifies the certificate and hostname.
 
 ## Testing response handling
 
-Response processing can be tested with literal inputs, without a listener or a client
-transport. These inputs include successful and error statuses:
+To check response-processing logic without a live server, pass literal responses
+to the graph. The inputs below cover both successful and error statuses without
+starting a listener or client transport:
 
 <!-- example-libraries: hg::web -->
 <!-- runnable-example -->
@@ -374,7 +382,7 @@ Output:
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -396,7 +404,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 | Client URL | `http` or `https`, without embedded credentials or fragments |
 | Application response status | 200–599 |
 
-Configure Python clients with
+To bound request duration and response memory, configure Python clients with
 `http_client_impl(timeout=timedelta(seconds=10), max_response_body_size=1024 * 1024)`.
 C++ uses `http_client_impl(HttpClientOptions{...})`. Client timeouts bound the transfer;
 bounding DNS resolution also requires libcurl with asynchronous DNS support.
@@ -413,9 +421,9 @@ For protected routes and authenticated clients, see [authentication](web-auth.md
 
 ## Complete HTTP round trip
 
-This program starts an ephemeral listener, posts a body to it, and prints the response.
-The bound port becomes the client request's URL. Both transports use the same catalogue;
-the run ends after two seconds.
+To run a client and server together, register both transports in the same catalogue
+and connect the listener's bound port to the client URL. This program uses an
+ephemeral port, posts a body, and prints the response before ending after two seconds.
 
 ::::::{tab-set}
 :sync-group: language
@@ -558,7 +566,7 @@ Response:
 The [C++ example project](index.md#web) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

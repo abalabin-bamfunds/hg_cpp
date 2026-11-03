@@ -6,7 +6,8 @@ Inputs can include compatible reference connections.
 
 ## valid
 
-`valid(value)` reports root validity. It evaluates in the first cycle, accepts initially
+To make input availability part of a calculation, use `valid(value)` to report
+root validity. It evaluates in the first cycle, accepts initially
 invalid inputs, and produces a deduplicated Boolean output. Reference arguments observe
 their targets through normal input bindings. Collection root validity is separate from
 [item validity](input-views.md#collection-views).
@@ -14,10 +15,10 @@ their targets through normal input bindings. Collection root validity is separat
 (concrete-scalar-type)=
 ## type_ (C++)
 
-`type_(value)` reports the concrete scalar type of a valid `TS<SCALAR>` input as
-`TS<const Type *, deduplicated>`. Use it when graph code needs to observe changes
-between concrete types accepted by a declared base type. Invalidation invalidates
-the result. The operator is currently exposed only in C++.
+If a declared base type accepts several concrete scalar types, use `type_(value)`
+to observe which type is currently present. It reports a valid `TS<SCALAR>` input's
+concrete type as `TS<const Type *, deduplicated>` and invalidates its result with
+the input. The operator is currently exposed only in C++.
 
 ```cpp
 auto concrete_type = type_(value);
@@ -27,26 +28,27 @@ For choosing a calculation by concrete type, see [runtime dispatch](operators.md
 
 ## sample
 
-`sample(signal, value)` copies the complete current value when a valid signal ticks and
-`value` is valid. Changes to `value` alone do not schedule evaluation. Invalidating
-either input preserves the last sampled output. The output has ordinary guarantees,
-including its contained time series, so a later signal can sample an unchanged value
-again. Copying uses the normal collection mutation rules: unchanged set membership and
-already-valid empty dictionaries do not publish another tick. Contained references copy
-reference values, not their target values. See [output copying](outputs.md).
+For a result that refreshes on request or on a timer, use `sample(signal, value)`. It copies the
+complete current value when a valid signal ticks and `value` is valid. Changes to `value` alone do
+not schedule evaluation. Invalidating either input preserves the last sampled output. The output has
+ordinary guarantees, including its contained time series, so a later signal can sample an unchanged
+value again. Copying uses the normal collection mutation rules: unchanged set membership and
+already-valid empty dictionaries do not publish another tick. Contained references copy reference
+values, not their target values. See [output copying](outputs.md).
 
 ## dedup
 
-`dedup(value)` forwards changes through an output with at least the deduplicated
-guarantee. Equality is exact and uses the scalar type's equality operation;
-floating-point values use no tolerance. Inputs already observed as deduplicated, final,
-or const are returned without adding a node. Invalidation and revalidation follow the
-normal output rules. Collection outputs apply the guarantee recursively and retain
-stronger contained guarantees.
+To avoid repeating downstream work for equal values, use `dedup(value)`. It forwards changes through
+an output with at least the deduplicated guarantee. Equality is exact and uses the scalar type's
+equality operation; floating-point values use no tolerance. Inputs already observed as deduplicated,
+final, or const are returned without adding a node. Invalidation and revalidation follow the normal
+output rules. Collection outputs apply the guarantee recursively and retain stronger contained
+guarantees.
 
 ## filter_
 
-`filter_(condition, value)` forwards changes while the condition is valid and true. It
+If downstream calculations should receive changes only while enabled, use
+`filter_(condition, value)` to forward them while the condition is valid and true. It
 preserves its output while closed. Opening publishes the current value if it has updated
 since the last forwarding; repeated true condition ticks do not republish an unchanged
 value. Reopening reconciles the complete collection, including removals while closed.
@@ -57,19 +59,20 @@ be delayed.
 
 ## gate
 
-`gate(condition, value, buffer_length=...)` retains input events while the condition
-is false or invalid. Opening replays the oldest event immediately, then at most one
-event per microsecond. Closing pauses the queue; value invalidation is retained as an
-event, while condition invalidation preserves the output and queue. A valid `reset`
-tick discards queued events and cancels the drain timer before handling a value tick
-in the same cycle. Reset preserves the output and condition state. An open gate with
-no backlog forwards directly. `buffer_length` must be positive; overflow raises an
-error. The output guarantee is limited to `final`. See [retained events](library-time.md#retained-events)
-for collection and reference behavior.
+To pause delivery without losing events, use `gate(condition, value, buffer_length=...)`. It retains
+input events while the condition is false or invalid. Opening replays the oldest event immediately,
+then at most one event per microsecond. Closing pauses the queue; value invalidation is retained as
+an event, while condition invalidation preserves the output and queue. A valid `reset` tick discards
+queued events and cancels the drain timer before handling a value tick in the same cycle. Reset
+preserves the output and condition state. An open gate with no backlog forwards directly.
+`buffer_length` must be positive; overflow raises an error. The output guarantee is limited to
+`final`. See [retained events](library-time.md#retained-events) for collection and reference
+behavior.
 
 ## if_then_else
 
-`if_then_else(condition, true_value, false_value)` selects an input by reference.
+To choose between two changing inputs, use
+`if_then_else(condition, true_value, false_value)`, which selects an input by reference.
 Changing the condition exposes the selected input's current value. Updates to that input
 remain observable without copying. An invalid condition or selected input makes the
 observed result invalid. Updates to the other input and repeated identical condition
@@ -140,7 +143,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -152,7 +155,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## if_
 
-`if_(condition, value)` returns a time series bundle with `true_value` and
+If two consumers should handle the true and false cases separately, use
+`if_(condition, value)`. It returns a time series bundle with `true_value` and
 `false_value` reference fields. A valid condition routes `value` to the matching field
 and invalidates the other field. An invalid condition invalidates both fields. Access a
 field with `getattr(result, symbol("true_value"))` in Python or
@@ -226,7 +230,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -238,8 +242,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## if_true
 
-`if_true(condition, tick_once_only=False)` emits an ordinary `true` tick for each true
-condition tick. False ticks produce no output. Condition invalidation preserves the last
+To turn true conditions into trigger signals, use
+`if_true(condition, tick_once_only=False)`. It emits an ordinary `true` tick for each
+true condition tick. False ticks produce no output. Condition invalidation preserves the last
 output. It does not schedule a startup tick. When `tick_once_only` is true, the operator
 becomes passive after its first true tick and emits no later ticks.
 
@@ -307,7 +312,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -319,8 +324,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## race
 
-`race(*values)` routes the reference to the valid input whose current continuous-validity
-period started first. If validity starts at the same time, the leftmost input wins. When
+If a selected publisher should stay in use until it becomes unavailable, use
+`race(*values)`. It routes the reference to the valid input whose current
+continuous-validity period started first. If validity starts at the same time, the leftmost input wins. When
 the selected input becomes invalid, the next earliest valid input wins. A valid-to-valid
 reference retarget does not restart the input's validity period. At least one input is
 required; one input is returned without a selection node. Inputs may be supplied as a
@@ -391,7 +397,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -403,11 +409,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## route_by_index
 
-`route_by_index(index, value)` routes `value` into the selected slot of a fixed time-series
-list. The result list type must be specified because its size is fixed. An index below
-zero, outside the list, or invalid invalidates the previously selected slot. Changing
-the index invalidates the old slot before routing the value to the new slot. The selected
-slot follows its input by reference.
+To send one value to a destination selected by number, use `route_by_index(index, value)`. It routes
+`value` into the selected slot of a fixed time series list. The result list type must be specified
+because its size is fixed. An index below zero, outside the list, or invalid invalidates the
+previously selected slot. Changing the index invalidates the old slot before routing the value to
+the new slot. The selected slot follows its input by reference.
 
 Specify the complete result type before calling the operator:
 
@@ -486,7 +492,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -498,31 +504,33 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## all_valid
 
-`all_valid(value)` tests root validity and validity of every immediate child. Its
+To check whether a collection is ready for a calculation that needs every item,
+use `all_valid(value)` to test the root and every immediate child. Its
 startup and deduplication rules are the same as `valid`. It does not recursively require
 all descendants of a nested collection.
 
 ## default_
 
-`default_(value, fallback)` follows `value` while it is valid and supplies the fallback
-while it is invalid. It does not make `value` valid. The fallback is a scalar of the
-input scalar type; a time series fallback is not accepted. Use an optional node input
-for an application-specific fallback rule.
+If a missing input should be replaced by a fixed value, use `default_(value, fallback)`. It follows
+`value` while valid and supplies the fallback while invalid. It does not make `value` valid. The
+fallback is a scalar of the input scalar type; a time series fallback is not accepted. Use an
+optional node input for an application-specific fallback rule.
 
 ## merge
 
-`merge(*values)` publishes the leftmost valid input that changed in the current
-evaluation. A valid input that did not change does not block later inputs. A scalar
-merge retains its current output when no valid changed input is available.
-Inputs have a common time series type. Collection overloads merge recursively;
-whole-input invalidation does not erase a previously merged collection.
+To accept updates from alternative publishers, use `merge(*values)`. It publishes the leftmost valid
+input that changed in the current evaluation. A valid input that did not change does not block later
+inputs. A scalar merge retains its current output when no valid changed input is available. Inputs
+have a common time series type. Collection overloads merge recursively; whole-input invalidation
+does not erase a previously merged collection.
 
 The [alternative-publisher example](../guide/graphs/conditionals.md#alternative-publishers)
 shows simultaneous updates and updates from a secondary publisher.
 
 ## take, drop, step
 
-These operators select valid root input ticks. `n` is a fixed integer.
+To keep an initial set of updates, skip initial updates, or select every nth update,
+use `take`, `drop`, or `step`. They count valid root input ticks using a fixed integer `n`.
 
 | Call | Selection | Constraint |
 | --- | --- | --- |
@@ -615,7 +623,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -691,7 +699,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -703,7 +711,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## slice_
 
-`slice_(value, start, stop, step=1)` selects zero-based valid tick positions in
+For a bounded range of updates with optional spacing, use
+`slice_(value, start, stop, step=1)`. It selects zero-based valid tick positions in
 `[start, stop)`, taking every `step`th position from `start`. Bounds are fixed
 nonnegative integers with `start <= stop`; `step` must be positive. An empty
 range publishes nothing. Invalid arguments fail during wiring.
@@ -778,7 +787,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

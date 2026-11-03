@@ -1,10 +1,13 @@
 # Types and guarantees
 
-Types describe the current scalar value or collection shape of a connection. Use
-explicit time series types when a declaration needs views, collections, references, or
-update guarantees.
+To state which values a calculation accepts and produces, declare its scalar types
+and connection shapes. Use explicit time series types when a declaration needs views,
+independently changing items, references, or update guarantees.
 
 ## Declarations
+
+Choose the shape according to what changes together: one value, fixed positions,
+named fields, a changing set of keys, or a selected source:
 
 | Value | Python | C++ |
 | --- | --- | --- |
@@ -28,6 +31,9 @@ forms; their operations and delta support differ from fixed lists. The standard
 reductions documented here support fixed TSL only.
 
 ## Guarantees
+
+If a calculation relies on how often a value can update, declare a guarantee to
+express that requirement and let HG check it:
 
 | Guarantee | Publication contract | Use |
 | --- | --- | --- |
@@ -56,10 +62,10 @@ guarantee also constrains its contained time series.
 
 ## References
 
-`REF<TS_T>` holds the identity of a target time series with compatible type. The
-reference's guarantee describes retargeting; the target has its own guarantee.
-Retargeting can expose a different current value even when each target has a stronger
-guarantee.
+To follow a source that can be selected dynamically, use `REF<TS_T>` to hold the
+identity of a compatible target time series. The reference's guarantee describes
+retargeting, while the target has its own guarantee. Retargeting can expose a different
+current value even when each target has a stronger guarantee.
 
 Value-taking parameters dereference automatically. Explicit reference views preserve
 reference identity. Reference validity and target validity are distinct. An unbound
@@ -67,7 +73,8 @@ reference has no target; a bound target can have no current value.
 
 ## Compatibility
 
-Scalar compatibility is exact for built-in numeric types; an integer does not
+To connect a result to another calculation, its type must satisfy the receiving
+input's contract. Scalar compatibility is exact for built-in numeric types; an integer does not
 automatically become a float to select an arithmetic overload. Use
 [`convert`](library-numeric.md#convert). Collection compatibility checks keys, item
 types, schema fields, and guarantees. A selection operation requires a common time

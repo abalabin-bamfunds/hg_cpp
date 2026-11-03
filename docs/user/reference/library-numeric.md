@@ -7,8 +7,10 @@ imports names from `hgraph.operators`. The fragments below use existing connecti
 
 ## Arithmetic
 
-Built-in operands can be scalars or time series. Numeric operands have exact types; an
-integer operand does not convert to double to match an overload.
+To express formulas and comparisons that update with their inputs, use the built-in
+arithmetic, comparison, and Boolean operators below. Operands can be scalars or time
+series, but numeric types must match exactly; an integer does not convert to double
+to match an overload.
 
 | Operators | Supported scalar types |
 | --- | --- |
@@ -53,8 +55,8 @@ zero.
 
 ### Integer bitwise operators
 
-`bit_and`, `bit_or`, and `bit_xor` combine the 64-bit representations of two `i64`
-values. `invert` complements every bit. These operators accept scalar or time-series
+To combine integer flags or masks, use `bit_and`, `bit_or`, and `bit_xor` on the
+64-bit representations of two `i64` values. `invert` complements every bit. These operators accept scalar or time-series
 operands and do not convert `double` values. Their results retain the `i64` type.
 
 C++ wiring points support `&`, `|`, `^`, and `~`. Python graph values support the same
@@ -126,7 +128,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -138,7 +140,8 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ### convert
 
-`convert` requires an explicit full result time-series type:
+If a calculation needs a different numeric type, use `convert` with the full
+result time series type:
 
 ::::{tab-set}
 :sync-group: language
@@ -181,7 +184,8 @@ concatenation calculates during construction.
 
 ## Optional arithmetic
 
-`opt()` selects optional overloads. Addition substitutes zero, or the empty string, for
+If arithmetic should still produce a result when an operand is unavailable, use
+`opt()` to select an optional overload. Addition substitutes zero, or the empty string, for
 invalid operands. Multiplication substitutes one. These overloads accept two optional
 operands and produce ordinary outputs. Marking either operand optional selects that
 behavior for both operands.
@@ -220,7 +224,8 @@ operators reject `opt()` arguments.
 
 ## Wiring syntax
 
-C++ wiring points support binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+`,
+To write graph formulas with familiar expression syntax, use the overloaded operators
+on wiring points. C++ supports binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+`,
 `-`, and `~`, and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `floordiv()`, `pow()`, `round()`, and
 `abs()` for operations without C++ wiring syntax. These operations also accept scalar
 operands and return `wp<>`.
@@ -257,7 +262,8 @@ See [operator declarations](operators.md) for selection and extension.
 
 ## clip
 
-`clip(value, min_, max_)` clamps an integer or floating-point value to inclusive bounds.
+To keep a numeric result within allowed limits, use `clip(value, min_, max_)` to
+clamp an integer or floating-point value to inclusive bounds.
 All three arguments have the same numeric type and can be scalars or time series.
 Required inputs must be valid. `min_ > max_` raises an evaluation error. The output
 propagates the weakest observed input guarantee.
@@ -326,7 +332,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

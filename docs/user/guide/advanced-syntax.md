@@ -1,14 +1,15 @@
 # Advanced syntax at a glance
 
-Explicit time series declarations express independent item updates, input-state
-inspection, and publication constraints. These examples introduce the forms;
-the linked chapters define their behavior.
+When a calculation needs more than current values, explicit time series declarations
+let it work with independent item updates, input availability, retained state, and
+changing sources. This overview shows the syntax for those needs, with links to the
+chapters that explain when and how to use each form.
 
 ## Time series declarations
 
-`TS[int]` in Python and `TS<i64>` in C++ describe an integer time series.
-Explicit declarations also support publication guarantees, collection items, and
-reference targets. Ordinary integer connections use this form:
+If a connection needs a publication guarantee or an explicit collection or reference
+shape, declare its time series type. The basic value form, `TS[int]` in Python or
+`TS<i64>` in C++, describes an integer that can change over time:
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -73,7 +74,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -88,8 +89,9 @@ See [time series types](advanced-graphs/types.md) and
 
 ## Independently changing items
 
-A time series dictionary updates individual items. Omitted keys retain their values;
-`REMOVE` removes an item.
+If a source sends updates for individual keys rather than a complete snapshot, use
+a time series dictionary. Each key keeps its current value until it is updated or
+removed with `REMOVE`, so omitted keys do not need to be sent again.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -155,7 +157,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -170,8 +172,9 @@ A scalar dictionary instead updates as one value. See
 
 ## Input views
 
-An input view exposes current values and update information. Python `@compute_node`
-uses time series annotations for views; C++ uses `In<TS<T>>`.
+To distinguish a new update from a retained value or check whether an input is
+available, request an input view. Python `@compute_node` uses time series annotations
+for views, while C++ requests them with `In<TS<T>>`.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -244,7 +247,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -260,8 +263,9 @@ See [input controls](advanced-nodes/inputs.md).
 
 ## State
 
-State belongs to a runtime node and survives between evaluations. It is initialized
-separately for each independent instance.
+For a running total, peak, or other calculation that needs earlier observations,
+use node state to retain data between evaluations. Each independent runtime node
+initializes and owns its own state.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -356,7 +360,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -371,8 +375,9 @@ See [state and lifecycle](advanced-nodes/state.md). The
 
 ## References
 
-A reference identifies a time series. Changing the reference changes which source
-an ordinary value input follows.
+If a calculation needs to follow whichever source a key currently selects, use a
+reference. It identifies the source time series, so changing the reference changes
+which source an ordinary value input follows.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -439,7 +444,7 @@ Output:
 The [C++ example project](installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

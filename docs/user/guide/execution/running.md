@@ -1,12 +1,15 @@
 # Running applications
 
-`run_graph` constructs and runs a graph. It can capture an output, execute sinks,
-or do both. Simulation is the default engine.
+To run a graph as an application, connect sources that supply values and sinks that
+consume results, then call `run_graph`. Output capture remains available when you
+want to inspect or test the run, and simulation can process finite inputs without
+waiting for wall-clock time.
 
 ## Sources and sinks
 
-A source introduces values. A sink consumes values and performs an application
-effect without producing a graph output.
+If a graph needs to receive data or affect the application, use sources for incoming
+values and sinks for actions such as printing or sending a result. A sink consumes
+graph values without producing another graph output.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -77,7 +80,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -93,20 +96,21 @@ the simulation ends. Outputless runs have no captured result.
 
 ## Capturing results
 
-Graphs returning an output capture sparse events by default. Python returns
-`GraphRunResult`; C++ returns a result supporting literal comparisons. Set
-`capture_output=False` in Python or `GraphRunOptions::capture_output = false` in C++
-to disable capture.
+To inspect a graph's publications after a run, return an output from the graph and
+keep the default output capture. Python returns `GraphRunResult`, while C++ returns
+a result supporting literal comparisons. For runs that do not need a retained result,
+set `capture_output=False` in Python or `GraphRunOptions::capture_output = false` in C++.
 
 [Changing inputs](../graphs/updates.md) introduces finite input sequences. The
 [result reference](../../reference/testing.md) covers timestamps, dense positions,
 and large gaps.
 
-## Simulation and real-time execution
+## Simulation and realtime execution
 
-Simulation advances directly to the next scheduled evaluation time. Realtime execution
-waits for input or timers. Real-time graphs need a run limit or stop request when they
-can remain idle indefinitely.
+For recorded inputs and deterministic time-based calculations, simulation advances
+directly to the next scheduled evaluation time. Choose realtime execution when the
+graph needs to wait for live inputs or timers, and supply a run limit or stop request
+if it could otherwise remain idle indefinitely.
 
 [Execution reference](../../reference/execution.md) lists engine selection, start times,
 stop times, duration limits, cancellation, services, and profiling. The

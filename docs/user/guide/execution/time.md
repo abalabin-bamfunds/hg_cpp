@@ -1,11 +1,14 @@
 # Time patterns
 
-Time operations schedule results independently of input arrival. Durations use
-`datetime.timedelta` in Python and `timedelta_t` in C++.
+If a result should refresh periodically, arrive after a delay, or publish at a limited
+rate, use time operators to schedule that work. Durations use `datetime.timedelta`
+in Python and `timedelta_t` in C++.
 
 ## Periodic signals
 
-`schedule` produces signals at a fixed positive interval. `max_ticks` bounds the source.
+To trigger work at a regular interval, use `schedule` with a positive period.
+Connect its signal to the work it should trigger, and use `max_ticks` when the
+source should stop after a fixed number of signals.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -73,7 +76,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -91,8 +94,9 @@ example uses a run limit to stop the periodic source.
 
 ## Delay
 
-`delay` schedules each input event for a later evaluation time. It preserves event
-order, including repeated values.
+If each input event should appear a fixed duration later, use `delay`. It schedules
+a later publication for each event and preserves their order, including repeated
+equal values.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -159,7 +163,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -175,7 +179,9 @@ input event to publish the preceding event.
 
 ## Throttle
 
-`throttle` limits publication frequency while retaining the latest pending value.
+To limit how often downstream work runs while keeping the latest input, use
+`throttle`. Several updates within one interval can become one later publication
+containing the latest pending value.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -242,7 +248,7 @@ Output:
 The [C++ example project](../installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -252,6 +258,5 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-Several input updates within one interval can produce one later result. The
-[time reference](../../reference/library-time.md) specifies interval boundaries,
+The [time reference](../../reference/library-time.md) specifies interval boundaries,
 leading publication, invalidation, and pending work.

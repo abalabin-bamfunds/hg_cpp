@@ -26,10 +26,19 @@ the site. Paths in the following table are relative to `docs/user/`.
 | `reference/` | API contracts and library operations |
 | `extensions/` | Optional extension setup, graph patterns, and node APIs |
 
-Use relative Markdown links and descriptive anchors. Keep one primary explanation
-for each concept. Introduce its purpose, show code and results, then state constraints.
-Quick starts link to detailed chapters. Avoid lesson narration, exercises, and
-instructions to modify an earlier program.
+Use relative Markdown links and descriptive anchors, and keep one primary explanation
+for each concept. Introduce each feature through a concrete need before describing its
+API: “If you need to apply the same calculation to every item in a collection, use
+`map`.” Follow with code, results, and the constraints needed to use it correctly.
+Use natural, connected sentences rather than a series of short definitions. Quick
+starts link to detailed chapters; avoid lesson narration, exercises, and instructions
+to modify an earlier program.
+
+Apply this structure to every feature introduction in guides, task pages, extension
+pages, and API and library reference entries. A page-level purpose does not replace
+the purpose of each feature introduced within it. For grouped operations, explain
+which need each operation addresses in the surrounding text or table. Vary the wording
+to suit the feature rather than repeating “If you need…” mechanically.
 
 ## Examples
 
@@ -47,6 +56,11 @@ Language tabs use `:sync-group: language` with `:sync: python` and `:sync: cpp`.
 Each C++ tab contains nested **Code** and **Build and run** tabs. The first shows
 source and expected output; the second links to the example project and gives build
 commands. Existing chapters provide the full directive structure.
+
+Both languages use the `hg-cpp` installation documented on the installation page.
+Core and web C++ examples use its site-packages directory as the CMake prefix. Keep the project
+setup inside the installation page's C++ tab; link to it from individual examples.
+Extension examples state their additional source or installed-target requirements.
 
 Mark pages containing complete examples with `<!-- runnable-example -->`.
 Place `Output:` and a fenced `text` block immediately after each runnable source

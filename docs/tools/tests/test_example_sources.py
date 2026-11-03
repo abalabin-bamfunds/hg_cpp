@@ -397,9 +397,18 @@ elapsed: ... ns
                 self.assertEqual(set(archive.namelist()), {"main.cpp", "CMakeLists.txt", "README.md"})
                 self.assertEqual(archive.read("main.cpp").decode(), example.cpp + "\n")
                 cmake = archive.read("CMakeLists.txt").decode()
+                readme = archive.read("README.md").decode()
                 self.assertIn("find_package(hg CONFIG REQUIRED)", cmake)
                 self.assertIn("target_link_libraries(example PRIVATE hg::library)", cmake)
-                self.assertIn("## Build and run", archive.read("README.md").decode())
+                self.assertIn("## Build and run", readme)
+                self.assertIn("`hg-cpp` distribution provides the core C++ SDK.", readme)
+                self.assertIn(
+                    "python -c \"from importlib.metadata import distribution; "
+                    "print(distribution('hg-cpp').locate_file(''))\"",
+                    readme,
+                )
+                self.assertIn('cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"', readme)
+                self.assertIn("Replace `/path/to/site-packages` below with the printed directory.", readme)
 
     def test_downloads_skip_python_and_include_extension_cmake_dependencies(self):
         from example_sources import Example
@@ -429,8 +438,19 @@ elapsed: ... ns
             self.assertNotIn(".py`", catalog)
             with ZipFile(downloads / f"{example.slug}.zip") as archive:
                 cmake = archive.read("CMakeLists.txt").decode()
+                readme = archive.read("README.md").decode()
                 self.assertIn("add_subdirectory(\"${HG_SOURCE_DIR}/extensions/frame\" hg_extension)", cmake)
                 self.assertIn("target_link_libraries(example PRIVATE hg::frame)", cmake)
+                self.assertIn(
+                    'cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages" '
+                    "-DHG_SOURCE_DIR=/path/to/hg/source",
+                    readme,
+                )
+                self.assertIn(
+                    "For extension projects, use an HG installation that provides every target listed in\n"
+                    "`CMakeLists.txt`; follow the extension's setup instructions.",
+                    readme,
+                )
 
 
 if __name__ == "__main__":

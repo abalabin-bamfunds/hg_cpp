@@ -6,17 +6,18 @@ separate runtime graph instances have separate state.
 
 ## count
 
-`count(value)` publishes `1` on the first valid input tick and increments on each later
-valid tick. Invalidation invalidates the output and resets the count; revalidation
-starts at `1`. It counts root ticks, not collection items, and propagates the observed
-input's root guarantee. Incrementing uses the [`i64` wrapping
+To track the number of updates received, use `count(value)`. It publishes `1` on the first valid
+input tick and increments on each later valid tick. Invalidation invalidates the output and resets
+the count; revalidation starts at `1`. It counts root ticks, not collection items, and propagates
+the observed input's root guarantee. Incrementing uses the [`i64` wrapping
 policy](library-numeric.md#arithmetic).
 
 ## lag
 
-`lag(value, n=1)` accepts `TS<T>` and publishes the input event from `n` events earlier
-whenever the input changes. It retains owning scalar values. `n` is a fixed nonnegative
-integer; zero returns the input unchanged. Invalidation is also an event. With `n=1`:
+If a calculation needs an earlier event, use `lag(value, n=1)`. It accepts `TS<T>` and publishes the
+input event from `n` events earlier whenever the input changes. It retains owning scalar values. `n`
+is a fixed nonnegative integer; zero returns the input unchanged. Invalidation is also an event.
+With `n=1`:
 
 ```text
 input:   10   20   invalid   30        40
@@ -92,7 +93,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -104,8 +105,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## sums, mins, maxs, means
 
-`sums(value)`, `mins(value)`, `maxs(value)`, and `means(value)` calculate over
-successive ticks of one `TS<i64>` or `TS<double>`. `sums`, `mins`, and `maxs` retain the
+For an accumulated total, historical extrema, or running mean, use `sums(value)`,
+`mins(value)`, `maxs(value)`, or `means(value)`. They calculate over successive ticks
+of one `TS<i64>` or `TS<double>`. `sums`, `mins`, and `maxs` retain the
 input scalar type. `means` returns `double` and accumulates in `double`, independently
 of the integer sum's wrapping policy.
 
@@ -158,7 +160,8 @@ auto restarted_total = sums(value, "reset"_n = reset);
 
 ## diff
 
-`diff(value)` subtracts the previous valid value from the current value. It accepts
+To measure the change between successive readings, use `diff(value)` to subtract
+the previous valid value from the current one. It accepts
 integer and floating-point time series and returns the same scalar type with an
 ordinary guarantee. The first value after start or invalidation produces no result.
 Skipped positions do not advance history.
@@ -227,7 +230,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 
@@ -239,8 +242,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## ewma
 
-`ewma(value, alpha, min_periods=0)` maintains an exponentially weighted moving average
-of floating-point values. `alpha` is a fixed finite value in `[0, 1]`. The first
+To smooth changing readings while giving more recent values greater influence, use
+`ewma(value, alpha, min_periods=0)`. It maintains an exponentially weighted moving
+average of floating-point values. `alpha` is a fixed finite value in `[0, 1]`. The first
 valid value seeds the average; each later value applies
 `average += alpha * (value - average)`.
 
@@ -313,7 +317,7 @@ Output:
 The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
 
 ```sh
-cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/hg/install
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
 cmake --build build --config Release
 ```
 

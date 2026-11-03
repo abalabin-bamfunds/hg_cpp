@@ -1,12 +1,15 @@
 # Binary WebSocket connections
 
-WebSocket connects a graph to a persistent stream of binary messages. Build the
-[web extension](index.md#web) and use the realtime engine.
+If your application exchanges a continuing stream of binary messages, use WebSocket
+to keep a connection open between the graph and its peer. The
+[web extension](index.md#web) is included in `hg-cpp`; run the graph with the realtime
+engine to wait for network events.
 
 ## Serving a connection
 
-`websocket_handler(path, graph)` registers a route on the HTTP listener. Include
-`<hg/web/http_server.hpp>` in C++ or import the schemas from `hg_web` in Python.
+To accept WebSocket connections at an HTTP path, register the handling graph with
+`websocket_handler(path, graph)`. Include `<hg/web/http_server.hpp>` in C++, or import
+the schemas from `hg_web` in Python.
 
 ::::{tab-set}
 :sync-group: language
@@ -96,9 +99,10 @@ handlers and response bundles with extra outputs follow the HTTP handler pattern
 
 ## Connecting as a client
 
-Include `<hg/web/websocket_client.hpp>` in C++ or import `websocket_client` from
-`hg_web` in Python. Register the client implementation in the service catalogue,
-then connect a request bundle to `websocket_client`:
+To exchange messages with a remote WebSocket server, register a client implementation
+in the service catalogue and connect a request bundle to `websocket_client`.
+Include `<hg/web/websocket_client.hpp>` in C++, or import `websocket_client` from
+`hg_web` in Python:
 
 Python uses `TSB[WebSocketClientRequest]` and `TSB[WebSocketClientReply]`; these
 correspond to C++ `TSB<BinaryWebSocketClientRequest>` and
@@ -125,9 +129,10 @@ The output is `TSB<BinaryWebSocketClientReply>` with `connect_response`, `messag
 and `close`. A successful handshake reports 101. A transport failure before the
 handshake reports 599; abnormal closure after admission reports close code 1006.
 
-`WebSocketClientOptions` in C++ and `websocket_client_impl(...)` in Python configure
-the handshake timeout (30 seconds by default), maximum message size (8 MiB), and
-optional `ca_file`. Python accepts `handshake_timeout=timedelta(...)`,
+To bound connection attempts and message memory, configure `WebSocketClientOptions`
+in C++ or `websocket_client_impl(...)` in Python. The options include a handshake
+timeout (30 seconds by default), maximum message size (8 MiB), and optional `ca_file`.
+Python accepts `handshake_timeout=timedelta(...)`,
 `max_message_size=...`, and `ca_file=...`. `register_client_transports(...)` accepts
 the same three keyword options when it installs both HTTP and WebSocket clients.
 The client supports `ws://` and `wss://`. For WSS, certificate and hostname verification
@@ -135,8 +140,9 @@ are enabled. `ca_file` adds a PEM CA file to OpenSSL's configured default trust 
 
 ## Messages, closing, and authentication
 
-The server accepts binary messages up to 8 MiB. Text messages close the connection
-with code 1003. A message and close tick in the same open-connection update send the
+To end a session from graph code, publish a close value with an application close
+code and optional reason. The server accepts binary messages up to 8 MiB, while text
+messages close the connection with code 1003. A message and close tick in the same open-connection update send the
 message before the close frame. Closing during a handshake cancels the attempt.
 
 Application close codes are 1000–1014 excluding 1004, 1005, and 1006, or 3000–4999.
