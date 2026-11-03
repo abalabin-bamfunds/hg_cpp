@@ -141,8 +141,8 @@ class GraphWiring {
     void register_nested_service_consumers(const GraphWiring &nested, NodeCallIdentity consumer);
 
     [[nodiscard]] const NodeTemplate &own_node_template(std::unique_ptr<NodeTemplate> node_template);
-    // Engine operation: retain a template owner while deferred node calls may reference it.
-    void retain_wiring_template(std::shared_ptr<const WiringTemplate> wiring_template);
+    // Engine operation: retain an owner while deferred node calls may reference it.
+    void retain_wiring_owner(std::shared_ptr<const void> owner);
 
     [[nodiscard]] std::optional<WiringPoint> invoke(const WiringTemplate &wiring_template,
                                                     std::span<const WiringArgument> arguments,
@@ -247,7 +247,7 @@ class GraphWiring {
     std::optional<std::pmr::unsynchronized_pool_resource> variable_memory_;
     allocator variable_allocator_;
     std::vector<std::unique_ptr<NodeTemplate>> node_templates_;
-    std::vector<std::shared_ptr<const WiringTemplate>> wiring_templates_;
+    std::vector<std::shared_ptr<const void>> wiring_owners_;
     struct PendingNodeCall;
     std::vector<std::unique_ptr<PendingNodeCall>> pending_node_calls_;
     std::vector<std::size_t> active_pending_node_calls_;
