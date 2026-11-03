@@ -710,8 +710,10 @@ For each reusable node and graph, test:
 - Boolean collection reductions, including all-valid and `opt` overloads,
   empty identities, partial validity, valid-item views, item updates and removals,
   references, free collections, output guarantees, and equal results on ordinary ticks
-- scalar list and set numeric and Boolean reductions, including empty results,
-  required and optional inputs, integer wrapping, reference rebinding, and guarantees
+- scalar list, set, and dictionary numeric and Boolean reductions, including empty
+  results, required and optional inputs, integer wrapping, reference rebinding, and guarantees
+- scalar dictionary subtraction, including distinct value types, key selection,
+  invalid operands, either optional annotation, nested values, and output guarantees
 - scalar set union, intersection, difference, and symmetric difference, including
   generic item types, invalidation and revalidation, optional empty inputs,
   ordinary equal-result ticks, and deduplicated output suppression

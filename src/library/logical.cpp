@@ -4,6 +4,7 @@
 #include <hg/library/operators.hpp>
 #include <hg/node.hpp>
 #include <hg/scalar/list/scalar.hpp>
+#include <hg/scalar/dict/scalar.hpp>
 #include <hg/scalar/set/scalar.hpp>
 #include <hg/overload.hpp>
 #include <hg/time_series/tsl/tsl_type.hpp>
@@ -137,6 +138,27 @@ struct boolean_reduction_overloads {
     overload<all_, all_scalar_collection_impl<required, G, Set>> all_scalar_set_required;
     overload<all_, all_scalar_collection_impl<optional, TimeSeriesGuarantee::ordinary, Set>> all_scalar_set_optional;
 
+    template <InputValidity Validity, auto OUTPUT_G> struct all_scalar_dict_impl {
+        In<TS<Dict<KEY, bool>, G>, Validity> values;
+        Out<TS<bool, OUTPUT_G>> output;
+
+        void evaluate() const {
+            if constexpr (Validity == optional) {
+                if (!values.valid()) {
+                    output.set(true);
+                    return;
+                }
+            }
+
+            auto result = true;
+            values.value_view().for_each([&](Scalar<KEY>, Scalar<bool> value) { result = result && value.value(); });
+            output.set(result);
+        }
+    };
+
+    overload<all_, all_scalar_dict_impl<required, G>> all_scalar_dict_required;
+    overload<all_, all_scalar_dict_impl<optional, TimeSeriesGuarantee::ordinary>> all_scalar_dict_optional;
+
     // any_
     template <InputValidity Validity, auto OUTPUT_G> struct any_tsl_impl {
         In<TSL<TS<bool, G>, SIZE, G>, Validity> values;
@@ -235,6 +257,27 @@ struct boolean_reduction_overloads {
         any_scalar_list_optional;
     overload<any_, any_scalar_collection_impl<required, G, Set>> any_scalar_set_required;
     overload<any_, any_scalar_collection_impl<optional, TimeSeriesGuarantee::ordinary, Set>> any_scalar_set_optional;
+
+    template <InputValidity Validity, auto OUTPUT_G> struct any_scalar_dict_impl {
+        In<TS<Dict<KEY, bool>, G>, Validity> values;
+        Out<TS<bool, OUTPUT_G>> output;
+
+        void evaluate() const {
+            if constexpr (Validity == optional) {
+                if (!values.valid()) {
+                    output.set(false);
+                    return;
+                }
+            }
+
+            auto result = false;
+            values.value_view().for_each([&](Scalar<KEY>, Scalar<bool> value) { result = result || value.value(); });
+            output.set(result);
+        }
+    };
+
+    overload<any_, any_scalar_dict_impl<required, G>> any_scalar_dict_required;
+    overload<any_, any_scalar_dict_impl<optional, TimeSeriesGuarantee::ordinary>> any_scalar_dict_optional;
 };
 
 } // namespace
