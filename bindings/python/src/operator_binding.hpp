@@ -2,9 +2,11 @@
 
 #include <hg/operator.hpp>
 #include <hg/graph/wiring_argument.hpp>
+#include <hg/python/object.hpp>
 
 #include <nanobind/nanobind.h>
 
+#include <memory>
 #include <span>
 #include <string>
 #include <string_view>
@@ -20,6 +22,7 @@ class PythonOperator {
   public:
     explicit PythonOperator(const Operator &operation);
     PythonOperator(const Operator &operation, std::span<const Type *const> type_parameters);
+    PythonOperator(std::shared_ptr<Operator> operation, std::span<const Type *const> type_parameters);
     PythonOperator(const PythonOperator &other);
     PythonOperator &operator=(const PythonOperator &other);
 
@@ -30,6 +33,7 @@ class PythonOperator {
     nanobind::object call(nanobind::handle lhs, nanobind::handle rhs) const;
     nanobind::object invoke(std::span<const WiringArgument> arguments) const;
     PythonOperator map_type_arguments(nanobind::handle arguments) const;
+    void register_overload(nanobind::handle definition, nanobind::handle owner);
     std::string name() const;
 
   private:
@@ -37,8 +41,10 @@ class PythonOperator {
                           nanobind::kwargs named) const;
 
     const Operator *operation_;
+    std::shared_ptr<Operator> owned_operation_;
     std::vector<const Type *> type_parameters_;
     TypeMap type_map_;
+    std::vector<Object> overload_owners_;
 };
 
 const Type &python_type_argument(nanobind::handle value);

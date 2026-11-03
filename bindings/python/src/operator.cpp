@@ -10,6 +10,9 @@
 #include <hg/operators.hpp>
 #include <hg/python/scalar_conversion.hpp>
 #include <hg/python/wiring_point.hpp>
+#include <hg/python/graph_definition.hpp>
+#include <hg/python/node_definition.hpp>
+#include <hg/node/runtime_signature_node_template.hpp>
 
 #include <nanobind/stl/string.h>
 
@@ -47,14 +50,26 @@ PythonOperator::PythonOperator(const Operator &operation,
                                std::span<const Type *const> type_parameters)
     : operation_{&operation}, type_parameters_{type_parameters.begin(), type_parameters.end()} {}
 
+PythonOperator::PythonOperator(std::shared_ptr<Operator> operation,
+                               std::span<const Type *const> type_parameters)
+    : operation_{operation.get()}, owned_operation_{std::move(operation)},
+      type_parameters_{type_parameters.begin(), type_parameters.end()} {
+    if (operation_ == nullptr) {
+        throw std::invalid_argument{"a Python operator requires a native operator"};
+    }
+}
+
 PythonOperator::PythonOperator(const PythonOperator &other)
-    : operation_{other.operation_}, type_parameters_{other.type_parameters_}, type_map_{other.type_map_.copy()} {}
+    : operation_{other.operation_}, owned_operation_{other.owned_operation_}, type_parameters_{other.type_parameters_},
+      type_map_{other.type_map_.copy()}, overload_owners_{other.overload_owners_} {}
 
 PythonOperator &PythonOperator::operator=(const PythonOperator &other) {
     if (this != &other) {
         operation_ = other.operation_;
+        owned_operation_ = other.owned_operation_;
         type_parameters_ = other.type_parameters_;
         type_map_ = other.type_map_.copy();
+        overload_owners_ = other.overload_owners_;
     }
     return *this;
 }
@@ -119,6 +134,9 @@ nb::object PythonOperator::call(nb::handle value) const {
 
 nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) const {
     try {
+        if (owned_operation_ != nullptr) {
+            WiringContext::current().wiring().retain_wiring_template(owned_operation_);
+        }
         const auto result = static_cast<const WiringTemplate &>(*operation_)(type_map_, arguments);
         if (!result) {
             return nb::none();
@@ -161,9 +179,30 @@ PythonOperator PythonOperator::map_type_arguments(nb::handle arguments) const {
         }
     }
 
-    auto result = PythonOperator{*operation_, std::span<const Type *const>{type_parameters_}};
+    auto result = *this;
     result.type_map_ = std::move(type_map);
     return result;
+}
+
+void PythonOperator::register_overload(nb::handle definition, nb::handle owner) {
+    if (owned_operation_ == nullptr) {
+        throw std::logic_error{"Python overloads can only be registered on a Python-declared operator"};
+    }
+
+    if (!nb::hasattr(owner, "_native_definition")) {
+        throw std::invalid_argument{"operator overloads must be decorated Python node or graph definitions"};
+    }
+    const auto native = nb::getattr(owner, "_native_definition");
+    if (nb::isinstance<PythonNodeDefinition>(native)) {
+        const auto &node = nb::cast<const PythonNodeDefinition &>(native);
+        owned_operation_->overload(
+            RuntimeSignatureNodeTemplate<PythonNodeDefinition>{node.retain_function()});
+    } else if (nb::isinstance<PythonGraphDefinition>(native)) {
+        owned_operation_->overload(nb::cast<const PythonGraphDefinition &>(native));
+    } else {
+        throw std::invalid_argument{"operator overloads must be decorated Python node or graph definitions"};
+    }
+    overload_owners_.emplace_back(owner);
 }
 
 std::string PythonOperator::name() const { return std::string{operation_->signature().name().text()}; }
@@ -223,6 +262,7 @@ void bind_operators(nb::module_ &module) {
         .def("__call__", static_cast<nb::object (PythonOperator::*)(nb::args, nb::kwargs) const>(
                              &PythonOperator::call))
         .def("__getitem__", &PythonOperator::map_type_arguments)
+        .def("_register_overload", &PythonOperator::register_overload)
         .def_prop_ro("name", &PythonOperator::name)
         .def("__repr__", [](const PythonOperator &operation) { return "operator_(" + operation.name() + ")"; });
 

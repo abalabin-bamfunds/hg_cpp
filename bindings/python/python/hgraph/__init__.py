@@ -30,6 +30,7 @@ from ._hg import (
     _Type,
     _make_graph,
     _make_node,
+    _make_operator,
     _make_schema,
     _register_python_schema,
     _dict_scalar_type,
@@ -811,6 +812,29 @@ class DispatchDefinition:
         return result
 
 
+class OperatorDefinition:
+    """A wiring-time operator with implementations resolved by the engine."""
+
+    def __init__(self, function: Any, native_operator: Any):
+        self.function = function
+        self._native_operator = native_operator
+        update_wrapper(self, function)
+        self.signature = inspect.signature(function)
+        self.__signature__ = self.signature
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        return self._native_operator(*args, **kwargs)
+
+    def __getitem__(self, type_arguments: Any) -> Any:
+        return self._native_operator[type_arguments]
+
+    def overload(self, implementation: GraphDefinition | NodeDefinition) -> GraphDefinition | NodeDefinition:
+        if not isinstance(implementation, (GraphDefinition, NodeDefinition)):
+            raise TypeError("operator overloads must be decorated @graph or Python node definitions")
+        self._native_operator._register_overload(implementation._native_definition, implementation)
+        return implementation
+
+
 class _FeedbackServiceImplementation:
     def __init__(self, service: _ServiceDefinition, implementation: GraphDefinition, native_definition: Any):
         self._service = service
@@ -1561,6 +1585,29 @@ def dispatch(signature: Any,
     return DispatchDefinition(signature, implementations)
 
 
+def _make_operator_definition(function: Any, type_params: tuple[TypeVar, ...]) -> OperatorDefinition:
+    prototype = graph(function)
+    native_type_parameters = tuple(_native_type(parameter) for parameter in type_params)
+    native = _make_operator(prototype._native_definition, native_type_parameters)
+    return OperatorDefinition(function, native)
+
+
+def operator(function: Any = None, *, type_params: tuple[TypeVar, ...] = ()) -> Any:
+    """Declare a wiring-time operator with optional explicit type parameters."""
+    if not isinstance(type_params, tuple) or any(not isinstance(parameter, TypeVar) for parameter in type_params):
+        raise TypeError("operator type_params must be a tuple of TypeVar values")
+    if len(set(type_params)) != len(type_params):
+        raise TypeError("operator type_params cannot contain duplicates")
+
+    if function is None:
+        return lambda definition: _make_operator_definition(definition, type_params)
+    if not callable(function):
+        raise TypeError("@operator requires an annotated function")
+    if type_params:
+        raise TypeError("use @operator(type_params=(...)) to declare explicit operator type parameters")
+    return _make_operator_definition(function, type_params)
+
+
 def run_graph(
     definition: GraphDefinition,
     *args: Any,
@@ -1617,6 +1664,7 @@ operators.feedback = feedback
 operators.mesh = mesh
 operators.switch_ = switch_
 operators.dispatch = dispatch
+operators.operator = operator
 
 
 __all__ = [
@@ -1647,6 +1695,8 @@ __all__ = [
     "NodeDefinition",
     "MultiserviceRegistration",
     "ordinary",
+    "operator",
+    "OperatorDefinition",
     "Output",
     "REF",
     "REMOVE",

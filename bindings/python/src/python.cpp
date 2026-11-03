@@ -1282,6 +1282,23 @@ void bind_core(nb::module_ &module) {
                                  bool lift_scalar_output) {
         return PythonGraphDefinition{make_signature(name, parameters, output), function, lift_scalar_output};
     });
+    module.def("_make_operator", [](const PythonGraphDefinition &prototype,
+                                    const std::vector<TypeDescriptor> &type_parameters) {
+        auto variables = std::vector<const Variable *>{};
+        auto types = std::vector<const Type *>{};
+        variables.reserve(type_parameters.size());
+        types.reserve(type_parameters.size());
+        for (const auto &parameter : type_parameters) {
+            const auto *variable = dynamic_cast<const Variable *>(&parameter.type());
+            if (variable == nullptr) {
+                throw std::invalid_argument{"operator type parameters must be Python TypeVars"};
+            }
+            variables.push_back(variable);
+            types.push_back(&parameter.type());
+        }
+        auto operation = std::make_shared<Operator>(prototype.default_signature(), variables);
+        return details::PythonOperator{std::move(operation), types};
+    });
     module.def("_make_service", &make_service, "name"_a, "kind"_a, "parameters"_a, "output"_a);
     module.def("_make_service_catalogue", [] { return PythonServiceCatalogue{}; });
     module.def("_wire_service", [](const PythonServiceDefinition &definition, nb::sequence arguments) {

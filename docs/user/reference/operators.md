@@ -38,9 +38,22 @@ retains its implementation after the registration object leaves scope; the opera
 object must remain alive for its uses. Type parameters, requirements, and resolvers
 refine signatures before construction.
 
-Python currently exposes native operators rather than Python `@operator` or `@overload`
-declarations. A Python wrapper can observe native overloads registered later. C++
-extension modules export an operator through `hg::python::export_operator`.
+Python `@operator` declares a wiring-time signature. Register decorated node or graph
+implementations with `@name.overload`; calls use the engine's normal type resolution and
+overload diagnostics. Declare type parameters explicitly when calls need bracket
+specialization:
+
+```python
+VALUE = TypeVar("VALUE")
+
+@operator(type_params=(VALUE,))
+def convert(value: TS[VALUE]) -> TS[str]: ...
+
+convert[int](input_point)
+```
+
+Implementations registered before graph wiring participate in selection. C++ extension
+modules can also export native operators through `hg::python::export_operator`.
 
 See [C++ integration](../how-to/cpp-extension.md) for build and ownership rules. Do not
 register a conversion overload merely to hide an incompatible numeric expression;
