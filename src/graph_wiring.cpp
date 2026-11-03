@@ -410,6 +410,18 @@ const NodeTemplate &GraphWiring::own_node_template(std::unique_ptr<NodeTemplate>
     return result;
 }
 
+void GraphWiring::retain_wiring_template(std::shared_ptr<const WiringTemplate> wiring_template) {
+    ensure_open();
+
+    for (const auto &retained_template : wiring_templates_) {
+        if (retained_template.get() == wiring_template.get()) {
+            return;
+        }
+    }
+
+    wiring_templates_.push_back(std::move(wiring_template));
+}
+
 void GraphWiring::destroy_scalars(std::span<const WiredScalar> scalars) noexcept {
     for (const auto &scalar : scalars) {
         if (!scalar.has_value()) {
