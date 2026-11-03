@@ -8,6 +8,7 @@
 #include <hg/switch.hpp>
 #include <hg/time_series/tsb/tsb.hpp>
 #include <hg/time_series/tsd/tsd_type.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -150,6 +151,11 @@ template <template <typename, auto...> typename Field> struct DispatchPatternRes
     Field<TS<symbol>> kind;
 };
 
+template <template <typename, auto...> typename Field> struct DispatchPatternPair {
+    Field<TS<i64>> left;
+    Field<TS<i64>> right;
+};
+
 TEST_CASE("dispatch keeps its structural output schema while selected fields change",
           "[feature:dispatch][feature:type-system][series:tsb][schema:named]"
           "[binding:covariant][transition:update]") {
@@ -254,6 +260,128 @@ TEST_CASE("dispatch inside a switch follows its changing inherited context",
                     {10, 11, 12, 13, 11},
                     {100, 101, 102, 103, 104})
               .equals<i64>({110, 112, 102, 103, 115}));
+}
+
+TEST_CASE("dispatch combines free and native bundle outputs across selected types",
+          "[feature:dispatch][series:tsb][schema:named][representation:free][representation:native]"
+          "[transition:update][binding:covariant]") {
+    const auto pack = node([](In<TS<i64>> left, In<TS<i64>> right, Out<TSB<DispatchPatternPair>> output) {
+        output->left.copy_tick(left);
+        output->right.copy_tick(right);
+    });
+
+    const auto free_case = graph([](wp<TS<Bundle<DispatchPatternBase>>>, wp<TS<i64>> left,
+                                    wp<TS<i64>> right) {
+        return bundle<TSB<DispatchPatternPair>>("left"_n = left, "right"_n = right);
+    });
+
+    const auto native_case = graph([&](wp<TS<Bundle<DispatchPatternDerived>>>, wp<TS<i64>> left,
+                                       wp<TS<i64>> right) { return pack(left, right); });
+
+    const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TS<i64>, TS<i64>)
+                                          -> TSB<DispatchPatternPair>>{free_case, native_case};
+    const auto publish = node([](i64 phase, Scalar<Bundle<DispatchPatternBase>> base,
+                                 Scalar<Bundle<DispatchPatternDerived>> derived,
+                                 Out<TS<Bundle<DispatchPatternBase>>> output) {
+        if (phase == 1 || phase == 3) {
+            output.set(base);
+        } else if (phase == 2 || phase == 4) {
+            output.set(derived);
+        }
+    });
+
+    const auto read = node([](In<TSB<DispatchPatternPair>> value) {
+        return *value->left * 100 + *value->right;
+    });
+
+    auto memory = allocator{};
+    const auto base = bundle<DispatchPatternBase>(memory, symbol{"base"});
+    const auto derived = bundle<DispatchPatternDerived>(memory, symbol{"derived"}, i64{7});
+    const auto tested = [&](wp<TS<i64>> phase, wp<TS<i64>> left, wp<TS<i64>> right) {
+        return read(choose(publish(phase, base, derived), left, right));
+    };
+
+    CHECK(run_graph(tested, {1, 2, 3, 4, 4}, {10, 11, literal::SKIP, 12, literal::SKIP},
+                    {20, literal::SKIP, 21, literal::SKIP, 22})
+              .equals<i64>({1020, 1120, 1121, 1221, 1222}));
+}
+
+TEST_CASE("dispatch combines free and native fixed-list outputs",
+          "[feature:dispatch][series:fixed-tsl][representation:free][representation:native]"
+          "[transition:update][binding:covariant]") {
+    const auto copy = node([](In<TS<i64>> first, In<TS<i64>> second, Out<TSL<TS<i64>, 2>> output) {
+        output[0].copy_tick(first);
+        output[1].copy_tick(second);
+    });
+
+    const auto free_case = graph([](wp<TS<Bundle<DispatchPatternBase>>>, wp<TS<i64>> first,
+                                    wp<TS<i64>> second) { return tsl(first, second); });
+
+    const auto native_case = graph([&](wp<TS<Bundle<DispatchPatternDerived>>>, wp<TS<i64>> first,
+                                       wp<TS<i64>> second) { return copy(first, second); });
+
+    const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TS<i64>, TS<i64>)
+                                          -> TSL<TS<i64>, 2>>{free_case, native_case};
+    const auto publish = node([](i64 phase, Scalar<Bundle<DispatchPatternBase>> base,
+                                 Scalar<Bundle<DispatchPatternDerived>> derived,
+                                 Out<TS<Bundle<DispatchPatternBase>>> output) {
+        if (phase == 1 || phase == 3) {
+            output.set(base);
+        } else if (phase == 2 || phase == 4) {
+            output.set(derived);
+        }
+    });
+
+    const auto read = node([](In<TSL<TS<i64>, 2>> values) { return *values[0] * 100 + *values[1]; });
+
+    auto memory = allocator{};
+    const auto base = bundle<DispatchPatternBase>(memory, symbol{"base"});
+    const auto derived = bundle<DispatchPatternDerived>(memory, symbol{"derived"}, i64{7});
+    const auto tested = [&](wp<TS<i64>> phase, wp<TS<i64>> first, wp<TS<i64>> second) {
+        return read(choose(publish(phase, base, derived), first, second));
+    };
+
+    CHECK(run_graph(tested, {1, 2, 3, 4, 4}, {10, 11, literal::SKIP, 12, literal::SKIP},
+                    {20, literal::SKIP, 21, literal::SKIP, 22})
+              .equals<i64>({1020, 1120, 1121, 1221, 1222}));
+}
+
+TEST_CASE("dispatch reads both reference and value items in dictionary outputs",
+          "[feature:dispatch][series:tsd][binding:reference-to-value][transition:update]"
+          "[shape:nested][binding:covariant]") {
+    const auto identity = graph([](wp<TS<i64>> value) { return value; });
+
+    const auto reference_items = graph([&](wp<TS<Bundle<DispatchPatternBase>>>,
+                                           wp<TSD<i64, TS<i64>>> values) {
+        return map(identity, values);
+    });
+
+    const auto value_items = graph([](wp<TS<Bundle<DispatchPatternDerived>>>,
+                                      wp<TSD<i64, TS<i64>>> values) { return values; });
+
+    const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TSD<i64, TS<i64>>)
+                                          -> TSD<i64, TS<i64>>>{reference_items, value_items};
+    const auto publish = node([](i64 phase, Scalar<Bundle<DispatchPatternBase>> base,
+                                 Scalar<Bundle<DispatchPatternDerived>> derived,
+                                 Out<TS<Bundle<DispatchPatternBase>>> output) {
+        if (phase == 1 || phase == 3) {
+            output.set(base);
+        } else if (phase == 2 || phase == 4) {
+            output.set(derived);
+        }
+    });
+
+    const auto total = node([](In<TSD<i64, TS<i64>>> values) { return *values[i64{1}] + *values[i64{2}]; });
+
+    auto memory = allocator{};
+    const auto base = bundle<DispatchPatternBase>(memory, symbol{"base"});
+    const auto derived = bundle<DispatchPatternDerived>(memory, symbol{"derived"}, i64{7});
+    const auto tested = [&](wp<TS<i64>> phase, wp<TSD<i64, TS<i64>>> values) {
+        return total(choose(publish(phase, base, derived), values));
+    };
+
+    CHECK(run_graph(tested, {1, 2, 3, 4, 4}, {{{1, 10}, {2, 20}}, {{1, 11}}, {{2, 21}}, {{1, 12}}, {{2, 22}}})
+              .equals<i64>({30, 31, 32, 33, 34}));
 }
 
 } // namespace
