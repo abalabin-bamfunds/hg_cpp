@@ -288,6 +288,8 @@ TEST_CASE("TSD representation runtime types ignore source and requested layouts"
     CHECK(&first == &alternate_request);
     CHECK(&first.key_runtime_type() == &canonical_key);
     CHECK(&first.item_runtime_type() == &canonical_item);
+    CHECK(requested_default_layout.try_item_layout(key_set_item_id));
+    CHECK_FALSE(first.try_item_layout(key_set_item_id));
 
     const auto &requested_reference =
         static_cast<const TimeSeriesReferenceType &>(REF<TS<Key>, TimeSeriesGuarantee::final>::type());
@@ -608,6 +610,8 @@ TEST_CASE("an ordinary list reference samples the selected list with final items
 TEST_CASE("plain and notifying inputs share one sampled dictionary",
           "[evaluation][reference][series:tsd][series:tsb][feature:sampling][transition:update]"
           "[binding:reference-to-value]") {
+    auto sampled_key_set_has_packed_layout = true;
+
     const auto select = node(
         [](In<TS<bool>> use_second, In<REF<TSD<i64, TS<i64>>>> first,
            In<REF<TSD<i64, TS<i64>>>> second,
@@ -622,8 +626,9 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
         });
 
     const auto compare = node(
-        [](In<TSD<i64, TS<i64>>> direct,
-           In<TSB<DictionaryBundle>> packaged, Out<TS<bool>> output) {
+        [&](In<TSD<i64, TS<i64>>> direct,
+            In<TSB<DictionaryBundle>> packaged, Out<TS<bool>> output) {
+            sampled_key_set_has_packed_layout = direct.runtime_type().try_item_layout(key_set_item_id).has_value();
             output.set(direct.data() == packaged->dictionary.data());
         });
 
@@ -639,6 +644,7 @@ TEST_CASE("plain and notifying inputs share one sampled dictionary",
                                                 {false, true});
 
     CHECK(actual.equals({true, true}));
+    CHECK_FALSE(sampled_key_set_has_packed_layout);
 }
 
 TEST_CASE("a nested graph releases its sampled reference change when it stops",

@@ -24,6 +24,8 @@ class TimeSeriesDictionaryRepresentationRuntimeType final : public TimeSeriesDic
                                                   const TimeSeriesRuntimeType &item)
         : TimeSeriesDictionaryRuntimeType{type, key, item, 0, 1, false, false, false} {}
 
+    std::optional<ItemLayout> try_item_layout(item_id_t) const override { return std::nullopt; }
+
     RetainedDictionaryKey retain_key(void *value, const ScalarData &key, allocator &memory) const override {
         const auto &view = representation(value);
         const auto base = view.base_time_series();
