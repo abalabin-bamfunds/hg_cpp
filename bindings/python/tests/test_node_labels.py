@@ -74,6 +74,31 @@ def test_deduplicated_node_keeps_first_local_name():
     assert source_paths[0].endswith("/source[first]")
 
 
+def test_reassigned_local_keeps_name_for_each_node_output():
+    @hg.graph
+    def graph() -> hg.TS[int]:
+        result = source()
+        result = identity(result)
+        return result
+
+    paths = _paths(graph)
+    assert any(path.endswith("/source[result]") for path in paths)
+    assert any(path.endswith("/identity[result]") for path in paths)
+
+
+def test_repeated_call_site_labels_each_reassigned_output():
+    @hg.graph
+    def graph() -> hg.TS[int]:
+        result = source()
+        for _ in range(2):
+            result = identity(result)
+        return result
+
+    identity_paths = [path for path in _paths(graph) if "/identity[" in path]
+    assert len(identity_paths) == 2
+    assert all(path.endswith("/identity[result]") for path in identity_paths)
+
+
 def test_python_assignment_does_not_replace_explicit_native_label():
     @hg.graph
     def graph() -> hg.TS[int]:

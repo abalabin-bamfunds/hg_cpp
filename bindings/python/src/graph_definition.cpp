@@ -68,28 +68,32 @@ void PythonWiringLifetime::observe() {
     }
 
     auto &graph_call = graph_calls_.back();
-    if (graph_call.frame) {
-        return;
-    }
-    if (!graph_call.code || graph_call.code.get().ptr() == Py_None) {
-        return;
-    }
-
-    auto *current_frame = PyEval_GetFrame();
-    if (current_frame == nullptr) {
-        return;
-    }
-
-    auto frame = nb::borrow<nb::object>(nb::handle{reinterpret_cast<PyObject *>(current_frame)});
-    while (frame && frame.ptr() != Py_None) {
-        auto code = nb::getattr(frame, "f_code", nb::none());
-        if (code.ptr() == graph_call.code.get().ptr()) {
-            graph_call.frame = Object{frame};
+    if (!graph_call.frame) {
+        if (!graph_call.code || graph_call.code.get().ptr() == Py_None) {
             return;
         }
 
-        frame = nb::getattr(frame, "f_back", nb::none());
+        auto *current_frame = PyEval_GetFrame();
+        if (current_frame == nullptr) {
+            return;
+        }
+
+        auto frame = nb::borrow<nb::object>(nb::handle{reinterpret_cast<PyObject *>(current_frame)});
+        while (frame && frame.ptr() != Py_None) {
+            auto code = nb::getattr(frame, "f_code", nb::none());
+            if (code.ptr() == graph_call.code.get().ptr()) {
+                graph_call.frame = Object{frame};
+                break;
+            }
+
+            frame = nb::getattr(frame, "f_back", nb::none());
+        }
+        if (!graph_call.frame) {
+            return;
+        }
     }
+
+    label_graph();
 }
 
 void PythonWiringLifetime::label_graph() {
