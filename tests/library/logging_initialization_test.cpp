@@ -282,6 +282,8 @@ TEST_CASE("HG logging formats UTC timezone modifiers", "[library][logging]") {
 #if defined(_WIN32)
     time_pattern += "|%#z|%#Z|%#Ez|%#OZ|%%#z";
     expected += R"(\|\+0000\|UTC\|\+0000\|UTC\|%#z)";
+    time_pattern += "|%E%%z|%E%%Z|%O%%z|%O%%Z|%#%%z|%#%%Z|%#E%%z|%#O%%Z";
+    expected += R"(\|%\+0000\|%UTC\|%\+0000\|%UTC\|%\+0000\|%UTC\|%\+0000\|%UTC)";
 #endif
     expected += R"(\|UTC modifiers\n$)";
     hg::logging::initialize({.file = path.string(),

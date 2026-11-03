@@ -205,7 +205,7 @@ quill::PatternFormatterOptions pattern_options(const Config &config) {
                 index += replacement.size();
                 continue;
             }
-            ++index;
+            index = conversion + 1;
         }
     }
     return quill::PatternFormatterOptions{
