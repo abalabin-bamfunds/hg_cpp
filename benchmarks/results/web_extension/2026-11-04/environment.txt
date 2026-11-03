@@ -1,0 +1,75 @@
+BG web extension benchmark environment
+Captured: 2026-11-04
+Base revision: be009f7b3fdab2dbf78ea6cbff60cd6159009012
+
+Source and executable SHA-256
+  benchmarks/web_extension_benchmark.cpp  a689086a6fb1c7f1b07fbb3f49f07c02fcb4b83d496970a2a0b116615f0120cf
+  extensions/web/CMakeLists.txt           528568c4547e38e95157591a994433285337f930cc3b710732c4bb000ea94821
+  build/web-benchmark/extensions/web/hg_web_extension_benchmark
+    f978f95bc89b370768b755ba09cb8d046b1025fd598a2f70456dc36c75d30170
+
+Build configuration
+  Configure:
+    cmake -S . -B build/web-benchmark -G Ninja -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=OFF -DHG_BUILD_BENCHMARKS=ON -DHG_BUILD_WEB=ON -DHG_BUILD_PYTHON=OFF
+  Build:
+    cmake --build build/web-benchmark --target hg_web_extension_benchmark -j 4
+  Compiler: GCC 14.3.0 (conda-forge gcc 14.3.0-19)
+  CMake: 4.3.4
+  Build type: Release
+  Compile flags: -O3 -DNDEBUG -std=gnu++23
+  AddressSanitizer: disabled for the measured Release run
+  CMake dependency paths:
+    CMAKE_PREFIX_PATH=/home/abalabin/miniforge3/envs/bg-build
+    CURL_INCLUDE_DIR=/home/abalabin/miniforge3/envs/bg-build/include
+    CURL_LIBRARY_RELEASE=/home/abalabin/miniforge3/envs/bg-build/lib/libcurl.so
+    OPENSSL_ROOT_DIR=/home/abalabin/miniforge3/envs/bg-build
+    OPENSSL_INCLUDE_DIR=/home/abalabin/miniforge3/envs/bg-build/include
+    OPENSSL_SSL_LIBRARY=/home/abalabin/miniforge3/envs/bg-build/lib/libssl.so
+    OPENSSL_CRYPTO_LIBRARY=/home/abalabin/miniforge3/envs/bg-build/lib/libcrypto.so
+    ICU_ROOT=/home/abalabin/miniforge3/envs/bg-build
+  Build/header dependency versions: Boost 1.87.0, libcurl 8.21.0,
+    OpenSSL 3.6.4, ICU 78.3.
+  Loaded runtime versions: libcurl 8.20.0, OpenSSL 3.6.2, ICU 78.3.
+    Resolved library paths: see release-runtime-libraries.txt
+  CMake FetchContent source overrides:
+    Boost=/home/abalabin/_bg/.lanes/web-http-server/build/web-python/_deps/boost-src
+    ddvisitor=/home/abalabin/_bg/.lanes/web-http-server/build/web-python/_deps/ddvisitor-src
+    quill=/home/abalabin/_bg/.lanes/web-http-server/build/web-python/_deps/quill-src
+    tpack=/home/abalabin/_bg/.lanes/web-http-server/build/web-python/_deps/tpack-src
+    certify=/tmp/certify-b74d50d6d91d460f92defb33f32baf302ce82986
+
+Host and execution
+  Kernel: Linux 6.12.68-92.122.amzn2023.x86_64
+  CPU: AMD EPYC 7R13, 32 logical CPUs, 16 cores, 2 threads/core, 2 NUMA nodes, KVM
+  Process affinity: CPUs 0-3
+  Run started: 2026-11-04 10:51:21 UTC
+  JSONL last write: 2026-11-04 10:55:18.681361718 UTC
+  Process exit status: 0 (observed by 2026-11-04 10:55:40 UTC)
+  External timeout: 600 s
+  release-full.stdout contains the four logger lines returned by the live
+  benchmark tool session; they were not in the captured stderr file.
+  CPU counters before/after: release-before-cpu.txt and release-after-cpu.txt
+  CPU pressure before/during/after: release-before-pressure.txt, release-during-pressure.txt,
+    release-during-4096B-window16-pressure.txt, and release-after-pressure.txt
+
+Exact benchmark command
+  env NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1 LD_LIBRARY_PATH=/home/abalabin/miniforge3/envs/bg-build/lib taskset -c 0-3 timeout 600s build/web-benchmark/extensions/web/hg_web_extension_benchmark --messages 4096 --samples 5 --output benchmarks/results/web_extension/2026-11-04/release-full.jsonl 2>benchmarks/results/web_extension/2026-11-04/release-full.stderr
+
+Workload
+  128 warm-up messages per case; five samples of 4096 messages per case.
+  HTTP/HTTPS use windows 1 and 16; WS/WSS use windows 1 and 64.
+  Payload sizes are 64 B and 4096 B. Raw Beast controls use persistent and
+  Connection: close modes. BG clients use the direct anonymous implementation.
+  Responses and payload identity, size, count, and sequence were validated.
+
+Output validation
+  release-full.jsonl contains one metadata record and 90 sample records.
+  Each sample contains 4096 request latencies. There are 18 cases and five
+  samples per case. The raw Beast peer-port count is a lower-bound proxy for
+  connection churn because TCP source ports can be reused.
+
+Limitations
+  The host had other CPU pressure during the run. CPU PSI rose from some
+  avg10=0.77%, avg60=0.66% before the run to avg10=11.67%, avg60=12.18% during
+  the 4096 B HTTPS/window-16 case, then measured avg10=8.07%, avg60=7.45% after
+  the run. Full CPU PSI remained 0%. Treat the results as contention-affected.
