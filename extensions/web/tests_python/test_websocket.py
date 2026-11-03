@@ -1,7 +1,10 @@
 import copy
 from datetime import timedelta
+import os
+from pathlib import Path
 
 import hgraph as hg
+import pytest
 
 from hg_web import (
     AuthDecision,
@@ -140,8 +143,6 @@ def test_python_websocket_handler_and_client_roundtrip_with_policy_and_ambient_i
 
 
 def test_python_websocket_dictionary_handler_and_wss_ca_file():
-    from pathlib import Path
-
     @hg.schema
     class DictionaryHandlerOutput:
         response: hg.TSD[int, hg.TSB[WebSocketResponse]]
@@ -224,6 +225,82 @@ def test_python_websocket_dictionary_handler_and_wss_ca_file():
     assert handshake_statuses == [101]
     assert received_messages == [b"dictionary:ping"]
     assert extra_outputs == ["dictionary"]
+
+
+def test_python_websocket_client_uses_native_trust():
+    if os.environ.get("HG_WEB_TEST_NATIVE_TRUST") != "1":
+        pytest.skip("native TLS trust setup is enabled only for dedicated CI runs")
+
+    certificate = Path(__file__).parent.parent / "tests" / "data" / "test_server_cert.pem"
+    wrong_ca = certificate.with_name("test_wrong_ca.pem")
+
+    def run_case(host, ca_file):
+        stop = hg.StopSource()
+        handshake_statuses = []
+        received_messages = []
+
+        @hg.graph
+        def echo(request: hg.TSB[WebSocketServerRequest]) -> hg.TSB[WebSocketResponse]:
+            messages = hg.operators.emit(hg.operators.getattr(request, hg.symbol("messages")))
+            return hg.operators.combine[hg.TSB[WebSocketResponse]](
+                connect_response=hg.operators.const_(HttpResponse(status=101)),
+                message=messages,
+                close=hg.operators.nothing[hg.TS[WebSocketClose]](),
+            )
+
+        route = websocket_handler("/tls", echo)
+
+        @hg.compute_node
+        def make_request(port: hg.TS[int]) -> hg.TSB[WebSocketClientRequest]:
+            return {
+                "connect_request": WebSocketConnectRequest(f"wss://{host}:{port.value}/tls"),
+                "message": b"ping",
+            }
+
+        @hg.compute_node
+        def observe(reply: hg.TSB[WebSocketClientReply]) -> None:
+            response = reply.connect_response
+            if response.valid and response.modified:
+                handshake_statuses.append(response.value.status)
+                if response.value.status != 101:
+                    stop.request_stop()
+            messages = reply.messages
+            if messages.valid and messages.modified and messages.value:
+                received_messages.extend(bytes(value) for value in messages.value)
+                stop.request_stop()
+
+        @hg.graph
+        def application() -> None:
+            route()
+            observe(websocket_client(make_request(http_server())))
+
+        catalogue = hg.ServiceCatalogue()
+        register_http_server(
+            catalogue,
+            host="127.0.0.1",
+            port=0,
+            certificate_chain_file=str(certificate),
+            private_key_file=str(certificate.with_name("test_server_key.pem")),
+        )
+        register_client_transports(catalogue, "native-wss-test", ca_file=ca_file)
+        hg.run_graph(
+            application,
+            catalogue=catalogue,
+            engine=hg.EvaluationEngine.realtime,
+            run_time=timedelta(seconds=5),
+            stop_token=stop.get_token(),
+        )
+        return handshake_statuses, received_messages
+
+    statuses, messages = run_case("localhost", None)
+    assert statuses == [101]
+    assert messages == [b"ping"]
+
+    statuses, _ = run_case("127.0.0.1", None)
+    assert statuses == [599]
+
+    statuses, _ = run_case("localhost", str(wrong_ca))
+    assert statuses == [599]
 
 
 def test_python_websocket_client_replaces_connection_and_closes_it():

@@ -1721,6 +1721,7 @@ TEST_CASE("HTTPS server serves a request and completes TLS shutdown", "[feature:
             if (error) {
                 throw boost::system::system_error{error};
             }
+            server.stop.request_stop();
         },
         [](ServiceCatalogue &) {},
         ServerOptions{.tls = ServerTlsOptions{test_data_file("test_server_cert.pem"),

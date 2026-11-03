@@ -69,6 +69,7 @@ add_executable(
     evaluation/time_series/time_series_reference_test.cpp
     evaluation/service_test.cpp
     evaluation/service_queue_test.cpp
+    evaluation/service_queue_patterns_test.cpp
     evaluation/multiservice_test.cpp
     evaluation/reference_service_test.cpp
     evaluation/subscription_service_test.cpp
@@ -234,6 +235,8 @@ add_executable(
     library/overload_registration_test.cpp
     library/merge_test.cpp
     library/reference_consumer_test.cpp
+    library/reference_composition_patterns_test.cpp
+    library/reduce_composition_patterns_test.cpp
     library/running_test.cpp
     library/stateful_test.cpp
     library/stream_test.cpp

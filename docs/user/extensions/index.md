@@ -34,8 +34,9 @@ cmake --build build/web --config Release
 cmake --install build/web --config Release
 ```
 
-Source configuration requires libcurl 7.85 or later, Boost 1.87 or later, and OpenSSL. CMake can
-download the required Boost components when a suitable installation is unavailable.
+Source configuration requires libcurl 7.85 or later, Boost 1.87 or later, OpenSSL,
+and downloads the pinned Boost.Certify headers. CMake can download the required Boost
+components when a suitable installation is unavailable.
 The installation includes `hg_web`, `<hg/web/...>` headers, and the `hg::web` target
 in the HG CMake package. Python must be able to import packages from the installation
 prefix.

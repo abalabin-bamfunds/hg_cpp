@@ -261,13 +261,14 @@ Runtime failures are logged. A libcurl multi-engine failure returns 599 for
 each active request, replaces the engine, and does not replay requests.
 
 `http_client_impl(timeout=timedelta(seconds=30),
-max_response_body_size=8 * 1024 * 1024)` configures each implementation. The
+max_response_body_size=8 * 1024 * 1024, ca_file=None)` configures each implementation. The
 timeout has millisecond resolution and must be at least one millisecond. It
 bounds the transfer. Bounding DNS resolution also requires a libcurl
 build with asynchronous DNS support. The response body limit defaults to
 8 MiB. The client uses libcurl multi for concurrent
 HTTP/1.1 requests, connection reuse, and DNS caching. HTTPS verifies the server
-certificate and hostname. Redirect following is disabled. The adaptor adds no
+certificate and hostname. By default it uses system CA trust. `ca_file` selects
+the only trusted CA file. Redirect following is disabled. The adaptor adds no
 retry policy.
 
 The C++ entry points are declared in `<hg/web/http_client.hpp>`:
@@ -279,7 +280,7 @@ catalogue.register_impl(hg::web::http_client, hg::web::http_client_impl(), {});
 
 The client signature is `TS<Bundle<HttpClientRequest>> ->
 TS<Bundle<HttpResponse>>`. Pass `HttpClientOptions` to `http_client_impl()` to
-configure the timeout and response body limit. One implementation owns one
+configure the timeout, response body limit, and optional `ca_file`. One implementation owns one
 transport thread shared by its service clients, with separate runtime state
 for each graph run.
 
@@ -369,7 +370,7 @@ catalogue.register_impl(hg::web::websocket_client, hg::web::websocket_client_imp
 ```
 
 `WebSocketClientOptions` configures the timeout for resolve, connect, and
-handshake, the maximum received message size, and an optional `ca_file` that
-adds a PEM CA file to OpenSSL's configured default trust paths. WSS verifies the
-server certificate and hostname. The client supports binary messages and one
+handshake, the maximum received message size, and an optional `ca_file`. By
+default, WSS uses system CA trust. When set, `ca_file` is the only trusted CA
+file. WSS verifies the server certificate and hostname. The client supports binary messages and one
 active connection per service client.

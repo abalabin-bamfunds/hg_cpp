@@ -140,10 +140,12 @@ python::PythonWiringPoint make_http_merge_responses(const python::PythonWiringPo
 
 python::PythonWiringPoint make_http_client_impl(const python::PythonWiringPoint &requests,
                                                 std::int64_t timeout_ms,
-                                                std::size_t max_response_body_size) {
+                                                std::size_t max_response_body_size,
+                                                std::optional<std::string> ca_file) {
     auto implementation = http_client_impl(HttpClientOptions{
         .timeout = std::chrono::milliseconds{timeout_ms},
         .max_response_body_size = max_response_body_size,
+        .ca_file = std::move(ca_file),
     });
     const auto result = (*implementation)(requests.get(WiringContext::current().wiring()));
     return python::PythonWiringPoint{*result, python::PythonWiringScope::current()};
@@ -210,7 +212,7 @@ NB_MODULE(_hg_web, module) {
         return hg::web::details::http_handler_input_is_dictionary(handler);
     });
     module.def("_http_client_impl", &hg::web::make_http_client_impl, nb::arg("requests"), nb::arg("timeout_ms"),
-               nb::arg("max_response_body_size"));
+               nb::arg("max_response_body_size"), nb::arg("ca_file") = nb::none());
     module.def("_websocket_client_impl", &hg::web::make_websocket_client_impl, nb::arg("requests"),
                nb::arg("handshake_timeout_ms"), nb::arg("max_message_size"), nb::arg("ca_file") = nb::none());
     module.def("_register_client_transports", [](nb::handle catalogue, std::string scope,
@@ -222,10 +224,11 @@ NB_MODULE(_hg_web, module) {
         hg::web::register_client_transports(
             hg::python::service_catalogue(catalogue), std::move(scope),
             hg::web::HttpClientOptions{.timeout = std::chrono::milliseconds{timeout_ms},
-                                       .max_response_body_size = max_response_body_size},
+                                       .max_response_body_size = max_response_body_size,
+                                       .ca_file = ca_file},
             hg::web::WebSocketClientOptions{.handshake_timeout = std::chrono::milliseconds{handshake_timeout_ms},
                                             .max_message_size = max_message_size,
-                                            .ca_file = std::move(ca_file)});
+                                            .ca_file = ca_file});
     }, nb::arg("catalogue"), nb::arg("scope"), nb::arg("timeout_ms"), nb::arg("max_response_body_size"),
        nb::kw_only(), nb::arg("handshake_timeout_ms") = 30'000,
        nb::arg("max_message_size") = 8 * 1024 * 1024, nb::arg("ca_file") = nb::none());

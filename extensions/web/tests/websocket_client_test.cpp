@@ -9,6 +9,7 @@
 #include <hg/scalar/list/scalar.hpp>
 #include <hg/scalar/tuple/scalar.hpp>
 #include <hg/time_series/tsb/tsb.hpp>
+#include <hg/util/scope_exit.hpp>
 #include <hg/web/client_auth.hpp>
 #include <hg/web/http_server.hpp>
 #include <hg/web/websocket_client.hpp>
@@ -19,8 +20,10 @@
 #include <array>
 #include <chrono>
 #include <cstddef>
+#include <cstdlib>
 #include <filesystem>
 #include <memory>
+#include <optional>
 #include <span>
 #include <stop_token>
 #include <string>
@@ -163,6 +166,9 @@ WssResult run_wss_attempt(WebSocketClientOptions options, std::string_view host)
 } // namespace
 
 TEST_CASE("WSS verifies certificates and hostnames and exchanges messages", "[feature:websocket][feature:tls]") {
+    const auto unknown_by_system = run_wss_attempt(WebSocketClientOptions{}, "localhost");
+    CHECK(unknown_by_system.status == 599);
+
     const auto trusted = WebSocketClientOptions{.ca_file = test_data_file("test_server_cert.pem")};
     const auto connected = run_wss_attempt(trusted, "localhost");
     CHECK(connected.status == 101);
@@ -177,6 +183,27 @@ TEST_CASE("WSS verifies certificates and hostnames and exchanges messages", "[fe
     CHECK(unknown_ca.status == 599);
     CHECK(unknown_ca.failure.find("certificate") != std::string::npos);
 }
+
+#if defined(__linux__)
+TEST_CASE("WSS uses system CA paths by default and excludes them for ca_file", "[feature:websocket][feature:tls]") {
+    const auto previous = std::getenv("SSL_CERT_FILE");
+    const auto previous_value = previous ? std::optional<std::string>{previous} : std::nullopt;
+    REQUIRE(setenv("SSL_CERT_FILE", test_data_file("test_server_cert.pem").c_str(), 1) == 0);
+    const auto restore = util::scope_exit{[&]() noexcept {
+        if (previous_value) {
+            (void)setenv("SSL_CERT_FILE", previous_value->c_str(), 1);
+        } else {
+            (void)unsetenv("SSL_CERT_FILE");
+        }
+    }};
+    const auto trusted_by_system = run_wss_attempt(WebSocketClientOptions{}, "localhost");
+    CHECK(trusted_by_system.status == 101);
+
+    const auto explicitly_untrusted = run_wss_attempt(
+        WebSocketClientOptions{.ca_file = test_data_file("test_wrong_ca.pem")}, "localhost");
+    CHECK(explicitly_untrusted.status == 599);
+}
+#endif
 
 TEST_CASE("WebSocket client runtime rejects a base-only authentication value",
           "[feature:websocket][feature:auth]") {
