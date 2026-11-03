@@ -38,7 +38,9 @@ TEST_CASE("map dispatches each item by its concrete bundle type",
     });
 
     const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>) -> TS<i64>>{base_case, derived_case};
+
     const auto select = graph([&](wp<TS<Bundle<DispatchPatternBase>>> value) { return choose(value); });
+
     const auto publish = node([](i64 phase,
                                  Scalar<Bundle<DispatchPatternBase>> base,
                                  Scalar<Bundle<DispatchPatternDerived>> derived,
@@ -188,9 +190,9 @@ TEST_CASE("dispatch keeps its structural output schema while selected fields cha
     };
 
     CHECK(run_graph(tested,
-                        {1, 2, 3},
-                        {10, 11, 12},
-                        {symbol{"derived"}, literal::SKIP, symbol{"base"}})
+                    {1, 2, 3},
+                    {10, 11, 12},
+                    {symbol{"derived"}, literal::SKIP, symbol{"base"}})
               .equals({{{"score", 10}, {"kind", symbol{"derived"}}},
                        {{"score", 11}},
                        {{"score", 12}, {"kind", symbol{"base"}}}}));
@@ -213,9 +215,11 @@ TEST_CASE("dispatch inside a switch follows its changing inherited context",
 
     const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TS<i64>) -> TS<i64>>{
         base_case, derived_case};
+
     const auto selected = graph([&](wp<TS<Bundle<DispatchPatternBase>>> value, wp<TS<i64>> amount) {
         return choose(value, amount);
     });
+
     const auto publish = node([](i64 phase,
                                  Scalar<Bundle<DispatchPatternBase>> base,
                                  Scalar<Bundle<DispatchPatternDerived>> derived,
@@ -245,10 +249,10 @@ TEST_CASE("dispatch inside a switch follows its changing inherited context",
     };
 
     CHECK(run_graph(tested,
-                        {true, true, false, false, true},
-                        {1, 2, 3, 4, 5},
-                        {10, 11, 12, 13, 11},
-                        {100, 101, 102, 103, 104})
+                    {true, true, false, false, true},
+                    {1, 2, 3, 4, 5},
+                    {10, 11, 12, 13, 11},
+                    {100, 101, 102, 103, 104})
               .equals<i64>({110, 112, 102, 103, 115}));
 }
 

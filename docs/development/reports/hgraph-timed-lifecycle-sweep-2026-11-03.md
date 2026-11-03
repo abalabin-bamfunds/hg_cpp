@@ -64,8 +64,9 @@ outer key cancels that branch's pending changes while the sibling continues.
 Restarting the nested graph discards events scheduled by its previous
 instance.
 
-The focused test runner passed all five cases. The full HG suite was not run
-for this batch.
+The focused test runner passed all five cases. Combined verification against
+refreshed main is recorded in the
+[mesh sweep report](hgraph-mesh-settling-sweep-2026-11-03.md#integration-verification).
 
 ## Scope limits
 
