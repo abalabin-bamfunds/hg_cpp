@@ -6,6 +6,9 @@ boundary; node callbacks perform the calculations later, during evaluation.
 
 ## Declarations
 
+To package a calculation for reuse and check the inputs it accepts, declare a graph
+function with the appropriate parameter and result types:
+
 | Purpose | Python | C++ |
 | --- | --- | --- |
 | Composable graph | `@graph` | Ordinary graph function |
@@ -29,10 +32,11 @@ graphs; an ordinary graph call does not.
 
 ## Arguments
 
-Python signatures follow positional, named, positional-only, and keyword-only parameter
-rules. C++ named parameters use `"name"_n = argument`; import `hg::literals` for `_n`.
-Checked C++ declarations can label parameters with `wp<TS<i64>, "reading"_n>` or provide
-parameter names when declaring a template.
+When a call has several inputs or configuration values, named arguments make their
+roles explicit. Python follows its usual positional, named, positional-only, and
+keyword-only parameter rules. C++ uses `"name"_n = argument`; import `hg::literals`
+for `_n`. Checked C++ declarations can label parameters with
+`wp<TS<i64>, "reading"_n>` or provide parameter names when declaring a template.
 
 A scalar argument is fixed during construction. A time series argument supplies a
 connection whose current value can change. A scalar can be lifted to a constant time
@@ -49,7 +53,8 @@ A plain optional parameter accepts an absent scalar or an optional time series i
 Node code receives absence when no value exists. Graph code receives the supplied scalar
 or optional connection. See [nodes](nodes.md).
 
-`valid_items(point)` similarly requires an accepting filtered dictionary input. See
+To pass only available dictionary items, use `valid_items(point)` with an accepting
+filtered dictionary input. See
 [collection input views](input-views.md#collection-views).
 
 ## Context inputs
@@ -101,10 +106,11 @@ access.
 
 ## Connection operations
 
-Arithmetic and comparisons construct graph operations. A connection cannot be converted
-to a native Boolean. Use graph Boolean operators and `if_then_else` for changing
-conditions. `point.has_output` in Python or `point.has_output()` in C++ tests output
-presence during construction, not a current runtime value.
+To derive a result from connections, use arithmetic, comparisons, and graph Boolean
+operations. These construct graph operations rather than reading current values.
+A connection cannot be converted to a native Boolean; use `if_then_else` for changing
+conditions. To check whether a call produces an output during construction, use
+`point.has_output` in Python or `point.has_output()` in C++.
 
 C++ `.as<TS<T>>()` supplies a checked type for an untyped connection. A checked
 graph boundary needs a concrete output type; use `.as` when its return expression

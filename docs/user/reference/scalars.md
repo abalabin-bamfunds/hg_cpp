@@ -6,6 +6,10 @@ or items.
 
 ## Built-in mappings
 
+For numbers, text, timestamps, and complete collections, use the following scalar
+annotations. Their mappings also determine which values can connect across Python
+and C++ nodes:
+
 | Python | C++ | Behavior |
 | --- | --- | --- |
 | `int` | `i64` | Signed 64-bit integer |

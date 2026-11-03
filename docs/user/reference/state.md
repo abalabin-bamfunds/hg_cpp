@@ -5,19 +5,22 @@ node state. Each runtime node owns its state for its own lifetime.
 
 ## State
 
-Python declares `state: State[Factory] = None`. The factory is called without arguments
-on the first invocation of that runtime node; the callback receives the object directly.
-A node can request at most one state parameter. C++ aggregate fields `State<T>` access
-the node's retained value with `*state` or `state->member`. Scalar collections expose
-their supported mutable state interfaces.
+To retain a running total, cache, or other callback data, request
+`state: State[Factory] = None` in Python. The factory is called without arguments on
+the first invocation of that runtime node, and the callback receives the object
+directly. A node can request at most one state parameter. C++ aggregate fields
+`State<T>` access the node's retained value with `*state` or `state->member`.
+Scalar collections expose their supported mutable state interfaces.
 
-Each runtime node owns its state. Calls that reuse one wired node share that state.
-Python disables wiring reuse for nodes requesting `State` and for generators. C++
-disables it with `deduplicate_wiring = false` on a callable node or `static constexpr
-bool deduplicate_wiring = false` on an aggregate definition. Separate graph runs and
-separate inner graph instances have independent state. Required-input invalidation does
-not automatically reset arbitrary state. Define that transition explicitly. `sums`,
-`count`, and other library operators specify their own reset rules.
+If equal calls need independent histories, they must create separate runtime nodes;
+calls that reuse one wired node share its state. Python disables wiring reuse for
+nodes requesting `State` and for generators. C++ disables it with
+`deduplicate_wiring = false` on a callable node or
+`static constexpr bool deduplicate_wiring = false` on an aggregate definition.
+Separate graph runs and separate inner graph instances have independent state.
+Required-input invalidation does not automatically reset arbitrary state, so define
+that transition explicitly. `sums`, `count`, and other library operators specify their
+own reset rules.
 
 ## Lifecycle
 

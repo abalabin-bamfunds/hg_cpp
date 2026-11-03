@@ -405,7 +405,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 | Client URL | `http` or `https`, without embedded credentials or fragments |
 | Application response status | 200–599 |
 
-Configure Python clients with
+To bound request duration and response memory, configure Python clients with
 `http_client_impl(timeout=timedelta(seconds=10), max_response_body_size=1024 * 1024)`.
 C++ uses `http_client_impl(HttpClientOptions{...})`. Client timeouts bound the transfer;
 bounding DNS resolution also requires libcurl with asynchronous DNS support.

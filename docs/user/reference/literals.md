@@ -1,7 +1,8 @@
 # Updates and literal forms
 
-An update describes what to change at one time. It does not replace an entire time
-series collection unless the type's operation explicitly copies a complete value.
+To describe test inputs, expected results, or collection deltas, use literals for the
+values and changes at each evaluation time. A collection update changes only the
+supplied items unless the type's operation explicitly copies a complete value.
 
 | Operation | Python | C++ literal |
 | --- | --- | --- |
@@ -29,7 +30,8 @@ a TSD key removes its item, whereas invalidating an item retains the key.
 
 ## Recorded results
 
-Python returns scalar values and collection deltas. TSS results use `SetDelta`.
+To check partial changes as well as final values, compare the recorded scalar values
+or collection deltas. Python TSS results use `SetDelta`.
 Invalidated contained items use `INVALID`; removed dictionary keys use `REMOVE`. Both no
 root output update and root invalidation record as `None`. Observe `valid` explicitly
 when a test must distinguish those events.

@@ -7,10 +7,11 @@ constraints.
 
 ## Returned values
 
-Python nodes publish by returning a scalar or collection delta. `None` leaves the output unchanged.
-Python callbacks currently cannot return `INVALID` to invalidate an output. C++ callable nodes
-publish returned scalars; a disengaged `std::optional<T>` leaves output unchanged. No update
-preserves availability as well as the value.
+To publish the result of a calculation, return a scalar or collection delta from the
+callback. To reject a reading while keeping the previous result, return `None` in
+Python or a disengaged `std::optional<T>` in C++. This preserves availability as well
+as the value. Python callbacks currently cannot return `INVALID` to invalidate an
+output.
 
 Time series collections publish deltas. Missing fields, positions, or keys in a delta
 remain unchanged. Dictionary `REMOVE` removes an item. Set removal uses `Removed` in

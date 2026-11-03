@@ -116,25 +116,28 @@ It follows dictionary reference changes and preserves the dictionary guarantee.
 For `TS<Dict<K, V>>`, it reconciles the current scalar dictionary's keys with the
 output set. An unchanged key set does not publish another membership tick.
 
-`keys_(valid_items(dictionary))` returns only keys whose immediate items are valid.
-It updates when an item becomes valid or invalid. An invalid dictionary root produces
+To track the keys of available items, use `keys_(valid_items(dictionary))`. The set
+updates when an immediate item becomes valid or invalid. An invalid dictionary root produces
 an invalid result; revalidation rebuilds the key set. `len_` and `is_empty` accept the
 same valid-item view and query its current keys. These filtered queries produce
 ordinary outputs.
 
-`keys_where_true(mask)` returns the keys whose TSD Boolean items are valid and true.
+To select keys that meet a changing Boolean condition, use `keys_where_true(mask)`.
+It returns the keys whose TSD Boolean items are valid and true.
 It updates when an item becomes false or invalid, or when a key is added or removed.
 
-`values_(dictionary)` returns `TS<List<V>>` for a scalar dictionary or
-`TSD<K, TS<V>>`. Python represents the scalar list as `tuple[V, ...]`.
+To pass a dictionary's current values to a list-based calculation, use
+`values_(dictionary)`. For either a scalar dictionary or `TSD<K, TS<V>>`, it returns
+`TS<List<V>>`, represented as `tuple[V, ...]` in Python.
 The scalar list retains duplicates; its order is unspecified.
 For a TSD, the list includes only valid immediate item values. A valid dictionary
 with no valid items produces an empty list.
 
-For a TSD, request `values_[TSS[V]](dictionary)` in Python or
-`values_[type<TSS<V>>](dictionary)` in C++ to obtain distinct valid immediate item
-values. These values must support equality comparison and hashing. Removing or invalidating one item
-removes its value only when no other valid item holds that value. Changes that
+If only distinct current values matter, request `values_[TSS[V]](dictionary)` in
+Python or `values_[type<TSS<V>>](dictionary)` in C++ for a TSD. The result contains
+valid immediate item values, which must support equality comparison and hashing.
+Removing or invalidating one item removes its value only when no other valid item
+holds that value. Changes that
 preserve the distinct set, including simultaneous value swaps, do not publish a
 membership tick.
 
@@ -143,23 +146,24 @@ count per distinct value. Initialization reads all items; subsequent evaluations
 process changed items without rescanning the dictionary. Root invalidation clears
 this state and invalidates the result; revalidation rebuilds it.
 
-`index_of(values, item)` searches a scalar list or fixed TSL and returns the first
-matching index as `i64`, or `-1` if no item matches. The item can be a scalar or a
-time series. TSL searches skip invalid immediate items without changing their
+To locate an item by value, use `index_of(values, item)` to search a scalar list or
+fixed TSL. It returns the first matching index as `i64`, or `-1` if no item matches.
+The item can be a scalar or a time series. TSL searches skip invalid immediate items without changing their
 indices. The collection root and a time series search item must be valid.
 Each search takes O(N) work and retains no state.
 
-`len_(value)` returns an `i64` length. It counts current TSS membership, physical TSD
-keys, or the items in `TS<List<T>>`, `TS<Set<T>>`, and `TS<Dict<K, V>>`. Use
+To count current items, use `len_(value)`, which returns an `i64` length. It counts
+current TSS membership, physical TSD keys, or the items in `TS<List<T>>`, `TS<Set<T>>`,
+and `TS<Dict<K, V>>`. Use
 `len_(valid_items(dictionary))` to count only valid immediate TSD items. For fixed TSL
 and TSB, it returns the declared item count as a wiring-time constant, independent of
 item validity. These fixed-size queries add no runtime query node. Sparse TSL length is
 not supplied. `is_empty(dictionary)` tests whether the dictionary has any physical keys;
 `is_empty(valid_items(dictionary))` tests whether it has any valid immediate items.
 
-`contains_(collection, key)` tests current membership in TSS, TSD, or a scalar list,
-set, or dictionary time series. Dictionaries test keys. The key can be a scalar or a
-time series. List membership requires equality; set and dictionary lookup also requires
+To check whether an item or key is present, use `contains_(collection, key)` on a TSS,
+TSD, or scalar list, set, or dictionary time series. Dictionaries test keys.
+The key can be a scalar or a time series. List membership requires equality; set and dictionary lookup also requires
 hashing.
 
 TSS and TSD queries subscribe to the selected key. Unrelated key changes do not schedule
@@ -413,16 +417,17 @@ reorganize a dictionary without copying its item values.
 Their reference outputs identify source items. Target updates reach downstream
 consumers without evaluating the transform again.
 
-In this table, `V` denotes a time series type:
+Choose the transform according to how the consumer identifies items. In this table,
+`V` denotes a time series type:
 
-| Operator | Input | Output |
-| --- | --- | --- |
-| `rekey(ts, new_keys)` | `TSD<K, V>`, `TSD<K, TS<K1>>` | `TSD<K1, REF<V>>` |
-| `partition(ts, partitions)` | `TSD<K, V>`, `TSD<K, TS<P>>` | `TSD<P, TSD<K, REF<V>>>` |
-| `unpartition(ts)` | `TSD<P, TSD<K, V>>` | `TSD<K, REF<V>>` |
-| `flip_keys(ts)` | `TSD<K, TSD<K1, V>>` | `TSD<K1, TSD<K, REF<V>>>` |
-| `collapse_keys(ts)` | `TSD<K, TSD<K1, V>>` | `TSD<Tuple<K, K1>, REF<V>>` |
-| `uncollapse_keys(ts)` | `TSD<Tuple<K, K1>, V>` | `TSD<K, TSD<K1, REF<V>>>` |
+| Need | Operator | Input | Output |
+| --- | --- | --- | --- |
+| Address items by another key | `rekey(ts, new_keys)` | `TSD<K, V>`, `TSD<K, TS<K1>>` | `TSD<K1, REF<V>>` |
+| Group items by a changing category | `partition(ts, partitions)` | `TSD<K, V>`, `TSD<K, TS<P>>` | `TSD<P, TSD<K, REF<V>>>` |
+| Combine groups into one dictionary | `unpartition(ts)` | `TSD<P, TSD<K, V>>` | `TSD<K, REF<V>>` |
+| Exchange outer and inner key levels | `flip_keys(ts)` | `TSD<K, TSD<K1, V>>` | `TSD<K1, TSD<K, REF<V>>>` |
+| Address nested items by key pairs | `collapse_keys(ts)` | `TSD<K, TSD<K1, V>>` | `TSD<Tuple<K, K1>, REF<V>>` |
+| Split key pairs into nested groups | `uncollapse_keys(ts)` | `TSD<Tuple<K, K1>, V>` | `TSD<K, TSD<K1, REF<V>>>` |
 
 Existing reference items retain their targets without adding another reference
 layer. Invalid item targets retain their keys. An absent or invalid mapping item
@@ -434,7 +439,8 @@ removes its routes. A valid empty source establishes a valid empty result.
 default. Pass `remove_empty=false` to retain groups after their last item is
 removed. Python spells the value `False`.
 
-`flip(ts, unique=true)` reverses a `TSD<K, TS<V>>` into `TSD<V, TS<K>>`.
+To look up a source key by its value, use `flip(ts, unique=true)` to reverse a
+`TSD<K, TS<V>>` into `TSD<V, TS<K>>`.
 Keys and values must support hashing. An invalid source item has no reverse entry.
 With `unique=false`, the result is `TSD<V, TSS<K>>`: each value groups all source
 keys that hold it. Removing the last key removes the group. The `unique` argument
@@ -486,9 +492,10 @@ name. Conversion to a scalar collection requires a valid root and valid immediat
 items. The [shape-conversion example](../guide/advanced-graphs/types.md#converting-collection-shapes)
 shows both languages.
 
-`combine[OUT](...)` constructs a fixed TSL from positional time series or a TSB from
-named time series. Items alias the supplied sources and retain their validity and
-change information. The result type is explicit. C++ uses `combine[type<OUT>]`.
+To present several existing connections as one collection, use `combine[OUT](...)`.
+It constructs a fixed TSL from positional time series or a TSB from named time series.
+Items alias the supplied sources and retain their validity and change information.
+The result type is explicit; C++ uses `combine[type<OUT>]`.
 
 
 <!-- runnable-example -->
@@ -577,8 +584,9 @@ that value tick. Invalidation preserves collected history. A valid reset tick cl
 history, and a simultaneous value contributes after the reset. Reset alone publishes
 a valid empty collection. Supported output guarantees are ordinary and deduplicated.
 
-`emit(value)` publishes collection items as successive ordinary ticks. Scalar lists
-and sets contribute all items of each new value. TSS contributes additions; fixed TSL
+If a downstream calculation processes one item at a time, use `emit(value)` to publish
+collection items as successive ordinary ticks. Scalar lists and sets contribute all
+items of each new value. TSS contributes additions; fixed TSL
 contributes modified valid items. Dictionaries contribute key/value entries, using
 `KeyValue` in Python and `operators::key_value` in C++ as the result TSB schema.
 TSD contributes added or modified valid entries.

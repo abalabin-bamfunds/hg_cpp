@@ -6,11 +6,12 @@ is sufficient for one concrete calculation.
 
 ## Resolution
 
-A call binds positional and named arguments, resolves type variables, checks
-constraints, and selects a compatible overload. Exact scalar types matter; integer and
-floating-point operands do not implicitly mix. Required and optional parameter contracts
-also affect selection. A fixed-parameter overload is preferred over a variadic overload
-before type specificity is compared.
+To use an operation across supported types, call the operator and let HG select its
+implementation. Resolution binds positional and named arguments, resolves type
+variables, checks constraints, and selects a compatible overload. Exact scalar types
+matter; integer and floating-point operands do not implicitly mix. Required and optional
+parameter contracts also affect selection. A fixed-parameter overload is preferred
+over a variadic overload before type specificity is compared.
 
 Missing implementations, incompatible arguments, and ambiguous matches are construction
 errors. A failure reports the operator, argument types, candidate signatures, and
@@ -18,8 +19,8 @@ rejection context. See [errors](../how-to/errors.md).
 
 ## Extension
 
-C++ declares an operator prototype with `operator_` and registers implementations with
-`overload`:
+To add an operation or support another input type in C++, declare its prototype with
+`operator_` and register implementations with `overload`:
 
 ```cpp
 #include <hg/library.hpp>

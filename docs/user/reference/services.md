@@ -6,6 +6,9 @@ contract in graph code and supply a `ServiceCatalogue` to the runner.
 
 ## Declarations
 
+Choose a reference service for a shared result, a subscription service for values
+selected by key, or request/reply for work performed on each client's request:
+
 | Kind | Python | C++ | Implementation input/output |
 | --- | --- | --- | --- |
 | Reference | `@reference_service` | `reference_service<Prototype>` | Scalar configuration to shared result |
