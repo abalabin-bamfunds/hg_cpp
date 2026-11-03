@@ -86,7 +86,8 @@ struct ResolvedMapCall {
 };
 
 ResolvedMapCall resolve_map_call(std::span<const MapArgument> arguments);
-ResolvedMapCall resolve_map_call(std::string_view operation, std::span<const MapArgument> arguments);
+ResolvedMapCall resolve_map_call(std::string_view operation, bool supports_scalar_dict_key_sources,
+                                 std::span<const MapArgument> arguments);
 
 template <typename T>
 inline constexpr bool is_map_option =

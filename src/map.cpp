@@ -33,8 +33,10 @@ namespace {
 
 class MapCallResolver {
   public:
-    MapCallResolver(std::string_view operation, std::span<const MapArgument> arguments)
-        : operation_{operation}, arguments_{arguments} {}
+    MapCallResolver(std::string_view operation, bool supports_scalar_dict_key_sources,
+                    std::span<const MapArgument> arguments)
+        : operation_{operation}, arguments_{arguments},
+          supports_scalar_dict_key_sources_{supports_scalar_dict_key_sources} {}
 
     ResolvedMapCall resolve() {
         split_arguments();
@@ -151,6 +153,10 @@ class MapCallResolver {
                 return;
             }
 
+            if (!supports_scalar_dict_key_sources_ && dictionary_scalar(*type) != nullptr) {
+                throw WiringError{std::string{operation_} + " does not accept scalar Dict as a key source"};
+            }
+
             const auto *candidate = key_type(*type);
             if (candidate == nullptr) {
                 return;
@@ -158,7 +164,9 @@ class MapCallResolver {
 
             if (result_.key_type != nullptr && result_.key_type != candidate) {
                 throw WiringError{std::string{"all "} + operation_ +
-                                  " TSD, scalar Dict, and TSS arguments must have the same key type"};
+                                  (supports_scalar_dict_key_sources_ ? " TSD, scalar Dict, and TSS"
+                                                                     : " TSD and TSS") +
+                                  " arguments must have the same key type"};
             }
             result_.key_type = candidate;
         };
@@ -171,7 +179,9 @@ class MapCallResolver {
         }
 
         if (result_.key_type == nullptr) {
-            throw WiringError{std::string{"a "} + operation_ + " call requires a TSD, scalar Dict, or TSS argument"};
+            throw WiringError{std::string{"a "} + operation_ + " call requires " +
+                              (supports_scalar_dict_key_sources_ ? "a TSD, scalar Dict, or TSS argument"
+                                                                 : "a TSD or TSS argument")};
         }
         if (!result_.key_type->is_resolved()) {
             throw WiringError{std::string{"a "} + operation_ + " call requires a concrete key type"};
@@ -196,7 +206,6 @@ class MapCallResolver {
         if (dictionary == nullptr && set == nullptr && scalar_dictionary == nullptr) {
             throw WiringError{"__key_set_arg__ must select a mapped TSD, scalar Dict, or a TSS"};
         }
-
         const auto &selected_key = dictionary != nullptr ? dictionary->key_type()
                                    : set != nullptr       ? set->item_type()
                                                           : scalar_dictionary->key_type();
@@ -253,17 +262,19 @@ class MapCallResolver {
     std::span<const MapArgument> arguments_;
     ResolvedMapCall result_;
     std::optional<MapArgumentSelector> key_set_argument_;
+    bool supports_scalar_dict_key_sources_;
     bool valid_items_option_seen_{};
 };
 
 } // namespace
 
 ResolvedMapCall resolve_map_call(std::span<const MapArgument> arguments) {
-    return resolve_map_call("map", arguments);
+    return resolve_map_call("map", true, arguments);
 }
 
-ResolvedMapCall resolve_map_call(std::string_view operation, std::span<const MapArgument> arguments) {
-    return MapCallResolver{operation, arguments}.resolve();
+ResolvedMapCall resolve_map_call(std::string_view operation, bool supports_scalar_dict_key_sources,
+                                 std::span<const MapArgument> arguments) {
+    return MapCallResolver{operation, supports_scalar_dict_key_sources, arguments}.resolve();
 }
 
 GraphArgument build_map_graph_argument(const WiringTemplate &function, ResolvedMapCall call,

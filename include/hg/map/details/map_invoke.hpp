@@ -251,18 +251,20 @@ void dispatch_map_graph_function(const Function &function, Callback &callback,
     }
 }
 
-template <typename Call> ResolvedMapCall resolve_map_call(std::string_view operation, Call &call) {
+template <typename Call>
+ResolvedMapCall resolve_map_call(std::string_view operation, bool supports_scalar_dict_key_sources, Call &call) {
     auto arguments = map_supplied_arguments(call.positional);
     auto named = map_supplied_arguments(call.named);
     auto options = map_supplied_arguments(call.options);
     arguments.reserve(arguments.size() + named.size() + options.size());
     arguments.insert(arguments.end(), std::make_move_iterator(named.begin()), std::make_move_iterator(named.end()));
     arguments.insert(arguments.end(), std::make_move_iterator(options.begin()), std::make_move_iterator(options.end()));
-    return resolve_map_call(operation, std::span<const MapArgument>{arguments});
+    return resolve_map_call(operation, supports_scalar_dict_key_sources, std::span<const MapArgument>{arguments});
 }
 
 struct map_graph_argument_builder {
     static constexpr auto name = "map";
+    static constexpr auto supports_scalar_dict_key_sources = true;
 
     GraphArgument operator()(const WiringTemplate &function, ResolvedMapCall call,
                              bool preserve_named_arguments, const TypeMap &type_map) const {
@@ -283,7 +285,7 @@ template <typename SelectOverload, typename Graph, typename Builder, typename...
 auto invoke_map(const TypeMap &type_map, SelectOverload &&select_overload, const Graph &function, Builder builder,
                 Arguments &&...arguments) {
     auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
-    auto resolved_call = resolve_map_call(Builder::name, call);
+    auto resolved_call = resolve_map_call(Builder::name, Builder::supports_scalar_dict_key_sources, call);
     return invoke_preprocessed_map(std::forward<SelectOverload>(select_overload), function, call,
                                    std::move(resolved_call), true, builder, type_map);
 }
@@ -291,7 +293,7 @@ auto invoke_map(const TypeMap &type_map, SelectOverload &&select_overload, const
 template <typename SelectOverload, typename Builder>
 auto invoke_runtime_map(const TypeMap &type_map, SelectOverload &&select_overload, const WiringTemplate &function,
                         std::span<const MapArgument> arguments, Builder builder) {
-    auto call = resolve_map_call(Builder::name, arguments);
+    auto call = resolve_map_call(Builder::name, Builder::supports_scalar_dict_key_sources, arguments);
     auto graph_argument = builder(function, call, true, type_map);
 
     auto overload_arguments = std::vector<WiringArgument>{};
@@ -318,15 +320,16 @@ auto invoke_map_function(const TypeMap &type_map, SelectOverload &&select_overlo
     using KeyScalar = typename first_map_callable_key<Arguments...>::type;
     if constexpr (std::same_as<KeyScalar, void>) {
         auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
-        (void)resolve_map_call(Builder::name, call);
-        throw WiringError{std::string{"a "} + Builder::name +
-                          " graph function requires typed TSD, TSS, or scalar Dict arguments; "
-                          "use a graph template with wp<>"};
+        (void)resolve_map_call(Builder::name, Builder::supports_scalar_dict_key_sources, call);
+        const auto collection_types = Builder::supports_scalar_dict_key_sources ? "TSD, TSS, or scalar Dict"
+                                                                                 : "TSD or TSS";
+        throw WiringError{std::string{"a "} + Builder::name + " graph function requires typed " + collection_types +
+                          " arguments; use a graph template with wp<>"};
     } else {
         using StoredFunction = std::decay_t<Function>;
         auto stored_function = StoredFunction{std::forward<Function>(function)};
         auto call = group_map_call_arguments(std::forward<Arguments>(arguments)...);
-        auto resolved_call = resolve_map_call(Builder::name, call);
+        auto resolved_call = resolve_map_call(Builder::name, Builder::supports_scalar_dict_key_sources, call);
         const auto selected_key_set = resolved_call.selected_key_set;
         using Supplied = decltype(std::tuple_cat(call.positional, call.named));
         using Key = map_key_parameter_t<KeyScalar>;

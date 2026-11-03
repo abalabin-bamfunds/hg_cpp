@@ -6,6 +6,7 @@
 #include <hg/mesh.hpp>
 #include <hg/node.hpp>
 #include <hg/operators.hpp>
+#include <hg/scalar/dict/type.hpp>
 #include <hg/testing/test_wiring.hpp>
 #include <hg/time_series/tsd/tsd_type.hpp>
 
@@ -315,6 +316,16 @@ TEST_CASE("mesh diagnostics identify mesh arguments", "[feature:mesh][feature:op
     CHECK_THROWS_WITH(testing::test_wiring(
                           [&] { (void)mesh([](auto left, auto) { return left; }, integers(), floating_point_keys()); }),
                       "all mesh TSD and TSS arguments must have the same key type");
+}
+
+TEST_CASE("mesh rejects scalar Dict key sources", "[feature:mesh][feature:wiring][series:tsd][scalar:dict]") {
+    const auto integers = node([](Out<TSD<i64, TS<i64>>>) {});
+    const auto dictionary = node([](Out<TS<Dict<i64, i64>>>) {});
+    const auto branch = graph("name"_n = "mesh_rejects_scalar_dictionary",
+                              [](wp<TS<i64>> value, wp<TS<i64>>) { return value; });
+
+    CHECK_THROWS_WITH(testing::test_wiring([&] { (void)mesh(branch, integers(), dictionary()); }),
+                      "mesh does not accept scalar Dict as a key source");
 }
 
 } // namespace
