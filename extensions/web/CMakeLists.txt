@@ -84,6 +84,17 @@ set_target_properties(
         SOVERSION ${PROJECT_VERSION_MAJOR}
 )
 
+if(HG_BUILD_BENCHMARKS)
+    add_executable(hg_web_extension_benchmark ../../benchmarks/web_extension_benchmark.cpp)
+    target_compile_features(hg_web_extension_benchmark PRIVATE cxx_std_23)
+    target_compile_definitions(
+        hg_web_extension_benchmark PRIVATE HG_WEB_BENCHMARK_TEST_DATA="${CMAKE_CURRENT_SOURCE_DIR}/tests/data"
+    )
+    target_link_libraries(
+        hg_web_extension_benchmark PRIVATE hg::web hg::library ${HG_WEB_BOOST_TARGETS} OpenSSL::SSL OpenSSL::Crypto
+    )
+endif()
+
 install(
     TARGETS hg_web
     EXPORT hgTargets

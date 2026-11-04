@@ -1,0 +1,18 @@
+HTTP payload=64 window=1
+HTTPS payload=64 window=1
+HTTP payload=64 window=16
+HTTPS payload=64 window=16
+WS payload=64 window=1
+WSS payload=64 window=1
+WS payload=64 window=64
+WSS payload=64 window=64
+HTTP payload=4096 window=1
+HTTPS payload=4096 window=1
+HTTP payload=4096 window=16
+HTTPS payload=4096 window=16
+WS payload=4096 window=1
+WSS payload=4096 window=1
+WS payload=4096 window=64
+WSS payload=4096 window=64
+raw Beast client persistent
+raw Beast client connection-close

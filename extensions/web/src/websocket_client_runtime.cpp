@@ -641,6 +641,7 @@ class WebSocketClientImplementation final {
                 fail_before_handshake("WebSocket connection failed: " + error.message());
                 return;
             }
+            stream_.next_layer().lowest_layer().set_option(tcp::no_delay{true});
             state_ = State::handshaking;
             auto self = shared_from_this();
             if (parsed_url_.secure) {

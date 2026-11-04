@@ -1,0 +1,2 @@
+ws payload=65536 window=1
+wss payload=65536 window=1

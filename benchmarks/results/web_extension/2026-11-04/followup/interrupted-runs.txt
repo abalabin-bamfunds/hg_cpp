@@ -1,0 +1,33 @@
+64 KiB WS/WSS window-1 attempts excluded from the accepted results
+
+Quick probe
+  Command arguments:
+    --quick --protocol ws --protocol wss --payload 65536 --window 1
+    --window 64 --window 256
+  The probe sets 64 measured messages and one sample, with 128 warmup
+  messages. At window 1, WS took 7.658 s with p50/p99 RTT 116.43/148.24 ms;
+  WSS took 7.503 s with p50/p99 RTT 117.13/146.68 ms. The measured rates were
+  about 8.4 and 8.5 messages/s. The other window results are in the quick
+  probe output originally written to /tmp/web-ws-64k-selector-smoke.jsonl.
+
+Attempt 1
+  Command arguments:
+    --protocol ws --protocol wss --payload 65536 --window 1 --messages 4096
+    --samples 5
+  The command emitted metadata and the `ws payload=65536 window=1` progress
+  line, but no completed sample. It was interrupted after the quick probe
+  showed that 20,480 measured messages at about 8.4 messages/s would take over
+  40 minutes, beyond the 600 s timeout.
+
+Attempt 2
+  Command arguments:
+    --protocol ws --protocol wss --payload 65536 --window 1 --messages 256
+    --samples 5
+  The command emitted metadata and the same progress line, but no completed
+  sample. It was interrupted before completion to limit this high-latency
+  case. The accepted run uses 64 measured messages per sample and five
+  samples.
+
+The metadata-only JSONL and progress files from both interrupted attempts are
+not accepted samples. The accepted measurements are in
+ws-64k-window1-64x5.jsonl.

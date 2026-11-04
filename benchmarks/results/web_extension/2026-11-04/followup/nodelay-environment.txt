@@ -1,0 +1,69 @@
+TCP_NODELAY follow-up environment
+Captured: 2026-11-04 12:10 UTC
+Working directory: /home/abalabin/_bg/.lanes/web-http-server
+Base revision: 0c3ad1734a6134f18893ace868a7c6a28dca3fe3
+Prior comparison revision: a2f3d723d695eeca5e4399fb7cc850349c5dd0ef
+
+Change
+  extensions/web/src/server_runtime.cpp sets TCP_NODELAY on each accepted
+  server socket.
+  extensions/web/src/websocket_client_runtime.cpp sets TCP_NODELAY on the
+  connected WebSocket client's lowest-layer socket.
+  No benchmark source or public option changed.
+
+Benchmark build
+  Build type: Release
+  Compiler: GCC 14.3.0
+  Benchmark executable:
+    build/web-benchmark/extensions/web/hg_web_extension_benchmark
+    SHA-256 ad64ec72bd58998f895cfa4263e4b8688d5ad99db07f6f8126ed1f723275fc82
+  Loaded extension:
+    build/web-benchmark/extensions/web/libhg_web.so.0.1.0
+    SHA-256 3617010e9d8d4b56961e3ae4972d2f451c2d44db3f4b8a3aeb2ec6d925f967c7
+  Modified source hashes:
+    extensions/web/src/server_runtime.cpp
+      SHA-256 6e121e5f097c3cc4073e356a3d1bf91a6ae281ff58da251e6aee278258315e82
+    extensions/web/src/websocket_client_runtime.cpp
+      SHA-256 016e838dccd1deb9b83642d8f7cc87e558f0dc6f104635b7464a5fa5404900f4
+  Loaded runtime dependencies include libcurl 8.20.0, OpenSSL 3.6.2, and
+  ICU 78.3. libcurl enables TCP_NODELAY by default.
+
+Common command prefix
+  env NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1
+      LD_LIBRARY_PATH=/home/abalabin/miniforge3/envs/bg-build/lib
+      taskset -c 0-3 timeout 180s
+      build/web-benchmark/extensions/web/hg_web_extension_benchmark
+  Each command used --samples 5 and redirected stderr to the matching
+  nodelay-*.stderr file.
+
+Accepted samples
+  --protocol ws --protocol wss --payload 65536 --window 1 --messages 64
+    --output nodelay-64k-window1-64x5.jsonl
+  --protocol ws --protocol wss --payload 64 --window 64 --messages 4096
+    --output nodelay-64b-window64-4096x5.jsonl
+  --protocol ws --protocol wss --payload 65536 --window 64 --messages 4096
+    --output nodelay-64k-window64-4096x5.jsonl
+  Each JSONL file contains one metadata record and ten samples: five per
+  protocol. The three files contain 30 accepted samples and 82,560 measured
+  exchanges. The single-sample quick probe is diagnostic and excluded.
+
+Host pressure
+  CPU pressure was not sampled during each case. Immediately after the
+  measurements, /proc/pressure/cpu reported some avg10=24.87, avg60=25.39,
+  avg300=28.60; full pressure was 0.00. /proc/loadavg reported 40.16, 38.66,
+  and 26.43. Throughput differences for window 64 are inconclusive under this
+  host load. The baseline and follow-up also use different engine revisions.
+
+Build and tests
+  The Release benchmark target and Debug web test target built successfully.
+  The CTest invocation below reached its configured 10-second timeout without
+  an assertion failure:
+    conda run --no-capture-output -n bg-build ctest --test-dir build/web-server
+      --output-on-failure -R '^hg_web_tests$'
+  Running the test binary directly completed successfully:
+    env LD_LIBRARY_PATH=/home/abalabin/miniforge3/envs/bg-build/lib timeout 120s
+      build/web-server/extensions/web/hg_web_tests
+    267 assertions in 53 test cases passed.
+  Test executable SHA-256:
+    build/web-server/extensions/web/hg_web_tests
+    952b809a68ec27b124e0f8a1117c8908be267a7f2ca900c129c7ae1fc5f35da7

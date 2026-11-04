@@ -1,0 +1,214 @@
+
+[ws-wss-64k-window1-256x5-before]
+2026-11-04 11:31:05 UTC
+some avg10=0.06 avg60=0.91 avg300=2.13 total=7515352350
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+8.02 13.78 19.54 6/3606 64
+Interrupted before samples at user request; 4096x5/full and 256x5 partial-run artifacts are excluded from results.
+
+[ws-wss-64k-window1-64x5-before]
+2026-11-04 11:32:08 UTC
+some avg10=0.59 avg60=0.66 avg300=1.81 total=7515858816
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+9.87 13.04 18.91 17/3631 64
+elapsed_sec=107.003 user_sec=1.250 sys_sec=0.884
+exit_status=0
+
+[ws-wss-64k-window1-64x5-after]
+2026-11-04 11:33:55 UTC
+some avg10=0.60 avg60=0.46 avg300=1.36 total=7516719525
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+13.87 13.54 18.43 20/3646 74
+
+[ws-wss-64k-window64-4096x5-before]
+2026-11-04 11:34:12 UTC
+some avg10=0.85 avg60=0.59 avg300=1.34 total=7516914829
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+14.93 13.79 18.44 17/3653 64
+elapsed_sec=15.898 user_sec=23.426 sys_sec=15.018
+exit_status=0
+
+[ws-wss-64k-window64-4096x5-after]
+2026-11-04 11:34:28 UTC
+some avg10=0.31 avg60=0.48 avg300=1.27 total=7517024796
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+15.84 14.05 18.45 18/3641 74
+
+[ws-wss-64k-window256-8192x5-before]
+2026-11-04 11:34:45 UTC
+some avg10=0.06 avg60=0.37 avg300=1.20 total=7517117428
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+16.48 14.31 18.44 17/3652 64
+elapsed_sec=31.143 user_sec=50.402 sys_sec=28.222
+exit_status=0
+
+[ws-wss-64k-window256-8192x5-after]
+2026-11-04 11:35:16 UTC
+some avg10=0.29 avg60=0.49 avg300=1.15 total=7517500372
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+19.29 15.18 18.60 22/3645 74
+
+
+Grouped source snapshots and timing records (verbatim)
+
+--- Original file: cache64-before-cpu-pressure.txt ---
+some avg10=0.93 avg60=1.67 avg300=7.72 total=7500037414
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: cache64-before-cpu.txt ---
+cpu  56177809 15302069 10209871 499655779 1014924 0 462858 11614 0 0
+
+--- Original file: cache64-before-loadavg.txt ---
+21.51 20.16 23.93 28/3724 62
+
+--- Original file: cache64-before-time.txt ---
+2026-11-04 11:20:42 UTC
+
+--- Original file: cache64-http8192-before-cpu-pressure.txt ---
+some avg10=6.23 avg60=4.52 avg300=6.63 total=7508454726
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: cache64-http8192-before-loadavg.txt ---
+28.20 22.90 24.36 42/3726 62
+
+--- Original file: cache64-http8192-before-time.txt ---
+2026-11-04 11:23:10 UTC
+
+--- Original file: cache64-http8192-cpu-samples.txt ---
+2026-11-04T11:23:34.409755+00:00 cpu0=100.0% cpu1=75.0% cpu2=88.0% cpu3=100.0% some avg10=2.98 avg60=4.26 avg300=6.42 total=7509393309 loadavg=27.47
+2026-11-04T11:23:35.410359+00:00 cpu0=100.0% cpu1=85.4% cpu2=89.1% cpu3=97.1% some avg10=3.16 avg60=4.25 avg300=6.40 total=7509459746 loadavg=27.47
+2026-11-04T11:23:36.410919+00:00 cpu0=100.0% cpu1=87.2% cpu2=89.6% cpu3=95.1% some avg10=3.16 avg60=4.25 avg300=6.40 total=7509518113 loadavg=27.47
+2026-11-04T11:23:37.411482+00:00 cpu0=100.0% cpu1=81.2% cpu2=89.8% cpu3=86.4% some avg10=3.68 avg60=4.31 avg300=6.40 total=7509591386 loadavg=27.47
+2026-11-04T11:23:38.411984+00:00 cpu0=100.0% cpu1=86.5% cpu2=95.9% cpu3=93.9% some avg10=3.68 avg60=4.31 avg300=6.40 total=7509652007 loadavg=27.47
+2026-11-04T11:23:39.412562+00:00 cpu0=100.0% cpu1=92.8% cpu2=94.9% cpu3=94.8% some avg10=4.10 avg60=4.37 avg300=6.40 total=7509687073 loadavg=27.11
+2026-11-04T11:23:40.413211+00:00 cpu0=99.0% cpu1=79.8% cpu2=100.0% cpu3=81.9% some avg10=4.10 avg60=4.37 avg300=6.40 total=7509736747 loadavg=27.11
+2026-11-04T11:23:41.413692+00:00 cpu0=99.0% cpu1=87.6% cpu2=84.7% cpu3=92.9% some avg10=4.08 avg60=4.35 avg300=6.38 total=7509793781 loadavg=27.11
+
+--- Original file: cache64-http8192-time.txt ---
+elapsed_sec=8.125 user_sec=12.451 sys_sec=6.037
+
+--- Original file: cache8-before-cpu-pressure.txt ---
+some avg10=1.52 avg60=10.04 avg300=14.16 total=7496647896
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: cache8-before-cpu.txt ---
+cpu  55955059 15272604 10181659 499302877 1014662 0 461020 11590 0 0
+
+--- Original file: cache8-before-loadavg.txt ---
+13.49 22.46 25.61 13/3706 62
+
+--- Original file: cache8-before-time.txt ---
+2026-11-04 11:17:21 UTC
+
+--- Original file: cache8-http8192-before-cpu-pressure.txt ---
+some avg10=0.74 avg60=2.92 avg300=5.76 total=7510620545
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: cache8-http8192-before-loadavg.txt ---
+21.49 22.29 24.06 10/3655 62
+
+--- Original file: cache8-http8192-before-time.txt ---
+2026-11-04 11:24:22 UTC
+
+--- Original file: cache8-http8192-cpu-samples.txt ---
+2026-11-04T11:24:30.773513+00:00 cpu0=77.4% cpu1=66.7% cpu2=56.1% cpu3=71.1% some avg10=0.37 avg60=2.50 avg300=5.57 total=7510671684 loadavg=19.40
+2026-11-04T11:24:31.774026+00:00 cpu0=60.0% cpu1=77.3% cpu2=66.0% cpu3=84.9% some avg10=0.37 avg60=2.50 avg300=5.57 total=7510676301 loadavg=19.40
+2026-11-04T11:24:32.774486+00:00 cpu0=81.4% cpu1=88.0% cpu2=95.0% cpu3=89.9% some avg10=0.30 avg60=2.41 avg300=5.53 total=7510688605 loadavg=19.40
+2026-11-04T11:24:33.774961+00:00 cpu0=90.7% cpu1=95.0% cpu2=89.5% cpu3=100.0% some avg10=0.30 avg60=2.41 avg300=5.53 total=7510725946 loadavg=18.80
+2026-11-04T11:24:34.775411+00:00 cpu0=93.0% cpu1=88.8% cpu2=93.9% cpu3=100.0% some avg10=0.79 avg60=2.43 avg300=5.51 total=7510768306 loadavg=18.80
+2026-11-04T11:24:35.775872+00:00 cpu0=86.8% cpu1=92.6% cpu2=96.0% cpu3=100.0% some avg10=0.79 avg60=2.43 avg300=5.51 total=7510804866 loadavg=18.80
+
+--- Original file: cache8-http8192-time.txt ---
+elapsed_sec=6.942 user_sec=10.759 sys_sec=7.762
+
+--- Original file: ws-64-4k-window1-64-after-cpu-pressure.txt ---
+some avg10=0.57 avg60=1.17 avg300=4.64 total=7511151387
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64-4k-window1-64-after-loadavg.txt ---
+11.61 19.27 22.89 4/3632 62
+
+--- Original file: ws-64-4k-window1-64-after-time.txt ---
+2026-11-04 11:25:27 UTC
+
+--- Original file: ws-64-4k-window1-64-before-cpu-pressure.txt ---
+some avg10=0.09 avg60=1.62 avg300=5.05 total=7510921753
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64-4k-window1-64-before-loadavg.txt ---
+14.59 20.43 23.36 5/3632 62
+
+--- Original file: ws-64-4k-window1-64-before-time.txt ---
+2026-11-04 11:25:01 UTC
+
+--- Original file: ws-64-4k-window1-64-time.txt ---
+elapsed_sec=15.976 user_sec=12.809 sys_sec=12.835
+
+--- Original file: ws-64-4k-window1024-after-cpu-pressure.txt ---
+some avg10=0.70 avg60=1.01 avg300=3.69 total=7512296329
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64-4k-window1024-after-loadavg.txt ---
+15.75 18.54 22.30 19/3649 62
+
+--- Original file: ws-64-4k-window1024-after-time.txt ---
+2026-11-04 11:26:52 UTC
+
+--- Original file: ws-64-4k-window1024-before-cpu-pressure.txt ---
+some avg10=0.87 avg60=0.86 avg300=4.00 total=7511686176
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64-4k-window1024-before-loadavg.txt ---
+13.75 18.56 22.45 19/3658 62
+
+--- Original file: ws-64-4k-window1024-before-time.txt ---
+2026-11-04 11:26:18 UTC
+
+--- Original file: ws-64-4k-window1024-time.txt ---
+elapsed_sec=24.043 user_sec=41.404 sys_sec=20.331
+
+--- Original file: ws-64-4k-window256-after-cpu-pressure.txt ---
+some avg10=0.30 avg60=0.79 avg300=4.16 total=7511458823
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64-4k-window256-after-loadavg.txt ---
+12.65 18.61 22.53 17/3665 62
+
+--- Original file: ws-64-4k-window256-after-time.txt ---
+2026-11-04 11:26:02 UTC
+
+--- Original file: ws-64-4k-window256-before-cpu-pressure.txt ---
+some avg10=0.19 avg60=0.92 avg300=4.40 total=7511296118
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64-4k-window256-before-loadavg.txt ---
+11.21 18.66 22.61 20/3676 62
+
+--- Original file: ws-64-4k-window256-before-time.txt ---
+2026-11-04 11:25:44 UTC
+
+--- Original file: ws-64-4k-window256-time.txt ---
+elapsed_sec=6.649 user_sec=9.994 sys_sec=4.615
+
+--- Original file: ws-64k-window1-4096x5-interrupted-time.txt ---
+[empty file]
+
+--- Original file: ws-64k-window1-64-before-cpu-pressure.txt ---
+some avg10=0.30 avg60=0.74 avg300=3.39 total=7512457006
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-64k-window1-64-before-loadavg.txt ---
+15.54 18.27 22.11 21/3660 62
+
+--- Original file: ws-64k-window1-64-before-time.txt ---
+2026-11-04 11:27:17 UTC
+
+--- Original file: ws-window1-64-before-cpu-pressure.txt ---
+some avg10=1.87 avg60=3.84 avg300=7.10 total=7505092050
+full avg10=0.00 avg60=0.00 avg300=0.00 total=0
+
+--- Original file: ws-window1-64-before-loadavg.txt ---
+23.05 21.06 23.91 26/3694 62
+
+--- Original file: ws-window1-64-before-time.txt ---
+2026-11-04 11:22:07 UTC

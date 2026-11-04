@@ -1,0 +1,94 @@
+BG web extension follow-up benchmark environment
+Captured: 2026-11-04
+Engine revision: a2f3d723d695eeca5e4399fb7cc850349c5dd0ef
+Benchmark branch starting commit: 46b91f6a9f4ca72f3f58e9a013f974df2ad7447f
+  Selector changes were uncommitted during these measurements.
+Working directory: /home/abalabin/_bg/.lanes/web-http-server
+
+Build
+  CMake cache: build/web-benchmark/CMakeCache.txt
+  Initial configure command and FetchContent overrides: ../environment.txt
+  Rebase and variant builds:
+    cmake --build build/web-benchmark --target hg_web_extension_benchmark -j 4
+  Compiler: GCC 14.3.0 (conda-forge gcc 14.3.0-19)
+  CMake: 4.3.4
+  Build type and flags: Release, -O3 -DNDEBUG -std=gnu++23
+  CMAKE_PREFIX_PATH: /home/abalabin/miniforge3/envs/bg-build
+  Build/header versions: Boost 1.87.0, libcurl 8.21.0, OpenSSL 3.6.4, ICU 78.3
+  Loaded runtime versions: libcurl 8.20.0, OpenSSL 3.6.2, ICU 78.3
+  Loaded library paths: ../release-runtime-libraries.txt
+  Commands used loopback proxy bypass, LD_LIBRARY_PATH=/home/abalabin/miniforge3/envs/bg-build/lib,
+  CPU affinity CPUs 0-3, and timeout 600s. Build and host details are also
+  recorded in ../environment.txt.
+
+Hashes
+  benchmarks/web_extension_benchmark.cpp
+    0d22ed6dc1de665edebccb77d8c80c9fb07c0b5a416fc9179bd552c56ccb88a1
+  build/web-benchmark/extensions/web/hg_web_extension_benchmark
+    ad64ec72bd58998f895cfa4263e4b8688d5ad99db07f6f8126ed1f723275fc82
+  Cache-8 extensions/web/src/client_runtime.cpp
+    5249f8751f5b5d089f2c2ad48ccc7f79bc69ee75bcf6621a1b2f126e1c9d9266
+    The restored source sets CURLMOPT_MAXCONNECTS to 8L.
+  Cache-8 build/web-benchmark/extensions/web/libhg_web.so.0.1.0
+    f05c7bba9407738aefc4c3485358ea592d6a9f576a2a11e5e0774453df2c1c27
+  Temporary cache-64 extensions/web/src/client_runtime.cpp
+    0708c4e5f985163b12d15ba4349500f6bdf870899eb3b8840f1ba5844a7b6ebd
+    The only source difference set CURLMOPT_MAXCONNECTS to 64L.
+  Cache-64 build/web-benchmark/extensions/web/libhg_web.so.0.1.0
+    3f8af6ef93e45f754f966a0b343dd77b8a4f80badaad3fccd1f915b30239b53a
+  The executable hash is the same for both cache builds. The cache-64 shared
+  library was used for its measurements. Source and build were restored to
+  cache 8 and rebuilt before the WebSocket sweeps.
+
+Common command prefix
+  env NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1
+      LD_LIBRARY_PATH=/home/abalabin/miniforge3/envs/bg-build/lib taskset -c 0-3
+      timeout 600s build/web-benchmark/extensions/web/hg_web_extension_benchmark
+  The arguments below were followed by `2>benchmarks/results/web_extension/2026-11-04/followup/<name>.stderr`.
+
+HTTP cache samples
+  Cache 8 first comparison:
+    --protocol http --protocol https --window 16 --messages 4096 --samples 5
+    --output benchmarks/results/web_extension/2026-11-04/followup/cache8-http-https-window16.jsonl
+  Cache 64 first comparison: same arguments, with `cache64-http-https-window16.jsonl`
+  as the output and the temporary 64L build.
+  Cache 8 plain-HTTP check:
+    --protocol http --window 16 --messages 8192 --samples 5
+    --output benchmarks/results/web_extension/2026-11-04/followup/cache8-http8192.jsonl
+  Cache 64 plain-HTTP check: same arguments, with `cache64-http8192.jsonl` as
+  the output and the temporary 64L build.
+
+WS/WSS samples
+  64 B and 4 KiB, windows 1 and 64:
+    --protocol ws --protocol wss --window 1 --window 64 --messages 4096
+    --samples 5 --output benchmarks/results/web_extension/2026-11-04/followup/ws-64-4k-window1-64.jsonl
+  64 B and 4 KiB, window 256:
+    --protocol ws --protocol wss --window 256 --messages 8192 --samples 5
+    --output benchmarks/results/web_extension/2026-11-04/followup/ws-64-4k-window256.jsonl
+  64 B and 4 KiB, window 1024:
+    --protocol ws --protocol wss --window 1024 --messages 32768 --samples 5
+    --output benchmarks/results/web_extension/2026-11-04/followup/ws-64-4k-window1024.jsonl
+  64 KiB, window 1:
+    --protocol ws --protocol wss --payload 65536 --window 1 --messages 64
+    --samples 5 --output benchmarks/results/web_extension/2026-11-04/followup/ws-64k-window1-64x5.jsonl
+  64 KiB, window 64:
+    --protocol ws --protocol wss --payload 65536 --window 64 --messages 4096
+    --samples 5 --output benchmarks/results/web_extension/2026-11-04/followup/ws-64k-window64-4096x5.jsonl
+  64 KiB, window 256:
+    --protocol ws --protocol wss --payload 65536 --window 256 --messages 8192
+    --samples 5 --output benchmarks/results/web_extension/2026-11-04/followup/ws-64k-window256-8192x5.jsonl
+  The raw JSONL files retain every sample, per-message RTTs, throughput,
+  ingress batch counts, and maximum ingress batch size. WebSocket cases wire
+  one client and one connection request; the window changes in-flight messages.
+
+Validation and timing
+  Quick selector checks passed for the 64 B/4 KiB windows 1/64/256/1024 and
+  64 KiB windows 1/64/256. Their outputs were temporary files under /tmp.
+  The accepted WS/WSS outputs contain 22 cases and five samples each (110
+  samples; 1,106,560 exchanges). HTTP outputs contain 60 accepted samples
+  across both cache comparisons and the plain-HTTP checks. Total accepted
+  exchanges: 1,434,240.
+  `git diff --check` and independent JSONL count/positive-RTT validation passed.
+  CPU pressure, load, shell timing, and per-core samples are in
+  run-environment.txt. The incomplete 64 KiB window-1 attempts are described
+  in interrupted-runs.txt and excluded from accepted counts.

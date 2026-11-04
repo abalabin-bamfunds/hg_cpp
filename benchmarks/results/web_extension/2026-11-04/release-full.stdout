@@ -1,0 +1,4 @@
+10:51:35.988623 LOG_ERROR     hg           HTTP client runtime failure: HTTP response queue is closed
+10:51:47.349896 LOG_ERROR     hg           HTTP client runtime failure: HTTP response queue is closed
+10:53:41.484444 LOG_ERROR     hg           HTTP client runtime failure: HTTP response queue is closed
+10:54:54.011895 LOG_ERROR     hg           HTTP client runtime failure: HTTP response queue is closed

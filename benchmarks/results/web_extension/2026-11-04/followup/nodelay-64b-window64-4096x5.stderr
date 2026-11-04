@@ -1,0 +1,2 @@
+ws payload=64 window=64
+wss payload=64 window=64
