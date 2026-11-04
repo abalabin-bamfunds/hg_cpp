@@ -11,15 +11,8 @@
 
 namespace hg::python {
 
-// Exposes a process-lifetime C++ operator through the normal Python wiring interface.
-HG_PYTHON_API void export_operator(nanobind::module_ &module, std::string_view python_name, const Operator &operation);
-
-// Exposes a mutable operator that accepts Python overload registration through the exported Python wrapper.
+// Exposes a process-lifetime C++ operator that accepts Python overload registration.
 HG_PYTHON_API void export_operator(nanobind::module_ &module, std::string_view python_name, Operator &operation);
-
-HG_PYTHON_API void export_operator(
-    nanobind::module_ &module, std::string_view python_name, const Operator &operation,
-    std::span<const Type *const> type_parameters);
 
 HG_PYTHON_API void export_operator(
     nanobind::module_ &module, std::string_view python_name, Operator &operation,
@@ -31,13 +24,6 @@ HG_PYTHON_API void export_operator(
 // Calling the bound method prepends the receiver and passes remaining positional and keyword arguments to the operator.
 HG_PYTHON_API void register_wiring_method(const Type &receiver_type, std::string_view name,
                                          const Operator &operation);
-
-template <typename Operation>
-    requires requires(const Operation &operation) { operation.explicit_type_parameters(); }
-void export_operator(nanobind::module_ &module, std::string_view python_name, const Operation &operation) {
-    const auto type_parameters = operation.explicit_type_parameters();
-    export_operator(module, python_name, operation, type_parameters);
-}
 
 template <typename Operation>
     requires(!std::is_const_v<Operation> && requires(const Operation &operation) {

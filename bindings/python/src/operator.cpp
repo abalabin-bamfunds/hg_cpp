@@ -205,9 +205,6 @@ void PythonOperator::set_owner(nb::handle owner) { owner_ = WeakObject{owner}; }
 
 void PythonOperator::register_overload(nb::handle owner) {
     auto *target = mutable_operation_;
-    if (target == nullptr) {
-        throw std::invalid_argument{"Python overloads require a mutable operator export"};
-    }
 
     if (!nb::hasattr(owner, "_native_definition")) {
         throw std::invalid_argument{"operator overloads must be decorated Python node or graph definitions"};
@@ -265,20 +262,9 @@ const Operator *find_wiring_method(std::string_view name, const Type &receiver_t
 
 } // namespace details
 
-void export_operator(nb::module_ &module, std::string_view python_name, const Operator &operation) {
-    const auto name = std::string{python_name};
-    module.attr(name.c_str()) = nb::cast(details::PythonOperator{operation});
-}
-
 void export_operator(nb::module_ &module, std::string_view python_name, Operator &operation) {
     const auto name = std::string{python_name};
     module.attr(name.c_str()) = nb::cast(details::PythonOperator{operation});
-}
-
-void export_operator(nb::module_ &module, std::string_view python_name, const Operator &operation,
-                     std::span<const Type *const> type_parameters) {
-    const auto name = std::string{python_name};
-    module.attr(name.c_str()) = nb::cast(details::PythonOperator{operation, type_parameters});
 }
 
 void export_operator(nb::module_ &module, std::string_view python_name, Operator &operation,
