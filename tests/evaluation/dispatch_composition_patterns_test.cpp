@@ -151,11 +151,6 @@ template <template <typename, auto...> typename Field> struct DispatchPatternRes
     Field<TS<symbol>> kind;
 };
 
-template <template <typename, auto...> typename Field> struct DispatchPatternPair {
-    Field<TS<i64>> left;
-    Field<TS<i64>> right;
-};
-
 TEST_CASE("dispatch keeps its structural output schema while selected fields change",
           "[feature:dispatch][feature:type-system][series:tsb][schema:named]"
           "[binding:covariant][transition:update]") {
@@ -262,6 +257,11 @@ TEST_CASE("dispatch inside a switch follows its changing inherited context",
               .equals<i64>({110, 112, 102, 103, 115}));
 }
 
+template <template <typename, auto...> typename Field> struct DispatchPatternPair {
+    Field<TS<i64>> left;
+    Field<TS<i64>> right;
+};
+
 TEST_CASE("dispatch combines free and native bundle outputs across selected types",
           "[feature:dispatch][series:tsb][schema:named][representation:free][representation:native]"
           "[transition:update][binding:covariant]") {
@@ -280,6 +280,7 @@ TEST_CASE("dispatch combines free and native bundle outputs across selected type
 
     const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TS<i64>, TS<i64>)
                                           -> TSB<DispatchPatternPair>>{free_case, native_case};
+
     const auto publish = node([](i64 phase, Scalar<Bundle<DispatchPatternBase>> base,
                                  Scalar<Bundle<DispatchPatternDerived>> derived,
                                  Out<TS<Bundle<DispatchPatternBase>>> output) {
@@ -322,6 +323,7 @@ TEST_CASE("dispatch combines free and native fixed-list outputs",
 
     const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TS<i64>, TS<i64>)
                                           -> TSL<TS<i64>, 2>>{free_case, native_case};
+
     const auto publish = node([](i64 phase, Scalar<Bundle<DispatchPatternBase>> base,
                                  Scalar<Bundle<DispatchPatternDerived>> derived,
                                  Out<TS<Bundle<DispatchPatternBase>>> output) {
@@ -347,7 +349,7 @@ TEST_CASE("dispatch combines free and native fixed-list outputs",
 }
 
 TEST_CASE("dispatch reads both reference and value items in dictionary outputs",
-          "[feature:dispatch][series:tsd][binding:reference-to-value][transition:update]"
+          "[feature:dispatch][feature:map][series:tsd][binding:reference-to-value][transition:update]"
           "[shape:nested][binding:covariant]") {
     const auto identity = graph([](wp<TS<i64>> value) { return value; });
 
@@ -361,6 +363,7 @@ TEST_CASE("dispatch reads both reference and value items in dictionary outputs",
 
     const auto choose = dispatch_<auto(TS<Bundle<DispatchPatternBase>>, TSD<i64, TS<i64>>)
                                           -> TSD<i64, TS<i64>>>{reference_items, value_items};
+
     const auto publish = node([](i64 phase, Scalar<Bundle<DispatchPatternBase>> base,
                                  Scalar<Bundle<DispatchPatternDerived>> derived,
                                  Out<TS<Bundle<DispatchPatternBase>>> output) {

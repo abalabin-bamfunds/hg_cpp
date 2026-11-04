@@ -1,9 +1,9 @@
 # hgraph dispatch composition sweep, 2026-11-03
 
 This sweep checks runtime dispatch inside map and switch graphs, per-key state,
-structured outputs, and inherited context. It adds four tests and records two
-wiring and declaration gaps. No production code was changed. Integration uses HG baseline
-`54cdfda71`.
+structured outputs, and inherited context. It fixes collection output
+compatibility and records a separate callable node declaration gap.
+Integration uses HG baseline `be009f7b3`.
 
 ## Sources and existing coverage
 
@@ -27,7 +27,7 @@ context propagation.
 ## Added coverage
 
 [`dispatch_composition_patterns_test.cpp`](../../../tests/evaluation/dispatch_composition_patterns_test.cpp)
-contains four cases:
+covers these behaviors:
 
 - Two mapped keys independently select base and derived implementations across
   type changes, removal, and recreation.
@@ -38,39 +38,36 @@ contains four cases:
   emits only the score field; branch replacement samples both current fields.
 - Dispatch inside a switch receives the enclosing context through updates and
   switch branch replacement.
+- Free and native TSB and fixed-list outputs retain held fields and items
+  across branch replacement and later partial updates.
+- Dictionary outputs accept reference items from map and value items from a
+  direct branch through the same declared output type.
 
-All four cases pass. Combined verification is recorded in the
+Combined verification is recorded in the
 [mesh sweep report](hgraph-mesh-settling-sweep-2026-11-03.md#integration-verification).
 
 ## Findings
 
-### Free bundle output: switch compatibility not applied in dispatch
+### Resolved: compatible collection outputs rejected by dispatch
 
-The [dispatch contract](../design/operators.md#runtime-dispatch) requires
-collection outputs to have identical dereferenced types. A free
+The dispatch wrapper compared dereferenced collection type identities after
+checking output compatibility. A free
 `bundle<TSB<...>>` has reference fields, while a native `Out<TSB<...>>` has
 value fields. Their types are compatible but differ after dereferencing the
 collection root.
 
 `DispatchBranchTemplate::wire` in [`dispatch.cpp`](../../../src/dispatch.cpp)
-first checks compatibility, then rejects this collection type difference with
-`dispatch output covariance requires scalar time-series values`.
-`WiringPoint::as` in [`graph_wiring.cpp`](../../../src/graph_wiring.cpp) retains
-an already compatible free bundle, so `.as<TSB<...>>()` does not materialize it.
-The native TSB-producing node control passes and is used in the added test.
-
-Switch already handles this difference. Commit `c11a9c1d8` removes references
-recursively before computing its common output target, then publishes a
-reference to that target. This follows the accepted
+now returns compatible collection outputs directly. It retains the declared
+output compatibility check and scalar output conversion. Switch removes
+references recursively before computing its common output target, then
+publishes a reference to that target, following the accepted
 [switch output compatibility decision](../decisions/0094-switch-output-reference-compatibility.md).
-Dispatch constructs switch branches, but its wrapper rejects the compatible
-collection before switch output inference can apply that rule.
 
-Classification: a wiring inconsistency with the accepted switch compatibility
-rule. The dispatch documentation records the current restriction, but this
-case does not require a new representation design. Dispatch should retain its
-declared-output compatibility check and allow compatible free and native
-collection outputs through the existing switch boundary. No fix is included.
+Classification: a wiring defect, resolved by removing the redundant type
+identity check. The new TSB and TSD cases reproduce the original rejection
+with `dispatch output covariance requires scalar time-series values`. The
+free/native fixed-list case also passes with the original check and provides
+a control for held-item sampling across branch replacement.
 
 ### Callable node state: C++ API implementation gap
 
@@ -94,7 +91,6 @@ node API, independent of dispatch runtime behavior. No fix is included.
 
 ## Scope limits
 
-This batch does not add Python reflection or overload-recreation behavior, or
-collection output covariance beyond the existing dispatch contract. It does
-not exhaust dispatch combinations with every higher-order graph or collection
-shape.
+This batch does not add Python reflection or overload-recreation behavior. It
+does not exhaust dispatch combinations with every higher-order graph or
+collection shape.

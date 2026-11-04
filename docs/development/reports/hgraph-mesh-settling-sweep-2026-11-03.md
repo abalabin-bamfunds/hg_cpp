@@ -1,7 +1,7 @@
 # hgraph mesh settling sweep, 2026-11-03
 
-This batch adds three tests for dynamic mesh dependencies and makes no
-production changes. The HG baseline is `e0156e84f`. The patterns are from the
+This mesh sweep adds three tests for dynamic dependencies. The initial HG
+baseline is `e0156e84f`. The patterns are from the
 hgraph 0.8 snapshot
 [`d36be500ec8b6fda77ff077566f891ffcf5c84a8`][hgraph-08].
 The 0.5.42 snapshot
@@ -42,16 +42,17 @@ was reproduced at the sweep baseline.
 
 ## Integration verification
 
-The review lane was refreshed to main at `54cdfda71`. Both native libraries
-were rebuilt in Release mode. The three focused runners include the new
-sources and existing tests for the affected areas:
+The review lane was refreshed to main at `be009f7b3` and checked with the
+dispatch collection compatibility fix. Both native libraries were rebuilt in
+Release mode. The three focused runners include the new sources and existing
+tests for the affected areas:
 
 | Group | Added cases | Passing cases | Passing assertions |
 | --- | ---: | ---: | ---: |
 | Mesh, context, nested graph owner | 3 | 61 | 78 |
 | [Timed lifecycle](hgraph-timed-lifecycle-sweep-2026-11-03.md), timed operators, scheduler | 5 | 114 | 494 |
-| [Dispatch composition](hgraph-dispatch-composition-sweep-2026-11-03.md), casts, selection | 4 | 39 | 71 |
-| Total | 12 | 214 | 643 |
+| [Dispatch composition](hgraph-dispatch-composition-sweep-2026-11-03.md), casts, selection | 7 | 42 | 74 |
+| Total | 15 | 217 | 646 |
 
 The sources are registered in the normal `hg_tests` and `hg_library_tests`
 targets. Structured coverage tags validate for all three focused runners with

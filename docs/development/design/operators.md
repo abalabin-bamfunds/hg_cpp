@@ -138,8 +138,9 @@ applicable tuples are ambiguous.
 Dispatch selects time-series inputs whose scalar type supports value
 covariance. The selected implementation receives the original arguments,
 with dispatch inputs adapted to its declared input types. Scalar-value time
-series outputs can be adapted to the declared output type. Collection outputs
-currently require identical dereferenced types.
+series outputs can be adapted to the declared output type. Compatible collection
+outputs use the [switch boundary](switch.md#selection-and-output) for free and
+native representations and contained references.
 
 When an implementation infers its output from its returned wiring point, the
 dispatch output contract must resolve before wiring its branches.
