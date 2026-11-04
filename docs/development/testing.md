@@ -411,6 +411,8 @@ graph compilation or evaluation.
   and service contexts; shared request origins; callback exception causes; diagnostic lifetime; offered-form and
   matched-binding costs without additional callback execution
 - map argument selection, graph-function adaptation, overload selection, graph identity, and diagnostics
+- scalar Dict map sources through the selected conversion, including C++ and Python calls, named and mixed arguments,
+  selected key sets, pass-through, sink graphs, and item types without equality
 - mesh argument selection, dependency selection, output inference, overload selection, and diagnostics
 - reducer graph adaptation, input and output compatibility, TSD item type resolution, and diagnostics
 - switch case preparation, argument selection, overload selection, compatibility, and diagnostics
@@ -549,6 +551,8 @@ graph compilation or evaluation.
 - global state shared by outer and inner graphs
 - context time series startup sampling, changes, validity, and use across nested graph boundaries
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
+- scalar Dict snapshots mapped to per-key graphs: unchanged values, additions, removals, invalidation,
+  revalidation, and branch re-creation
 - inner graph input reference guarantees, generic and explicitly typed map
   functions, reference-bound collections, and mapped item replacement while
   another input keeps the inner graph alive

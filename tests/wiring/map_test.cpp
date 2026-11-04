@@ -555,7 +555,7 @@ TEST_CASE("a map graph function requires typed collection arguments",
     testing::test_wiring([&] {
         CHECK_THROWS_WITH(
             map([](auto value) { return value; }, wp<>{values()}),
-            "a map graph function requires typed TSD or TSS arguments; use a graph template with wp<>");
+            "a map graph function requires typed TSD, TSS, or scalar Dict arguments; use a graph template with wp<>");
     });
 }
 
@@ -585,7 +585,7 @@ TEST_CASE("map reports invalid selectors and incompatible key types",
             (void)map([](auto left, auto) { return left; }, integers(),
                       floating_point_keys());
         }),
-        "all map TSD and TSS arguments must have the same key type");
+        "all map TSD, scalar Dict, and TSS arguments must have the same key type");
 }
 
 TEST_CASE("a map graph function requires an explicit selector when leading key use is ambiguous",

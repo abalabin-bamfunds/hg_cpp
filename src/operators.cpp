@@ -89,6 +89,7 @@ class DefaultValueTemplate final : public WiringTemplate {
 
 operator_<auto(SCALAR)->TS<SCALAR, TimeSeriesGuarantee::const_>> const_{"const", {"value"}};
 operator_<auto(TS<SCALAR>, SCALAR)->TS<SCALAR>> default_{"default", {"value", "fallback"}};
+operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert{"convert", {"value"}};
 operator_<TS_T, auto() -> TS_T::with<TimeSeriesGuarantee::final>> nothing{"nothing"};
 operator_<VALUE, auto(COLLECTION, Union<"key", K, TS<K>, TSS<K>>)->ITEM> getitem{"getitem", {"collection", "key"}};
 operator_<VALUE, auto(TS_T, SCALAR)->ITEM> getattr{"getattr", {"bundle", "name"}};

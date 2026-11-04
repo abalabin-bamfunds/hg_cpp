@@ -27,6 +27,7 @@ class MeshDependencySelector {
 
 struct mesh_graph_argument_builder {
     static constexpr auto name = "mesh";
+    static constexpr auto supports_scalar_dict_key_sources = false;
 
     std::string mesh_name;
 

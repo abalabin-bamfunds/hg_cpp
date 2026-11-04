@@ -8,8 +8,14 @@
 namespace hg {
 
 class GraphWiring;
+class TimeSeriesDictionaryType;
 
 namespace details {
+
+struct MapDictionaryConversion {
+    std::size_t parameter_index;
+    const ::hg::TimeSeriesDictionaryType *output_type;
+};
 
 enum class MapInputKind {
     mapped,

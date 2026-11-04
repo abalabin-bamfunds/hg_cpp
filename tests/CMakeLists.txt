@@ -249,6 +249,7 @@ add_executable(
     library/string_collection_test.cpp
     library/string_format_test.cpp
     library/log_test.cpp
+    library/map_dict_test.cpp
     value/scalar/test_scalar_provider.cpp
     library/tick_selection_test.cpp
     library/timed_test.cpp

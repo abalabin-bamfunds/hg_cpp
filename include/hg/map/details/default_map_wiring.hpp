@@ -4,6 +4,7 @@
 #include <hg/map/details/map_node.hpp>
 #include <hg/graph/graph_argument.hpp>
 #include <hg/map/details/map_call.hpp>
+#include <hg/type/time_series_dict_type.hpp>
 
 #include <memory>
 #include <optional>
@@ -19,6 +20,7 @@ struct DefaultMapWiring {
     MapGraphWiring graph;
     ResolvedSignature outer_signature;
     std::vector<WiringArgument> outer_arguments;
+    std::vector<MapDictionaryConversion> dictionary_conversions;
     std::optional<std::size_t> dictionary_key_set_parameter;
 
     static const DefaultMapWiring &from(const GraphArgument &argument);

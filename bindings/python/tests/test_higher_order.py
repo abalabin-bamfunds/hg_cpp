@@ -31,6 +31,22 @@ def test_map_wires_python_graphs_and_passes_the_key():
     assert hg.run_graph(graph, [1, 3]) == [12, 32]
 
 
+def test_map_maps_scalar_dict_snapshots_with_named_arguments():
+    @hg.compute_node
+    def make_dictionary(trigger: hg.TS[int]) -> hg.TS[dict[int, int]]:
+        return {1: trigger.value, 2: trigger.value * 10}
+
+    @hg.graph
+    def add_named_amount(value: hg.TS[int], amount: int) -> hg.TS[int]:
+        return add_amount(value, amount)
+
+    @hg.graph
+    def graph(trigger: hg.TS[int]) -> hg.TS[int]:
+        return hg.map(add_named_amount, make_dictionary(trigger), amount=5)[2]
+
+    assert hg.run_graph(graph, [1, 2]) == [15, 25]
+
+
 def test_map_uses_the_union_of_mapped_dictionaries():
     @hg.compute_node
     def make_left(trigger: hg.TS[int]) -> hg.TSD[int, hg.TS[int]]:

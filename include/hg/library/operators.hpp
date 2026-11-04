@@ -29,7 +29,6 @@ using FORMAT_POSITIONAL = BundleSchemaVariableDeclaration<"FORMAT_POSITIONAL", F
 template <template <typename, auto...> typename Field>
 using FORMAT_NAMED = BundleSchemaVariableDeclaration<"FORMAT_NAMED", Field>;
 
-using CONVERT_RESULT = TimeSeriesVariable<"CONVERT_RESULT">;
 using SIGNAL = TimeSeriesVariable<"SIGNAL">;
 using TRUE_TS = TimeSeriesVariable<"TRUE_TS">;
 using FALSE_TS = TimeSeriesVariable<"FALSE_TS">;
@@ -55,7 +54,7 @@ extern HG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> abs;
 extern HG_LIBRARY_EXPORT operator_<auto(SCALAR) -> SCALAR> invert;
 
 // Conversion.
-extern HG_LIBRARY_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
+extern HG_EXPORT operator_<CONVERT_RESULT, auto(TS_T) -> CONVERT_RESULT> convert;
 extern HG_LIBRARY_EXPORT operator_<OUT, auto(TS_T) -> OUT> combine;
 extern HG_LIBRARY_EXPORT operator_<OUT, auto(TS_T, Union<"reset", SIGNAL>) -> OUT> collect;
 extern HG_LIBRARY_EXPORT operator_<OUT, auto(TS_T) -> OUT> emit;
@@ -169,7 +168,28 @@ extern HG_LIBRARY_EXPORT operator_<auto(TS_T) -> OUT> mean;
 extern HG_LIBRARY_EXPORT operator_<auto(COLLECTION) -> OUT> all_;
 extern HG_LIBRARY_EXPORT operator_<auto(COLLECTION) -> OUT> any_;
 
+} // namespace hg::operators
+
+namespace hg {
+
 // Nested graph operators.
+extern HG_EXPORT operator_<
+    auto(GRAPH_T, TSB<details::MAP_POSITIONAL>, TSB<details::MAP_NAMED>) -> TS_T,
+    details::map_operator_implementation>
+    map;
+extern HG_EXPORT operator_<
+    auto(GRAPH_T, TSB<details::MESH_POSITIONAL>, TSB<details::MESH_NAMED>) -> TS_T,
+    details::mesh_operator_implementation>
+    mesh;
+extern HG_EXPORT operator_<
+    auto(TS<SCALAR>, GRAPH_T, TSB<details::SWITCH_POSITIONAL>, TSB<details::SWITCH_NAMED>) -> TS_T,
+    details::switch_operator_implementation>
+    switch_;
+
+} // namespace hg
+
+namespace hg::operators {
+
 using ::hg::map;
 using ::hg::mesh;
 using ::hg::switch_;

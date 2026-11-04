@@ -5,6 +5,7 @@
 #include <hg/operators.hpp>
 #include <hg/run_graph.hpp>
 #include <hg/scalar/bundle/value.hpp>
+#include <hg/scalar/dict/type.hpp>
 #include <hg/switch.hpp>
 #include <hg/testing/test_wiring.hpp>
 #include <hg/time_series/tsb/tsb.hpp>
@@ -13,9 +14,11 @@
 
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <optional>
+#include <utility>
 #include <vector>
 #include <span>
 
@@ -57,6 +60,26 @@ TEST_CASE("map applies a graph to each TSD item",
     const auto actual = hg::run_graph(tested, {{{1, 1}, {2, 10}}, {{1, 4}}, {{2, 20}}, {{1, literal::REMOVE}}});
 
     CHECK(actual.equals({{{1, 2}, {2, 11}}, {{1, 5}}, {{2, 21}}, {{1, literal::REMOVE}}}));
+}
+
+TEST_CASE("map passes a scalar Dict through without selecting its entries",
+          "[feature:map][feature:nested-graph][series:value][series:tss][scalar:dict][scalar:i64]"
+          "[transition:update][shape:nested]") {
+    const auto add_key_to_sum = node([](In<TS<i64>> key, In<TS<Dict<i64, i64>>> values) {
+        auto sum = i64{};
+        values.value_view().for_each([&](const auto, const auto value) { sum += value.value(); });
+        return sum + *key;
+    });
+    const auto materialize = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto tested = [&](wp<TSS<i64>> keys, wp<TS<Dict<i64, i64>>> values) {
+        return materialize(map(add_key_to_sum, "__keys__"_n = keys, pass_through(values), "__key_arg__"_n = 0));
+    };
+
+    CHECK(hg::run_graph(tested, {{1, 2}, literal::SKIP}, {{{10, 5}}, {{10, 6}}})
+              .equals({{{1, 6}, {2, 7}}, {{1, 7}, {2, 8}}}));
 }
 
 TEST_CASE("map removes an output item while its result is invalid when valid_items is enabled",
