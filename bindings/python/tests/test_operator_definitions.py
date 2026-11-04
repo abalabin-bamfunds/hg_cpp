@@ -86,6 +86,69 @@ def test_operator_accepts_a_python_graph_overload():
     assert hg.run_graph(graph, [3, 8]) == [5, 10]
 
 
+def test_node_overloads_keyword_mixes_with_operator_overload_registration():
+    VALUE = TypeVar("VALUE")
+
+    @hg.operator
+    def classify(value: hg.TS[VALUE]) -> hg.TS[str]: ...
+
+    @classify.overload
+    @hg.compute_node
+    def integer(value: hg.TS[int]) -> hg.TS[str]:
+        return "registered"
+
+    @hg.node(overloads=classify)
+    def text(value: str) -> str:
+        return "decorator"
+
+    @hg.graph
+    def integer_graph(value: hg.TS[int]) -> hg.TS[str]:
+        return classify(value)
+
+    @hg.graph
+    def text_graph(value: hg.TS[str]) -> hg.TS[str]:
+        return classify(value)
+
+    assert hg.run_graph(integer_graph, [1]) == ["registered"]
+    assert hg.run_graph(text_graph, ["a"]) == ["decorator"]
+
+
+def test_compute_node_overloads_keyword_registers_node():
+    @hg.operator
+    def classify(value: hg.TS[int]) -> hg.TS[str]: ...
+
+    @hg.compute_node(overloads=classify)
+    def integer(value: hg.TS[int]) -> hg.TS[str]:
+        return "compute"
+
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[str]:
+        return classify(value)
+
+    assert hg.run_graph(graph, [1]) == ["compute"]
+
+
+def test_graph_overloads_keyword_registers_graph():
+    @hg.operator
+    def increment(value: hg.TS[int]) -> hg.TS[int]: ...
+
+    @hg.graph(overloads=increment)
+    def increment_graph(value: hg.TS[int]) -> hg.TS[int]:
+        return value + 2
+
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        return increment(value)
+
+    assert hg.run_graph(graph, [3, 8]) == [5, 10]
+
+
+@pytest.mark.parametrize("decorator", [hg.node, hg.compute_node, hg.graph])
+def test_decorators_reject_non_operator_overloads_target(decorator):
+    with pytest.raises(TypeError, match="overloads must be a Python @operator definition"):
+        decorator(overloads=object())
+
+
 def test_operator_reports_ambiguous_overloads_using_engine_diagnostics():
     @hg.operator
     def ambiguous(value: hg.TS[int]) -> hg.TS[int]: ...
@@ -136,6 +199,36 @@ def test_python_operator_overload_does_not_leak_at_shutdown(overload_kind: str):
         "def operation(value: hg.TS[int]) -> hg.TS[int]: ...\n"
         f"{definition}"
         "del implementation, operation\n"
+        "gc.collect()\n"
+    )
+    process = subprocess.run(
+        [sys.executable, "-c", script],
+        capture_output=True,
+        env=os.environ.copy(),
+        text=True,
+        check=False,
+    )
+
+    assert process.returncode == 0, process.stderr
+    assert "nanobind: leaked" not in process.stderr
+
+
+def test_builtin_operator_accepts_python_overload_and_keeps_native_overloads():
+    script = (
+        "import hgraph as hg\n"
+        "import gc\n"
+        "@hg.compute_node(overloads=hg.operators.add)\n"
+        "def boolean_and(lhs: hg.TS[bool], rhs: hg.TS[bool]) -> hg.TS[bool]:\n"
+        "    return lhs.value and rhs.value\n"
+        "@hg.graph\n"
+        "def graph(lhs: hg.TS[bool], rhs: hg.TS[bool]) -> hg.TS[bool]:\n"
+        "    return hg.operators.add(lhs, rhs)\n"
+        "assert hg.run_graph(graph, [True], [True]) == [True]\n"
+        "@hg.graph\n"
+        "def integer_graph(lhs: hg.TS[int], rhs: hg.TS[int]) -> hg.TS[int]:\n"
+        "    return hg.operators.add(lhs, rhs)\n"
+        "assert hg.run_graph(integer_graph, [2, 3], [4, 5]) == [6, 8]\n"
+        "del boolean_and, graph\n"
         "gc.collect()\n"
     )
     process = subprocess.run(

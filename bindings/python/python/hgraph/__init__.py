@@ -27,6 +27,7 @@ from ._hg import (
     ScheduleHandle,
     _TimeSeriesGuarantee,
     WiringPoint as _WiringPoint,
+    _Operator,
     _Type,
     _make_graph,
     _make_node,
@@ -879,6 +880,21 @@ class OperatorDefinition:
         return implementation
 
 
+def _validate_overload_operator(overloads: Any) -> None:
+    if overloads is not None and not isinstance(overloads, (OperatorDefinition, _Operator)):
+        raise TypeError("overloads must be a Python @operator definition or an exported native operator")
+
+
+def _register_operator_overload(
+    overloads: OperatorDefinition | _Operator, definition: GraphDefinition | NodeDefinition
+) -> None:
+    if isinstance(overloads, OperatorDefinition):
+        overloads.overload(definition)
+    else:
+        overloads._register_overload(definition)
+        atexit.register(overloads._release_overload_owners)
+
+
 class _OperatorSpecialization:
     def __init__(self, owner: OperatorDefinition, native_operator: Any):
         self._owner = owner
@@ -1519,10 +1535,16 @@ def _native_type(annotation: Any) -> Any:
 def compute_node(
     function: Any = None, *, active: tuple[str, ...] | None = None,
     valid: tuple[str, ...] | None = None, all_valid: tuple[str, ...] | None = None,
+    overloads: OperatorDefinition | _Operator | None = None,
 ) -> Any:
     """Declare an input-driven node with optional input activity and validity selection."""
+    _validate_overload_operator(overloads)
+
     def decorate(callback: Any) -> NodeDefinition:
-        return _define_node(callback, active=active, valid=valid, all_valid=all_valid)
+        definition = _define_node(callback, active=active, valid=valid, all_valid=all_valid)
+        if overloads is not None:
+            _register_operator_overload(overloads, definition)
+        return definition
 
     return decorate if function is None else decorate(function)
 
@@ -1563,13 +1585,19 @@ def feedback_service_implementation(
 def node(
     function: Any = None, *, active: tuple[str, ...] | None = None,
     valid: tuple[str, ...] | None = None, all_valid: tuple[str, ...] | None = None,
+    overloads: OperatorDefinition | _Operator | None = None,
 ) -> Any:
     """Declare a scalar-or-time-series node with optional input activity and validity selection."""
+    _validate_overload_operator(overloads)
+
     def decorate(callback: Any) -> NodeDefinition:
-        return _define_node(
+        definition = _define_node(
             callback, schedule_on_start=True, scalar_or_time_series_inputs=True,
             active=active, valid=valid, all_valid=all_valid,
         )
+        if overloads is not None:
+            _register_operator_overload(overloads, definition)
+        return definition
 
     return decorate if function is None else decorate(function)
 
@@ -1638,28 +1666,36 @@ def generator(function: Any) -> NodeDefinition:
     return _define_node(function, generator=True)
 
 
-def graph(function: Any) -> GraphDefinition:
+def graph(function: Any = None, *, overloads: OperatorDefinition | _Operator | None = None) -> Any:
     """Declare a graph template composed from Python nodes and graph functions."""
-    signature = inspect.signature(function)
-    annotations = get_type_hints(function, include_extras=True)
-    parameters, fixed_parameters, callback, _, _, context_parameters = _definition_signature(
-        function, promote_plain_graph_inputs=True
-    )
+    _validate_overload_operator(overloads)
 
-    output = annotations.get("return", signature.return_annotation)
-    lift_scalar_output = False
-    if output is inspect.Signature.empty or output is None or output is type(None):
-        output = None
-    else:
-        output = _native_type(output)
-        if isinstance(output, _ScalarAnnotation):
-            raise TypeError("Scalar[...] can only annotate a Python node or graph input")
-        if not output.is_time_series:
-            output = _time_series_type(output)
-            lift_scalar_output = True
+    def decorate(callback: Any) -> GraphDefinition:
+        signature = inspect.signature(callback)
+        annotations = get_type_hints(callback, include_extras=True)
+        parameters, fixed_parameters, graph_callback, _, _, context_parameters = _definition_signature(
+            callback, promote_plain_graph_inputs=True
+        )
 
-    native = _make_graph(function.__name__, parameters, output, callback, lift_scalar_output)
-    return GraphDefinition(function, native, fixed_parameters, callback, context_parameters)
+        output = annotations.get("return", signature.return_annotation)
+        lift_scalar_output = False
+        if output is inspect.Signature.empty or output is None or output is type(None):
+            output = None
+        else:
+            output = _native_type(output)
+            if isinstance(output, _ScalarAnnotation):
+                raise TypeError("Scalar[...] can only annotate a Python node or graph input")
+            if not output.is_time_series:
+                output = _time_series_type(output)
+                lift_scalar_output = True
+
+        native = _make_graph(callback.__name__, parameters, output, graph_callback, lift_scalar_output)
+        definition = GraphDefinition(callback, native, fixed_parameters, graph_callback, context_parameters)
+        if overloads is not None:
+            _register_operator_overload(overloads, definition)
+        return definition
+
+    return decorate if function is None else decorate(function)
 
 
 def dispatch(signature: Any,

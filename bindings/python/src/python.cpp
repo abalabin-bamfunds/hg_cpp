@@ -1555,7 +1555,7 @@ void bind_core(nb::module_ &module) {
         }, "exc_type"_a.none(), "exc_value"_a.none(), "traceback"_a.none())
         .def("__getitem__", &details::getitem)
         .def("__getattr__", [](const PythonWiringPoint &self, std::string_view name) {
-            const auto *operation = details::find_wiring_method(name, self.type());
+            auto *operation = details::find_wiring_method(name, self.type());
             if (operation == nullptr) {
                 const auto message = "'WiringPoint' object has no attribute '" + std::string{name} + "'";
                 throw nb::attribute_error(message.c_str());
