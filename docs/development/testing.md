@@ -557,11 +557,15 @@ graph compilation or evaluation.
   functions, reference-bound collections, and mapped item replacement while
   another input keeps the inner graph alive
 - mesh dependency creation, key changes, shared dependencies, cycle rejection, evaluation order, and lifecycle
+- structured mesh outputs, partial bundle and list updates, field and item references,
+  dependency forwarding, and branch removal and recreation
 - reduction through compact and nested reducers, odd item counts, defaults, sparse updates, physical item-ID changes,
   and membership changes
 - switch selection, default selection, inner graph evaluation, scheduling, lifecycle, and composition with map and mesh;
   common output inference across contained references and free/native collections, both branch orders,
   downstream value/reference representations, and incompatible type rejection
+- dispatch collection output validity, partial field and item updates, invalidation and revalidation,
+  and held values across concrete runtime type changes
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
 - service request sinks dispatching work to a background thread and returning queued replies during realtime execution
 
@@ -747,6 +751,8 @@ For each reusable node and graph, test:
   periods and event/expiry coincidence, timeout expiry and event resets,
   simultaneous timers and input changes, input update timestamps and elapsed
   intervals, duration bounds, and nested-graph stop cleanup
+- mapped periodic sources and resampling, independent key schedules, branch removal and recreation,
+  and coincident timers and input changes
 - scalar equality through built-in, compound, collection, and extension views;
   ordering and Boolean operations
 - guarantee propagation, equal-result tick selection, reference bindings,
