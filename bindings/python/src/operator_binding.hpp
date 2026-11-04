@@ -21,11 +21,9 @@ namespace hg::python::details {
 
 class PythonOperator {
   public:
-    explicit PythonOperator(Operator &operation);
-    PythonOperator(Operator &operation, std::span<const Type *const> type_parameters);
+    explicit PythonOperator(Operator &operation, std::span<const Type *const> type_parameters = {});
     PythonOperator(std::shared_ptr<Operator> operation, std::span<const Type *const> type_parameters);
     PythonOperator(const PythonOperator &other);
-    PythonOperator &operator=(const PythonOperator &other);
 
     nanobind::object call(nanobind::args positional, nanobind::kwargs named) const;
     nanobind::object call_with_receiver(nanobind::handle receiver, nanobind::args positional,

@@ -14,6 +14,7 @@
 #include <hg/python/graph_definition.hpp>
 #include <hg/python/node_definition.hpp>
 #include <hg/node/runtime_signature_node_template.hpp>
+#include <hg/util/scope_exit.hpp>
 
 #include <nanobind/stl/string.h>
 
@@ -45,9 +46,6 @@ auto &registered_wiring_methods() {
 
 } // namespace
 
-PythonOperator::PythonOperator(Operator &operation)
-    : operation_{&operation} {}
-
 PythonOperator::PythonOperator(Operator &operation, std::span<const Type *const> type_parameters)
     : operation_{&operation}, type_parameters_{type_parameters.begin(), type_parameters.end()} {}
 
@@ -64,18 +62,6 @@ PythonOperator::PythonOperator(const PythonOperator &other)
     : operation_{other.operation_}, owned_operation_{other.owned_operation_},
       overload_owners_{other.overload_owners_},
       type_parameters_{other.type_parameters_}, type_map_{other.type_map_.copy()}, owner_{other.owner_} {}
-
-PythonOperator &PythonOperator::operator=(const PythonOperator &other) {
-    if (this != &other) {
-        operation_ = other.operation_;
-        owned_operation_ = other.owned_operation_;
-        overload_owners_ = other.overload_owners_;
-        type_parameters_ = other.type_parameters_;
-        type_map_ = other.type_map_.copy();
-        owner_ = other.owner_;
-    }
-    return *this;
-}
 
 nb::object PythonOperator::call(nb::args positional, nb::kwargs named) const {
     return call(std::span<const nb::handle>{}, positional, named);
@@ -157,31 +143,26 @@ nb::object PythonOperator::invoke(std::span<const WiringArgument> arguments) con
 }
 
 PythonOperator PythonOperator::map_type_arguments(nb::handle arguments) const {
-    auto values = std::vector<const Type *>{};
     const auto tuple = PyTuple_Check(arguments.ptr());
     const auto size = tuple ? PyTuple_Size(arguments.ptr()) : Py_ssize_t{1};
-    values.reserve(static_cast<std::size_t>(size));
+    if (static_cast<std::size_t>(size) > type_parameters_.size()) {
+        throw std::invalid_argument{"too many positional type arguments for this operator"};
+    }
+    if (size == 0) {
+        throw std::invalid_argument{"an operator type argument list cannot be empty"};
+    }
+
+    auto type_map = type_map_.copy();
     for (auto index = Py_ssize_t{}; index < size; ++index) {
         const auto value = tuple ? nb::handle{PyTuple_GetItem(arguments.ptr(), index)} : arguments;
         const auto &type = python_type_argument(value);
         if (!type.is_resolved()) {
             throw std::invalid_argument{"an explicit operator type argument must be resolved"};
         }
-        values.push_back(&type);
-    }
-
-    if (values.size() > type_parameters_.size()) {
-        throw std::invalid_argument{"too many positional type arguments for this operator"};
-    }
-    if (values.empty()) {
-        throw std::invalid_argument{"an operator type argument list cannot be empty"};
-    }
-
-    auto type_map = type_map_.copy();
-    for (auto index = std::size_t{}; index < values.size(); ++index) {
-        if (!type_parameters_[index]->match(*values[index], type_map)) {
+        const auto parameter_index = static_cast<std::size_t>(index);
+        if (!type_parameters_[parameter_index]->match(type, type_map)) {
             auto parameter_name = std::string{};
-            type_parameters_[index]->format_name(parameter_name);
+            type_parameters_[parameter_index]->format_name(parameter_name);
             throw std::invalid_argument{"type argument does not match operator parameter '" + parameter_name + "'"};
         }
     }
@@ -212,19 +193,18 @@ void PythonOperator::register_overload(nb::handle owner) {
         overload_owners_->emplace_back(owner);
     }
 
-    try {
-        if (is_node) {
-            const auto &node = nb::cast<const PythonNodeDefinition &>(native);
-            operation_->overload(RuntimeSignatureNodeTemplate<PythonNodeDefinition>{node});
-        } else {
-            operation_->overload(nb::cast<const PythonGraphDefinition &>(native));
-        }
-    } catch (...) {
+    auto rollback_owner = util::scope_exit{[&]() noexcept {
         if (retain_owner) {
             overload_owners_->pop_back();
         }
-        throw;
+    }};
+    if (is_node) {
+        const auto &node = nb::cast<const PythonNodeDefinition &>(native);
+        operation_->overload(RuntimeSignatureNodeTemplate<PythonNodeDefinition>{node});
+    } else {
+        operation_->overload(nb::cast<const PythonGraphDefinition &>(native));
     }
+    rollback_owner.release();
 }
 
 void PythonOperator::release_overload_owners() noexcept {
