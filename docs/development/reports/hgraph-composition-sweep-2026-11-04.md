@@ -66,9 +66,9 @@ These behaviors follow the [reference sampling contract](../design/time-series-r
 
 ## Verification
 
-All 16 added cases pass. The tests were compiled in Release mode and linked
-against native libraries matching the baseline implementation. The focused
-runners also include existing tests for the affected areas:
+All 16 added cases pass. Merge verification uses HG `7aa7d6e69` after rebasing
+onto main and rebuilding both native libraries and the focused runners in
+Release mode. The runners also include existing tests for the affected areas:
 
 | Group | Added cases | Passing cases | Passing assertions |
 | --- | ---: | ---: | ---: |
