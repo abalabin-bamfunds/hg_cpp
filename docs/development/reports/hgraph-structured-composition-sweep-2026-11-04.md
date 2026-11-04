@@ -1,7 +1,7 @@
 # hgraph Dict mapping, collection projection, and structured services sweep, 2026-11-04
 
 This sweep checks higher-order scalar Dict mapping, collection fields projected
-from mapped bundles, and structured service replies against HG `a2f3d723d`.
+from mapped bundles, and structured service replies against HG `d334ad217`.
 It adds tests and records findings for review. Production code is unchanged.
 
 ## Source patterns
@@ -89,29 +89,18 @@ removes the collection's current value and reports its prior members as removed.
 The probe checks each flattened item's validity before reading its value.
 A separate observer confirms that the input group itself becomes invalid.
 
-This minimized direct case fails on the baseline. The clock input ensures the
-observer runs during invalidation even if the collection does not notify it:
+This minimized direct case reproduces the same result through the standard
+optional sum, without a custom observer:
 
 ```cpp
-const auto sum = node([](i64, In<TSD<Tuple<string, i64>, TS<i64>>, optional> values) {
-    auto total = i64{};
-    values.for_each_value([&](const auto &value) {
-        if (value.valid()) {
-            total += *value;
-        }
-    });
-    return total;
-});
-
-const auto flattened_sum = [&](wp<TSD<string, TSD<i64, TS<i64>>>> values, wp<TS<i64>> cycle) {
-    return sum(cycle, operators::collapse_keys(values));
+const auto flattened_sum = [](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+    return operators::sum_(opt(operators::collapse_keys(values)));
 };
 
 CHECK(run_graph(flattened_sum,
                 {{{"A", {{1, 10}, {2, 20}}}},
                  {{"A", literal::INVALID}},
-                 {{"A", {{1, 11}, {2, 22}}}}},
-                {0, 1, 2})
+                 {{"A", {{1, 11}, {2, 22}}}}})
           .equals<i64>({30, 0, 33})); // Actual: 30, 30, 33.
 ```
 
@@ -133,7 +122,9 @@ capture, following the [capture restriction](../testing.md#test-layout).
 
 ## Verification
 
-Focused runners use Release libraries built from the baseline implementation.
+Focused runners use Release libraries built from `a2f3d723d`. The final branch
+is rebased onto `d334ad217`; the intervening Python binding changes leave the
+tested engine and standard library code unchanged.
 All 16 added cases pass, alongside existing tests for the affected areas:
 
 | Group | Added cases | Passing cases | Passing assertions |
