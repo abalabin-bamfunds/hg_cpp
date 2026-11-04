@@ -15,6 +15,11 @@ decltype(div) div{"div", {"lhs", "rhs"}};
 decltype(floordiv) floordiv{"floordiv", {"lhs", "rhs"}};
 decltype(mod) mod{"mod", {"lhs", "rhs"}};
 decltype(pow) pow{"pow", {"lhs", "rhs"}};
+decltype(divmod) divmod{"divmod", {"lhs", "rhs"}};
+decltype(lshift) lshift{"lshift", {"lhs", "rhs"}};
+decltype(rshift) rshift{"rshift", {"lhs", "rhs"}};
+decltype(ln) ln{"ln", {"value"}};
+decltype(sign) sign{"sign", {"value"}};
 decltype(round) round{"round", {"value", "ndigits"}};
 decltype(pos) pos{"pos", {"value"}};
 decltype(neg) neg{"neg", {"value"}};
@@ -118,6 +123,7 @@ namespace {
 // Register implementations only after every operator object above has been constructed.
 const auto registered = [] {
     details::register_numeric_operators();
+    details::register_temporal_operators();
     details::register_conversion_operators();
     details::register_collect_operators();
     details::register_emit_operators();

@@ -674,6 +674,13 @@ For each reusable node and graph, test:
   selections, and unselected-input updates
 - arithmetic across scalar and time series arguments, exact type matching,
   integer and temporal wraparound, and borrowed string construction
+- `ln` and `sign`, including the logarithm domain, NaN and signed zero; fixed-width
+  shifts and `divmod` across scalar and time series operands, invalidation, and
+  guarantee propagation
+- duration scaling and division, including ties-to-even microsecond rounding,
+  i64 range limits, zero and non-finite divisors; date-time and duration fields,
+  including negative component normalization, i64 timestamp extremes, and
+  wiring errors for unknown fields
 - scalar List concatenation, append, repetition, and removal with scalar and
   time series operands; test optional invalid inputs, guarantees, nested values,
   equal-result suppression, and reference retargeting

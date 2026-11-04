@@ -34,6 +34,7 @@ specify imports and headers.
 | `diff` | [Reference](library-stateful.md#diff) |
 | `dispatch` | [Reference](operators.md#runtime-dispatch) |
 | `div` | [Reference](library-numeric.md#arithmetic) |
+| `divmod` | [Reference](library-numeric.md#arithmetic) |
 | `drop` | [Reference](library-selection.md#take-drop-step) |
 | `elapsed` | [Reference](library-time.md#elapsed) |
 | `emit` | [Reference](library-collections.md#construction-and-conversion) |
@@ -64,8 +65,10 @@ specify imports and headers.
 | `last_modified_time` | [Reference](library-time.md#last_modified_time) |
 | `le` | [Reference](library-numeric.md#arithmetic) |
 | `len_` | [Reference](library-collections.md#collection-queries) |
+| `ln` | [Reference](library-numeric.md#arithmetic) |
 | `log_` | [Reference](library-text.md#formatting-and-printing) |
 | `lower` | [Reference](library-text.md#construction-and-queries) |
+| `lshift` | [Reference](library-numeric.md#arithmetic) |
 | `lt` | [Reference](library-numeric.md#arithmetic) |
 | `map` | [Reference](higher-order.md#map) |
 | `match_` | [Reference](library-text.md#regular-expressions) |
@@ -98,8 +101,10 @@ specify imports and headers.
 | `resample` | [Reference](library-time.md#resample) |
 | `round` | [Reference](library-numeric.md#arithmetic) |
 | `route_by_index` | [Reference](library-selection.md#route_by_index) |
+| `rshift` | [Reference](library-numeric.md#arithmetic) |
 | `sample` | [Reference](library-selection.md#sample) |
 | `schedule` | [Reference](library-time.md#schedule) |
+| `sign` | [Reference](library-numeric.md#arithmetic) |
 | `slice_` | [Reference](library-selection.md#slice_) |
 | `split` | [Reference](library-text.md#split-and-join) |
 | `step` | [Reference](library-selection.md#take-drop-step) |

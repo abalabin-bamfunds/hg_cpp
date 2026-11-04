@@ -255,6 +255,7 @@ add_executable(
     value/scalar/test_scalar_provider.cpp
     library/tick_selection_test.cpp
     library/timed_test.cpp
+    library/temporal_test.cpp
     library/timed_lifecycle_patterns_test.cpp
     library/mapped_timed_sources_test.cpp
     library/tsd_transform_test.cpp

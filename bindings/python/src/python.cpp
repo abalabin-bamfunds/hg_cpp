@@ -1508,6 +1508,7 @@ void bind_core(nb::module_ &module) {
     const auto sub_operator = details::PythonOperator{operators::sub};
     const auto mul_operator = details::PythonOperator{operators::mul};
     const auto div_operator = details::PythonOperator{operators::div};
+    const auto divmod_operator = details::PythonOperator{operators::divmod};
     const auto floordiv_operator = details::PythonOperator{operators::floordiv};
     const auto mod_operator = details::PythonOperator{operators::mod};
     const auto pow_operator = details::PythonOperator{operators::pow};
@@ -1525,6 +1526,8 @@ void bind_core(nb::module_ &module) {
     const auto bit_or_operator = details::PythonOperator{operators::bit_or};
     const auto bit_and_operator = details::PythonOperator{operators::bit_and};
     const auto bit_xor_operator = details::PythonOperator{operators::bit_xor};
+    const auto lshift_operator = details::PythonOperator{operators::lshift};
+    const auto rshift_operator = details::PythonOperator{operators::rshift};
 
     nb::class_<TypeDescriptor>(module, "_Type")
         .def_prop_ro("is_time_series", [](const TypeDescriptor &value) { return value.type().is_time_series(); })
@@ -1656,6 +1659,36 @@ void bind_core(nb::module_ &module) {
         .def("__rmod__",
              [mod_operator](const PythonWiringPoint &self, nb::handle other) {
                  return mod_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__divmod__",
+             [divmod_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return divmod_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rdivmod__",
+             [divmod_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return divmod_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__lshift__",
+             [lshift_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return lshift_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rlshift__",
+             [lshift_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return lshift_operator.call(other, nb::cast(self));
+             },
+             nb::is_operator())
+        .def("__rshift__",
+             [rshift_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return rshift_operator.call(nb::cast(self), other);
+             },
+             nb::is_operator())
+        .def("__rrshift__",
+             [rshift_operator](const PythonWiringPoint &self, nb::handle other) {
+                 return rshift_operator.call(other, nb::cast(self));
              },
              nb::is_operator())
         .def("__pow__",
