@@ -88,6 +88,14 @@ def test_extension_can_export_existing_and_sink_operators():
     hg.run_graph(sink)
 
 
+def test_python_overloads_reject_read_only_native_operator_exports():
+    with pytest.raises(ValueError, match="Python overloads require a mutable operator export"):
+
+        @hg.node(overloads=extension.discard)
+        def discard(value: int) -> None:
+            pass
+
+
 def test_exported_native_operator_accepts_python_node_and_graph_overloads():
     @hg.compute_node(overloads=extension.optional_choice)
     def text(value: hg.TS[str]) -> hg.TS[str]:
