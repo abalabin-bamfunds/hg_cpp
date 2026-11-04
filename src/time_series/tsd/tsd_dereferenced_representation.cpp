@@ -852,7 +852,10 @@ template <bool Recursive> class DereferencedTimeSeriesDictionaryRepresentation f
         const auto referenced_item = reference ? ResolvedTimeSeries::resolve(reference) : ResolvedTimeSeries{};
         if (change == OutputChange::invalidation) {
             auto previous = referenced_item;
-            previous.last_updated = last_updated_;
+            const auto was_valid = referenced_item.last_updated.valid_before(context.evaluation_time());
+            // Preserve the child's pre-cycle validity and current-cycle removals.
+            previous.last_updated = TimeSeriesState::from_validity_transition(
+                context.evaluation_time(), was_valid, was_valid);
             sample_switch(id, {}, context.evaluation_time(), previous);
         } else if (change == OutputChange::revalidation) {
             auto previous = referenced_item;
