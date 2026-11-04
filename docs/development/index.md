@@ -59,3 +59,6 @@ history and are marked `superseded`.
 - [hgraph reference composition sweep, 2026-11-03](reports/hgraph-reference-composition-sweep-2026-11-03.md): additional reference sources, consumers, and nested graph lifetimes.
 - [hgraph service queue sweep, 2026-11-03](reports/hgraph-service-queue-sweep-2026-11-03.md): service-owned queue sources and client lifecycle.
 - [hgraph reduce composition sweep, 2026-11-03](reports/hgraph-reduce-composition-sweep-2026-11-03.md): higher-order reducer graphs and collection lifecycle.
+- [hgraph mesh settling sweep, 2026-11-03](reports/hgraph-mesh-settling-sweep-2026-11-03.md): dependency expansion, retargeting, and branch lifecycle.
+- [hgraph timed lifecycle sweep, 2026-11-03](reports/hgraph-timed-lifecycle-sweep-2026-11-03.md): pending work across branch removal and recreation.
+- [hgraph dispatch composition sweep, 2026-11-03](reports/hgraph-dispatch-composition-sweep-2026-11-03.md): mapped runtime types, structured outputs, and inherited context.

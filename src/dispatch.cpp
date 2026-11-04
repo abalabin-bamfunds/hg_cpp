@@ -157,9 +157,6 @@ class DispatchBranchTemplate final : public WiringTemplate {
         if (declared_value != nullptr && result_value != nullptr) {
             return dispatch_cast(*result, dispatch_reference_type(*signature.output, result->type()));
         }
-        if (&signature.output->dereferenced_type() != &result->type().dereferenced_type()) {
-            throw WiringError{"dispatch output covariance requires scalar time-series values"};
-        }
         return result;
     }
 

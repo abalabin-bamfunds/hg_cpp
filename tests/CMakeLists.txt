@@ -50,9 +50,11 @@ add_executable(
     evaluation/map_test.cpp
     evaluation/reduce_test.cpp
     evaluation/mesh_test.cpp
+    evaluation/mesh_settling_patterns_test.cpp
     evaluation/switch_test.cpp
     evaluation/dispatch_cast_test.cpp
     evaluation/dispatch_test.cpp
+    evaluation/dispatch_composition_patterns_test.cpp
     evaluation/nested_graph_test.cpp
     evaluation/nested_graph_owner_test.cpp
     evaluation/scheduling/timed_scheduling_test.cpp
@@ -250,6 +252,7 @@ add_executable(
     value/scalar/test_scalar_provider.cpp
     library/tick_selection_test.cpp
     library/timed_test.cpp
+    library/timed_lifecycle_patterns_test.cpp
     library/tsd_transform_test.cpp
     library/service_patterns_test.cpp
     library/service_composition_test.cpp
