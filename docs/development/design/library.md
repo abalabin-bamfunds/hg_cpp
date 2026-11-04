@@ -34,12 +34,16 @@ types; an integer operand does not convert to double to match an overload.
 | --- | --- |
 | `add` | `i64`, `double`, `timedelta_t`, `string`; timestamp plus duration in either order |
 | `sub` | `i64`, `double`, `timedelta_t`; timestamp minus duration or timestamp |
-| `mul` | `i64`, `double`; string or symbol repeated by an `i64` in either order |
-| `div` | `i64`, `double`; result is `double` |
-| `floordiv` | `i64` to `i64`, `double` to `double` |
+| `mul` | `i64`, `double`; string or symbol repeated by an `i64` in either order; duration scaling |
+| `div` | `i64`, `double`; result is `double`; duration scaling or ratio |
+| `divmod` | `i64`/`i64` and `double`/`double`; fixed two-item TSL of floor quotient and remainder; ordinary root guarantee |
+| `floordiv` | `i64` to `i64`, `double` to `double`, duration ratio to `i64` |
+| `lshift`, `rshift` | `i64` |
+| `ln` | `double`; positive input |
 | `mod` | `i64` to `i64`, `double` to `double` |
 | `pow` | `i64` to `i64`, `double` to `double` |
 | `round` | `double`, with an optional decimal digit count; result is `double` |
+| `sign` | `i64`, `double` |
 | `neg`, `pos`, `abs` | `i64`, `double`, `timedelta_t` |
 | `eq`, `ne` | Compatible values of an equality-comparable scalar type |
 | `lt`, `le`, `gt`, `ge` | `i64`, `double`, `string`, `date_time_t`, `timedelta_t` |
@@ -56,22 +60,11 @@ that same minimum value. Floating-point arithmetic uses normal C++ operations.
 String concatenation, text repetition, string comparison, and substring search process
 UTF-8 bytes, including embedded NUL bytes. Character operations follow the
 [text rules](#text-operations). Temporal operators are native C++ overloads.
-Python `datetime.timedelta` maps to
-`timedelta_t`; Python timestamp scalar conversion is not yet supplied.
+Python `datetime.datetime` and `datetime.timedelta` map to `date_time_t` and
+`timedelta_t`; datetime values use timezone-naive UTC conversion.
 
-Integer division converts both operands to `double` and uses native floating-point
-division. Conversion can round operands outside the consecutive-integer range,
-so large-integer results can differ from Python integer true division. It preserves
-the sign of a zero result. Division, floor division, and modulo reject a zero divisor
-during evaluation.
-Dividing the `i64` minimum by `-1` returns the positive quotient as `double`;
-integer floor division wraps the corresponding quotient, and modulo returns
-zero. Integer power wraps at `i64` width and rejects negative exponents.
-Floating power rejects zero raised to a negative exponent and negative bases
-with fractional exponents. `round` returns `double` and rounds ties to even.
-With a digit count, it scales the value by a power of ten, rounds, and scales
-back. Floating-point scaling can affect the result: `round(2.675, 2)` returns
-`2.68`. It preserves non-finite values and the sign of zero.
+The operator behavior and supported temporal fields are specified in the public
+[numeric reference](../../user/reference/library-numeric.md).
 
 `convert` requires an explicit full result time-series type:
 

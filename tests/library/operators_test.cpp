@@ -200,6 +200,103 @@ TEST_CASE("floating division preserves signed zero",
     CHECK(std::signbit(scalar_cast<double>(result[2]->view()).value()));
 }
 
+TEST_CASE("divmod returns floor quotient and remainder for matching numeric types",
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
+    const auto integer_quotient = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) -> wp<> {
+        const auto result = operators::divmod(lhs, rhs);
+        return wp<>{result[0].as<TS<i64>>()};
+    };
+    const auto integer_remainder = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) {
+        const auto result = operators::divmod(lhs, rhs);
+        return result[1].as<TS<i64>>();
+    };
+    const auto double_quotient = [](wp<TS<double>> lhs, wp<TS<double>> rhs) {
+        const auto result = operators::divmod(lhs, rhs);
+        return result[0].as<TS<double>>();
+    };
+    const auto double_remainder = [](wp<TS<double>> lhs, wp<TS<double>> rhs) {
+        const auto result = operators::divmod(lhs, rhs);
+        return result[1].as<TS<double>>();
+    };
+
+    CHECK(hg::run_graph(integer_quotient, {-7, 7}, {3, -3}).equals<i64>({-3, -3}));
+    CHECK(hg::run_graph(integer_remainder, {-7, 7}, {3, -3}).equals<i64>({2, -2}));
+    CHECK(hg::run_graph(double_quotient, {-7.0, 7.0}, {3.0, -3.0}).equals<double>({-3.0, -3.0}));
+    CHECK(hg::run_graph(double_remainder, {-7.0, 7.0}, {3.0, -3.0}).equals<double>({2.0, -2.0}));
+    CHECK(hg::run_graph(integer_quotient, {7, literal::INVALID, 9}, {3, literal::SKIP, 4})
+              .equals({2, literal::INVALID, 2}));
+
+    const auto final_source = node([](Out<TS<i64, TimeSeriesGuarantee::final>> output) { output.set(1); });
+    testing::test_wiring([&] {
+        const auto result = operators::divmod(final_source(), final_source());
+        const auto &result_type = type_cast<TimeSeriesListType>(result.type());
+        CHECK(result_type.size().value() == 2);
+        CHECK(result_type.guarantee().value() == TimeSeriesGuarantee::ordinary);
+        CHECK(result_type.item_type().guarantee().value() == TimeSeriesGuarantee::final);
+    });
+}
+
+TEST_CASE("divmod promotes scalar operands to constant time series",
+          "[feature:operator][feature:wiring][series:fixed-tsl][scalar:i64]") {
+    const auto scalar_rhs = [](wp<TS<i64>> value) { return operators::divmod(value, i64{3}); };
+    const auto scalar_lhs = [](wp<TS<i64>> value) { return operators::divmod(i64{7}, value); };
+    const auto scalar_operands = [] { return operators::divmod(i64{7}, i64{3}); };
+
+    CHECK(hg::run_graph(scalar_rhs, {7, -7})
+              .equals({{{0, 2}, {1, 1}}, {{0, -3}, {1, 2}}}));
+    CHECK(hg::run_graph(scalar_lhs, {3, -3})
+              .equals({{{0, 2}, {1, 1}}, {{0, -3}, {1, -2}}}));
+    CHECK(hg::run_graph(scalar_operands).equals({{{0, 2}, {1, 1}}}));
+}
+
+TEST_CASE("integer shifts have fixed-width behavior and C++ wiring syntax",
+          "[feature:operator][feature:wiring][series:value][scalar:i64]") {
+    constexpr auto minimum = std::numeric_limits<i64>::min();
+    constexpr auto maximum = std::numeric_limits<i64>::max();
+    const auto left_shift = [](wp<TS<i64>> value, wp<TS<i64>> count) { return value << count; };
+    const auto right_shift = [](wp<TS<i64>> value, wp<TS<i64>> count) { return value >> count; };
+    const auto shift_left = [](wp<TS<i64>> count) { return i64{1} << count; };
+
+    CHECK(hg::run_graph(left_shift, {-1, 1, maximum, minimum}, {1, 63, 64, 1})
+              .equals<i64>({-2, minimum, 0, 0}));
+    CHECK(hg::run_graph(right_shift, {-7, 7, minimum, maximum}, {1, 1, 64, 64})
+              .equals<i64>({-4, 3, -1, 0}));
+    CHECK(hg::run_graph(shift_left, {2, 3}).equals<i64>({4, 8}));
+    CHECK_THROWS_AS(hg::run_graph(left_shift, {1}, {-1}), std::domain_error);
+}
+
+TEST_CASE("natural logarithm and sign cover numeric edge values",
+          "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
+    const auto natural_log = [](wp<TS<double>> value) { return operators::ln(value); };
+    const auto integer_sign = [](wp<TS<i64>> value) { return operators::sign(value); };
+    const auto double_sign = [](wp<TS<double>> value) { return operators::sign(value); };
+
+    CHECK(hg::run_graph(natural_log, {1.0}).equals<double>({0.0}));
+    CHECK_THROWS_AS(hg::run_graph(natural_log, {0.0}), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(natural_log, {-1.0}), std::domain_error);
+    const auto logarithm_special_values =
+        hg::run_graph(natural_log, {std::numeric_limits<double>::quiet_NaN(),
+                                    std::numeric_limits<double>::infinity()});
+    REQUIRE(logarithm_special_values[0].has_value());
+    REQUIRE(logarithm_special_values[1].has_value());
+    CHECK(std::isnan(scalar_cast<double>(logarithm_special_values[0]->view()).value()));
+    CHECK(std::isinf(scalar_cast<double>(logarithm_special_values[1]->view()).value()));
+    CHECK(hg::run_graph(integer_sign, {-4, 0, 7}).equals<i64>({-1, 0, 1}));
+
+    const auto result = hg::run_graph(double_sign, {-2.0, -0.0, 0.0, 3.0,
+                                                    -std::numeric_limits<double>::infinity(),
+                                                    std::numeric_limits<double>::infinity(),
+                                                    std::numeric_limits<double>::quiet_NaN()});
+    CHECK(scalar_cast<double>(result[0]->view()).value() == -1.0);
+    CHECK_FALSE(std::signbit(scalar_cast<double>(result[1]->view()).value()));
+    CHECK_FALSE(std::signbit(scalar_cast<double>(result[2]->view()).value()));
+    CHECK(scalar_cast<double>(result[3]->view()).value() == 1.0);
+    CHECK(scalar_cast<double>(result[4]->view()).value() == -1.0);
+    CHECK(scalar_cast<double>(result[5]->view()).value() == 1.0);
+    REQUIRE(result[6].has_value());
+    CHECK(std::isnan(scalar_cast<double>(result[6]->view()).value()));
+}
+
 TEST_CASE("integer division converts its operands to binary64",
           "[feature:operator][series:value][scalar:i64][scalar:floating-point]") {
     const auto divide = [](wp<TS<i64>> lhs, wp<TS<i64>> rhs) { return operators::div(lhs, rhs); };
@@ -620,6 +717,55 @@ TEST_CASE("integer multiplication and unary operations wrap at signed boundaries
     CHECK(hg::run_graph(scalar_multiply).equals<i64>({I64_MIN}));
     CHECK(hg::run_graph(scalar_negate).equals<i64>({I64_MIN}));
     CHECK(hg::run_graph(scalar_absolute).equals<i64>({I64_MIN}));
+}
+
+TEST_CASE("duration scaling rounds fractional microseconds to even",
+          "[feature:operator][series:value][scalar:timedelta][scalar:i64][scalar:floating-point]") {
+    const auto multiply_integer = [](wp<TS<timedelta_t>> value) { return operators::mul(value, i64{3}); };
+    const auto multiply_integer_boundary = [](wp<TS<timedelta_t>> value) { return operators::mul(value, i64{2}); };
+    const auto multiply_integer_reversed = [](wp<TS<timedelta_t>> value) { return i64{3} * value; };
+    const auto multiply_fractional = [](wp<TS<timedelta_t>> value) { return operators::mul(value, 0.5); };
+    const auto multiply_fractional_reversed = [](wp<TS<timedelta_t>> value) { return 0.5 * value; };
+    const auto divide_integer = [](wp<TS<timedelta_t>> value) { return operators::div(value, i64{2}); };
+    const auto divide_fractional = [](wp<TS<timedelta_t>> value) { return operators::div(value, 2.0); };
+    const auto duration_ratio = [](wp<TS<timedelta_t>> lhs, wp<TS<timedelta_t>> rhs) {
+        return operators::div(lhs, rhs);
+    };
+    const auto floor_duration_ratio = [](wp<TS<timedelta_t>> lhs, wp<TS<timedelta_t>> rhs) {
+        return operators::floordiv(lhs, rhs);
+    };
+
+    CHECK(hg::run_graph(multiply_integer, std::array{timedelta_t{1}, timedelta_t{-2}})
+              .equals<timedelta_t>({timedelta_t{3}, timedelta_t{-6}}));
+    CHECK(hg::run_graph(multiply_integer_reversed, std::array{timedelta_t{1}, timedelta_t{-2}})
+              .equals<timedelta_t>({timedelta_t{3}, timedelta_t{-6}}));
+    CHECK(hg::run_graph(multiply_integer_boundary, std::array{timedelta_t::max(), timedelta_t::min()})
+              .equals<timedelta_t>({timedelta_t{-2}, timedelta_t{0}}));
+    CHECK(hg::run_graph(multiply_fractional, std::array{timedelta_t{1}, timedelta_t{3}, timedelta_t{-3}})
+              .equals<timedelta_t>({timedelta_t{0}, timedelta_t{2}, timedelta_t{-2}}));
+    CHECK(hg::run_graph(multiply_fractional_reversed, std::array{timedelta_t{1}, timedelta_t{3}, timedelta_t{-3}})
+              .equals<timedelta_t>({timedelta_t{0}, timedelta_t{2}, timedelta_t{-2}}));
+    CHECK(hg::run_graph(divide_integer, std::array{timedelta_t{1}, timedelta_t{3}, timedelta_t{-3}})
+              .equals<timedelta_t>({timedelta_t{0}, timedelta_t{2}, timedelta_t{-2}}));
+    CHECK(hg::run_graph(divide_fractional, std::array{timedelta_t{1}, timedelta_t{3}, timedelta_t{-3}})
+              .equals<timedelta_t>({timedelta_t{0}, timedelta_t{2}, timedelta_t{-2}}));
+    CHECK(hg::run_graph(duration_ratio, std::array{timedelta_t{-7}, timedelta_t{7}},
+                        std::array{timedelta_t{3}, timedelta_t{-3}})
+              .equals<double>({-7.0 / 3.0, 7.0 / -3.0}));
+    CHECK(hg::run_graph(floor_duration_ratio, std::array{timedelta_t{-7}, timedelta_t{7}},
+                        std::array{timedelta_t{3}, timedelta_t{-3}})
+              .equals<i64>({-3, -3}));
+
+    const auto overflow = [] { return operators::mul(timedelta_t::max(), 2.0); };
+    const auto divide_by_zero = [] { return operators::div(timedelta_t{1}, 0.0); };
+    const auto divide_by_infinity = [] {
+        return operators::div(timedelta_t{1}, std::numeric_limits<double>::infinity());
+    };
+    const auto divide_by_nan = [] { return operators::div(timedelta_t{1}, std::numeric_limits<double>::quiet_NaN()); };
+    CHECK_THROWS_AS(hg::run_graph(overflow), std::overflow_error);
+    CHECK_THROWS_AS(hg::run_graph(divide_by_zero), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(divide_by_infinity), std::domain_error);
+    CHECK_THROWS_AS(hg::run_graph(divide_by_nan), std::domain_error);
 }
 
 TEST_CASE("optional multiplication substitutes one for invalid operands",

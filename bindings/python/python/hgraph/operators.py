@@ -19,10 +19,15 @@ match_ = _native.match_
 split = _native.split
 join = _native.join
 div = _native.div
+divmod = _native.divmod
 floordiv = _native.floordiv
+ln = _native.ln
 mod = _native.mod
 pow = _native.pow
+lshift = _native.lshift
+rshift = _native.rshift
 round = _native.round
+sign = _native.sign
 convert = _native.convert
 combine = _native.combine
 collect = _native.collect
@@ -139,6 +144,7 @@ __all__ = [
     "drop",
     "elapsed",
     "div",
+    "divmod",
     "eq",
     "ewma",
     "floordiv",
@@ -162,6 +168,8 @@ __all__ = [
     "last_modified_time",
     "len_",
     "log_",
+    "ln",
+    "lshift",
     "lt",
     "map",
     "merge",
@@ -185,11 +193,13 @@ __all__ = [
     "nothing",
     "or_",
     "pow",
+    "rshift",
     "print_",
     "replace",
     "pos",
     "reduce",
     "round",
+    "sign",
     "resample",
     "route_by_index",
     "sample",

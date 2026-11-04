@@ -232,6 +232,7 @@ add_library(
     hg_library SHARED
     src/library/logical.cpp
     src/library/numeric.cpp
+    src/library/temporal.cpp
     src/library/conversion.cpp
     src/library/collect.cpp
     src/library/emit.cpp

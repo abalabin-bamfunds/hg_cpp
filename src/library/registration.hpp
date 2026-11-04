@@ -3,6 +3,7 @@
 namespace hg::operators::details {
 
 void register_numeric_operators();
+void register_temporal_operators();
 void register_conversion_operators();
 void register_collect_operators();
 void register_emit_operators();

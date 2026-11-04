@@ -295,9 +295,14 @@ void bind_operators(nb::module_ &module) {
     export_operator(operators_module, "split", operators::split, split_type_parameters);
     export_operator(operators_module, "join", operators::join);
     export_operator(operators_module, "div", operators::div);
+    export_operator(operators_module, "divmod", operators::divmod);
     export_operator(operators_module, "floordiv", operators::floordiv);
     export_operator(operators_module, "mod", operators::mod);
     export_operator(operators_module, "pow", operators::pow);
+    export_operator(operators_module, "lshift", operators::lshift);
+    export_operator(operators_module, "rshift", operators::rshift);
+    export_operator(operators_module, "ln", operators::ln);
+    export_operator(operators_module, "sign", operators::sign);
     export_operator(operators_module, "round", operators::round);
     export_operator(operators_module, "convert", operators::convert);
     export_operator(operators_module, "combine", operators::combine);

@@ -4,6 +4,7 @@
 #include <hg/library/operators.hpp>
 #include <hg/node.hpp>
 #include <hg/overload.hpp>
+#include <hg/time_series/tsl/tsl.hpp>
 #include <hg/type/time_series_value_type.hpp>
 
 #include <algorithm>
@@ -33,6 +34,8 @@ i64 wrapping_multiply(i64 lhs, i64 rhs) noexcept {
 i64 wrapping_negate(i64 value) noexcept {
     return static_cast<i64>(std::uint64_t{} - static_cast<std::uint64_t>(value));
 }
+
+inline constexpr auto DIVMOD_G = guarantee_variable<"DIVMOD_G">;
 
 struct arithmetic_overloads {
     // Addition.
@@ -79,6 +82,18 @@ struct arithmetic_overloads {
     overload<mul> mul_double_optional{[](std::optional<double> lhs, std::optional<double> rhs) {
         return lhs.value_or(1.0) * rhs.value_or(1.0);
     }};
+    overload<mul> mul_timedelta_i64{[](timedelta_t value, i64 factor) {
+        return timedelta_t{wrapping_multiply(value.count(), factor)};
+    }};
+    overload<mul> mul_i64_timedelta{[](i64 factor, timedelta_t value) {
+        return timedelta_t{wrapping_multiply(value.count(), factor)};
+    }};
+    overload<mul> mul_timedelta_double{[](timedelta_t value, double factor) {
+        return scale_duration(value, factor);
+    }};
+    overload<mul> mul_double_timedelta{[](double factor, timedelta_t value) {
+        return scale_duration(value, factor);
+    }};
 
     // Division.
     overload<div> div_i64{[](i64 lhs, i64 rhs) {
@@ -92,6 +107,18 @@ struct arithmetic_overloads {
             throw std::domain_error{"division by zero"};
         }
         return lhs / rhs;
+    }};
+    overload<div> div_timedelta_i64{[](timedelta_t value, i64 divisor) {
+        return timedelta_t{integer_round_division(value.count(), divisor)};
+    }};
+    overload<div> div_timedelta_double{[](timedelta_t value, double divisor) {
+        return divide_duration(value, divisor);
+    }};
+    overload<div> div_timedelta{[](timedelta_t lhs, timedelta_t rhs) {
+        if (rhs.count() == 0) {
+            throw std::domain_error{"division by zero"};
+        }
+        return static_cast<double>(lhs.count()) / static_cast<double>(rhs.count());
     }};
 
     // Floor division.
@@ -135,8 +162,78 @@ struct arithmetic_overloads {
         return result;
     }
 
+    static i64 integer_round_division(i64 numerator, i64 denominator) {
+        if (denominator == 0) {
+            throw std::domain_error{"division by zero"};
+        }
+
+        auto unsigned_numerator = static_cast<std::uint64_t>(numerator);
+        if (numerator < 0) {
+            unsigned_numerator = std::uint64_t{} - unsigned_numerator;
+        }
+
+        auto unsigned_denominator = static_cast<std::uint64_t>(denominator);
+        if (denominator < 0) {
+            unsigned_denominator = std::uint64_t{} - unsigned_denominator;
+        }
+
+        auto quotient = unsigned_numerator / unsigned_denominator;
+        const auto remainder = unsigned_numerator % unsigned_denominator;
+        const auto distance_to_next = unsigned_denominator - remainder;
+        if (remainder > distance_to_next || (remainder == distance_to_next && (quotient & 1U) != 0)) {
+            ++quotient;
+        }
+
+        if ((numerator < 0) != (denominator < 0)) {
+            return static_cast<i64>(std::uint64_t{} - quotient);
+        }
+        return static_cast<i64>(quotient);
+    }
+
+    static long double round_ties_to_even(long double value) noexcept {
+        const auto lower = std::floor(value);
+        const auto fraction = value - lower;
+        if (fraction < 0.5L) {
+            return lower;
+        }
+        if (fraction > 0.5L) {
+            return lower + 1.0L;
+        }
+        return std::fmod(lower, 2.0L) == 0.0L ? lower : lower + 1.0L;
+    }
+
+    static i64 rounded_duration_count(long double value) {
+        if (!std::isfinite(value)) {
+            throw std::overflow_error{"scaled duration is outside the i64 range"};
+        }
+
+        const auto rounded = round_ties_to_even(value);
+        const auto limit = std::ldexp(1.0L, 63);
+        if (rounded < -limit || rounded >= limit) {
+            throw std::overflow_error{"scaled duration is outside the i64 range"};
+        }
+        return static_cast<i64>(rounded);
+    }
+
+    static timedelta_t scale_duration(timedelta_t value, double factor) {
+        return timedelta_t{rounded_duration_count(static_cast<long double>(value.count()) * factor)};
+    }
+
+    static timedelta_t divide_duration(timedelta_t value, double divisor) {
+        if (!std::isfinite(divisor)) {
+            throw std::domain_error{"duration divisor must be finite"};
+        }
+        if (divisor == 0.0) {
+            throw std::domain_error{"division by zero"};
+        }
+        return timedelta_t{rounded_duration_count(static_cast<long double>(value.count()) / divisor)};
+    }
+
     overload<floordiv> floordiv_i64{[](i64 lhs, i64 rhs) { return integer_floor_division(lhs, rhs); }};
     overload<floordiv> floordiv_double{[](double lhs, double rhs) { return float_floor_division(lhs, rhs); }};
+    overload<floordiv> floordiv_timedelta{[](timedelta_t lhs, timedelta_t rhs) {
+        return integer_floor_division(lhs.count(), rhs.count());
+    }};
 
     // Modulo.
     static i64 integer_modulo(i64 lhs, i64 rhs) {
@@ -173,7 +270,9 @@ struct arithmetic_overloads {
     overload<mod> mod_i64{[](i64 lhs, i64 rhs) { return integer_modulo(lhs, rhs); }};
     overload<mod> mod_double{[](double lhs, double rhs) { return float_modulo(lhs, rhs); }};
 
-    // Power.
+};
+
+struct power_overloads {
     static i64 integer_power(i64 lhs, i64 rhs) {
         if (rhs < 0) {
             throw std::domain_error{"an integer exponent must be nonnegative"};
@@ -206,12 +305,59 @@ struct arithmetic_overloads {
 
     overload<pow> pow_i64{[](i64 lhs, i64 rhs) { return integer_power(lhs, rhs); }};
     overload<pow> pow_double{[](double lhs, double rhs) { return floating_power(lhs, rhs); }};
+};
 
-    // Integer bitwise operators.
+struct bitwise_overloads {
     overload<bit_and> bit_and_i64{[](i64 lhs, i64 rhs) { return lhs & rhs; }};
     overload<bit_or> bit_or_i64{[](i64 lhs, i64 rhs) { return lhs | rhs; }};
     overload<bit_xor> bit_xor_i64{[](i64 lhs, i64 rhs) { return lhs ^ rhs; }};
 
+    // Shift counts are checked before shifting to avoid undefined behavior.
+    overload<lshift> lshift_i64{[](i64 lhs, i64 rhs) {
+        if (rhs < 0) {
+            throw std::domain_error{"shift count must be nonnegative"};
+        }
+        if (rhs >= 64) {
+            return i64{0};
+        }
+        return static_cast<i64>(static_cast<std::uint64_t>(lhs) << static_cast<unsigned>(rhs));
+    }};
+    overload<rshift> rshift_i64{[](i64 lhs, i64 rhs) {
+        if (rhs < 0) {
+            throw std::domain_error{"shift count must be nonnegative"};
+        }
+        if (rhs >= 64) {
+            return lhs < 0 ? i64{-1} : i64{0};
+        }
+        return lhs >> static_cast<unsigned>(rhs);
+    }};
+};
+
+struct quotient_remainder_overloads {
+    overload<divmod> divmod_i64{graph([](wp<TS<i64, DIVMOD_G>> lhs, wp<TS<i64, DIVMOD_G>> rhs) {
+        return tsl(hg::operators::floordiv(lhs, rhs), hg::operators::mod(lhs, rhs));
+    })};
+    overload<divmod> divmod_double{graph([](wp<TS<double, DIVMOD_G>> lhs, wp<TS<double, DIVMOD_G>> rhs) {
+        return tsl(hg::operators::floordiv(lhs, rhs), hg::operators::mod(lhs, rhs));
+    })};
+    overload<divmod> divmod_time_series_scalar{graph([](wp<TS<NUMERIC, DIVMOD_G>> lhs, Scalar<NUMERIC> rhs) {
+        const auto value = hg::operators::const_(rhs);
+        return tsl(hg::operators::floordiv(lhs, value), hg::operators::mod(lhs, value));
+    })};
+    overload<divmod> divmod_scalar_time_series{graph([](Scalar<NUMERIC> lhs, wp<TS<NUMERIC, DIVMOD_G>> rhs) {
+        const auto value = hg::operators::const_(lhs);
+        return tsl(hg::operators::floordiv(value, rhs), hg::operators::mod(value, rhs));
+    })};
+    overload<divmod> divmod_i64_scalars{graph([](Scalar<i64> lhs, Scalar<i64> rhs) {
+        const auto left = hg::operators::const_(lhs);
+        const auto right = hg::operators::const_(rhs);
+        return tsl(hg::operators::floordiv(left, right), hg::operators::mod(left, right));
+    })};
+    overload<divmod> divmod_double_scalars{graph([](Scalar<double> lhs, Scalar<double> rhs) {
+        const auto left = hg::operators::const_(lhs);
+        const auto right = hg::operators::const_(rhs);
+        return tsl(hg::operators::floordiv(left, right), hg::operators::mod(left, right));
+    })};
 };
 
 struct transform_overloads {
@@ -319,6 +465,25 @@ struct transform_overloads {
         return timedelta_t{count < 0 ? wrapping_negate(count) : count};
     }};
 
+    // Natural logarithm and sign.
+    overload<ln> ln_impl{[](double value) {
+        if (value <= 0.0) {
+            throw std::domain_error{"natural logarithm requires a positive value"};
+        }
+        return std::log(value);
+    }};
+
+    overload<sign> sign_i64{[](i64 value) { return static_cast<i64>((value > 0) - (value < 0)); }};
+    overload<sign> sign_double{[](double value) {
+        if (std::isnan(value)) {
+            return value;
+        }
+        if (value == 0.0) {
+            return 0.0;
+        }
+        return std::copysign(1.0, value);
+    }};
+
 };
 
 struct comparison_overloads {
@@ -361,6 +526,9 @@ struct comparison_overloads {
 
 void register_numeric_operators() {
     register_overloads<arithmetic_overloads>();
+    register_overloads<power_overloads>();
+    register_overloads<bitwise_overloads>();
+    register_overloads<quotient_remainder_overloads>();
     register_overloads<transform_overloads>();
     register_overloads<comparison_overloads>();
 }

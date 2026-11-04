@@ -16,12 +16,16 @@ to match an overload.
 | --- | --- |
 | `add` | `i64`, `double`, `timedelta_t`, `string`; timestamp plus duration in either order |
 | `sub` | `i64`, `double`, `timedelta_t`; timestamp minus duration or timestamp |
-| `mul` | `i64`, `double` |
-| `div` | `i64`, `double`; result is `double` |
-| `floordiv` | `i64` to `i64`, `double` to `double` |
+| `mul` | `i64`, `double`; `timedelta_t` by `i64` or `double` in either order |
+| `div` | `i64`, `double` to `double`; `timedelta_t` by `i64` or `double` to `timedelta_t`; duration ratio to `double` |
+| `divmod` | Matching `i64` or `double` operands; returns a two-item TSL |
+| `floordiv` | `i64` to `i64`, `double` to `double`, duration ratio to `i64` |
+| `lshift`, `rshift` | `i64` |
+| `ln` | `double`; input must be positive |
 | `mod` | `i64` to `i64`, `double` to `double` |
 | `pow` | `i64` to `i64`, `double` to `double` |
 | `round` | `double`, with an optional decimal digit count; result is `double` |
+| `sign` | `i64`, `double` |
 | `neg`, `pos`, `abs` | `i64`, `double`, `timedelta_t` |
 | `bit_and`, `bit_or`, `bit_xor`, `invert` | `i64` |
 | `eq`, `ne` | Compatible values of an equality-comparable scalar type |
@@ -52,6 +56,60 @@ rejects zero raised to a negative exponent and negative bases with fractional ex
 value by a power of ten, rounds, and scales back. Floating-point scaling can affect the
 result: `round(2.675, 2)` returns `2.68`. It preserves non-finite values and the sign of
 zero.
+
+`divmod(lhs, rhs)` returns a fixed two-item TSL. Item 0 is the floor quotient and
+item 1 is the remainder, following `floordiv` and `mod`. Each item retains its
+resolved guarantee; the TSL root uses the ordinary guarantee. Integer operands
+must both be `i64`; floating operands must both be `double`.
+
+Shift counts must be nonnegative. A left shift by 64 or more returns zero; a right
+shift by 64 or more returns zero for a nonnegative value and -1 for a negative
+value. A negative shift count raises `domain_error` during evaluation. Python graph
+code can use `<<` and `>>`; both languages also provide `lshift` and `rshift`.
+
+`ln` computes the natural logarithm of a positive `double`; a nonpositive input
+raises `domain_error`. `sign` returns -1, 0, or 1 for `i64`. For `double`, it
+returns -1 or 1 for nonzero values, positive zero for either signed zero, and a NaN
+unchanged.
+
+Duration multiplication by `i64` wraps at the underlying i64 width. Multiplication
+or division by `double` rounds the resulting microseconds to nearest, ties to even.
+Division by `i64` uses integer arithmetic and the same tie rule. Dividing one
+duration by another returns the ratio as `double`; floor division returns the floor
+of that ratio as `i64`. Division by zero or a non-finite duration divisor raises
+`domain_error`; a non-finite or out-of-range scaled duration raises `overflow_error`.
+Floating duration scaling uses native `long double` intermediates, so halfway results
+can vary on platforms where `long double` has no more precision than `double`. For
+example, `5us * 0.1` can round to 0us there; this operation does not guarantee Python
+`timedelta` multiplication parity.
+
+### Temporal fields
+
+Use `getattr` to extract a time component from `date_time_t` or `timedelta_t`.
+The field name is a scalar known during wiring, so the graph uses a field-specific
+implementation:
+
+```python
+import datetime
+import hgraph as hg
+
+@hg.graph
+def year(value: hg.TS[datetime.datetime]) -> hg.TS[int]:
+    return hg.operators.getattr(value, hg.symbol("year"))
+```
+
+`date_time_t` supports `year`, `month`, `day`, `hour`, `minute`, `second`,
+`microsecond`, `weekday`, and `isoweekday`. `weekday` numbers Monday as 0;
+`isoweekday` numbers Monday as 1. Calendar fields use
+`std::chrono::year_month_day` and raise `out_of_range` when the timestamp's year
+is outside that type's range. Time-of-day and weekday fields support the full
+`date_time_t` representation. Python `datetime.datetime` values are timezone-naive
+UTC values.
+
+`timedelta_t` supports `days`, `seconds`, `microseconds`, and `total_seconds`.
+The first three fields use normalized components: for a negative duration, `days`
+is rounded down and `seconds` and `microseconds` are nonnegative. This matches
+Python `datetime.timedelta`.
 
 ### Integer bitwise operators
 
