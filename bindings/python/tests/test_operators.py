@@ -88,6 +88,32 @@ def test_extension_can_export_existing_and_sink_operators():
     hg.run_graph(sink)
 
 
+def test_exported_native_operator_accepts_python_node_and_graph_overloads():
+    @hg.compute_node(overloads=extension.optional_choice)
+    def text(value: hg.TS[str]) -> hg.TS[str]:
+        return "python:" + value.value
+
+    @hg.graph(overloads=extension.optional_choice)
+    def boolean(value: hg.TS[bool]) -> hg.TS[bool]:
+        return value
+
+    @hg.graph
+    def integer(value: hg.TS[int]) -> hg.TS[int]:
+        return extension.optional_choice(value)
+
+    @hg.graph
+    def text_graph(value: hg.TS[str]) -> hg.TS[str]:
+        return extension.optional_choice(value)
+
+    @hg.graph
+    def boolean_graph(value: hg.TS[bool]) -> hg.TS[bool]:
+        return extension.optional_choice(value)
+
+    assert hg.run_graph(integer, [1, 2]) == [11, 12]
+    assert hg.run_graph(text_graph, ["a", "b"]) == ["python:a", "python:b"]
+    assert hg.run_graph(boolean_graph, [True, False]) == [True, False]
+
+
 def test_wiring_point_methods_call_registered_operators_with_normal_arguments():
     @hg.graph
     def bound(value: hg.TS[int]) -> hg.TS[int]:

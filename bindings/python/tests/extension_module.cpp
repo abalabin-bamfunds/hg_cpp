@@ -349,7 +349,7 @@ const hg::Operator &invalidate_on_zero_operator() {
     return operation;
 }
 
-const hg::Operator &optional_choice_operator() {
+hg::Operator &optional_choice_operator() {
     static auto operation = hg::operator_<auto(hg::TS_T) -> hg::TS_T>{"optional_choice", {"value"}};
     static const auto &required = operation.overload(hg::node([](hg::In<hg::TS<hg::i64>> input,
                                                                  hg::Out<hg::TS<hg::i64>> output) {

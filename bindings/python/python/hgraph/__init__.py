@@ -27,6 +27,7 @@ from ._hg import (
     ScheduleHandle,
     _TimeSeriesGuarantee,
     WiringPoint as _WiringPoint,
+    _Operator,
     _Type,
     _make_graph,
     _make_node,
@@ -880,8 +881,18 @@ class OperatorDefinition:
 
 
 def _validate_overload_operator(overloads: Any) -> None:
-    if overloads is not None and not isinstance(overloads, OperatorDefinition):
-        raise TypeError("overloads must be a Python @operator definition")
+    if overloads is not None and not isinstance(overloads, (OperatorDefinition, _Operator)):
+        raise TypeError("overloads must be a Python @operator definition or an exported native operator")
+
+
+def _register_operator_overload(
+    overloads: OperatorDefinition | _Operator, definition: GraphDefinition | NodeDefinition
+) -> None:
+    if isinstance(overloads, OperatorDefinition):
+        overloads.overload(definition)
+    else:
+        overloads._register_overload(definition)
+        atexit.register(overloads._release_overload_owners)
 
 
 class _OperatorSpecialization:
@@ -1524,7 +1535,7 @@ def _native_type(annotation: Any) -> Any:
 def compute_node(
     function: Any = None, *, active: tuple[str, ...] | None = None,
     valid: tuple[str, ...] | None = None, all_valid: tuple[str, ...] | None = None,
-    overloads: OperatorDefinition | None = None,
+    overloads: OperatorDefinition | _Operator | None = None,
 ) -> Any:
     """Declare an input-driven node with optional input activity and validity selection."""
     _validate_overload_operator(overloads)
@@ -1532,7 +1543,7 @@ def compute_node(
     def decorate(callback: Any) -> NodeDefinition:
         definition = _define_node(callback, active=active, valid=valid, all_valid=all_valid)
         if overloads is not None:
-            overloads.overload(definition)
+            _register_operator_overload(overloads, definition)
         return definition
 
     return decorate if function is None else decorate(function)
@@ -1574,7 +1585,7 @@ def feedback_service_implementation(
 def node(
     function: Any = None, *, active: tuple[str, ...] | None = None,
     valid: tuple[str, ...] | None = None, all_valid: tuple[str, ...] | None = None,
-    overloads: OperatorDefinition | None = None,
+    overloads: OperatorDefinition | _Operator | None = None,
 ) -> Any:
     """Declare a scalar-or-time-series node with optional input activity and validity selection."""
     _validate_overload_operator(overloads)
@@ -1585,7 +1596,7 @@ def node(
             active=active, valid=valid, all_valid=all_valid,
         )
         if overloads is not None:
-            overloads.overload(definition)
+            _register_operator_overload(overloads, definition)
         return definition
 
     return decorate if function is None else decorate(function)
@@ -1655,7 +1666,7 @@ def generator(function: Any) -> NodeDefinition:
     return _define_node(function, generator=True)
 
 
-def graph(function: Any = None, *, overloads: OperatorDefinition | None = None) -> Any:
+def graph(function: Any = None, *, overloads: OperatorDefinition | _Operator | None = None) -> Any:
     """Declare a graph template composed from Python nodes and graph functions."""
     _validate_overload_operator(overloads)
 
@@ -1681,7 +1692,7 @@ def graph(function: Any = None, *, overloads: OperatorDefinition | None = None) 
         native = _make_graph(callback.__name__, parameters, output, graph_callback, lift_scalar_output)
         definition = GraphDefinition(callback, native, fixed_parameters, graph_callback, context_parameters)
         if overloads is not None:
-            overloads.overload(definition)
+            _register_operator_overload(overloads, definition)
         return definition
 
     return decorate if function is None else decorate(function)

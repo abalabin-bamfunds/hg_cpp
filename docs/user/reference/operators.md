@@ -59,8 +59,9 @@ Implementations registered before graph wiring participate in selection. C++ ext
 modules can also export native operators through `hg::python::export_operator`.
 
 Register an implementation when decorating it with `@node(overloads=operation)`,
-`@compute_node(overloads=operation)`, or `@graph(overloads=operation)`. These forms can
-be mixed with `@operation.overload`.
+`@compute_node(overloads=operation)`, or `@graph(overloads=operation)`. `overloads=` accepts a
+Python-declared operator or a mutable native operator exported to Python. These forms can be
+mixed with `@operation.overload` for Python-declared operators.
 
 See [C++ integration](../how-to/cpp-extension.md) for build and ownership rules. Do not
 register a conversion overload merely to hide an incompatible numeric expression;

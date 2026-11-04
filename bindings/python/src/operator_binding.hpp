@@ -22,7 +22,9 @@ namespace hg::python::details {
 class PythonOperator {
   public:
     explicit PythonOperator(const Operator &operation);
+    explicit PythonOperator(Operator &operation);
     PythonOperator(const Operator &operation, std::span<const Type *const> type_parameters);
+    PythonOperator(Operator &operation, std::span<const Type *const> type_parameters);
     PythonOperator(std::shared_ptr<Operator> operation, std::span<const Type *const> type_parameters);
     PythonOperator(const PythonOperator &other);
     PythonOperator &operator=(const PythonOperator &other);
@@ -36,6 +38,7 @@ class PythonOperator {
     PythonOperator map_type_arguments(nanobind::handle arguments) const;
     void set_owner(nanobind::handle owner);
     void register_overload(nanobind::handle owner);
+    void release_overload_owners() noexcept;
     std::string name() const;
 
   private:
@@ -43,7 +46,9 @@ class PythonOperator {
                           nanobind::kwargs named) const;
 
     const Operator *operation_;
+    Operator *mutable_operation_{};
     std::shared_ptr<Operator> owned_operation_;
+    std::shared_ptr<std::vector<Object>> overload_owners_;
     std::vector<const Type *> type_parameters_;
     TypeMap type_map_;
     std::optional<WeakObject> owner_;
