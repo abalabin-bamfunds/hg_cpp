@@ -1,0 +1,87 @@
+{
+  "started_utc": "2026-11-04T15:13:36.122651+00:00",
+  "checkout_revision": "aec316df15fdcb05e7d2c25d16796178bd0ae34e",
+  "engine_base_revision": "a2b97f570071a5a455b725004445f0664d1032b8",
+  "engine_diff_from_main": "",
+  "tracked_status_before_run": "M docs/development/benchmarks.md\n M docs/user/benchmarks.md",
+  "platform": "Linux-6.12.68-92.122.amzn2023.x86_64-x86_64-with-glibc2.34",
+  "libc": [
+    "glibc",
+    "2.34"
+  ],
+  "lscpu": "Architecture:                            x86_64\nCPU op-mode(s):                          32-bit, 64-bit\nAddress sizes:                           48 bits physical, 48 bits virtual\nByte Order:                              Little Endian\nCPU(s):                                  32\nOn-line CPU(s) list:                     0-31\nVendor ID:                               AuthenticAMD\nModel name:                              AMD EPYC 7R13 Processor\nCPU family:                              25\nModel:                                   1\nThread(s) per core:                      2\nCore(s) per socket:                      16\nSocket(s):                               1\nStepping:                                1\nBogoMIPS:                                5299.99\nFlags:                                   fpu vme de pse tsc msr pae mce cx8 apic sep mtrr pge mca cmov pat pse36 clflush mmx fxsr sse sse2 ht syscall nx mmxext fxsr_opt pdpe1gb rdtscp lm constant_tsc rep_good nopl xtopology nonstop_tsc cpuid extd_apicid aperfmperf tsc_known_freq pni pclmulqdq ssse3 fma cx16 pcid sse4_1 sse4_2 x2apic movbe popcnt aes xsave avx f16c rdrand hypervisor lahf_lm cmp_legacy cr8_legacy abm sse4a misalignsse 3dnowprefetch topoext ssbd ibrs ibpb stibp vmmcall fsgsbase bmi1 avx2 smep bmi2 invpcid rdseed adx smap clflushopt clwb sha_ni xsaveopt xsavec xgetbv1 clzero xsaveerptr rdpru wbnoinvd arat npt nrip_save vaes vpclmulqdq rdpid\nHypervisor vendor:                       KVM\nVirtualization type:                     full\nL1d cache:                               512 KiB (16 instances)\nL1i cache:                               512 KiB (16 instances)\nL2 cache:                                8 MiB (16 instances)\nL3 cache:                                64 MiB (2 instances)\nNUMA node(s):                            2\nNUMA node0 CPU(s):                       0-7,16-23\nNUMA node1 CPU(s):                       8-15,24-31\nVulnerability Gather data sampling:      Not affected\nVulnerability Indirect target selection: Not affected\nVulnerability Itlb multihit:             Not affected\nVulnerability L1tf:                      Not affected\nVulnerability Mds:                       Not affected\nVulnerability Meltdown:                  Not affected\nVulnerability Mmio stale data:           Not affected\nVulnerability Reg file data sampling:    Not affected\nVulnerability Retbleed:                  Not affected\nVulnerability Spec rstack overflow:      Mitigation; Safe RET\nVulnerability Spec store bypass:         Mitigation; Speculative Store Bypass disabled via prctl\nVulnerability Spectre v1:                Mitigation; usercopy/swapgs barriers and __user pointer sanitization\nVulnerability Spectre v2:                Mitigation; Retpolines; IBPB conditional; IBRS_FW; STIBP always-on; RSB filling; PBRSB-eIBRS Not affected; BHI Not affected\nVulnerability Srbds:                     Not affected\nVulnerability Tsa:                       Mitigation; Clear CPU buffers\nVulnerability Tsx async abort:           Not affected\nVulnerability Vmscape:                   Not affected",
+  "compiler": "c++ (conda-forge gcc 14.3.0-19) 14.3.0\nCopyright (C) 2024 Free Software Foundation, Inc.\nThis is free software; see the source for copying conditions.  There is NO\nwarranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.",
+  "cmake": "cmake version 4.3.4\n\nCMake suite maintained and supported by Kitware (kitware.com/cmake).",
+  "cmake_settings": [
+    "BUILD_TESTING:BOOL=OFF",
+    "CMAKE_BUILD_TYPE:STRING=Release",
+    "CMAKE_CXX_COMPILER:STRING=/home/abalabin/miniforge3/envs/bg-build/bin/c++",
+    "CMAKE_CXX_COMPILER_AR:FILEPATH=/home/abalabin/miniforge3/envs/bg-build/bin/gcc-ar",
+    "CMAKE_CXX_COMPILER_RANLIB:FILEPATH=/home/abalabin/miniforge3/envs/bg-build/bin/gcc-ranlib",
+    "CMAKE_CXX_FLAGS:STRING=",
+    "CMAKE_CXX_FLAGS_DEBUG:STRING=-g",
+    "CMAKE_CXX_FLAGS_MINSIZEREL:STRING=-Os -DNDEBUG",
+    "CMAKE_CXX_FLAGS_RELEASE:STRING=-O3 -DNDEBUG",
+    "CMAKE_CXX_FLAGS_RELWITHDEBINFO:STRING=-O2 -g -DNDEBUG",
+    "CMAKE_PREFIX_PATH:UNINITIALIZED=/home/abalabin/miniforge3/envs/bg-build",
+    "FETCHCONTENT_SOURCE_DIR_DDVISITOR:PATH=/home/abalabin/_bg/.lanes/python-node-labels/build/python/_deps/ddvisitor-src",
+    "FETCHCONTENT_SOURCE_DIR_QUILL:PATH=/home/abalabin/_bg/.lanes/python-node-labels/build/python/_deps/quill-src",
+    "FETCHCONTENT_SOURCE_DIR_TPACK:PATH=/home/abalabin/_bg/.lanes/python-node-labels/build/python/_deps/tpack-src",
+    "HG_BUILD_BENCHMARKS:BOOL=ON",
+    "HG_BUILD_PYTHON:BOOL=OFF",
+    "HG_BUILD_WEB:BOOL=OFF",
+    "ICU_ROOT:UNINITIALIZED=/home/abalabin/miniforge3/envs/bg-build",
+    "fmt_DIR:PATH=/home/abalabin/miniforge3/envs/bg-build/lib/cmake/fmt",
+    "CMAKE_CXX_COMPILER-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_COMPILER_AR-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_COMPILER_RANLIB-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_FLAGS-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_FLAGS_DEBUG-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_FLAGS_MINSIZEREL-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_FLAGS_RELEASE-ADVANCED:INTERNAL=1",
+    "CMAKE_CXX_FLAGS_RELWITHDEBINFO-ADVANCED:INTERNAL=1",
+    "CMAKE_GENERATOR:INTERNAL=Ninja",
+    "CMAKE_GENERATOR_INSTANCE:INTERNAL=",
+    "CMAKE_GENERATOR_PLATFORM:INTERNAL=",
+    "CMAKE_GENERATOR_TOOLSET:INTERNAL="
+  ],
+  "dependency_sources": {
+    "tpack": {
+      "revision": "6b813585c32af1c620bd095c6c24ea17045c4deb",
+      "tag": "v0.3.4"
+    },
+    "ddvisitor": {
+      "revision": "556565714502ccb0c2fd99c526dc15435479ef7f",
+      "tag": "v0.9.6"
+    },
+    "quill": {
+      "revision": "78c0696c5be589488d882c280796dfa06bdcd492",
+      "tag": "v13.1.0"
+    }
+  },
+  "compile_flags": "-O3 -DNDEBUG -std=c++23; shared library also uses -fPIC; no LTO",
+  "runtime_libraries": "linux-vdso.so.1 (0x00007fe0de403000)\n\tlibhg.so.0 => /home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/libhg.so.0 (0x00007fe0dd800000)\n\tlibfmt.so.12 => /home/abalabin/miniforge3/envs/bg-build/lib/libfmt.so.12 (0x00007fe0de384000)\n\tlibstdc++.so.6 => /home/abalabin/miniforge3/envs/bg-build/lib/libstdc++.so.6 (0x00007fe0dd400000)\n\tlibm.so.6 => /lib64/libm.so.6 (0x00007fe0de2a1000)\n\tlibgcc_s.so.1 => /home/abalabin/miniforge3/envs/bg-build/lib/libgcc_s.so.1 (0x00007fe0de272000)\n\tlibc.so.6 => /lib64/libc.so.6 (0x00007fe0dd1f7000)\n\t/lib64/ld-linux-x86-64.so.2 (0x00007fe0de405000)\n\tlibdl.so.2 => /lib64/libdl.so.2 (0x00007fe0de26d000)",
+  "sha256": {
+    "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark": "f18fab541132930da11dd83a40b15159780a4ef862cc5f8fbbfd4a0084f81cc9",
+    "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/libhg.so.0": "d6067b2f4943188aed30d6c1f7b2cd6558d9c5e695a01663b48a772b7e06529d",
+    "/home/abalabin/miniforge3/envs/bg-build/lib/libfmt.so.12": "fa42f34e50f78972727bba10ec8a53224f6f0f16ea9894e59bf17d4bc69fe66c",
+    "/home/abalabin/miniforge3/envs/bg-build/lib/libstdc++.so.6": "9581ad615b7c073423f57b69a3b148a89f8ea76fc909124211f9007909b807a6",
+    "/lib64/libm.so.6": "a4ba3d1c54d209fc3541fac47f8de8ea2293bb95b876dd4820b430af61833d7e",
+    "/home/abalabin/miniforge3/envs/bg-build/lib/libgcc_s.so.1": "e1e904051f77f9569c2ea53c83bb4083c26575e0fbd4010e46f1cb8b21037ad1",
+    "/lib64/libc.so.6": "c369ef07996c64bebe781176323170fe42e0cf83d4bcb4e7bce2860bcb8f9ae8",
+    "/lib64/ld-linux-x86-64.so.2": "47a5ee38bf8b4a04d125f0da8420a78ce4b6fff0bde9a7cf49cb9aefd1f69548",
+    "/lib64/libdl.so.2": "e36bd87e03dc6dd015d64b809734d27e9e8d4d1698b27d0a21f4a9e075c8aed4"
+  },
+  "cpu": 31,
+  "sizes": [
+    10000,
+    100000,
+    1000000
+  ],
+  "processes_per_size_and_mode": 3,
+  "samples_per_update_kind_and_process": 100,
+  "lifecycle_pairs_per_process": 100,
+  "warmup": "No discarded evaluation cycles; two separate 10k smoke processes run first and are excluded.",
+  "aggregation": "Median of three process medians per update kind. Initialization and RSS use medians across processes.",
+  "finished_utc": "2026-11-04T15:13:46.111167+00:00"
+}
