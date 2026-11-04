@@ -22,8 +22,7 @@ HG_PYTHON_API void export_operator(
 // `receiver_type` and `operation` must remain alive for the process lifetime. Repeated registrations of the same
 // name, receiver type, and operator are idempotent. A method name cannot refer to different operators.
 // Calling the bound method prepends the receiver and passes remaining positional and keyword arguments to the operator.
-HG_PYTHON_API void register_wiring_method(const Type &receiver_type, std::string_view name,
-                                         const Operator &operation);
+HG_PYTHON_API void register_wiring_method(const Type &receiver_type, std::string_view name, Operator &operation);
 
 template <typename Operation>
     requires(!std::is_const_v<Operation> && requires(const Operation &operation) {
