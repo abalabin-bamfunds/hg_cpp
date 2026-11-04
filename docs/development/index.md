@@ -62,3 +62,4 @@ history and are marked `superseded`.
 - [hgraph mesh settling sweep, 2026-11-03](reports/hgraph-mesh-settling-sweep-2026-11-03.md): dependency expansion, retargeting, and branch lifecycle.
 - [hgraph timed lifecycle sweep, 2026-11-03](reports/hgraph-timed-lifecycle-sweep-2026-11-03.md): pending work across branch removal and recreation.
 - [hgraph dispatch composition sweep, 2026-11-03](reports/hgraph-dispatch-composition-sweep-2026-11-03.md): mapped runtime types, structured outputs, and inherited context.
+- [hgraph structured outputs and mapped timers sweep, 2026-11-04](reports/hgraph-composition-sweep-2026-11-04.md): structured mesh outputs, dispatch collection validity, and mapped periodic sources.

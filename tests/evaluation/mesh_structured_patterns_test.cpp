@@ -163,6 +163,7 @@ TEST_CASE("mesh TSL output removes and recreates a branch",
           "[feature:mesh][feature:nested-graph][series:tsd][series:fixed-tsl]"
           "[definition:function][transition:removal][transition:addition][transition:lifecycle]") {
     const auto add_one = node([](i64 value) { return value + 1; });
+
     const auto child = graph("name"_n = "mesh_list_lifecycle_child",
                              [add_one](wp<TS<i64>> value) { return tsl(value, add_one(value)); });
 

@@ -16,6 +16,7 @@ TEST_CASE("mapped schedules keep independent start times",
     const auto schedule = graph([] {
         return operators::schedule(timedelta_t{2}, true, i64{2});
     });
+
     const auto copy = node([](In<TSD<i64, TS<bool>>> input, Out<TSD<i64, TS<bool>>> output) {
         output.copy_tick(input);
     });
@@ -59,6 +60,7 @@ TEST_CASE("mapped schedule removal cancels its timer and recreation starts a new
     const auto schedule = graph([] {
         return operators::schedule(timedelta_t{2}, true, i64{2});
     });
+
     const auto copy = node([](In<TSD<i64, TS<bool>>> input, Out<TSD<i64, TS<bool>>> output) {
         output.copy_tick(input);
     });
@@ -84,6 +86,7 @@ TEST_CASE("mapped resampling keeps per-key clocks",
     const auto resample = [](wp<TS<i64>> value) {
         return operators::resample(value, timedelta_t{2});
     };
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });
@@ -110,6 +113,7 @@ TEST_CASE("mapped resampling observes an input update on its timer",
     const auto resample = [](wp<TS<i64>> value) {
         return operators::resample(value, timedelta_t{2});
     };
+
     const auto copy = node([](In<TSD<i64, TS<i64>>> input, Out<TSD<i64, TS<i64>>> output) {
         output.copy_tick(input);
     });

@@ -29,7 +29,8 @@ TEST_CASE("dispatch preserves a shared value across reference path changes",
 
     const auto derived_case = graph([](wp<TS<Bundle<DispatchValidityDerived>>>, wp<TS<i64>> value) { return value; });
 
-    const auto choose = dispatch_<auto(TS<Bundle<DispatchValidityBase>>, TS<i64>)->TS<i64>>{base_case, derived_case};
+    const auto choose = dispatch_<auto(TS<Bundle<DispatchValidityBase>>, TS<i64>) -> TS<i64>>{
+        base_case, derived_case};
 
     auto memory = allocator{};
     const auto base = bundle<DispatchValidityBase>(memory, symbol{"base"});
@@ -51,11 +52,11 @@ TEST_CASE("dispatch preserves partial bundle fields through invalidation and typ
           "[feature:dispatch][feature:validity][feature:invalidation][series:tsb][schema:named]"
           "[representation:free][representation:native][binding:covariant][validity:optional]"
           "[transition:update][transition:invalidation][transition:revalidation]") {
-    const auto pack =
-        node([](In<TS<i64>, optional> left, In<TS<i64>, optional> right, Out<TSB<DispatchValidityBundle>> output) {
-            output->left.copy_tick(left);
-            output->right.copy_tick(right);
-        });
+    const auto pack = node([](In<TS<i64>, optional> left, In<TS<i64>, optional> right,
+                              Out<TSB<DispatchValidityBundle>> output) {
+        output->left.copy_tick(left);
+        output->right.copy_tick(right);
+    });
 
     const auto free_case = graph([](wp<TS<Bundle<DispatchValidityBase>>>, wp<TS<i64>> left, wp<TS<i64>> right) {
         return bundle<TSB<DispatchValidityBundle>>("left"_n = left, "right"_n = right);
@@ -65,9 +66,8 @@ TEST_CASE("dispatch preserves partial bundle fields through invalidation and typ
         return pack(opt(left), opt(right));
     });
 
-    const auto choose =
-        dispatch_<auto(TS<Bundle<DispatchValidityBase>>, TS<i64>, TS<i64>)->TSB<DispatchValidityBundle>>{free_case,
-                                                                                                         native_case};
+    const auto choose = dispatch_<auto(TS<Bundle<DispatchValidityBase>>, TS<i64>, TS<i64>)
+                                      -> TSB<DispatchValidityBundle>>{free_case, native_case};
 
     const auto copy = node([](In<TSB<DispatchValidityBundle>> input, Out<TSB<DispatchValidityBundle>> output) {
         output.copy_tick(input);
@@ -111,8 +111,8 @@ TEST_CASE("dispatch preserves partial fixed-list items through invalidation and 
         return pack(opt(first), opt(second));
     });
 
-    const auto choose =
-        dispatch_<auto(TS<Bundle<DispatchValidityBase>>, TS<i64>, TS<i64>)->TSL<TS<i64>, 2>>{free_case, native_case};
+    const auto choose = dispatch_<auto(TS<Bundle<DispatchValidityBase>>, TS<i64>, TS<i64>)
+                                      -> TSL<TS<i64>, 2>>{free_case, native_case};
 
     const auto copy = node([](In<TSL<TS<i64>, 2>> input, Out<TSL<TS<i64>, 2>> output) { output.copy_tick(input); });
 
