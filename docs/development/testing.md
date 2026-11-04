@@ -553,6 +553,10 @@ graph compilation or evaluation.
 - mapped TSD unions, selected key sets, per-key inner graph evaluation, scheduling, and lifecycle
 - scalar Dict snapshots mapped to per-key graphs: unchanged values, additions, removals, invalidation,
   revalidation, and branch re-creation
+- scalar Dict mapping through reference changes, nested graphs, and switches; per-key state
+  across equal snapshots and mixed scalar Dict and TSD sources
+- collection fields projected from mapped bundles: late explicit keys, stable field references,
+  nested removals and invalidation, and aliased fields
 - inner graph input reference guarantees, generic and explicitly typed map
   functions, reference-bound collections, and mapped item replacement while
   another input keeps the inner graph alive
@@ -567,6 +571,8 @@ graph compilation or evaluation.
 - dispatch collection output validity, partial field and item updates, invalidation and revalidation,
   and held values across concrete runtime type changes
 - service request deduplication, invalidation, nested graph binding propagation, provider ordering, and client removal
+- structured service replies: partial field updates, native and free field references,
+  independent clients, late subscribers, and client removal and recreation
 - service request sinks dispatching work to a background thread and returning queued replies during realtime execution
 
 ### Time series references

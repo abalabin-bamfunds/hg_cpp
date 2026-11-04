@@ -252,6 +252,8 @@ add_executable(
     library/string_format_test.cpp
     library/log_test.cpp
     library/map_dict_test.cpp
+    library/map_dict_composition_patterns_test.cpp
+    library/map_projection_patterns_test.cpp
     value/scalar/test_scalar_provider.cpp
     library/tick_selection_test.cpp
     library/timed_test.cpp
@@ -261,7 +263,8 @@ add_executable(
     library/tsd_transform_test.cpp
     library/service_patterns_test.cpp
     library/service_composition_test.cpp
-    library/service_specialization_patterns_test.cpp)
+    library/service_specialization_patterns_test.cpp
+    library/service_structured_patterns_test.cpp)
 target_link_libraries(hg_library_tests PRIVATE hg::library Catch2::Catch2WithMain)
 target_compile_options(hg_library_tests PRIVATE $<$<CXX_COMPILER_ID:MSVC>:/bigobj> $<$<CXX_COMPILER_ID:MSVC>:/utf-8>)
 catch_discover_tests(hg_library_tests DISCOVERY_MODE PRE_TEST)

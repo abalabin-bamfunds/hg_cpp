@@ -454,6 +454,68 @@ TEST_CASE("collapse_keys and uncollapse_keys preserve nested collection deltas",
               .equals({{{1, {{"a", 5}, {"b", 6}}}}, {{1, {{"a", literal::REMOVE}}}}}));
 }
 
+TEST_CASE("optional sum over collapsed nested dictionaries follows invalidation through references",
+          "[feature:operator][feature:reference][series:tsd][shape:nested]"
+          "[transition:invalidation][transition:revalidation]") {
+    const auto materialize = node([](In<TSD<Tuple<string, i64>, TS<i64>>> input,
+                                     Out<TSD<Tuple<string, i64>, TS<i64>>> output) {
+        output.copy_tick(input);
+    });
+
+    const auto direct = [](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+        return operators::sum_(opt(operators::collapse_keys(values)));
+    };
+
+    const auto flatten_direct = [&](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+        return materialize(operators::collapse_keys(values));
+    };
+
+    const auto wrap = graph("name"_n = "wrap_nested_dictionary", [](wp<TSD<i64, TS<i64>>> values) {
+        return bundle<NestedDictionaryBundle>("values"_n = values, "marker"_n = operators::const_(i64{1}));
+    });
+
+    const auto project = graph("name"_n = "project_nested_dictionary",
+                               [](wp<TSB<NestedDictionaryBundle>> row) { return row->values; });
+
+    const auto projected = [&](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+        return operators::sum_(opt(operators::collapse_keys(map(project, map(wrap, values)))));
+    };
+
+    const auto flatten_projected = [&](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+        return materialize(operators::collapse_keys(map(project, map(wrap, values))));
+    };
+    const auto history = ticks({{{"A", {{1, 10}, {2, 20}}}, {"B", {{7, 70}}}},
+                                {{"A", literal::INVALID}},
+                                {{"A", {{3, 11}, {4, 22}}}}});
+
+    CHECK(hg::run_graph(direct, history).equals<i64>({100, 70, 103}));
+    CHECK(hg::run_graph(projected, history).equals<i64>({100, 70, 103}));
+    CHECK(hg::run_graph(flatten_direct, history)
+              .equals({{{{"A", 1}, 10}, {{"A", 2}, 20}, {{"B", 7}, 70}},
+                       {{{"A", 1}, literal::REMOVE}, {{"A", 2}, literal::REMOVE}},
+                       {{{"A", 3}, 11}, {{"A", 4}, 22}}}));
+    CHECK(hg::run_graph(flatten_projected, history)
+              .equals({{{{"A", 1}, 10}, {{"A", 2}, 20}, {{"B", 7}, 70}},
+                       {{{"A", 1}, literal::REMOVE}, {{"A", 2}, literal::REMOVE}},
+                       {{{"A", 3}, 11}, {{"A", 4}, 22}}}));
+}
+
+TEST_CASE("collapse_keys retains an invalid scalar leaf as an invalid item",
+          "[feature:operator][feature:reference][series:tsd][shape:nested][transition:invalidation]") {
+    const auto inspect = node([](In<TSD<Tuple<string, i64>, TS<i64>>> input) {
+        auto sole_item_is_invalid = false;
+        input.for_each_key_value([&](const auto &, const auto &value) { sole_item_is_invalid = !value.valid(); });
+        return input.size() == 1 && sole_item_is_invalid;
+    });
+
+    const auto graph = [&](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
+        return inspect(operators::collapse_keys(values));
+    };
+    const auto history = ticks({{{"A", {{1, 10}}}}, {{"A", {{1, literal::INVALID}}}}});
+
+    CHECK(hg::run_graph(graph, history).equals<bool>({false, true}));
+}
+
 TEST_CASE("nested map projection preserves the final inner key removal",
           "[feature:map][feature:nested-graph][feature:reference][series:tsd][series:tsb]"
           "[shape:doubly-nested][transition:removal]") {

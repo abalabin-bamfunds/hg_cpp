@@ -68,7 +68,7 @@ TEST_CASE("switch accepts case graphs with inferred output types",
 
 TEST_CASE("switch retains node templates captured by a generic case function",
           "[feature:switch][feature:nested-graph][feature:operator][series:value]"
-          "[definition:function][lifetime:capture]") {
+          "[definition:function]") {
     const auto increment = node([](i64 value) { return value + 1; });
 
     const auto tested = [increment](wp<TS<i64>> key, wp<TS<i64>> value) {
@@ -80,7 +80,7 @@ TEST_CASE("switch retains node templates captured by a generic case function",
 
 TEST_CASE("switch retains node templates captured by a move-only graph case",
           "[feature:switch][feature:nested-graph][feature:operator][series:value]"
-          "[definition:graph][lifetime:capture][lifetime:move-only]") {
+          "[definition:function]") {
     const auto increment = node([](i64 value) { return value + 1; });
 
     const auto tested = [increment](wp<TS<i64>> key, wp<TS<i64>> value) {
