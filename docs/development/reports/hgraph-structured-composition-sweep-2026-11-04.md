@@ -138,6 +138,10 @@ regressions, declaration identity, and isolated logging tests. This run uses the
 correction on `d334ad217`; the 16 composition cases above are checked by the
 Release runners. The Debug build uses matching ICU 78.3 headers and libraries.
 
+After rebasing onto `9def2e896`, the full Debug C++ suite passes all 3,301 CTest
+tests. This run includes all 18 added cases and the numeric, temporal, and core
+runtime changes merged since the initial sweep.
+
 Two existing switch tests used undocumented coverage tags. Their tags now use
 the documented `definition:function` value and omit the unsupported `lifetime`
 dimension. Their assertions are unchanged. Structured tags validate for all
