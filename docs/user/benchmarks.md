@@ -4,15 +4,16 @@ These benchmarks help estimate the cost of maintaining a graph as inputs change,
 handling queued events, and processing tables or network messages. Each workload
 measures a particular execution path; choose the one closest to your application.
 
-This page collects measurements recorded through **4 November 2026**. They describe
-the revisions and environments stated below. They have not been rerun for this
-documentation update. Lower times and memory use are better; higher throughput is better.
+These measurements were recorded between **17 October and 4 November 2026**.
+Each section identifies the source revisions and environments used.
+Lower times and memory use are better; higher throughput is better.
 The median is the middle observation, and p95 or p99 describes the upper tail of
 the measured samples. Observed latencies do not establish a maximum delivery time.
 
 | Application need | Relevant measurements |
 | --- | --- |
 | Many independent calculations with sparse changes | [Mapped graphs](#mapped-graphs) |
+| One aggregate across a changing dictionary | [Reduction](#reduction) |
 | External events and real-time delivery | [Queues](#queues) |
 | Running totals and grouped tables | [Frame aggregation](#frame-aggregation) |
 | HTTP or WebSocket graph services | [Web extension](#web-extension) |
@@ -58,6 +59,68 @@ storage. Some memory samples came from matching reruns. Python adapters use
 different timing boundaries, so precise cross-engine ratios need care. These are
 single runs under uncontrolled host contention; repeat runs would be needed to
 estimate run-to-run variation.
+
+## Reduction
+
+When a single result combines many changing dictionary items, `reduce` maintains
+that result by updating the affected parts of a reduction tree. This benchmark
+sums a native `TSD<i64, TS<i64>>` through a reducer graph containing one addition
+node. See [custom aggregation](guide/graphs/aggregation.md#custom-aggregation) for
+the authoring pattern.
+
+Each run populates the dictionary, then measures single-item updates, updates to
+1% of the items, and removal and restoration of 1% of the items. Update times cover
+the complete graph evaluation, including source mutation, reduction, result
+validation, publication, and cleanup.
+
+### Updates and membership changes
+
+Times are **microseconds per evaluation**. A 1% change affects 100, 1,000, or
+10,000 items at the respective dictionary sizes.
+
+| Items | Path | One-item update | 1% update | 1% removal | 1% restoration |
+| --- | --- | ---: | ---: | ---: | ---: |
+| 10,000 | Reduce | 7.23 | 45.19 | 23.56 | 68.80 |
+| 10,000 | Source only | 0.68 | 11.16 | 8.01 | 20.63 |
+| 100,000 | Reduce | 16.57 | 446.97 | 210.57 | 641.98 |
+| 100,000 | Source only | 3.45 | 182.27 | 77.46 | 193.68 |
+| 1,000,000 | Reduce | 95.20 | 4,649.72 | 2,037.53 | 6,592.58 |
+| 1,000,000 | Source only | 27.82 | 1,060.56 | 784.74 | 1,973.19 |
+
+The source-only control applies the same changes to the same dictionary type
+without a reduction or result observer. Its timings show the input-handling cost;
+subtracting the two medians does not isolate reducer execution.
+
+### Initial population and memory
+
+These figures include the source dictionary and reduction. Population time covers
+the first evaluation; the RSS increase is resident memory after population minus
+resident memory with the empty runtime.
+
+| Items | Population, ms | Populated RSS increase, MiB |
+| --- | ---: | ---: |
+| 10,000 | 10.47 | 1.72 |
+| 100,000 | 78.34 | 15.18 |
+| 1,000,000 | 733.02 | 149.32 |
+
+RSS includes allocator effects and does not isolate reducer storage. It is sampled
+before update cycles, so later memory peaks are excluded.
+
+### Measurement conditions
+
+The **4 November 2026** run used engine and harness `a2b97f570`, GCC 14.3.0 Release
+without LTO, and an AMD EPYC 7R13 Linux KVM VM with affinity to CPU 31. Three fresh
+processes per size and path each measured 100 single-item updates, 100 bursts, and
+100 remove/restore pairs, with no discarded warmup cycles. Update figures are
+medians of three process medians; population and RSS figures are medians across
+the three reduction processes. Every reduction process matched all 401 expected
+aggregate outputs. Source-only processes checked source completion.
+
+Host contention was uncontrolled. At 10,000 items, the three single-item reduction
+medians ranged from 4.62 to 9.13 µs; at 1,000,000 items, they ranged from 93.11 to
+95.22 µs. These measurements cover valid native scalar items with a one-node
+reducer; references, validity changes, and larger reducer graphs need separate
+measurements.
 
 ## Queues
 
@@ -257,6 +320,16 @@ build/benchmark/benchmarks/hg_queue_realtime_benchmark --quick
 
 The small runs validate the harnesses. The full map workload uses
 `build/benchmark/benchmarks/hg_high_count_map_benchmark --profile 250k --cycles 10000`.
+For reduction, these commands measure 100 single-item updates, 100 bursts, and
+100 remove/restore pairs at 100,000 items. Repeat with `--size 10000` and
+`--size 1000000` for the other sizes above:
+
+```sh
+cmake --build --preset benchmark --target hg_reduce_benchmark
+build/benchmark/benchmarks/hg_reduce_benchmark --size 100000 --samples 100 --lifecycle-rounds 100
+build/benchmark/benchmarks/hg_reduce_benchmark --size 100000 --mode source --samples 100 --lifecycle-rounds 100
+```
+
 On Linux, `taskset -c <available-cpu>` can pin a run. The HG Python
 adapter requires a matching Release Python extension and accepts the same profile
 and cycle arguments:

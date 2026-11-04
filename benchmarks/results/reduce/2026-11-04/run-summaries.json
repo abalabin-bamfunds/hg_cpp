@@ -1,0 +1,2232 @@
+[
+  {
+    "repeat": 0,
+    "smoke": true,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "source",
+      "--samples",
+      "2",
+      "--lifecycle-rounds",
+      "1"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.285385+00:00",
+      "loadavg": "23.70 25.80 25.53 25/3965 87",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593809519\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.301375+00:00",
+      "loadavg": "23.70 25.80 25.53 20/3971 88",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593809700\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.015969000000040978,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 2,
+        "burst_ticks": 2,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 1,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 169966,
+        "runtime_construction": 10331,
+        "runtime_start": 33913,
+        "initial_population": 3842393,
+        "sparse_one_key": {
+          "count": 2,
+          "total_ns": 10891,
+          "mean_ns": 5445.5,
+          "min_ns": 2430,
+          "median_ns": 2430,
+          "p95_ns": 8461,
+          "p99_ns": 8461,
+          "max_ns": 8461
+        },
+        "burst_1_percent": {
+          "count": 2,
+          "total_ns": 39564,
+          "mean_ns": 19782.0,
+          "min_ns": 19452,
+          "median_ns": 19452,
+          "p95_ns": 20112,
+          "p99_ns": 20112,
+          "max_ns": 20112
+        },
+        "remove_1_percent": {
+          "count": 1,
+          "total_ns": 15181,
+          "mean_ns": 15181.0,
+          "min_ns": 15181,
+          "median_ns": 15181,
+          "p95_ns": 15181,
+          "p99_ns": 15181,
+          "max_ns": 15181
+        },
+        "restore_1_percent": {
+          "count": 1,
+          "total_ns": 38494,
+          "mean_ns": 38494.0,
+          "min_ns": 38494,
+          "median_ns": 38494,
+          "p95_ns": 38494,
+          "p99_ns": 38494,
+          "max_ns": 38494
+        },
+        "final_stop": 13571
+      },
+      "memory_bytes": {
+        "before_graph": 11853824,
+        "after_compile": 12533760,
+        "empty_runtime": 12730368,
+        "populated": 13230080,
+        "peak_rss": 38621184,
+        "after_stop": 13230080,
+        "populated_runtime_delta_including_tsd": 499712,
+        "populated_runtime_bytes_per_item_including_tsd": 49.97
+      },
+      "checksum": {
+        "expected_count": 7,
+        "expected_sum": 645995940541690178,
+        "expected_xor": 14773940647283050196,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 0,
+    "smoke": true,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "2",
+      "--lifecycle-rounds",
+      "1"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.301927+00:00",
+      "loadavg": "23.70 25.80 25.53 19/3970 88",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593809700\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.321430+00:00",
+      "loadavg": "23.70 25.80 25.53 18/3977 89",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593809736\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.01958439199370332,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 2,
+        "burst_ticks": 2,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 1,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 655671,
+        "runtime_construction": 10281,
+        "runtime_start": 51335,
+        "initial_population": 8551058,
+        "sparse_one_key": {
+          "count": 2,
+          "total_ns": 30353,
+          "mean_ns": 15176.5,
+          "min_ns": 7670,
+          "median_ns": 7670,
+          "p95_ns": 22683,
+          "p99_ns": 22683,
+          "max_ns": 22683
+        },
+        "burst_1_percent": {
+          "count": 2,
+          "total_ns": 96099,
+          "mean_ns": 48049.5,
+          "min_ns": 47074,
+          "median_ns": 47074,
+          "p95_ns": 49025,
+          "p99_ns": 49025,
+          "max_ns": 49025
+        },
+        "remove_1_percent": {
+          "count": 1,
+          "total_ns": 29573,
+          "mean_ns": 29573.0,
+          "min_ns": 29573,
+          "median_ns": 29573,
+          "p95_ns": 29573,
+          "p99_ns": 29573,
+          "max_ns": 29573
+        },
+        "restore_1_percent": {
+          "count": 1,
+          "total_ns": 78257,
+          "mean_ns": 78257.0,
+          "min_ns": 78257,
+          "median_ns": 78257,
+          "p95_ns": 78257,
+          "p99_ns": 78257,
+          "max_ns": 78257
+        },
+        "final_stop": 14382
+      },
+      "memory_bytes": {
+        "before_graph": 11825152,
+        "after_compile": 12681216,
+        "empty_runtime": 12877824,
+        "populated": 14684160,
+        "peak_rss": 38621184,
+        "after_stop": 14684160,
+        "populated_runtime_delta_including_tsd": 1806336,
+        "populated_runtime_bytes_per_item_including_tsd": 180.63
+      },
+      "checksum": {
+        "expected_count": 7,
+        "expected_sum": 645995940541690178,
+        "expected_xor": 14773940647283050196,
+        "actual_count": 7,
+        "actual_sum": 645995940541690178,
+        "actual_xor": 14773940647283050196,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 1,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.322019+00:00",
+      "loadavg": "23.70 25.80 25.53 19/3977 89",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593809736\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.358037+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3953 90",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593811064\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.03609101101756096,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 589714,
+        "runtime_construction": 10601,
+        "runtime_start": 53765,
+        "initial_population": 10840347,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 721550,
+          "mean_ns": 7215.5,
+          "min_ns": 4161,
+          "median_ns": 7231,
+          "p95_ns": 9881,
+          "p99_ns": 18081,
+          "max_ns": 29592
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 4645023,
+          "mean_ns": 46450.23,
+          "min_ns": 42304,
+          "median_ns": 44884,
+          "p95_ns": 58216,
+          "p99_ns": 74476,
+          "max_ns": 77707
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 2424438,
+          "mean_ns": 24244.38,
+          "min_ns": 20072,
+          "median_ns": 23562,
+          "p95_ns": 33263,
+          "p99_ns": 37264,
+          "max_ns": 37943
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 6956168,
+          "mean_ns": 69561.68,
+          "min_ns": 58846,
+          "median_ns": 67236,
+          "p95_ns": 84668,
+          "p99_ns": 103959,
+          "max_ns": 156374
+        },
+        "final_stop": 17012
+      },
+      "memory_bytes": {
+        "before_graph": 11862016,
+        "after_compile": 12722176,
+        "empty_runtime": 12918784,
+        "populated": 14721024,
+        "peak_rss": 38621184,
+        "after_stop": 14729216,
+        "populated_runtime_delta_including_tsd": 1802240,
+        "populated_runtime_bytes_per_item_including_tsd": 180.22
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5654964329622434629,
+        "expected_xor": 9069170971717905939,
+        "actual_count": 401,
+        "actual_sum": 5654964329622434629,
+        "actual_xor": 9069170971717905939,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 1,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.358613+00:00",
+      "loadavg": "23.70 25.80 25.53 17/3953 90",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593811064\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.374806+00:00",
+      "loadavg": "23.70 25.80 25.53 17/3963 91",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593811118\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.016273318004095927,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 122152,
+        "runtime_construction": 7861,
+        "runtime_start": 30993,
+        "initial_population": 2340715,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 90008,
+          "mean_ns": 900.08,
+          "min_ns": 640,
+          "median_ns": 750,
+          "p95_ns": 1680,
+          "p99_ns": 2101,
+          "max_ns": 8120
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 1668393,
+          "mean_ns": 16683.93,
+          "min_ns": 10961,
+          "median_ns": 17792,
+          "p95_ns": 20582,
+          "p99_ns": 21032,
+          "max_ns": 34863
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 976749,
+          "mean_ns": 9767.49,
+          "min_ns": 7870,
+          "median_ns": 7971,
+          "p95_ns": 14981,
+          "p99_ns": 15721,
+          "max_ns": 16402
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 2446570,
+          "mean_ns": 24465.7,
+          "min_ns": 19991,
+          "median_ns": 20432,
+          "p95_ns": 37133,
+          "p99_ns": 38984,
+          "max_ns": 39683
+        },
+        "final_stop": 17182
+      },
+      "memory_bytes": {
+        "before_graph": 11866112,
+        "after_compile": 12546048,
+        "empty_runtime": 12742656,
+        "populated": 13246464,
+        "peak_rss": 38621184,
+        "after_stop": 13254656,
+        "populated_runtime_delta_including_tsd": 503808,
+        "populated_runtime_bytes_per_item_including_tsd": 50.38
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5654964329622434629,
+        "expected_xor": 9069170971717905939,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 2,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.375411+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3963 91",
+      "cpu_pressure": "some avg10=12.68 avg60=13.16 avg300=9.08 total=9593811118\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.391992+00:00",
+      "loadavg": "23.70 25.80 25.53 19/3968 92",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593811150\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.016699896979844198,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 112351,
+        "runtime_construction": 6400,
+        "runtime_start": 22002,
+        "initial_population": 2341585,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 77106,
+          "mean_ns": 771.06,
+          "min_ns": 640,
+          "median_ns": 680,
+          "p95_ns": 800,
+          "p99_ns": 1260,
+          "max_ns": 7021
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 1138976,
+          "mean_ns": 11389.76,
+          "min_ns": 11051,
+          "median_ns": 11131,
+          "p95_ns": 11591,
+          "p99_ns": 12951,
+          "max_ns": 28413
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 1135190,
+          "mean_ns": 11351.9,
+          "min_ns": 7991,
+          "median_ns": 8631,
+          "p95_ns": 15932,
+          "p99_ns": 16082,
+          "max_ns": 16671
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 2975236,
+          "mean_ns": 29752.36,
+          "min_ns": 20152,
+          "median_ns": 21792,
+          "p95_ns": 39034,
+          "p99_ns": 40944,
+          "max_ns": 186467
+        },
+        "final_stop": 17022
+      },
+      "memory_bytes": {
+        "before_graph": 11862016,
+        "after_compile": 12541952,
+        "empty_runtime": 12738560,
+        "populated": 13242368,
+        "peak_rss": 38621184,
+        "after_stop": 13250560,
+        "populated_runtime_delta_including_tsd": 503808,
+        "populated_runtime_bytes_per_item_including_tsd": 50.38
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5654964329622434629,
+        "expected_xor": 9069170971717905939,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 2,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.393042+00:00",
+      "loadavg": "23.70 25.80 25.53 19/3968 92",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593811150\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.434262+00:00",
+      "loadavg": "23.70 25.80 25.53 17/3943 93",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812004\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.04126297699986026,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 420099,
+        "runtime_construction": 7711,
+        "runtime_start": 37993,
+        "initial_population": 10465812,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 959468,
+          "mean_ns": 9594.68,
+          "min_ns": 7431,
+          "median_ns": 9131,
+          "p95_ns": 11521,
+          "p99_ns": 12761,
+          "max_ns": 41154
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 5673511,
+          "mean_ns": 56735.11,
+          "min_ns": 42494,
+          "median_ns": 46014,
+          "p95_ns": 79137,
+          "p99_ns": 95039,
+          "max_ns": 107580
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 3563914,
+          "mean_ns": 35639.14,
+          "min_ns": 20032,
+          "median_ns": 37454,
+          "p95_ns": 42064,
+          "p99_ns": 55805,
+          "max_ns": 87668
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 10068529,
+          "mean_ns": 100685.29,
+          "min_ns": 58065,
+          "median_ns": 109080,
+          "p95_ns": 120751,
+          "p99_ns": 127942,
+          "max_ns": 131682
+        },
+        "final_stop": 19442
+      },
+      "memory_bytes": {
+        "before_graph": 11837440,
+        "after_compile": 12693504,
+        "empty_runtime": 12890112,
+        "populated": 14688256,
+        "peak_rss": 38621184,
+        "after_stop": 14688256,
+        "populated_runtime_delta_including_tsd": 1798144,
+        "populated_runtime_bytes_per_item_including_tsd": 179.81
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5654964329622434629,
+        "expected_xor": 9069170971717905939,
+        "actual_count": 401,
+        "actual_sum": 5654964329622434629,
+        "actual_xor": 9069170971717905939,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 3,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.434884+00:00",
+      "loadavg": "23.70 25.80 25.53 14/3941 93",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812004\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.466222+00:00",
+      "loadavg": "23.70 25.80 25.53 12/3938 94",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812028\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.0314210020005703,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 428800,
+        "runtime_construction": 6081,
+        "runtime_start": 34753,
+        "initial_population": 7101793,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 545470,
+          "mean_ns": 5454.7,
+          "min_ns": 3820,
+          "median_ns": 4621,
+          "p95_ns": 8641,
+          "p99_ns": 20992,
+          "max_ns": 24503
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 4608310,
+          "mean_ns": 46083.1,
+          "min_ns": 42744,
+          "median_ns": 45194,
+          "p95_ns": 53615,
+          "p99_ns": 70706,
+          "max_ns": 75317
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 2436924,
+          "mean_ns": 24369.24,
+          "min_ns": 19862,
+          "median_ns": 23302,
+          "p95_ns": 34423,
+          "p99_ns": 39454,
+          "max_ns": 42984
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 7025820,
+          "mean_ns": 70258.2,
+          "min_ns": 57815,
+          "median_ns": 68796,
+          "p95_ns": 87758,
+          "p99_ns": 100989,
+          "max_ns": 105780
+        },
+        "final_stop": 17942
+      },
+      "memory_bytes": {
+        "before_graph": 11866112,
+        "after_compile": 12722176,
+        "empty_runtime": 12918784,
+        "populated": 14721024,
+        "peak_rss": 38621184,
+        "after_stop": 14729216,
+        "populated_runtime_delta_including_tsd": 1802240,
+        "populated_runtime_bytes_per_item_including_tsd": 180.22
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5654964329622434629,
+        "expected_xor": 9069170971717905939,
+        "actual_count": 401,
+        "actual_sum": 5654964329622434629,
+        "actual_xor": 9069170971717905939,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 3,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "10000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.466867+00:00",
+      "loadavg": "23.70 25.80 25.53 13/3938 94",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812028\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.482257+00:00",
+      "loadavg": "23.70 25.80 25.53 15/3938 95",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812049\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.01549859601072967,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 10000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 100,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 100
+      },
+      "timing_ns": {
+        "wiring_and_compile": 118491,
+        "runtime_construction": 6791,
+        "runtime_start": 22912,
+        "initial_population": 2381009,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 77202,
+          "mean_ns": 772.02,
+          "min_ns": 649,
+          "median_ns": 680,
+          "p95_ns": 850,
+          "p99_ns": 1990,
+          "max_ns": 6071
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 1128871,
+          "mean_ns": 11288.71,
+          "min_ns": 11101,
+          "median_ns": 11161,
+          "p95_ns": 11811,
+          "p99_ns": 12651,
+          "max_ns": 12981
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 871927,
+          "mean_ns": 8719.27,
+          "min_ns": 7951,
+          "median_ns": 8011,
+          "p95_ns": 9732,
+          "p99_ns": 15731,
+          "max_ns": 45854
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 2148816,
+          "mean_ns": 21488.16,
+          "min_ns": 20141,
+          "median_ns": 20632,
+          "p95_ns": 26352,
+          "p99_ns": 35454,
+          "max_ns": 36283
+        },
+        "final_stop": 14001
+      },
+      "memory_bytes": {
+        "before_graph": 11837440,
+        "after_compile": 12517376,
+        "empty_runtime": 12713984,
+        "populated": 13217792,
+        "peak_rss": 38621184,
+        "after_stop": 13225984,
+        "populated_runtime_delta_including_tsd": 503808,
+        "populated_runtime_bytes_per_item_including_tsd": 50.38
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5654964329622434629,
+        "expected_xor": 9069170971717905939,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 1,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "100000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.482978+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3938 95",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812049\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.727179+00:00",
+      "loadavg": "23.70 25.80 25.53 12/3937 96",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812286\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.24428372099646367,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 100000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 1000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 1000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 440630,
+        "runtime_construction": 7561,
+        "runtime_start": 38523,
+        "initial_population": 67844264,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 1835534,
+          "mean_ns": 18355.34,
+          "min_ns": 14112,
+          "median_ns": 16572,
+          "p95_ns": 28102,
+          "p99_ns": 34514,
+          "max_ns": 51434
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 57891696,
+          "mean_ns": 578916.96,
+          "min_ns": 411958,
+          "median_ns": 569632,
+          "p95_ns": 764890,
+          "p99_ns": 797944,
+          "max_ns": 801283
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 24465716,
+          "mean_ns": 244657.16,
+          "min_ns": 173925,
+          "median_ns": 219020,
+          "p95_ns": 327460,
+          "p99_ns": 344742,
+          "max_ns": 350072
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 77817578,
+          "mean_ns": 778175.78,
+          "min_ns": 525888,
+          "median_ns": 659651,
+          "p95_ns": 1074930,
+          "p99_ns": 1083340,
+          "max_ns": 1089320
+        },
+        "final_stop": 21262
+      },
+      "memory_bytes": {
+        "before_graph": 12587008,
+        "after_compile": 13443072,
+        "empty_runtime": 13639680,
+        "populated": 29552640,
+        "peak_rss": 38621184,
+        "after_stop": 29552640,
+        "populated_runtime_delta_including_tsd": 15912960,
+        "populated_runtime_bytes_per_item_including_tsd": 159.13
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5110883211963938775,
+        "expected_xor": 8376104843720058135,
+        "actual_count": 401,
+        "actual_sum": 5110883211963938775,
+        "actual_xor": 8376104843720058135,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 1,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "100000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.728150+00:00",
+      "loadavg": "23.70 25.80 25.53 24/3937 96",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812286\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.816030+00:00",
+      "loadavg": "23.70 25.80 25.53 15/3938 97",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812387\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.08795818398357369,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 100000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 1000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 1000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 118051,
+        "runtime_construction": 7280,
+        "runtime_start": 24193,
+        "initial_population": 27043679,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 361196,
+          "mean_ns": 3611.96,
+          "min_ns": 2930,
+          "median_ns": 3450,
+          "p95_ns": 4131,
+          "p99_ns": 4360,
+          "max_ns": 14432
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 15949702,
+          "mean_ns": 159497.02,
+          "min_ns": 107350,
+          "median_ns": 182267,
+          "p95_ns": 209339,
+          "p99_ns": 212909,
+          "max_ns": 246212
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 9349241,
+          "mean_ns": 93492.41,
+          "min_ns": 75718,
+          "median_ns": 77457,
+          "p95_ns": 148703,
+          "p99_ns": 158395,
+          "max_ns": 190217
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 23381904,
+          "mean_ns": 233819.04,
+          "min_ns": 188757,
+          "median_ns": 195858,
+          "p95_ns": 359713,
+          "p99_ns": 369154,
+          "max_ns": 375074
+        },
+        "final_stop": 20302
+      },
+      "memory_bytes": {
+        "before_graph": 12582912,
+        "after_compile": 13258752,
+        "empty_runtime": 13455360,
+        "populated": 18001920,
+        "peak_rss": 38621184,
+        "after_stop": 18001920,
+        "populated_runtime_delta_including_tsd": 4546560,
+        "populated_runtime_bytes_per_item_including_tsd": 45.47
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5110883211963938775,
+        "expected_xor": 8376104843720058135,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 2,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "100000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.816970+00:00",
+      "loadavg": "23.70 25.80 25.53 18/3938 97",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593812387\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:36.904474+00:00",
+      "loadavg": "23.70 25.80 25.53 13/3937 98",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593814536\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.08758774001034908,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 100000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 1000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 1000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 157225,
+        "runtime_construction": 9031,
+        "runtime_start": 31183,
+        "initial_population": 25586235,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 717162,
+          "mean_ns": 7171.62,
+          "min_ns": 6491,
+          "median_ns": 7061,
+          "p95_ns": 7491,
+          "p99_ns": 8241,
+          "max_ns": 18051
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 16407014,
+          "mean_ns": 164070.14,
+          "min_ns": 104150,
+          "median_ns": 186917,
+          "p95_ns": 200048,
+          "p99_ns": 219650,
+          "max_ns": 227641
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 9488301,
+          "mean_ns": 94883.01,
+          "min_ns": 75117,
+          "median_ns": 76737,
+          "p95_ns": 148034,
+          "p99_ns": 154194,
+          "max_ns": 297237
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 23360709,
+          "mean_ns": 233607.09,
+          "min_ns": 184567,
+          "median_ns": 193678,
+          "p95_ns": 366254,
+          "p99_ns": 374525,
+          "max_ns": 375145
+        },
+        "final_stop": 19382
+      },
+      "memory_bytes": {
+        "before_graph": 12595200,
+        "after_compile": 13275136,
+        "empty_runtime": 13471744,
+        "populated": 18018304,
+        "peak_rss": 38621184,
+        "after_stop": 18018304,
+        "populated_runtime_delta_including_tsd": 4546560,
+        "populated_runtime_bytes_per_item_including_tsd": 45.47
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5110883211963938775,
+        "expected_xor": 8376104843720058135,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 2,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "100000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:36.905427+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3937 98",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593814536\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:37.157162+00:00",
+      "loadavg": "23.70 25.80 25.53 14/3937 99",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593816206\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.2518533669936005,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 100000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 1000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 1000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 500206,
+        "runtime_construction": 7420,
+        "runtime_start": 40074,
+        "initial_population": 78344490,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 1692752,
+          "mean_ns": 16927.52,
+          "min_ns": 12872,
+          "median_ns": 16322,
+          "p95_ns": 19091,
+          "p99_ns": 32294,
+          "max_ns": 51354
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 52379135,
+          "mean_ns": 523791.35,
+          "min_ns": 416489,
+          "median_ns": 446971,
+          "p95_ns": 745949,
+          "p99_ns": 768300,
+          "max_ns": 771120
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 24458509,
+          "mean_ns": 244585.09,
+          "min_ns": 185957,
+          "median_ns": 210570,
+          "p95_ns": 340662,
+          "p99_ns": 388556,
+          "max_ns": 393906
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 77072564,
+          "mean_ns": 770725.64,
+          "min_ns": 592934,
+          "median_ns": 641979,
+          "p95_ns": 1084569,
+          "p99_ns": 1120693,
+          "max_ns": 1197260
+        },
+        "final_stop": 22252
+      },
+      "memory_bytes": {
+        "before_graph": 12591104,
+        "after_compile": 13451264,
+        "empty_runtime": 13647872,
+        "populated": 29560832,
+        "peak_rss": 38621184,
+        "after_stop": 29560832,
+        "populated_runtime_delta_including_tsd": 15912960,
+        "populated_runtime_bytes_per_item_including_tsd": 159.13
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5110883211963938775,
+        "expected_xor": 8376104843720058135,
+        "actual_count": 401,
+        "actual_sum": 5110883211963938775,
+        "actual_xor": 8376104843720058135,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 3,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "100000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:37.158079+00:00",
+      "loadavg": "23.70 25.80 25.53 14/3937 99",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593816206\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:37.401971+00:00",
+      "loadavg": "23.70 25.80 25.53 12/3934 100",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593817770\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.24396923201857135,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 100000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 1000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 1000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 488905,
+        "runtime_construction": 8021,
+        "runtime_start": 37823,
+        "initial_population": 81467238,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 2201057,
+          "mean_ns": 22010.57,
+          "min_ns": 14641,
+          "median_ns": 16922,
+          "p95_ns": 33453,
+          "p99_ns": 74657,
+          "max_ns": 162665
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 44501565,
+          "mean_ns": 445015.65,
+          "min_ns": 411757,
+          "median_ns": 433680,
+          "p95_ns": 492435,
+          "p99_ns": 675503,
+          "max_ns": 688424
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 24047976,
+          "mean_ns": 240479.76,
+          "min_ns": 187017,
+          "median_ns": 199238,
+          "p95_ns": 338712,
+          "p99_ns": 379215,
+          "max_ns": 397417
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 75726839,
+          "mean_ns": 757268.39,
+          "min_ns": 589904,
+          "median_ns": 621537,
+          "p95_ns": 1093070,
+          "p99_ns": 1136055,
+          "max_ns": 1141996
+        },
+        "final_stop": 20802
+      },
+      "memory_bytes": {
+        "before_graph": 12546048,
+        "after_compile": 13402112,
+        "empty_runtime": 13598720,
+        "populated": 29519872,
+        "peak_rss": 38621184,
+        "after_stop": 29519872,
+        "populated_runtime_delta_including_tsd": 15921152,
+        "populated_runtime_bytes_per_item_including_tsd": 159.21
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5110883211963938775,
+        "expected_xor": 8376104843720058135,
+        "actual_count": 401,
+        "actual_sum": 5110883211963938775,
+        "actual_xor": 8376104843720058135,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 3,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "100000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:37.402737+00:00",
+      "loadavg": "23.70 25.80 25.53 14/3934 100",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593817770\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:37.486331+00:00",
+      "loadavg": "23.70 25.80 25.53 17/3934 101",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593817838\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.08370308301527984,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 100000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 1000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 1000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 188117,
+        "runtime_construction": 12461,
+        "runtime_start": 36663,
+        "initial_population": 27841703,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 353683,
+          "mean_ns": 3536.83,
+          "min_ns": 2940,
+          "median_ns": 3400,
+          "p95_ns": 3980,
+          "p99_ns": 4470,
+          "max_ns": 14132
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 10734739,
+          "mean_ns": 107347.39,
+          "min_ns": 103540,
+          "median_ns": 106140,
+          "p95_ns": 114380,
+          "p99_ns": 123621,
+          "max_ns": 148644
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 8591802,
+          "mean_ns": 85918.02,
+          "min_ns": 76776,
+          "median_ns": 78447,
+          "p95_ns": 135163,
+          "p99_ns": 149184,
+          "max_ns": 168746
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 20959409,
+          "mean_ns": 209594.09,
+          "min_ns": 184127,
+          "median_ns": 193128,
+          "p95_ns": 328810,
+          "p99_ns": 352173,
+          "max_ns": 353403
+        },
+        "final_stop": 22022
+      },
+      "memory_bytes": {
+        "before_graph": 12591104,
+        "after_compile": 13271040,
+        "empty_runtime": 13467648,
+        "populated": 18014208,
+        "peak_rss": 38621184,
+        "after_stop": 18014208,
+        "populated_runtime_delta_including_tsd": 4546560,
+        "populated_runtime_bytes_per_item_including_tsd": 45.47
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 5110883211963938775,
+        "expected_xor": 8376104843720058135,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 1,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "1000000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:37.487815+00:00",
+      "loadavg": "23.70 25.80 25.53 18/3934 101",
+      "cpu_pressure": "some avg10=10.56 avg60=12.76 avg300=9.02 total=9593817838\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:39.655363+00:00",
+      "loadavg": "23.70 25.80 25.53 15/3927 102",
+      "cpu_pressure": "some avg10=9.55 avg60=12.51 avg300=8.99 total=9593983355\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 2.1675727539986838,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 1000000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 10000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 10000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 620708,
+        "runtime_construction": 12811,
+        "runtime_start": 55185,
+        "initial_population": 733015077,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 9433935,
+          "mean_ns": 94339.35,
+          "min_ns": 88618,
+          "median_ns": 93109,
+          "p95_ns": 98979,
+          "p99_ns": 143744,
+          "max_ns": 144604
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 487553573,
+          "mean_ns": 4875535.73,
+          "min_ns": 4394294,
+          "median_ns": 4622325,
+          "p95_ns": 6626870,
+          "p99_ns": 7209784,
+          "max_ns": 7366428
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 205492253,
+          "mean_ns": 2054922.53,
+          "min_ns": 1903265,
+          "median_ns": 1989043,
+          "p95_ns": 2414122,
+          "p99_ns": 2856943,
+          "max_ns": 2930970
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 665456917,
+          "mean_ns": 6654569.17,
+          "min_ns": 6183410,
+          "median_ns": 6531101,
+          "p95_ns": 7855293,
+          "p99_ns": 8370241,
+          "max_ns": 8747936
+        },
+        "final_stop": 20602
+      },
+      "memory_bytes": {
+        "before_graph": 19783680,
+        "after_compile": 20639744,
+        "empty_runtime": 20836352,
+        "populated": 177414144,
+        "peak_rss": 177577984,
+        "after_stop": 177577984,
+        "populated_runtime_delta_including_tsd": 156577792,
+        "populated_runtime_bytes_per_item_including_tsd": 156.58
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 9251602055271151436,
+        "expected_xor": 4496353920541812365,
+        "actual_count": 401,
+        "actual_sum": 9251602055271151436,
+        "actual_xor": 4496353920541812365,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 1,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "1000000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:39.656491+00:00",
+      "loadavg": "23.70 25.80 25.53 19/3927 102",
+      "cpu_pressure": "some avg10=9.55 avg60=12.51 avg300=8.99 total=9593983355\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:40.326344+00:00",
+      "loadavg": "23.70 25.80 25.53 15/3927 103",
+      "cpu_pressure": "some avg10=9.55 avg60=12.51 avg300=8.99 total=9593987078\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.669942862004973,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 1000000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 10000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 10000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 197328,
+        "runtime_construction": 12301,
+        "runtime_start": 35104,
+        "initial_population": 237344252,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 3050819,
+          "mean_ns": 30508.19,
+          "min_ns": 26783,
+          "median_ns": 27822,
+          "p95_ns": 54645,
+          "p99_ns": 66326,
+          "max_ns": 67766
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 108793202,
+          "mean_ns": 1087932.02,
+          "min_ns": 1043096,
+          "median_ns": 1060558,
+          "p95_ns": 1239774,
+          "p99_ns": 1505839,
+          "max_ns": 1511029
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 81316462,
+          "mean_ns": 813164.62,
+          "min_ns": 739528,
+          "median_ns": 779572,
+          "p95_ns": 1020374,
+          "p99_ns": 1141305,
+          "max_ns": 1278588
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 202649610,
+          "mean_ns": 2026496.1,
+          "min_ns": 1833059,
+          "median_ns": 1973192,
+          "p95_ns": 2335094,
+          "p99_ns": 2527023,
+          "max_ns": 2562096
+        },
+        "final_stop": 20892
+      },
+      "memory_bytes": {
+        "before_graph": 19795968,
+        "after_compile": 20475904,
+        "empty_runtime": 20676608,
+        "populated": 65200128,
+        "peak_rss": 65200128,
+        "after_stop": 65200128,
+        "populated_runtime_delta_including_tsd": 44523520,
+        "populated_runtime_bytes_per_item_including_tsd": 44.52
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 9251602055271151436,
+        "expected_xor": 4496353920541812365,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 2,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "1000000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:40.327476+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3927 103",
+      "cpu_pressure": "some avg10=9.55 avg60=12.51 avg300=8.99 total=9593987078\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:40.992123+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3930 104",
+      "cpu_pressure": "some avg10=8.00 avg60=12.13 avg300=8.94 total=9593990490\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.6647410550212953,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 1000000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 10000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 10000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 192738,
+        "runtime_construction": 12931,
+        "runtime_start": 34424,
+        "initial_population": 222876480,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 2919594,
+          "mean_ns": 29195.94,
+          "min_ns": 26763,
+          "median_ns": 27313,
+          "p95_ns": 43414,
+          "p99_ns": 57486,
+          "max_ns": 79168
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 112264939,
+          "mean_ns": 1122649.39,
+          "min_ns": 1014574,
+          "median_ns": 1054057,
+          "p95_ns": 1496117,
+          "p99_ns": 1802016,
+          "max_ns": 1903415
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 82460478,
+          "mean_ns": 824604.78,
+          "min_ns": 739728,
+          "median_ns": 787643,
+          "p95_ns": 957958,
+          "p99_ns": 1380667,
+          "max_ns": 1415601
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 204314897,
+          "mean_ns": 2043148.97,
+          "min_ns": 1826248,
+          "median_ns": 1983583,
+          "p95_ns": 2434334,
+          "p99_ns": 2641143,
+          "max_ns": 2997296
+        },
+        "final_stop": 22542
+      },
+      "memory_bytes": {
+        "before_graph": 19759104,
+        "after_compile": 20439040,
+        "empty_runtime": 20639744,
+        "populated": 65163264,
+        "peak_rss": 65163264,
+        "after_stop": 65163264,
+        "populated_runtime_delta_including_tsd": 44523520,
+        "populated_runtime_bytes_per_item_including_tsd": 44.52
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 9251602055271151436,
+        "expected_xor": 4496353920541812365,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  },
+  {
+    "repeat": 2,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "1000000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:40.993310+00:00",
+      "loadavg": "23.70 25.80 25.53 16/3930 104",
+      "cpu_pressure": "some avg10=8.00 avg60=12.13 avg300=8.94 total=9593990490\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:43.241733+00:00",
+      "loadavg": "24.20 25.87 25.55 13/3937 105",
+      "cpu_pressure": "some avg10=6.55 avg60=11.73 avg300=8.88 total=9594008868\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 2.2485307149763685,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 1000000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 10000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 10000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 732697,
+        "runtime_construction": 12341,
+        "runtime_start": 59126,
+        "initial_population": 740455412,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 10357782,
+          "mean_ns": 103577.82,
+          "min_ns": 88588,
+          "median_ns": 95219,
+          "p95_ns": 151023,
+          "p99_ns": 165436,
+          "max_ns": 167265
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 483789987,
+          "mean_ns": 4837899.87,
+          "min_ns": 4446340,
+          "median_ns": 4695642,
+          "p95_ns": 5732947,
+          "p99_ns": 6120613,
+          "max_ns": 6303019
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 220993435,
+          "mean_ns": 2209934.35,
+          "min_ns": 1872753,
+          "median_ns": 2050899,
+          "p95_ns": 3038670,
+          "p99_ns": 3253109,
+          "max_ns": 3389102
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 723310647,
+          "mean_ns": 7233106.47,
+          "min_ns": 6180730,
+          "median_ns": 6766263,
+          "p95_ns": 9079306,
+          "p99_ns": 9900020,
+          "max_ns": 10844488
+        },
+        "final_stop": 21772
+      },
+      "memory_bytes": {
+        "before_graph": 19755008,
+        "after_compile": 20611072,
+        "empty_runtime": 20807680,
+        "populated": 177385472,
+        "peak_rss": 177549312,
+        "after_stop": 177549312,
+        "populated_runtime_delta_including_tsd": 156577792,
+        "populated_runtime_bytes_per_item_including_tsd": 156.58
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 9251602055271151436,
+        "expected_xor": 4496353920541812365,
+        "actual_count": 401,
+        "actual_sum": 9251602055271151436,
+        "actual_xor": 4496353920541812365,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 3,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "1000000",
+      "--mode",
+      "reduce",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:43.243191+00:00",
+      "loadavg": "24.20 25.87 25.55 16/3937 105",
+      "cpu_pressure": "some avg10=6.55 avg60=11.73 avg300=8.88 total=9594008868\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:45.427536+00:00",
+      "loadavg": "24.20 25.87 25.55 19/3936 106",
+      "cpu_pressure": "some avg10=5.72 avg60=11.41 avg300=8.83 total=9594068698\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 2.1844002029974945,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "reduce",
+      "item_count": 1000000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 10000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 10000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 571993,
+        "runtime_construction": 11441,
+        "runtime_start": 51814,
+        "initial_population": 714877768,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 11360514,
+          "mean_ns": 113605.14,
+          "min_ns": 87878,
+          "median_ns": 95199,
+          "p95_ns": 176416,
+          "p99_ns": 177916,
+          "max_ns": 186947
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 478456395,
+          "mean_ns": 4784563.95,
+          "min_ns": 4409276,
+          "median_ns": 4649718,
+          "p95_ns": 5644199,
+          "p99_ns": 6024044,
+          "max_ns": 6214003
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 217468778,
+          "mean_ns": 2174687.78,
+          "min_ns": 1908586,
+          "median_ns": 2037527,
+          "p95_ns": 2894077,
+          "p99_ns": 3071323,
+          "max_ns": 3734704
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 697906479,
+          "mean_ns": 6979064.79,
+          "min_ns": 6192600,
+          "median_ns": 6592576,
+          "p95_ns": 8899610,
+          "p99_ns": 10965599,
+          "max_ns": 11067748
+        },
+        "final_stop": 21682
+      },
+      "memory_bytes": {
+        "before_graph": 19795968,
+        "after_compile": 20652032,
+        "empty_runtime": 20848640,
+        "populated": 177426432,
+        "peak_rss": 177590272,
+        "after_stop": 177590272,
+        "populated_runtime_delta_including_tsd": 156577792,
+        "populated_runtime_bytes_per_item_including_tsd": 156.58
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 9251602055271151436,
+        "expected_xor": 4496353920541812365,
+        "actual_count": 401,
+        "actual_sum": 9251602055271151436,
+        "actual_xor": 4496353920541812365,
+        "source_completed": true,
+        "valid": true
+      }
+    }
+  },
+  {
+    "repeat": 3,
+    "smoke": false,
+    "command": [
+      "/home/abalabin/_bg/.lanes/benchmark-documentation/build/benchmark/benchmarks/hg_reduce_benchmark",
+      "--size",
+      "1000000",
+      "--mode",
+      "source",
+      "--samples",
+      "100",
+      "--lifecycle-rounds",
+      "100"
+    ],
+    "before": {
+      "utc": "2026-11-04T15:13:45.429062+00:00",
+      "loadavg": "24.20 25.87 25.55 15/3936 106",
+      "cpu_pressure": "some avg10=5.72 avg60=11.41 avg300=8.83 total=9594068698\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "after": {
+      "utc": "2026-11-04T15:13:46.109547+00:00",
+      "loadavg": "24.43 25.89 25.56 16/3944 107",
+      "cpu_pressure": "some avg10=5.72 avg60=11.41 avg300=8.83 total=9594092919\nfull avg10=0.00 avg60=0.00 avg300=0.00 total=0",
+      "affinity": [
+        31
+      ]
+    },
+    "wall_seconds": 0.6805835110135376,
+    "returncode": 0,
+    "stderr": "",
+    "result": {
+      "benchmark": "large_tsd_reduce",
+      "source_mode": "source_only",
+      "item_count": 1000000,
+      "workload": {
+        "sparse_one_key_ticks": 100,
+        "burst_ticks": 100,
+        "burst_items_per_tick": 10000,
+        "remove_restore_pairs": 100,
+        "lifecycle_items_per_tick": 10000
+      },
+      "timing_ns": {
+        "wiring_and_compile": 181826,
+        "runtime_construction": 11141,
+        "runtime_start": 32403,
+        "initial_population": 240595621,
+        "sparse_one_key": {
+          "count": 100,
+          "total_ns": 3160735,
+          "mean_ns": 31607.35,
+          "min_ns": 27243,
+          "median_ns": 28493,
+          "p95_ns": 55665,
+          "p99_ns": 68416,
+          "max_ns": 108710
+        },
+        "burst_1_percent": {
+          "count": 100,
+          "total_ns": 112547285,
+          "mean_ns": 1125472.85,
+          "min_ns": 1020914,
+          "median_ns": 1073308,
+          "p95_ns": 1459354,
+          "p99_ns": 1839769,
+          "max_ns": 1852721
+        },
+        "remove_1_percent": {
+          "count": 100,
+          "total_ns": 81332985,
+          "mean_ns": 813329.85,
+          "min_ns": 740068,
+          "median_ns": 784743,
+          "p95_ns": 963188,
+          "p99_ns": 1328612,
+          "max_ns": 1420981
+        },
+        "restore_1_percent": {
+          "count": 100,
+          "total_ns": 205290879,
+          "mean_ns": 2052908.79,
+          "min_ns": 1843800,
+          "median_ns": 1946989,
+          "p95_ns": 2620961,
+          "p99_ns": 3106816,
+          "max_ns": 3375381
+        },
+        "final_stop": 20081
+      },
+      "memory_bytes": {
+        "before_graph": 19791872,
+        "after_compile": 20471808,
+        "empty_runtime": 20672512,
+        "populated": 65196032,
+        "peak_rss": 65196032,
+        "after_stop": 65196032,
+        "populated_runtime_delta_including_tsd": 44523520,
+        "populated_runtime_bytes_per_item_including_tsd": 44.52
+      },
+      "checksum": {
+        "expected_count": 401,
+        "expected_sum": 9251602055271151436,
+        "expected_xor": 4496353920541812365,
+        "source_completed": true,
+        "valid": null
+      }
+    }
+  }
+]
