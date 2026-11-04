@@ -26,6 +26,8 @@ namespace {
 
 using namespace literals;
 
+wp<TS<i64>> identity_free_function(wp<TS<i64>> value) { return value; }
+
 using TypedInputResult = decltype(input<TS<i64>>(std::declval<GraphRunLiteralInput &&>()));
 using SemanticInputResult = decltype(input(std::declval<const TimeSeriesType &>(),
                                            std::declval<GraphRunLiteralInput &&>()));
@@ -46,6 +48,11 @@ TEST_CASE("run_graph runs a node with initial values and tick histories",
 
     CHECK(run_graph(increment, 41).equals<i64>({42}));
     CHECK(run_graph(increment, {1, 2, 3}).equals<i64>({2, 3, 4}));
+}
+
+TEST_CASE("run_graph accepts a free graph function with inputs",
+          "[testing][evaluation][feature:test-graph][series:value][scalar:integer]") {
+    CHECK(run_graph(identity_free_function, {1, 2, 3}).equals<i64>({1, 2, 3}));
 }
 
 TEST_CASE("run_graph accepts heterogeneous numeric tick histories",
@@ -165,6 +172,74 @@ TEST_CASE("run_graph infers literal types for plain callable inputs",
     const auto skipped = run_graph(
         add_plain, {literal::SKIP, literal::SKIP}, {literal::SKIP, literal::SKIP});
     CHECK(skipped.equals({literal::SKIP, literal::SKIP}));
+}
+
+TEST_CASE("run_graph infers generic graph function inputs from values",
+          "[testing][evaluation][feature:test-graph][transition:update][scalar:integer]") {
+    const auto actual = run_graph([](auto reading) { return reading; },
+                                  {18, literal::SKIP, 18, 19});
+
+    CHECK(actual.equals({18, literal::SKIP, 18, 19}));
+    CHECK(run_graph([](auto reading) { return reading; }, 18).equals({18}));
+    CHECK(run_graph([](auto reading) { return reading; },
+                    GraphRunOptions{.capture_output = false}, {18, 19})
+              .size() == 0);
+}
+
+TEST_CASE("run_graph infers generic graph function input types from typed ranges",
+          "[testing][evaluation][feature:test-graph][transition:update][scalar:integer]") {
+    const auto identity = [](auto value) { return value; };
+    const auto empty = std::vector<int>{};
+    const auto proxy_values = std::vector<bool>{true, false};
+    const auto typed_sentinels = input<TS<i64>>({literal::SKIP, literal::SKIP});
+    const auto typed_collection = input<TS<List<i64>>>({{1, 2}, {3}});
+    const auto erased_value = ScalarValue<>{i64{5}};
+    const auto erased_values = std::array{ScalarValue<>{i64{6}}, ScalarValue<>{i64{7}}};
+    const auto typed_values = std::array{ScalarValue<i64>{i64{8}}, ScalarValue<i64>{i64{9}}};
+    const auto empty_typed_values = std::vector<ScalarValue<i64>>{};
+
+    CHECK(run_graph(identity, std::array{1, 2, 3}).equals({1, 2, 3}));
+    CHECK_NOTHROW(run_graph(identity, empty));
+    CHECK(run_graph(identity, input<TS<string>>({"plain"})).equals<string>({"plain"}));
+    CHECK(run_graph(identity, std::string{"text"}).equals<string>({"text"}));
+    CHECK(run_graph(identity, "text").equals<string>({"text"}));
+    CHECK(run_graph(identity, proxy_values).equals({true, false}));
+    CHECK(run_graph(identity, std::optional<int>{}).equals({literal::SKIP}));
+    CHECK(run_graph(identity, std::optional<std::string>{"optional"}).equals<string>({"optional"}));
+    CHECK(run_graph(identity, erased_value).equals<i64>({5}));
+    CHECK(run_graph(identity, erased_values).equals<i64>({6, 7}));
+    CHECK(run_graph(identity, typed_values).equals<i64>({8, 9}));
+    CHECK_NOTHROW(run_graph(identity, empty_typed_values));
+    CHECK(run_graph(identity, typed_sentinels).equals<i64>({std::nullopt, std::nullopt}));
+    CHECK(run_graph(identity, typed_collection).equals({{1, 2}, {3}}));
+    CHECK_THROWS_AS((run_graph(identity, {})), std::invalid_argument);
+    CHECK_THROWS_AS((run_graph(identity, {literal::SKIP, literal::SKIP})), std::invalid_argument);
+    CHECK_THROWS_AS((run_graph(identity, {1, 2.0})), std::invalid_argument);
+    CHECK_THROWS_AS((run_graph(identity, {{1, 2}})), std::invalid_argument);
+    CHECK_THROWS_AS((run_graph(identity, literal::SKIP)), std::invalid_argument);
+    CHECK_THROWS_AS((run_graph(identity, literal::INVALID)), std::invalid_argument);
+    CHECK(run_graph(identity, {1, literal::INVALID, 3}).equals({1, literal::INVALID, 3}));
+}
+
+TEST_CASE("run_graph infers generic graph function inputs independently",
+          "[testing][evaluation][feature:test-graph][transition:update][scalar:integer]") {
+    const auto add = node([](i64 lhs, i64 rhs) { return lhs + rhs; });
+    const auto add_two = [&](auto lhs, auto rhs) { return add(lhs, rhs); };
+    const auto outputless = [](auto value) { (void)value; };
+    const auto add_three = [&](auto first, auto second, auto third) { return add(add(first, second), third); };
+    const auto add_four = [&](auto first, auto second, auto third, auto fourth) {
+        return add(add(add(first, second), third), fourth);
+    };
+    const auto fixed_offset = i64{4};
+    const auto add_offset = node([fixed_offset](i64 value) { return value + fixed_offset; });
+    const auto captured = [&](auto value) { return add_offset(value); };
+
+    CHECK(run_graph(add_two, {1, 2, 3}, {10, 20, 30}).equals({11, 22, 33}));
+    CHECK(run_graph(add_two, GraphRunOptions{}, std::array{1, 2}, 10).equals({11, 12}));
+    CHECK(run_graph(add_three, {1, 2}, {10, 20}, {100, 200}).equals({111, 222}));
+    CHECK(run_graph(add_four, {1}, {10}, {100}, {1000}).equals({1111}));
+    CHECK(run_graph(captured, {1, 2}).equals({5, 6}));
+    CHECK(run_graph(outputless, {1, 2}).size() == 0);
 }
 
 TEST_CASE("run_graph infers literal types for optional aggregate plain inputs",
@@ -767,8 +842,10 @@ TEST_CASE("run_graph accepts runtime-typed inputs",
     };
 
     const auto actual = run_graph(identity, std::span<const GraphRunInput>{inputs});
+    const auto generic_actual = run_graph([](auto value) { return value; }, inputs.front());
 
     CHECK(actual.equals<i64>({1, std::nullopt, 3}));
+    CHECK(generic_actual.equals<i64>({1, std::nullopt, 3}));
 }
 
 TEST_CASE("runtime-typed run_graph inputs can contain only skipped ticks",

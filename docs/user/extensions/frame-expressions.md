@@ -148,44 +148,9 @@ filtered frames have different selections, even when their current rows happen t
 
 ## Grouped sums
 
-`group_by(frame, names...).agg(assignments...)` produces one row per nonempty group.
-Grouping names may be separate arguments or a wiring-time collection. Aggregate
-assignments use `operators::sum_` with column expressions:
-
-```cpp
-auto totals = frame::group_by(quotes, "venue").agg(
-    "quantity"_n = operators::sum_(col("size")),
-    "notional"_n = operators::sum_(col("price") * frame::convert<double>(col("size"))));
-```
-
-Expressions may capture scalar time series directly. Their updates recalculate
-contributions for the current rows. The result schema is inferred during wiring,
-including when the source schema is defined during wiring.
-
-The expression structure must be available as a scalar during wiring. A mixed
-expression bundle retains that scalar separately from its captured time series.
-A time-series field containing the structure is rejected, including a
-`TS<Expression, const_>` whose value is unavailable during wiring.
-
-Grouping columns support `i64`, `string`, and `symbol`. Null grouping cells compare
-equal. The grouping columns form the result's ordered key tuple. Groups have no
-specified output order, and a group's row ID stays stable while the group exists.
-A group is removed when it has no source rows after the invocation's changes.
-
-Grouped and column sums support `i64` and `double`. Null numeric cells do not
-contribute; an all-null group sums to zero. Integer sums wrap at the scalar width.
-Double sums use compensated accumulation for finite contributions. Results remain
-dependent on update order. A NaN contribution, or contributions of both positive
-and negative infinity, produces NaN. Removing those contributions restores the
-result from the remaining contributions.
-
-The node retains source row membership and numeric contributions, so ordinary
-updates process changed rows. Source invalidation invalidates the result.
-Revalidation initializes retained state from the current rows. Reference switches
-reconcile groups using the sampled input's row changes.
-
-`operators::agg(grouped, assignments...)` calls the same implementation as `.agg`.
-The C++ convenience method uses HG's wiring-point method extension point.
+If a table needs one total per venue or another key, use
+[`group_by(...).agg(...)`](frame-grouping.md). It accepts the same column expressions
+and keeps grouped totals current as rows are added, changed, moved, or removed.
 
 ## Adding or replacing columns
 

@@ -68,12 +68,12 @@ const auto correct = [](i64 reading) {
 
 const auto correct_node = node(correct);
 
-auto temperature(wp<TS<i64>> reading) {
-    return correct_node(reading);
-}
-
 int main() {
-    const auto result = run_graph(temperature, {18, -3, SKIP, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            return correct_node(reading);
+        },
+        {18, -3, SKIP, 19});
     std::cout << result << '\n';
 }
 ```

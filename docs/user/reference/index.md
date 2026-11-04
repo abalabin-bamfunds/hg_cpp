@@ -17,6 +17,7 @@ errors; the guide provides complete task examples.
 
 - [Alphabetical index](library-index.md)
 - [Arithmetic, comparison, and conversion](library-numeric.md)
+- [Timestamps and durations](library-temporal.md)
 - [Selection and validity](library-selection.md)
 - [Successive-update calculations](library-stateful.md)
 - [Time operators](library-time.md)
@@ -28,5 +29,6 @@ errors; the guide provides complete task examples.
 - [HTTP clients and servers](../extensions/web.md),
   [authentication](../extensions/web-auth.md), and [WebSocket](../extensions/websocket.md).
 - [Columns and frames](../extensions/frame.md),
-  [column expressions and table transformations](../extensions/frame-expressions.md), and
+  [column expressions and table transformations](../extensions/frame-expressions.md),
+  [grouped aggregation](../extensions/frame-grouping.md), and
   [frame nodes and Arrow interchange](../extensions/frame-nodes.md).

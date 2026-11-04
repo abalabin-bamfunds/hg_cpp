@@ -7,7 +7,7 @@ requirements and provides types and operations for its use case.
 | Extension | Use | Python | C++ |
 | --- | --- | --- | --- |
 | [Web](web.md) | HTTP services, requests, authentication, and binary WebSocket connections | [HTTP](web.md) and [WebSocket](websocket.md) | HTTP and WebSocket |
-| [Frame](frame.md) | Nullable columns, keyed tables, row updates, and column expressions | — | Supported |
+| [Frame](frame.md) | Nullable columns, keyed tables, row updates, expressions, and grouped totals | — | Supported |
 
 The web extension uses [services](../reference/services.md) to connect transport
 implementations to graph code. Its examples use the realtime engine because network

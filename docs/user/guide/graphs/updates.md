@@ -57,20 +57,20 @@ Output:
 
 using namespace hg;
 
-auto calibrated_temperature(wp<TS<i64>> reading, int offset) {
+auto calibrated_temperature(auto reading, int offset) {
     return reading + offset;
 }
 
-auto display_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = calibrated_temperature(reading, 2);
-    return calibrated * 10;
-}
-
 int main() {
-using namespace literal;
+    using namespace literal;
 
-const auto result = run_graph(display_temperature, {18, SKIP, 18, 19});
-std::cout << result << '\n';
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = calibrated_temperature(reading, 2);
+            return calibrated * 10;
+        },
+        {18, SKIP, 18, 19});
+    std::cout << result << '\n';
 }
 ```
 
@@ -165,18 +165,16 @@ Output:
 using namespace hg;
 using namespace literal;
 
-auto calibrated_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
+auto calibrated_temperature(auto reading, auto offset) {
     return reading + offset;
-}
-
-auto display_temperature(wp<TS<i64>> reading, wp<TS<i64>> offset) {
-    const auto calibrated = calibrated_temperature(reading, offset);
-    return calibrated * 10;
 }
 
 int main() {
     const auto result = run_graph(
-        display_temperature,
+        [](auto reading, auto offset) {
+            const auto calibrated = calibrated_temperature(reading, offset);
+            return calibrated * 10;
+        },
         {18, SKIP, 19, SKIP},
         {SKIP, 2, SKIP, 3});
     std::cout << result << '\n';
@@ -260,13 +258,13 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto reported_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    return dedup(calibrated);
-}
-
 int main() {
-    const auto result = run_graph(reported_temperature, {18, 18, SKIP, 19, 18, 18});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            return dedup(calibrated);
+        },
+        {18, 18, SKIP, 19, 18, 18});
     std::cout << result << '\n';
 }
 ```
@@ -351,14 +349,12 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto sampled_temperature(wp<TS<i64>> reading, wp<TS<bool>> signal) {
-    const auto calibrated = reading + 2;
-    return sample(signal, calibrated);
-}
-
 int main() {
     const auto result = run_graph(
-        sampled_temperature,
+        [](auto reading, auto signal) {
+            const auto calibrated = reading + 2;
+            return sample(signal, calibrated);
+        },
         {18, 19, SKIP, 20, 21, SKIP},
         {SKIP, true, true, SKIP, true, false});
     std::cout << result << '\n';
@@ -388,7 +384,7 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 Repeated signals sample again even when the value is equal. A sample requires a
-valid current value. [Input activity](../advanced-nodes/inputs.md#activity) explains
+valid current value. [Input activity](../advanced-nodes/inputs.md#active-and-passive-inputs) explains
 how custom nodes express similar trigger rules.
 
 ## Selecting updates by count

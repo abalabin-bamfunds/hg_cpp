@@ -8,9 +8,11 @@ current graph value.
 ## Input sequences
 
 To reproduce updates and gaps without a live source, supply a sequence for each
-changing graph input. C++ literal sequences infer types from concrete receiving
-parameters; use `input<TS<T>>({...})` to supply an explicit type when the declaration
-is unresolved. Generic Python definitions can use a concrete specialization such as
+changing graph input. C++ inline lambdas with `auto` parameters can infer scalar
+input types from their sequences; concrete receiving parameters also supply their
+types. Use `input<TS<T>>({...})` when a type or collection shape cannot be inferred,
+including empty literal streams. See [C++ inferred inputs](execution.md#c-inferred-inputs).
+Generic Python definitions can use a concrete specialization such as
 `definition[TS[int]]`.
 
 `input(time_series_type, {...})` accepts a semantic time series type selected at

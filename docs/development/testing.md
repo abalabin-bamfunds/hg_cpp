@@ -447,6 +447,9 @@ graph compilation or evaluation.
   plain callable and aggregate parameter inference, explicit generic input types, cycle positions,
   configured start times, realtime input scheduling,
   services, profiling, and existing scalar input compatibility
+- generic C++ callable inputs inferred from scalar literals and typed ranges;
+  independent input types, captures, explicit descriptors, skip and invalidation,
+  empty and sentinel-only inputs, mixed-type rejection, and concrete callable compatibility
 - `run_graph` default and explicit simulation selection, realtime selection, engine-specific default start times,
   explicit start times, realtime stop-token forwarding, and services, global state, and profiling in both modes;
   ordinary scalar arguments, mixed initial values and update sequences, ambiguous empty collections,

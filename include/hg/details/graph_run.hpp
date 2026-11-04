@@ -332,8 +332,19 @@ template <typename Function> struct graph_function {
 };
 
 template <typename Graph>
+inline constexpr bool graph_run_has_unique_call_operator_v = [] {
+    if constexpr (requires { &std::remove_cvref_t<Graph>::operator(); }) {
+        return true;
+    } else if constexpr (std::is_pointer_v<std::remove_cvref_t<Graph>>) {
+        return std::is_function_v<std::remove_pointer_t<std::remove_cvref_t<Graph>>>;
+    } else {
+        return std::is_function_v<std::remove_cvref_t<Graph>>;
+    }
+}();
+
+template <typename Graph>
 concept graph_run_target = std::derived_from<std::remove_cvref_t<Graph>, WiringTemplate> ||
-                           requires { typename graph_function<Graph>::callable; };
+                           graph_run_has_unique_call_operator_v<Graph>;
 
 inline auto finish_graph_run(GraphWiring &wiring, CapturedValues &captured, const GraphRunOptions &options) {
     if (options.services != nullptr) {

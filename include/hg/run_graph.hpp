@@ -80,7 +80,9 @@ template <typename Function> auto run_graph_callback(Function &&function, const 
     return GraphRunResult<OutputScalar>{finish_graph_run(wiring, captured, options)};
 }
 
-template <typename T> struct graph_run_optional : std::false_type {};
+template <typename T> struct graph_run_optional : std::false_type {
+    using value_type = T;
+};
 
 template <typename T> struct graph_run_optional<std::optional<T>> : std::true_type {
     using value_type = T;
@@ -141,6 +143,21 @@ template <typename T> struct graph_run_input_scalar {
 };
 
 template <typename T> struct graph_run_input_scalar<std::optional<T>> : graph_run_input_scalar<T> {};
+template <typename T> struct graph_run_input_scalar<Scalar<T>> {
+    using type = T;
+};
+template <typename T> struct graph_run_input_scalar<ScalarValue<T>> {
+    using type = T;
+};
+
+template <typename T> inline constexpr bool graph_run_typed_scalar_handle_v = [] {
+    using Input = std::remove_cvref_t<T>;
+    if constexpr (details::ScalarHandle<Input>) {
+        return !std::same_as<typename Input::scalar_type, void>;
+    } else {
+        return false;
+    }
+}();
 
 template <std::ranges::input_range Range>
     requires(!graph_run_atomic_range_v<Range>)
@@ -1173,6 +1190,219 @@ auto run_graph_bound_descriptor_range_target(const Graph &graph, const GraphRunO
     }
 }
 
+struct GenericGraphRunInput {
+    WiringPoint point;
+    std::size_t cycle_count;
+};
+
+template <typename Range>
+std::span<const literal::TimeSeriesLiteral> generic_graph_run_literals(Range &&range,
+                                                                        GraphRunLiteralStorage &storage) {
+    using Item = std::ranges::range_value_t<std::remove_cvref_t<Range>>;
+    auto &values = storage.sequences.emplace_back();
+    for (auto &&value : range) {
+        if constexpr (std::same_as<Item, literal::TimeSeriesLiteral>) {
+            values.emplace_back(value);
+        } else if constexpr (graph_run_optional_v<Item>) {
+            if (value) {
+                values.emplace_back(graph_run_literal_from_value(*value, storage));
+            } else {
+                values.emplace_back(literal::SKIP);
+            }
+        } else {
+            if constexpr (std::same_as<std::remove_cvref_t<decltype(value)>, Item>) {
+                values.emplace_back(graph_run_literal_from_value(value, storage));
+            } else {
+                values.emplace_back(graph_run_literal_from_value(Item(value), storage));
+            }
+        }
+    }
+    return values;
+}
+
+inline const ScalarType *generic_graph_run_literal_scalar_type(const literal::TimeSeriesLiteral &value) {
+    return value.visit(
+        [](const literal::ScalarLiteralItem &item) -> const ScalarType * {
+            if (literal::Sentinel::from(item) != nullptr) {
+                return nullptr;
+            }
+            if (literal::TaggedLiteral::from(item)) {
+                throw std::invalid_argument{"generic run_graph inputs require scalar values; use input<TS<T>>"};
+            }
+            return item.visit_scalar([](auto *scalar) -> const ScalarType * { return &scalar->type(); })
+                .value_or(nullptr);
+        },
+        [](std::span<const literal::TimeSeriesLiteral>) -> const ScalarType * {
+            throw std::invalid_argument{"generic run_graph inputs require scalar values; use input<TS<T>>"};
+        }).value_or(nullptr);
+}
+
+inline const ScalarType &generic_graph_run_literal_scalar_type(
+    std::span<const literal::TimeSeriesLiteral> values) {
+    const ScalarType *scalar_type{};
+    for (const auto &value : values) {
+        const auto *current = generic_graph_run_literal_scalar_type(value);
+        if (current == nullptr) {
+            continue;
+        }
+        if (scalar_type != nullptr && scalar_type != current) {
+            throw std::invalid_argument{
+                "generic run_graph inputs must use one scalar type; use input<TS<T>> to select a type"};
+        }
+        scalar_type = current;
+    }
+    if (scalar_type == nullptr) {
+        throw std::invalid_argument{
+            "generic run_graph cannot infer an empty or sentinel-only input; use input<TS<T>> to select a type"};
+    }
+    return *scalar_type;
+}
+
+inline GenericGraphRunInput generic_graph_run_literal_input(const GraphRunLiteralInput &input) {
+    const auto &time_series_type = input.time_series_type != nullptr
+                                       ? *input.time_series_type
+                                       : time_series_value_type(generic_graph_run_literal_scalar_type(input.ticks()),
+                                                                TimeSeriesGuarantee::ordinary);
+    const auto &runtime_type = graph_run_runtime_type(time_series_type);
+    auto point = wire_literal_source(input, runtime_type);
+    return {point, input.ticks().size()};
+}
+
+inline GenericGraphRunInput generic_graph_run_literal_input(std::span<const literal::TimeSeriesLiteral> values,
+                                                            const ScalarType &scalar_type) {
+    const auto &time_series_type = time_series_value_type(scalar_type, TimeSeriesGuarantee::ordinary);
+    const auto &runtime_type = graph_run_runtime_type(time_series_type);
+    auto point = wire_literal_source(GraphRunLiteralInput(values), runtime_type);
+    return {point, values.size()};
+}
+
+template <typename Range>
+GenericGraphRunInput generic_graph_run_range_input(Range &&range, GraphRunLiteralStorage &storage) {
+    using Item = std::ranges::range_value_t<std::remove_cvref_t<Range>>;
+    using Value = typename graph_run_optional<Item>::value_type;
+    const auto values = generic_graph_run_literals(std::forward<Range>(range), storage);
+    if constexpr (std::same_as<Value, literal::TimeSeriesLiteral>) {
+        const auto &scalar_type = generic_graph_run_literal_scalar_type(values);
+        return generic_graph_run_literal_input(values, scalar_type);
+    } else if constexpr (graph_run_typed_scalar_handle_v<Value>) {
+        const auto &scalar_type = cpp_scalar_type<graph_run_input_scalar_t<Value>>();
+        return generic_graph_run_literal_input(values, scalar_type);
+    } else if constexpr (requires(const Value &value) { details::scalar_data(value); }) {
+        const auto &scalar_type = generic_graph_run_literal_scalar_type(values);
+        return generic_graph_run_literal_input(values, scalar_type);
+    } else if constexpr (graph_run_scalar_input_v<Value>) {
+        const auto &scalar_type = cpp_scalar_type<graph_run_input_scalar_t<Value>>();
+        return generic_graph_run_literal_input(values, scalar_type);
+    } else {
+        throw std::invalid_argument{"generic run_graph inputs require scalar values; use input<TS<T>>"};
+    }
+}
+
+template <typename Input>
+GenericGraphRunInput generic_graph_run_input(Input &&input, GraphRunLiteralStorage &storage) {
+    if constexpr (std::same_as<std::remove_cvref_t<Input>, GraphRunInput>) {
+        auto point = wire_runtime_source(input);
+        return {point, input.ticks.size()};
+    } else if constexpr (std::same_as<std::remove_cvref_t<Input>, GraphRunLiteralInput>) {
+        return generic_graph_run_literal_input(input);
+    } else if constexpr (std::same_as<std::remove_cvref_t<Input>, RawGraphRunLiteralInput>) {
+        return generic_graph_run_range_input(input.values, storage);
+    } else if constexpr (graph_run_ticks_v<Input>) {
+        return generic_graph_run_range_input(input.values, storage);
+    } else if constexpr (graph_run_range_input_v<Input>) {
+        return generic_graph_run_range_input(std::forward<Input>(input), storage);
+    } else if constexpr (graph_run_optional_v<std::remove_cvref_t<Input>>) {
+        using Value = typename graph_run_optional<std::remove_cvref_t<Input>>::value_type;
+        auto &values = storage.sequences.emplace_back();
+        if (input) {
+            values.emplace_back(graph_run_literal_from_value(*input, storage));
+        } else {
+            values.emplace_back(literal::SKIP);
+        }
+        if constexpr (scalar_source<Value> || scalar_type_mapped<Value> ||
+                      graph_run_typed_scalar_handle_v<Value>) {
+            const auto &scalar_type = cpp_scalar_type<graph_run_input_scalar_t<Value>>();
+            return generic_graph_run_literal_input(std::span<const literal::TimeSeriesLiteral>{values}, scalar_type);
+        } else {
+            const auto &inferred_scalar_type = generic_graph_run_literal_scalar_type(values);
+            return generic_graph_run_literal_input(std::span<const literal::TimeSeriesLiteral>{values},
+                                                   inferred_scalar_type);
+        }
+    } else if constexpr (std::same_as<std::remove_cvref_t<Input>, literal::TimeSeriesLiteral> ||
+                         std::same_as<std::remove_cvref_t<Input>, literal::Sentinel>) {
+        auto &values = storage.sequences.emplace_back();
+        if constexpr (std::same_as<std::remove_cvref_t<Input>, literal::Sentinel>) {
+            values.emplace_back(input);
+        } else {
+            values.emplace_back(graph_run_literal_from_value(std::forward<Input>(input), storage));
+        }
+        const auto &scalar_type = generic_graph_run_literal_scalar_type(values);
+        return generic_graph_run_literal_input(std::span<const literal::TimeSeriesLiteral>{values}, scalar_type);
+    } else {
+        auto &values = storage.sequences.emplace_back();
+        values.emplace_back(graph_run_literal_from_value(std::forward<Input>(input), storage));
+        const auto &scalar_type = generic_graph_run_literal_scalar_type(values);
+        return generic_graph_run_literal_input(std::span<const literal::TimeSeriesLiteral>{values}, scalar_type);
+    }
+}
+
+template <typename Function, typename IndexSequence> struct generic_graph_run_invocable;
+
+template <typename Function, std::size_t... Index>
+struct generic_graph_run_invocable<Function, std::index_sequence<Index...>>
+    : std::bool_constant<std::invocable<Function,
+                                         std::conditional_t<true, wp<>, std::integral_constant<std::size_t, Index>>...>> {};
+
+template <typename Function, typename IndexSequence>
+inline constexpr bool generic_graph_run_invocable_v = generic_graph_run_invocable<Function, IndexSequence>::value;
+
+template <typename Function, typename... Inputs, std::size_t... Index>
+auto run_generic_graph(Function &&function, const GraphRunOptions &options, std::index_sequence<Index...>,
+                       Inputs &&...inputs) {
+    using Result = std::invoke_result_t<Function, std::conditional_t<true, wp<>,
+                                                                     std::integral_constant<std::size_t, Index>>...>;
+    auto captured = CapturedValues{options.start_time.value_or(
+        options.engine == EvaluationEngine::realtime ? SystemWallClock::instance().now()
+                                                     : MIN_DT + EvaluationTime::duration{1})};
+    auto wiring = GraphWiring{};
+    auto literal_storage = GraphRunLiteralStorage{};
+    auto cycle_count = std::size_t{};
+    {
+        auto context = WiringContext{wiring};
+        auto prepared = std::tuple{generic_graph_run_input(std::forward<Inputs>(inputs), literal_storage)...};
+        cycle_count = std::max({std::size_t{}, std::get<Index>(prepared).cycle_count...});
+        if constexpr (std::same_as<Result, void>) {
+            std::invoke(std::forward<Function>(function), wp<>{std::get<Index>(prepared).point}...);
+        } else {
+            auto output = std::invoke(std::forward<Function>(function), wp<>{std::get<Index>(prepared).point}...);
+            if (options.capture_output) {
+                capture_graph_output(output, captured);
+            }
+        }
+    }
+    captured.set_cycle_count(cycle_count);
+    return GraphRunResult<void>{finish_graph_run(wiring, captured, options)};
+}
+
+template <typename Function, typename... Inputs>
+auto run_generic_graph_literal_lists(Function &&function, const GraphRunOptions &options,
+                                    const Inputs &...inputs)
+    requires((std::same_as<std::remove_cvref_t<Inputs>,
+                           std::initializer_list<literal::TimeSeriesLiteral>> && ...))
+{
+    return run_generic_graph(std::forward<Function>(function), options, std::index_sequence_for<Inputs...>{},
+                             RawGraphRunLiteralInput{{inputs.begin(), inputs.size()}}...);
+}
+
+template <typename Function, typename... Inputs>
+inline constexpr bool generic_graph_run_target_v = [] {
+    if constexpr (graph_run_target<Function> || sizeof...(Inputs) == 0) {
+        return false;
+    } else {
+        return generic_graph_run_invocable_v<Function, std::make_index_sequence<sizeof...(Inputs)>>;
+    }
+}();
+
 } // namespace details
 
 // Wire an explicitly typed input while a run_graph callback has an active WiringContext.
@@ -1192,6 +1422,106 @@ template <std::invocable Function>
     requires(!std::derived_from<std::remove_cvref_t<Function>, WiringTemplate>)
 auto run_graph(Function &&function, const GraphRunOptions &options = {}) {
     return details::run_graph_callback(std::forward<Function>(function), options);
+}
+
+template <typename Function, typename... Inputs>
+    requires ((!std::same_as<std::remove_cvref_t<Inputs>, GraphRunOptions>) && ...) &&
+             details::generic_graph_run_target_v<Function, Inputs...>
+auto run_graph(Function &&function, Inputs &&...inputs) {
+    return details::run_generic_graph(std::forward<Function>(function), GraphRunOptions{},
+                                     std::index_sequence_for<Inputs...>{}, std::forward<Inputs>(inputs)...);
+}
+
+template <typename Function, typename Options, typename... Inputs>
+    requires std::same_as<std::remove_cvref_t<Options>, GraphRunOptions> &&
+             details::generic_graph_run_target_v<Function, Inputs...>
+auto run_graph(Function &&function, const Options &options, Inputs &&...inputs) {
+    return details::run_generic_graph(std::forward<Function>(function), options,
+                                     std::index_sequence_for<Inputs...>{}, std::forward<Inputs>(inputs)...);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, std::initializer_list<literal::TimeSeriesLiteral> input) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), GraphRunOptions{}, input);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, const GraphRunOptions &options,
+               std::initializer_list<literal::TimeSeriesLiteral> input) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), options, input);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, std::initializer_list<literal::TimeSeriesLiteral> first,
+               std::initializer_list<literal::TimeSeriesLiteral> second) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), GraphRunOptions{}, first, second);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, const GraphRunOptions &options,
+               std::initializer_list<literal::TimeSeriesLiteral> first,
+               std::initializer_list<literal::TimeSeriesLiteral> second) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), options, first, second);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, std::initializer_list<literal::TimeSeriesLiteral> first,
+               std::initializer_list<literal::TimeSeriesLiteral> second,
+               std::initializer_list<literal::TimeSeriesLiteral> third) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), GraphRunOptions{}, first, second, third);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, const GraphRunOptions &options,
+               std::initializer_list<literal::TimeSeriesLiteral> first,
+               std::initializer_list<literal::TimeSeriesLiteral> second,
+               std::initializer_list<literal::TimeSeriesLiteral> third) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), options, first, second, third);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, std::initializer_list<literal::TimeSeriesLiteral> first,
+               std::initializer_list<literal::TimeSeriesLiteral> second,
+               std::initializer_list<literal::TimeSeriesLiteral> third,
+               std::initializer_list<literal::TimeSeriesLiteral> fourth) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), GraphRunOptions{}, first, second, third, fourth);
+}
+
+template <typename Function>
+    requires details::generic_graph_run_target_v<Function, details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput,
+                                                details::RawGraphRunLiteralInput>
+auto run_graph(Function &&function, const GraphRunOptions &options,
+               std::initializer_list<literal::TimeSeriesLiteral> first,
+               std::initializer_list<literal::TimeSeriesLiteral> second,
+               std::initializer_list<literal::TimeSeriesLiteral> third,
+               std::initializer_list<literal::TimeSeriesLiteral> fourth) {
+    return details::run_generic_graph_literal_lists<Function>(
+        std::forward<Function>(function), options, first, second, third, fourth);
 }
 
 template <typename Graph, std::ranges::contiguous_range Inputs>

@@ -2,6 +2,8 @@
 
 Timed operators use evaluation time. C++ durations use `timedelta_t`; Python uses
 `datetime.timedelta`. Arguments such as a period are fixed during construction.
+For calculations on timestamp and duration values, see
+[timestamps and durations](library-temporal.md).
 
 ## last_modified_time
 

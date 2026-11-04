@@ -2,8 +2,7 @@
 
 Use numeric and Boolean operators to construct calculations over fixed scalars or
 changing values. C++ includes `<hg/library.hpp>` and imports `hg::operators`; Python
-imports names from `hgraph.operators`. The fragments below use existing connections `x`,
-`y`, and `integer_value`.
+imports names from `hgraph.operators`.
 
 ## Arithmetic
 
@@ -36,80 +35,203 @@ Generic `eq` and `ne` overloads accept two time series of the same equality-comp
 scalar type. Scalar-only and mixed scalar/time-series calls for compound, collection,
 and extension types are not yet supplied.
 
-Timestamp subtraction produces a duration. Timestamp minus duration produces a
-timestamp. Integer and temporal arithmetic wraps at the underlying integer width.
-Negation and absolute value of the minimum integer or duration return that same minimum
-value. Floating-point arithmetic uses normal C++ operations. String operations process
-bytes, including embedded NUL bytes. Temporal operators are native C++ overloads.
-Python `datetime.datetime` and `datetime.timedelta` map to `date_time_t` and
-`timedelta_t`; timestamp conversion uses a timezone-naive UTC datetime.
+Integer arithmetic wraps at `i64` width. Negation and absolute value of the minimum
+integer return that same minimum value. Floating-point arithmetic uses native C++
+operations. String operations process bytes, including embedded NUL bytes.
+[Timestamp and duration operations](library-temporal.md) describe temporal arithmetic
+and field access.
 
-Integer division converts both operands to `double` and uses native floating-point
-division. Conversion can round operands outside the consecutive-integer range, so
-large-integer results can differ from Python integer true division. It preserves the
-sign of a zero result. Division, floor division, and modulo reject a zero divisor during
-evaluation. Dividing the `i64` minimum by `-1` returns the positive quotient as
-`double`; integer floor division wraps the corresponding quotient, and modulo returns
-zero. Integer power wraps at `i64` width and rejects negative exponents. Floating power
-rejects zero raised to a negative exponent and negative bases with fractional exponents.
-`round` returns `double` and rounds ties to even. With a digit count, it scales the
-value by a power of ten, rounds, and scales back. Floating-point scaling can affect the
-result: `round(2.675, 2)` returns `2.68`. It preserves non-finite values and the sign of
-zero.
+### Division and powers
 
-`divmod(lhs, rhs)` returns a fixed two-item TSL. Item 0 is the floor quotient and
-item 1 is the remainder, following `floordiv` and `mod`. Each item retains its
-resolved guarantee; the TSL root uses the ordinary guarantee. Integer operands
-must both be `i64`; floating operands must both be `double`.
+To divide quantities while retaining a fractional result, use `/` or `div`.
+Integer division converts both operands to `double`; large integers can round during
+conversion, so results can differ from Python integer true division. Division preserves
+the sign of a zero result. Use `floordiv` when the result needs the floor quotient,
+and `mod` when only the remainder is needed. Division, floor division, and modulo
+reject a zero divisor during evaluation.
 
-Shift counts must be nonnegative. A left shift by 64 or more returns zero; a right
-shift by 64 or more returns zero for a nonnegative value and -1 for a negative
-value. A negative shift count raises `domain_error` during evaluation. Python graph
-code can use `<<` and `>>`; both languages also provide `lshift` and `rshift`.
+Dividing the `i64` minimum by `-1` returns the positive quotient as `double`;
+integer floor division wraps that quotient, and modulo returns zero. Integer `pow`
+wraps at `i64` width and rejects negative exponents. Floating `pow` rejects zero
+raised to a negative exponent and negative bases with fractional exponents.
 
-`ln` computes the natural logarithm of a positive `double`; a nonpositive input
-raises `domain_error`. `sign` returns -1, 0, or 1 for `i64`. For `double`, it
-returns -1 or 1 for nonzero values, positive zero for either signed zero, and a NaN
-unchanged.
+### Quotient and remainder
 
-Duration multiplication by `i64` wraps at the underlying i64 width. Multiplication
-or division by `double` rounds the resulting microseconds to nearest, ties to even.
-Division by `i64` uses integer arithmetic and the same tie rule. Dividing one
-duration by another returns the ratio as `double`; floor division returns the floor
-of that ratio as `i64`. Division by zero or a non-finite duration divisor raises
-`domain_error`; a non-finite or out-of-range scaled duration raises `overflow_error`.
-Floating duration scaling uses native `long double` intermediates, so halfway results
-can vary on platforms where `long double` has no more precision than `double`. For
-example, `5us * 0.1` can round to 0us there; this operation does not guarantee Python
-`timedelta` multiplication parity.
+If a calculation needs both complete units and a leftover amount, `divmod` produces
+both from the same operands. Its fixed two-item time series list contains the floor
+quotient at index 0 and the remainder at index 1. For example, dividing a quantity
+into packs of three gives:
 
-### Temporal fields
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
 
-Use `getattr` to extract a time component from `date_time_t` or `timedelta_t`.
-The field name is a scalar known during wiring, so the graph uses a field-specific
-implementation:
+:::::{tab-item} Python
+:sync: python
 
 ```python
-import datetime
-import hgraph as hg
+from hgraph import TS, TSL, graph, run_graph
+from hgraph.operators import divmod
 
-@hg.graph
-def year(value: hg.TS[datetime.datetime]) -> hg.TS[int]:
-    return hg.operators.getattr(value, hg.symbol("year"))
+@graph
+def packs(quantity: int) -> TSL[TS[int], 2]:
+    return divmod(quantity, 3)
+
+print(run_graph(packs, [7, 10, -7]))
 ```
 
-`date_time_t` supports `year`, `month`, `day`, `hour`, `minute`, `second`,
-`microsecond`, `weekday`, and `isoweekday`. `weekday` numbers Monday as 0;
-`isoweekday` numbers Monday as 1. Calendar fields use
-`std::chrono::year_month_day` and raise `out_of_range` when the timestamp's year
-is outside that type's range. Time-of-day and weekday fields support the full
-`date_time_t` representation. Python `datetime.datetime` values are timezone-naive
-UTC values.
+Output:
 
-`timedelta_t` supports `days`, `seconds`, `microseconds`, and `total_seconds`.
-The first three fields use normalized components: for a negative duration, `days`
-is rounded down and `seconds` and `microseconds` are nonnegative. This matches
-Python `datetime.timedelta`.
+```text
+[{0: 2, 1: 1}, {0: 3, 1: 1}, {0: -3, 1: 2}]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <iostream>
+
+using namespace hg;
+using namespace hg::operators;
+
+int main() {
+    std::cout << run_graph([](auto quantity) {
+        return divmod(quantity, 3);
+    }, {7, 10, -7}) << '\n';
+}
+```
+
+Output:
+
+```text
+[{0: 2, 1: 1}, {0: 3, 1: 1}, {0: -3, 1: 2}]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+Both operands must have the same numeric type. Each result item retains its resolved
+guarantee; the list root is ordinary. Indexing the result selects one item as a
+connection, as with other [time series lists](../guide/advanced-graphs/collections.md).
+
+### Rounding
+
+When a calculation needs a fixed decimal precision, use `round(value, ndigits)`.
+The digit count is optional, and the result remains `double`. Rounding uses ties to
+even and preserves non-finite values and the sign of zero. With a digit count it
+scales by a power of ten, rounds, and scales back; floating-point scaling affects
+some halfway values, so `round(2.675, 2)` returns `2.68`.
+
+### Logarithms and signs
+
+Use `ln` for natural logarithms, for example when converting ratios into log returns.
+Use `sign` when only a value's direction matters, independently of its magnitude:
+
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from math import e
+from hgraph import graph, run_graph
+from hgraph.operators import ln, sign
+
+@graph
+def log_return(ratio: float) -> float:
+    return ln(ratio)
+
+@graph
+def direction(change: int) -> int:
+    return sign(change)
+
+print(run_graph(log_return, [1.0, e]))
+print(run_graph(direction, [-20, 0, 35]))
+```
+
+Output:
+
+```text
+[0.0, 1.0]
+[-1, 0, 1]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <iostream>
+
+#include <numbers>
+
+using namespace hg;
+using namespace hg::operators;
+
+int main() {
+    std::cout << run_graph([](auto ratio) {
+        return ln(ratio);
+    }, {1.0, std::numbers::e}) << '\n';
+    std::cout << run_graph([](auto change) {
+        return sign(change);
+    }, {-20, 0, 35}) << '\n';
+}
+```
+
+Output:
+
+```text
+[0, 1]
+[-1, 0, 1]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+`ln` accepts `double`; a nonpositive value raises `domain_error` during evaluation.
+`sign` returns -1, 0, or 1 in the input's numeric type. For `double`, either signed
+zero produces positive zero and a NaN is returned unchanged.
 
 ### Integer bitwise operators
 
@@ -165,12 +287,10 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto low_bits(wp<TS<i64>> value) {
-    return bit_and(value, 7);
-}
-
 int main() {
-    std::cout << run_graph(low_bits, {9, 15, SKIP, 16}) << '\n';
+    std::cout << run_graph([](auto value) {
+        return bit_and(value, 7);
+    }, {9, 15, SKIP, 16}) << '\n';
 }
 ```
 
@@ -195,6 +315,83 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::
 :::::
 ::::::
+
+### Bit shifts
+
+To position bits in an integer mask or extract a shifted value, use `<<` and `>>`,
+or their named forms `lshift` and `rshift`. Right shift preserves a negative value's
+sign:
+
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from hgraph import graph, run_graph
+
+@graph
+def shifted(value: int) -> int:
+    return value >> 1
+
+print(run_graph(shifted, [-7, 7, 16]))
+```
+
+Output:
+
+```text
+[-4, 3, 8]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <iostream>
+
+using namespace hg;
+using namespace hg::operators;
+
+int main() {
+    std::cout << run_graph([](auto value) {
+        return value >> 1;
+    }, {-7, 7, 16}) << '\n';
+}
+```
+
+Output:
+
+```text
+[-4, 3, 8]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+Operands are `i64`. Shift counts must be nonnegative; a negative count raises
+`domain_error` during evaluation. A left shift by 64 or more returns zero. A right
+shift by 64 or more returns zero for a nonnegative value and -1 for a negative value.
 
 ### convert
 
@@ -283,7 +480,7 @@ operators reject `opt()` arguments.
 ## Wiring syntax
 
 To write graph formulas with familiar expression syntax, use the overloaded operators
-on wiring points. C++ supports binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, unary `+`,
+on wiring points. C++ supports binary `+`, `-`, `*`, `/`, `%`, `|`, `&`, `^`, `<<`, `>>`, unary `+`,
 `-`, and `~`, and `==`, `!=`, `<`, `<=`, `>`, `>=`. Use `floordiv()`, `pow()`, `round()`, and
 `abs()` for operations without C++ wiring syntax. These operations also accept scalar
 operands and return `wp<>`.
@@ -298,7 +495,7 @@ auto negated = !bounded;
 
 Python uses `/`, `//`, `%`, and `**` for division, floor division, modulo, and power.
 It uses `&`, `|`, and `^` for integer bitwise operators and collection set operations,
-and `~` for integer bitwise inversion. `round(point, ndigits)` and `abs(point)` call
+and `~` for integer bitwise inversion. `<<` and `>>` shift integer values. `round(point, ndigits)` and `abs(point)` call
 their corresponding operators. Python uses the named Boolean operators because its
 `and`, `or`, and `not` keywords cannot be overloaded. Write two comparisons explicitly:
 
@@ -360,7 +557,6 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
 
@@ -368,12 +564,10 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto limited(wp<TS<i64>> value) {
-    return clip(value, i64{0}, i64{100});
-}
-
 int main() {
-    const auto result = run_graph(limited, {-2, 50, 120});
+    const auto result = run_graph([](auto value) {
+        return clip(value, 0, 100);
+    }, {-2, 50, 120});
     std::cout << result << '\n';
 }
 ```

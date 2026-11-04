@@ -1,6 +1,7 @@
 # Unified graph execution and output capture
 
-Status: accepted
+Status: accepted; the input interpretation rule is superseded for generic C++
+callables by [generic lambda graph runs](0102-generic-lambda-graph-runs.md).
 
 ## Context
 

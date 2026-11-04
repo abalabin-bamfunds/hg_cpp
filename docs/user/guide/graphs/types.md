@@ -60,7 +60,6 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/graph.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
@@ -76,12 +75,12 @@ const auto correct = node([](i64 reading) {
     return reading + 2;
 });
 
-auto temperature(wp<TS<i64>> reading) {
-    return correct(reading);
-}
-
 int main() {
-    const auto result = run_graph(graph(temperature), {18, -3, SKIP, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            return correct(reading);
+        },
+        {18, -3, SKIP, 19});
     std::cout << result << '\n';
 }
 ```
@@ -161,12 +160,12 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto scaled(wp<TS<i64>> reading) {
-    return convert[type<TS<double>>](reading) * 0.5;
-}
-
 int main() {
-    const auto result = run_graph(scaled, {18, SKIP, 19});
+    const auto result = run_graph(
+        [](auto reading) {
+            return convert[type<TS<double>>](reading) * 0.5;
+        },
+        {18, SKIP, 19});
     std::cout << result << '\n';
 }
 ```

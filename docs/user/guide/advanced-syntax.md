@@ -84,6 +84,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
+C++ `wp<TS<i64>>` declares an input connection carrying 64-bit integers. Use an
+explicit connection type when a graph needs to restrict its accepted types or
+state a time series contract. An `auto` parameter lets the caller determine the
+connection's type.
+
 See [time series types](advanced-graphs/types.md) and
 [guarantees](advanced-graphs/guarantees.md).
 
@@ -257,9 +262,17 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-Optional views check validity before value access. Active inputs schedule evaluation;
-passive inputs supply current values when another dependency triggers evaluation.
-See [input controls](advanced-nodes/inputs.md).
+If a node can calculate without an input, make it
+[optional](advanced-nodes/inputs.md#optional-inputs) and handle its absence. Keep an
+input [required](advanced-nodes/inputs.md#required-inputs) when it must have a value,
+or use [`all_valid`](advanced-nodes/inputs.md#requiring-complete-items) when every
+immediate item of a collection is needed.
+
+To calculate only on selected updates, make those inputs
+[active](advanced-nodes/inputs.md#active-and-passive-inputs) and the others passive.
+A passive input still keeps its current value, and its validity constraint still
+determines whether the node can run. The [validity and activity guide](advanced-nodes/inputs.md)
+compares the combinations with complete examples.
 
 ## State
 

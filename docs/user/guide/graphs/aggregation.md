@@ -15,6 +15,9 @@ what your total should represent.
 | Difference between successive values | `diff` |
 | Smoothed changing value | `ewma` |
 
+For keyed tables, the C++ frame extension provides
+[grouped aggregation](../../extensions/frame-grouping.md) to maintain one row per group.
+
 ## Current-item reductions
 
 If you need a total, minimum, maximum, or mean across the items currently present,
@@ -321,12 +324,12 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto reading_count(wp<TS<i64>> reading) {
-    return count(reading);
-}
-
 int main() {
-    const auto result = run_graph(reading_count, {SKIP, 18, 18, SKIP, 24, 22});
+    const auto result = run_graph(
+        [](auto reading) {
+            return count(reading);
+        },
+        {SKIP, 18, 18, SKIP, 24, 22});
     std::cout << result << '\n';
 }
 ```
@@ -398,13 +401,13 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto previous_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    return lag(calibrated);
-}
-
 int main() {
-    const auto result = run_graph(previous_temperature, {SKIP, 18, 18, SKIP, 24, 22});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            return lag(calibrated);
+        },
+        {SKIP, 18, 18, SKIP, 24, 22});
     std::cout << result << '\n';
 }
 ```
@@ -485,13 +488,13 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto temperature_total(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    return sums(calibrated);
-}
-
 int main() {
-    const auto result = run_graph(temperature_total, {SKIP, 18, 18, SKIP, 24, 22});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            return sums(calibrated);
+        },
+        {SKIP, 18, 18, SKIP, 24, 22});
     std::cout << result << '\n';
 }
 ```
@@ -563,13 +566,13 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto average_temperature(wp<TS<i64>> reading) {
-    const auto calibrated = reading + 2;
-    return means(calibrated);
-}
-
 int main() {
-    const auto result = run_graph(average_temperature, {SKIP, 18, 18, SKIP, 24, 22});
+    const auto result = run_graph(
+        [](auto reading) {
+            const auto calibrated = reading + 2;
+            return means(calibrated);
+        },
+        {SKIP, 18, 18, SKIP, 24, 22});
     std::cout << result << '\n';
 }
 ```
@@ -648,12 +651,12 @@ using namespace hg::literals;
 using namespace hg::operators;
 using namespace literal;
 
-auto session_total(wp<TS<i64>> reading, wp<TS<bool>> reset) {
-    return sums(reading, "reset"_n = reset);
-}
-
 int main() {
-    const auto result = run_graph(session_total, {18, 19, SKIP, 20, 21}, {SKIP, SKIP, false, SKIP, true});
+    const auto result = run_graph(
+        [](auto reading, auto reset) {
+            return sums(reading, "reset"_n = reset);
+        },
+        {18, 19, SKIP, 20, 21}, {SKIP, SKIP, false, SKIP, true});
     std::cout << result << '\n';
 }
 ```

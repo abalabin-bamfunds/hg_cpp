@@ -20,6 +20,34 @@ supported callable. Arguments bind to the receiving signature. Fixed scalar argu
 remain fixed; input sequences supply successive updates. `ticks` explicitly identifies
 a sequence when argument shape would otherwise be ambiguous.
 
+### C++ inferred inputs
+
+For a calculation that can accept the supplied scalar types, use an inline lambda
+with `auto` parameters. Each parameter receives a graph connection, and `run_graph`
+infers its type from the input values:
+
+```cpp
+run_graph([](auto reading) { return reading + 2; }, {18, SKIP, 19});
+```
+
+A scalar argument supplies one initial value; a sequence supplies ticks. Capture
+fixed configuration in the lambda or pass it to a helper function from the body.
+The [basic syntax example](../guide/getting-started.md#changing-inputs) shows a
+complete program.
+
+Braced sequences support up to four inputs in this form. For more inputs, or a
+call that combines sequences with bare scalar arguments, use named C++ ranges or
+explicit input descriptors so C++ can deduce each argument's type.
+
+Literal streams need a value that identifies their scalar type. `SKIP` and
+`INVALID` do not identify a type, and values of different scalar types cannot be
+combined in one inferred stream. A typed C++ range supplies its element type even
+when empty. Ranges of `Scalar<>` or `ScalarValue<>` use the values' runtime types
+and need a value to identify a type. Use
+`input<TS<T>>({...})` when neither the values nor the range type identify a type.
+Collection literals require an explicit type to identify their shape.
+Concrete graph declarations continue to determine their own argument interpretation.
+
 ## Arguments
 
 To reproduce independently changing sources, supply an input sequence for each one.
@@ -96,8 +124,9 @@ Construction and evaluation exceptions propagate after cleanup.
 To inspect publications after a run, keep output capture enabled, which is the
 default. Python returns `GraphRunResult`, or `None` for an outputless run or disabled
 capture. C++ returns a `GraphRunResult<T>`; disabled capture leaves its event storage
-empty. Capture dereferences a root reference. Collections containing reference items
-require capture to be disabled.
+empty. For a generic lambda, `run_graph` returns `GraphRunResult<>`, whose captured
+value type is determined at runtime. Capture dereferences a root reference.
+Collections containing reference items require capture to be disabled.
 
 [Result access](testing.md) specifies sparse events and dense positions.
 [Profiling](../how-to/profiling.md) specifies recorder setup, reported measurements,

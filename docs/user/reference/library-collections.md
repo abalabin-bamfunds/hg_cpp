@@ -565,7 +565,8 @@ selection during construction; supported time series keys can retarget it.
 missing dynamic dictionary key has no current item value. Selection follows the selected
 item's updates and validity. Python object scalar overloads use their annotated result
 types; see [scalar values](scalars.md#python-object-scalars).
-
+For date components or duration units, use the
+[temporal field overloads](library-temporal.md#calendar-and-duration-fields).
 
 ## Construction and conversion
 

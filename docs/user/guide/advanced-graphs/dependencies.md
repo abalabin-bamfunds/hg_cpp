@@ -13,7 +13,7 @@ publish; [running summaries on request](../../how-to/requested-summary.md) combi
 sampling with retained statistics.
 
 A custom node expresses this with an active signal and a passive value input.
-[Node input controls](../advanced-nodes/inputs.md#activity) gives the declarations.
+[Node input controls](../advanced-nodes/inputs.md#active-and-passive-inputs) gives the declarations.
 Activity controls scheduling; validity controls whether evaluation is permitted.
 
 ## Selected dependencies
