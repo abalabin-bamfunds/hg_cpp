@@ -881,6 +881,9 @@ prefix on `PYTHONPATH`.
 
 ### Performance and portability
 
+The [benchmark catalog](benchmarks.md) lists harnesses and retained results. The
+[published benchmark page](../user/benchmarks.md) summarizes application-facing measurements.
+
 - public and runtime object sizes
 - graph and global-state allocation accounting
 - compiled and runtime storage size

@@ -38,6 +38,7 @@ history and are marked `superseded`.
 ## Contributor guidance
 
 - [Testing](testing.md): test organization, coverage dimensions, and required checks.
+- [Benchmark catalog](benchmarks.md): harnesses, recorded results, reproduction, and historical experiments.
 - [Library implementation](library-implementation.md): operator implementation conventions.
 - [Documentation maintenance](documentation.md): page structure, examples, tooling, and publication.
 

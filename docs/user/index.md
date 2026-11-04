@@ -225,6 +225,7 @@ guide/execution/time
 how-to/testing
 how-to/errors
 how-to/profiling
+benchmarks
 how-to/cpp-extension
 how-to/examples
 how-to/temperature-monitor
