@@ -15,6 +15,9 @@ what your total should represent.
 | Difference between successive values | `diff` |
 | Smoothed changing value | `ewma` |
 
+For keyed tables, the C++ frame extension provides
+[grouped aggregation](../../extensions/frame-grouping.md) to maintain one row per group.
+
 ## Current-item reductions
 
 If you need a total, minimum, maximum, or mean across the items currently present,

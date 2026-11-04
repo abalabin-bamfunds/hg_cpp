@@ -17,7 +17,9 @@ or a `TS<Dict<K, V>>` whose item feeds that branch parameter. A scalar Dict tick
 a complete snapshot; map scans it and updates only branches whose values changed when
 the item type supports equality. `pass_through(point)` supplies the whole time
 series to each branch. C++ programs that map a scalar Dict must link `hg::library`, which
-provides the Dict-to-TSD conversion overload. Scalars remain fixed arguments. A TSS can
+provides the Dict-to-TSD conversion overload. Python can declare the input as plain
+`dict[K, V]`; see the [snapshot example](../guide/graphs/iteration.md#per-key-calculations-with-map).
+Scalars remain fixed arguments. A TSS can
 supply keys for a source-like graph.
 
 If branch membership should follow one input rather than the union of mapped

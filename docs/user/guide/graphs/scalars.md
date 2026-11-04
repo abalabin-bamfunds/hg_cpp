@@ -171,6 +171,9 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 The second mapping replaces the first, so `bid` is absent. Omitted keys are not
 retained in a scalar dictionary.
 
+To apply one calculation per dictionary key, use
+[`map`](iteration.md#per-key-calculations-with-map) with complete snapshots.
+
 ## Fixed tuples
 
 When a record has a fixed number of positions with different types, use a fixed tuple.

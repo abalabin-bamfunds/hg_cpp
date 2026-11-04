@@ -17,56 +17,232 @@ Missing implementations, incompatible arguments, and ambiguous matches are const
 errors. A failure reports the operator, argument types, candidate signatures, and
 rejection context. See [errors](../how-to/errors.md).
 
-## Extension
+## Declaring an operator
 
-To add an operation or support another input type in C++, declare its prototype with
-`operator_` and register implementations with `overload`:
+To give callers one operation across several input types, declare an operator and
+register a node or graph for each supported signature. A node overload implements a
+calculation with values; a graph overload composes existing calculations. This example
+uses both forms to double integer and floating-point inputs:
 
-```cpp
-#include <hg/library.hpp>
+<!-- runnable-example -->
+::::::{tab-set}
+:sync-group: language
 
-using namespace hg;
-
-inline operator_<auto(i64) -> i64> doubled{"doubled", {"value"}};
-inline overload<doubled> implementation{[](i64 value) { return value * 2; }};
-```
-
-`overload<operation, Definition>` registers an aggregate node definition.
-`overload<operation>{graph_template}` registers a graph implementation.
-`register_overloads<Group>()` constructs a group of overload members. Registration
-retains its implementation after the registration object leaves scope; the operator
-object must remain alive for its uses. Type parameters, requirements, and resolvers
-refine signatures before construction.
-
-Python `@operator` declares a wiring-time signature. Register decorated node or graph
-implementations with `@name.overload`; calls use the engine's normal type resolution and
-overload diagnostics. Declare type parameters explicitly when calls need bracket
-specialization:
+:::::{tab-item} Python
+:sync: python
 
 ```python
 from typing import TypeVar
-from hgraph import TS, operator
+from hgraph import TS, graph, node, operator, run_graph
 
 VALUE = TypeVar("VALUE")
 
-@operator(type_params=(VALUE,))
-def convert(value: TS[VALUE]) -> TS[str]: ...
+@operator
+def doubled(value: TS[VALUE]) -> TS[VALUE]: ...
 
-convert[int](input_point)
+@node(overloads=doubled)
+def doubled_integer(value: int) -> int:
+    return value * 2
+
+@graph(overloads=doubled)
+def doubled_float(value: float) -> float:
+    return value * 2.0
+
+@graph
+def integers(value: int) -> int:
+    return doubled(value)
+
+@graph
+def floats(value: float) -> float:
+    return doubled(value)
+
+print(run_graph(integers, [3, 8]))
+print(run_graph(floats, [1.5, 2.5]))
 ```
 
-Implementations registered before graph wiring participate in selection. C++ extension
-modules can also export native operators through `hg::python::export_operator`.
+Output:
 
-Register an implementation when decorating it with `@node(overloads=operation)`,
-`@compute_node(overloads=operation)`, or `@graph(overloads=operation)`. `overloads=` accepts a
-Python-declared operator or a native operator exported to Python. These forms can be
-mixed with `@operation.overload` for Python-declared operators.
+```text
+[6, 16]
+[3.0, 5.0]
+```
+:::::
 
-See [C++ integration](../how-to/cpp-extension.md) for build and ownership rules. Do not
-register a conversion overload merely to hide an incompatible numeric expression;
-explicit `convert` makes the resulting value type visible.
+:::::{tab-item} C++
+:sync: cpp
 
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <iostream>
+
+#include <hg/graph.hpp>
+
+using namespace hg;
+using namespace hg::operators;
+
+inline operator_<auto(SCALAR) -> SCALAR> doubled{"doubled", {"value"}};
+inline overload<doubled> doubled_integer{[](i64 value) { return value * 2; }};
+inline overload<doubled> doubled_float{
+    graph([](wp<TS<double>> value) { return value * 2.0; })};
+
+int main() {
+    std::cout << run_graph([](auto value) {
+        return doubled(value);
+    }, {3, 8}) << '\n';
+    std::cout << run_graph([](auto value) {
+        return doubled(value);
+    }, {1.5, 2.5}) << '\n';
+}
+```
+
+Output:
+
+```text
+[6, 16]
+[3, 5]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+Python `@node(overloads=operation)`, `@compute_node(overloads=operation)`, and
+`@graph(overloads=operation)` register their decorated implementation. Use
+`compute_node` when the implementation needs [input views](input-views.md).
+For a Python-declared operator, `@operation.overload` above a node or graph decorator
+registers the implementation in the same way.
+
+C++ `overload<operation, Definition>` registers an aggregate node definition;
+`overload<operation>{graph_template}` registers a graph implementation.
+`register_overloads<Group>()` constructs a group of overload members. Registration
+retains its implementation after the registration object leaves scope; the operator
+object must remain alive for its uses.
+
+Register implementations before graph wiring. Type parameters, requirements, and
+resolvers refine signatures before construction. To expose explicit specialization
+in Python, declare `@operator(type_params=(VALUE,))`; callers can then write
+`operation[int](input_point)`. See [generic declarations](graph-code.md).
+
+## Extending a library operator
+
+If your domain needs a library operation for an additional type, register an overload
+on that operator. Python's `overloads=` accepts both Python-declared operators and
+native operators exported to Python. Existing native overloads remain available.
+
+Here the application defines Boolean `add` as logical OR. This is a registered
+application rule; the numeric overloads keep their existing behavior:
+
+::::::{tab-set}
+:sync-group: language
+
+:::::{tab-item} Python
+:sync: python
+
+```python
+from hgraph import graph, node, run_graph
+from hgraph.operators import add
+
+@node(overloads=add)
+def add_flags(lhs: bool, rhs: bool) -> bool:
+    return lhs or rhs
+
+@graph
+def flags(lhs: bool, rhs: bool) -> bool:
+    return add(lhs, rhs)
+
+@graph
+def numbers(lhs: int, rhs: int) -> int:
+    return add(lhs, rhs)
+
+print(run_graph(flags, [False, True, False], [True, False, False]))
+print(run_graph(numbers, [2, 3], [4, 5]))
+```
+
+Output:
+
+```text
+[True, True, False]
+[6, 8]
+```
+:::::
+
+:::::{tab-item} C++
+:sync: cpp
+
+::::{tab-set}
+
+:::{tab-item} Code
+
+```cpp
+#include <hg/library.hpp>
+#include <hg/run_graph.hpp>
+#include <iostream>
+
+using namespace hg;
+using namespace hg::operators;
+
+inline overload<operators::add> add_flags{
+    [](bool lhs, bool rhs) { return lhs || rhs; }};
+
+int main() {
+    std::cout << run_graph([](auto lhs, auto rhs) {
+        return add(lhs, rhs);
+    }, {false, true, false}, {true, false, false}) << '\n';
+    std::cout << run_graph([](auto lhs, auto rhs) {
+        return add(lhs, rhs);
+    }, {2, 3}, {4, 5}) << '\n';
+}
+```
+
+Output:
+
+```text
+[true, true, false]
+[6, 8]
+```
+:::
+
+:::{tab-item} Build and run
+
+The [C++ example project](../guide/installation.md#c-example-project) builds this code as `main.cpp`.
+
+```sh
+cmake -S . -B build -DCMAKE_PREFIX_PATH="/path/to/site-packages"
+cmake --build build --config Release
+```
+
+Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windows.
+:::
+::::
+:::::
+::::::
+
+Overloads participate in the same resolution rules as built-in implementations.
+An equally specific duplicate is ambiguous. Registrations affect subsequent calls
+to that operator, so put application-specific registrations in an explicit setup
+module or translation unit.
+
+C++ extension modules can export mutable native operators through
+`hg::python::export_operator`. See [C++ integration](../how-to/cpp-extension.md)
+for build and ownership rules. Use explicit `convert` for numeric type changes so
+the resulting value type remains visible at the call site.
 
 ## Runtime dispatch
 

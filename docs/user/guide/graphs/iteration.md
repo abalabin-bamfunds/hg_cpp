@@ -94,9 +94,11 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 ## Per-key calculations with map
 
-For collections whose items arrive, change, or disappear during a run,
-`map(graph, values)` applies the graph independently to each key. An item update reaches
-that key's calculation, while adding or removing a key starts or stops its instance.
+If readings arrive as complete dictionary snapshots, `map(graph, values)` applies
+one calculation per key. Each snapshot supplies all current items. HG compares it
+with the preceding snapshot, starts calculations for new keys, and stops them for
+keys that disappeared. An unchanged item does not recalculate when its type supports
+equality. The mapped calculation can be a graph function or a node template.
 
 <!-- runnable-example -->
 ::::::{tab-set}
@@ -106,17 +108,22 @@ that key's calculation, while adding or removing a key starts or stops its insta
 :sync: python
 
 ```python
-from hgraph import REMOVE, TS, TSD, graph, map, run_graph
+from hgraph import graph, map, run_graph
 
 @graph
 def calibrate(reading: int) -> int:
     return reading + 2
 
 @graph
-def sensor_one(readings: TSD[int, TS[int]]) -> int:
+def sensor_one(readings: dict[int, int]) -> int:
     return map(calibrate, readings)[1]
 
-print(run_graph(sensor_one, [{1: 18, 2: 30}, {2: 31}, {1: REMOVE}, {1: 19}]))
+print(run_graph(sensor_one, [
+    {1: 18, 2: 30},
+    {1: 18, 2: 31},
+    {2: 31},
+    {1: 19, 2: 31},
+]))
 ```
 
 Output:
@@ -135,26 +142,24 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
-#include <hg/graph.hpp>
+#include <hg/map.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
-#include <hg/map.hpp>
-#include <hg/time_series/tsd/tsd_type.hpp>
 
 using namespace hg;
 using namespace hg::operators;
-using namespace literal;
-
-auto calibrate(wp<TS<i64>> reading) { return (reading + 2).as<TS<i64>>(); }
-
-auto sensor_one(wp<TSD<i64, TS<i64>>> readings) {
-    return map(calibrate, readings)[i64{1}].as<TS<i64>>();
-}
 
 int main() {
-    const auto result = run_graph(graph(sensor_one), {{{1, 18}, {2, 30}}, {{2, 31}}, {{1, REMOVE}}, {{1, 19}}});
-    std::cout << result << '\n';
+    const auto calibrate = node([](i64 reading) { return reading + 2; });
+    std::cout << run_graph([&](auto readings) {
+        return map(calibrate, readings)[1];
+    }, input<TS<Dict<i64, i64>>>({
+        {{1, 18}, {2, 30}},
+        {{1, 18}, {2, 31}},
+        {{2, 31}},
+        {{1, 19}, {2, 31}},
+    })) << '\n';
 }
 ```
 
@@ -180,22 +185,26 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 :::::
 ::::::
 
-`TSD[int, TS[int]]` in Python and `TSD<i64, TS<i64>>` in C++ describe keyed inputs
-whose integer items update independently. Here, each input mapping supplies item
-updates. The [collection chapter](../advanced-graphs/collections.md#dictionaries)
-defines the type and update format in detail.
+The result selects sensor 1 from the mapped calculations. Changing only sensor 2
+leaves sensor 1 unchanged. Omitting sensor 1 from a later snapshot removes its
+calculation; adding it back creates a fresh instance.
 
-The example selects sensor 1 from the mapped results. An update to sensor 2 does not
-recalculate sensor 1. Re-adding sensor 1 creates a fresh instance.
+Python's `dict[int, int]` declares a complete scalar dictionary. C++ uses
+`input<TS<Dict<i64, i64>>>` to distinguish whole-dictionary snapshots from item
+updates; the graph callback can keep `auto` parameters. The input declaration selects
+the collection shape, as in [scalar dictionaries](scalars.md#dictionaries).
+
+When a source publishes only changed items, use a
+[time series dictionary](../advanced-graphs/collections.md#mapping-item-updates)
+to map those updates directly.
 
 ## Shared and mapped arguments
 
 If every item needs the same changing configuration, wrap that argument in
-`pass_through(value)` to send the complete input to every instance. Scalar arguments
+`pass_through(value)` to send its current value to every instance. Scalar arguments
 already supply a fixed value to all instances, while an unwrapped dictionary supplies
-each instance with its matching item.
+each instance with its matching item:
 
-<!-- runnable-example -->
 ::::::{tab-set}
 :sync-group: language
 
@@ -203,17 +212,17 @@ each instance with its matching item.
 :sync: python
 
 ```python
-from hgraph import TS, TSD, graph, map, pass_through, run_graph
+from hgraph import graph, map, pass_through, run_graph
 
 @graph
 def calibrate(reading: int, offset: int) -> int:
     return reading + offset
 
 @graph
-def first(readings: TSD[int, TS[int]], offset: int) -> int:
+def first(readings: dict[int, int], offset: int) -> int:
     return map(calibrate, readings, pass_through(offset))[1]
 
-print(run_graph(first, [{1: 10, 2: 20}, {2: 21}, None], [2, None, 3]))
+print(run_graph(first, [{1: 10, 2: 20}, {1: 10, 2: 21}, None], [2, None, 3]))
 ```
 
 Output:
@@ -232,6 +241,7 @@ Output:
 
 ```cpp
 #include <hg/library.hpp>
+#include <hg/map.hpp>
 #include <hg/node.hpp>
 #include <hg/run_graph.hpp>
 #include <iostream>
@@ -240,17 +250,15 @@ using namespace hg;
 using namespace hg::operators;
 using namespace literal;
 
-auto calibrate(wp<TS<i64>> reading, wp<TS<i64>> offset) {
-    return (reading + offset).as<TS<i64>>();
-}
-
-auto first(wp<TSD<i64, TS<i64>>> readings, wp<TS<i64>> offset) {
-    return map(calibrate, readings, pass_through(offset))[i64{1}].as<TS<i64>>();
-}
-
 int main() {
-    const auto result = run_graph(first, {{{1, 10}, {2, 20}}, {{2, 21}}, SKIP}, {2, SKIP, 3});
-    std::cout << result << '\n';
+    const auto calibrate = node([](i64 reading, i64 offset) { return reading + offset; });
+    std::cout << run_graph([&](auto readings, auto offset) {
+        return map(calibrate, readings, pass_through(offset))[1];
+    }, input<TS<Dict<i64, i64>>>({
+        {{1, 10}, {2, 20}},
+        {{1, 10}, {2, 21}},
+        SKIP,
+    }), ticks({2, SKIP, 3})) << '\n';
 }
 ```
 
@@ -277,11 +285,10 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 ::::::
 
 An offset update reaches every instance. A sensor 2 update leaves sensor 1 unchanged.
-
-With several mapped dictionaries, the default key set is their union. Missing items
-can leave an instance's required inputs unavailable. `__key_set_arg__` selects one
-argument's keys; `__key_arg__` passes the current key into the inner graph.
-The [map reference](../../reference/higher-order.md#map) specifies these options.
+C++ `ticks({...})` marks the offset argument as a sequence of updates alongside the
+typed dictionary input.
+The [map reference](../../reference/higher-order.md#map) describes mapping several
+dictionaries and choosing the branch keys.
 
 ## Independent state
 

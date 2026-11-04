@@ -114,7 +114,7 @@ rows for groups that remain nonempty. Invalidation discards retained membership
 and contributions.
 
 Grouped and column sums share the
-[numeric sum rules](../../user/extensions/frame-expressions.md#grouped-sums).
+[numeric sum rules](../../user/extensions/frame-grouping.md#numeric-sum-rules).
 Finite double contributions use Neumaier compensation, including negative
 contributions on removal. Finite overflow recovery rebuilds all affected groups
 in one traversal of the current rows. Publication reuses those results until

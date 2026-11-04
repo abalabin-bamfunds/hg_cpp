@@ -195,5 +195,6 @@ Each expected tick describes the complete delta. Use `SKIP` for no publication a
 printed scalar columns show nullable cell values.
 
 For row calculations and table transformations, see
-[column expressions](frame-expressions.md). For custom row processing, see
-[frame nodes and interchange](frame-nodes.md).
+[column expressions](frame-expressions.md). To maintain totals for each venue or
+other key, use [grouped aggregation](frame-grouping.md). For custom row processing
+and aggregate implementations, see [frame nodes and interchange](frame-nodes.md).

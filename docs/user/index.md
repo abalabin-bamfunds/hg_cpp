@@ -242,6 +242,7 @@ extensions/web-auth
 extensions/websocket
 extensions/frame
 extensions/frame-expressions
+extensions/frame-grouping
 extensions/frame-nodes
 ```
 
@@ -272,6 +273,7 @@ reference/operators
 
 reference/library-index
 reference/library-numeric
+reference/library-temporal
 reference/library-selection
 reference/library-stateful
 reference/library-time

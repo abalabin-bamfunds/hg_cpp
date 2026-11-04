@@ -260,3 +260,6 @@ Run `./build/example` on Linux or macOS, or `build/Release/example.exe` on Windo
 
 The [time reference](../../reference/library-time.md) specifies interval boundaries,
 leading publication, invalidation, and pending work.
+
+For deadline arithmetic and calendar fields, see
+[timestamps and durations](../../reference/library-temporal.md).

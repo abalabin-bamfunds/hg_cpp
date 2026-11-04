@@ -8,6 +8,7 @@ specify imports and headers.
 | Name | Contract |
 | --- | --- |
 | `abs` | [Reference](library-numeric.md#arithmetic) |
+| `agg` (frame, C++) | [Reference](../extensions/frame-grouping.md) |
 | `add` | [Reference](library-numeric.md#arithmetic) |
 | `all_` | [Reference](library-collections.md#boolean-reductions) |
 | `all_valid` | [Reference](library-selection.md#all_valid) |
@@ -34,7 +35,7 @@ specify imports and headers.
 | `diff` | [Reference](library-stateful.md#diff) |
 | `dispatch` | [Reference](operators.md#runtime-dispatch) |
 | `div` | [Reference](library-numeric.md#arithmetic) |
-| `divmod` | [Reference](library-numeric.md#arithmetic) |
+| `divmod` | [Reference](library-numeric.md#quotient-and-remainder) |
 | `drop` | [Reference](library-selection.md#take-drop-step) |
 | `elapsed` | [Reference](library-time.md#elapsed) |
 | `emit` | [Reference](library-collections.md#construction-and-conversion) |
@@ -48,8 +49,9 @@ specify imports and headers.
 | `format_` | [Reference](library-text.md#formatting-and-printing) |
 | `gate` | [Reference](library-selection.md#gate) |
 | `ge` | [Reference](library-numeric.md#arithmetic) |
-| `getattr` | [Reference](library-collections.md#getitem-and-getattr) |
+| `getattr` | [Collections](library-collections.md#getitem-and-getattr), [temporal fields](library-temporal.md#calendar-and-duration-fields) |
 | `getitem` | [Reference](library-collections.md#getitem-and-getattr) |
+| `group_by` (frame, C++) | [Reference](../extensions/frame-grouping.md) |
 | `gt` | [Reference](library-numeric.md#arithmetic) |
 | `if_` | [Reference](library-selection.md#if_) |
 | `if_then_else` | [Reference](library-selection.md#if_then_else) |
@@ -65,10 +67,10 @@ specify imports and headers.
 | `last_modified_time` | [Reference](library-time.md#last_modified_time) |
 | `le` | [Reference](library-numeric.md#arithmetic) |
 | `len_` | [Reference](library-collections.md#collection-queries) |
-| `ln` | [Reference](library-numeric.md#arithmetic) |
+| `ln` | [Reference](library-numeric.md#logarithms-and-signs) |
 | `log_` | [Reference](library-text.md#formatting-and-printing) |
 | `lower` | [Reference](library-text.md#construction-and-queries) |
-| `lshift` | [Reference](library-numeric.md#arithmetic) |
+| `lshift` | [Reference](library-numeric.md#bit-shifts) |
 | `lt` | [Reference](library-numeric.md#arithmetic) |
 | `map` | [Reference](higher-order.md#map) |
 | `match_` | [Reference](library-text.md#regular-expressions) |
@@ -99,19 +101,19 @@ specify imports and headers.
 | `rekey` | [Reference](library-collections.md#dictionary-transforms) |
 | `replace` | [Reference](library-text.md#regular-expressions) |
 | `resample` | [Reference](library-time.md#resample) |
-| `round` | [Reference](library-numeric.md#arithmetic) |
+| `round` | [Reference](library-numeric.md#rounding) |
 | `route_by_index` | [Reference](library-selection.md#route_by_index) |
-| `rshift` | [Reference](library-numeric.md#arithmetic) |
+| `rshift` | [Reference](library-numeric.md#bit-shifts) |
 | `sample` | [Reference](library-selection.md#sample) |
 | `schedule` | [Reference](library-time.md#schedule) |
-| `sign` | [Reference](library-numeric.md#arithmetic) |
+| `sign` | [Reference](library-numeric.md#logarithms-and-signs) |
 | `slice_` | [Reference](library-selection.md#slice_) |
 | `split` | [Reference](library-text.md#split-and-join) |
 | `step` | [Reference](library-selection.md#take-drop-step) |
 | `str_` | [Reference](library-text.md#construction-and-queries) |
 | `sub` | [Reference](library-numeric.md#arithmetic) |
 | `substr` | [Reference](library-text.md#construction-and-queries) |
-| `sum_` | [Reference](library-collections.md#collection-reductions) |
+| `sum_` | [Collections](library-collections.md#collection-reductions), [frames](../extensions/frame-grouping.md#numeric-sum-rules) |
 | `sums` | [Reference](library-stateful.md#sums-mins-maxs-means) |
 | `switch_` | [Reference](higher-order.md#switch_) |
 | `take` | [Reference](library-selection.md#take-drop-step) |
