@@ -4,7 +4,7 @@ The [published benchmark page](../user/benchmarks.md) collects application-facin
 results and their limits. This catalog identifies every benchmark harness and
 retained result family as of 4 November 2026. Paths below are relative to the
 repository root unless a table states otherwise. Raw records remain authoritative;
-the public page summarizes selected workloads and links to the original evidence.
+the public page summarizes application-facing workloads and their measurement conditions.
 
 ## Core and Python harnesses
 

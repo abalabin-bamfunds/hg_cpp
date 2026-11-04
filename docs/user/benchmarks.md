@@ -13,9 +13,8 @@ the measured samples. Observed latencies do not establish a maximum delivery tim
 | Application need | Relevant measurements |
 | --- | --- |
 | Many independent calculations with sparse changes | [Mapped graphs](#mapped-graphs) |
-| External events and real-time delivery | [Queues and scheduling](#queues-and-scheduling) |
+| External events and real-time delivery | [Queues](#queues) |
 | Running totals and grouped tables | [Frame aggregation](#frame-aggregation) |
-| Native columns consumed by Arrow | [Frame traversal and export](#frame-traversal-and-export) |
 | HTTP or WebSocket graph services | [Web extension](#web-extension) |
 
 ## Mapped graphs
@@ -34,7 +33,7 @@ cycles and ten full broadcasts. All eight configurations produced the expected
 
 ### Python and C++ execution paths
 
-The historical comparison from **17 October 2026** reports one run per configuration.
+The comparison from **17 October 2026** measures one run per configuration.
 Cycle totals exclude workload generation, wiring, and initial population.
 
 | Engine and arithmetic implementation | Population, s | 10,000 cycles, s | Ordinary p50, ms | Graph RSS, GB |
@@ -57,33 +56,10 @@ Graph RSS is process resident memory before graph stop minus resident memory bef
 wiring, expressed in decimal GB. It can include process allocations beyond graph
 storage. Some memory samples came from matching reruns. Python adapters use
 different timing boundaries, so precise cross-engine ratios need care. These are
-single runs under uncontrolled host contention, and the original raw JSON files
-are no longer available. The {download}`historical report <../../benchmarks/results/high_count_map/clean_250k_10k_2026-10-17.md>`
-retains lifecycle timings, source attribution, and measurement details.
+single runs under uncontrolled host contention; repeat runs would be needed to
+estimate run-to-run variation.
 
-### Runs with retained raw measurements
-
-Separate native HG runs retain their full JSON records. These use the same
-250,000-graph, 10,000-cycle workload, but differ from the historical comparison above.
-Each record includes a validated checksum, latency classes, and memory samples.
-
-| HG revision and raw JSON | CPU affinity | Population, s | 10,000 cycles, s | Ordinary p50, ms |
-| --- | ---: | ---: | ---: | ---: |
-| {download}`067dc7a5 <../../benchmarks/results/high_count_map/hg/067dc7a5cd754b9adae9d1cbf106b7848ca520f3.json>` | 47 | 0.789 | 18.085 | 1.142 |
-| {download}`6b7bb435 <../../benchmarks/results/high_count_map/hg/6b7bb4351022dc7afce108ad735fb87083864c5a.json>` | 47 | 0.897 | 15.418 | 1.193 |
-| {download}`e99c8c16 <../../benchmarks/results/high_count_map/hg/e99c8c165634878addec1bcd07259938588f536d.json>` | 47 | 0.875 | 14.878 | 1.145 |
-| {download}`bcc9b1e7 <../../benchmarks/results/high_count_map/hg/bcc9b1e7f7b57a592f022ba02c6fc82b22d621c7.json>` | 0 | 0.779 | 13.304 | 1.033 |
-
-These runs used GCC 14.3 Release on AMD EPYC 7R13 Linux hosts. The last run has a
-different CPU configuration; this table alone does not isolate the effect of code
-changes. Additional raw comparison records cover
-{download}`hgraph native C++ at 7c55fcf1 <../../benchmarks/results/high_count_map/hgraph-current/7c55fcf19bb2fce0ae3a5292eab2855376e084fa.json>`
-and hgraph 0.5.42 at `c34dba1d` with its
-{download}`C++ engine <../../benchmarks/results/high_count_map/hgraph-0.5/c34dba1db8a1c873ee303796db4c8fc48c8cc5be-cpp.json>`
-and {download}`Python engine <../../benchmarks/results/high_count_map/hgraph-0.5/c34dba1db8a1c873ee303796db4c8fc48c8cc5be-python.json>`.
-Their adapter revisions and phase boundaries are recorded in each file.
-
-## Queues and scheduling
+## Queues
 
 Queues connect external producers to graph inputs. The queue benchmarks distinguish
 the cost of writing messages, evaluating queued messages, and waking a waiting
@@ -128,31 +104,6 @@ maximum was 1.217 ms.
 The baseline used engine `08302061`, harness/corrections `10481b3a` and `1ca7da5c`,
 GCC 14.3 Release without LTO, and an AMD EPYC 7R13 Linux KVM VM. Queue and wakeup
 processes shared CPUs 0–3; individual threads were not pinned.
-{download}`Raw baseline results <../../benchmarks/results/queue_realtime/1ca7da5c5ad1b6a5e28aa84be4e35976952bba7d-rerun.json>`
-include samples and environment counters. An earlier contention-affected sweep
-is retained separately in the repository.
-
-### Scheduling and periodic callbacks
-
-In the same baseline, scheduling one of 32 nodes took **77.2 ns per cycle**;
-scheduling all 32 took **963.6 ns per cycle**. Each is the median of three
-200,000-cycle runs pinned to CPU 0.
-
-A separate paired experiment compares periodic callback polling before and after
-the eight-cycle cadence was implemented. Each version has 21 pairs of
-1,000,000-cycle simulation runs. Timing includes wiring, start, and stop.
-
-| Callback setting | Per-cycle polling, ns/cycle | Eight-cycle polling, ns/cycle |
-| --- | ---: | ---: |
-| Disabled | 113.066 | 112.330 |
-| Enabled, 50 ms interval | 145.581 | 117.482 |
-| Median paired enabled-minus-disabled cost | 32.395 | 5.123 |
-
-This comparison uses engine definitions from `06f12da7` and `9473d53d`, with
-GCC 14.3 Release and CPU affinity 0 on the same VM. Sample ranges are wide,
-including negative paired differences after the change. The medians describe
-this timer workload. The cadence can delay a due callback by seven additional
-complete cycles. {download}`Raw callback comparison <../../benchmarks/results/periodic_callback_overhead/9473d53d89440ff11d9b6aca49f8cf62bdbb07d2-timer-ab.json>`.
 
 ## Frame aggregation
 
@@ -179,8 +130,6 @@ incremental-sum changes on base `5169a8d5`. Each case combines 303 measured cycl
 from three graph instances after ten warmup cycles each. Initialization and
 destruction are excluded; every result is checked outside timing. Bulk changes,
 rebinding, and overflow recovery require different workloads.
-{download}`Complete-cycle CSV <../../extensions/frame/benchmarks/results/2026-10-27/incremental-sum.csv>`
-and {download}`separate sum-node profiling CSV, 28 October <../../extensions/frame/benchmarks/results/2026-10-28/incremental-sum-nodes.csv>`.
 
 ### Grouped sums
 
@@ -207,10 +156,6 @@ captured scalar parameter recalculates contributions for every source row.
 The build used GCC 14.3 Release on an AMD EPYC 7R13 VM without CPU affinity.
 Frame source was based on `29e6b8f43`, with grouped-aggregation and numerical
 changes through `384de57e7`; harness commits were `17e70e484` and `f2e420f87`.
-The {download}`native report <../../extensions/frame/benchmarks/group_by.md>`
-records the complete dependency configuration.
-{download}`Cycle CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by.csv>`
-and {download}`separate node profiling CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by-nodes.csv>`.
 
 ### Comparison with Arrow Compute
 
@@ -234,8 +179,7 @@ Both exclude source mutation and sink evaluation.
 Each median uses 303 samples. The comparison uses the native configuration above
 and comparator `77b109bcf`. Borrowed inputs retain 15 chunks per column; dense
 inputs copy each column into one owned chunk. Arrow is faster for the shown
-10,000-group bulk update and full recalculation. The raw files also retain initial
-evaluations, where HG constructs aggregation state and reports a complete-cycle interval.
+10,000-group bulk update and full recalculation.
 
 These are separate runs without affinity, with substantial timing variation.
 Profiling adds overhead: for the one-row, 100-group case the unprofiled HG cycle
@@ -244,44 +188,6 @@ preceding publication and scheduling between profiler checkpoints, and end befor
 the node's output publication. The measurements do not isolate profiling overhead
 from run-to-run variation. Arrow result conversion back to a native frame is excluded.
 
-{download}`Arrow phase CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by-arrow.csv>`,
-{download}`HG comparison node CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by-comparison-bg-nodes.csv>`,
-and {download}`HG comparison cycle CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by-comparison-bg.csv>`.
-
-## Frame traversal and export
-
-When another library consumes frame columns, row layout affects the cost of
-traversal and export. Borrowed Arrow export retains native buffers; dense gather
-copies selected values into contiguous buffers. Fragmented selections can make
-the borrowed path create many small Arrow chunks.
-
-The **23 October 2026** bounded-validity-search comparison measures frame revisions
-`2f180034` and `3b59d9d7`, against HG `5d48e914`. Each value is the median of three
-process medians, with two warmup and eleven measured cycles per process. Borrowed
-consumer timing includes export, Arrow sum, and destruction.
-
-| Workload | Consumer | Before, ms | After, ms |
-| --- | --- | ---: | ---: |
-| 100,000 dense rows | Borrowed Arrow + sum | 0.220 | 0.032 |
-| Clustered selection and deletion | Borrowed Arrow + sum | 0.180 | 0.081 |
-| Scattered selection, clustered deletion | Borrowed Arrow + sum | 16.530 | 16.444 |
-| 100,000 dense rows | Native batch sum | 0.085 | 0.086 |
-
-These all-valid workloads used GCC 14.3 Release and Arrow 24 on an AMD EPYC 7R13
-Linux VM without affinity. Scattered selection retained 49,168 Arrow chunks, so
-faster validity search did little for that case.
-{download}`Full comparison CSV <../../extensions/frame/benchmarks/results/2026-10-23/bounded-search/comparison.csv>`.
-
-Compaction can reduce fragmentation before repeated consumers read the same
-table. In the **24 October 2026** range-relocation run at `d8dbd8c3`, eight-column
-frames started with 32,768 rows. For 5% scattered deletion, one borrowed-Arrow
-consumer took 3.999 ms before compaction. The modeled compaction-plus-consumer
-total was 0.915 ms; dense gather plus sum took 1.497 ms. These totals add medians
-of separately timed phases and are not direct end-to-end measurements. At 0.5%
-deletion, compaction did not repay its cost for one Arrow consumer.
-The run used GCC 14.3 Release, Arrow 24, and an AMD EPYC 7R13 Linux VM, with five
-samples per case. {download}`Compaction CSV <../../extensions/frame/benchmarks/results/2026-10-24/compaction-range/after.csv>`.
-
 ## Web extension
 
 For applications using [HTTP](extensions/web.md) or [WebSocket](extensions/websocket.md)
@@ -289,11 +195,19 @@ services, the loopback benchmark measures complete native client/server graph
 exchanges, including graph services, queues, transport threads, payload generation,
 and validation. It does not measure an external network or maximum server capacity.
 
-### HTTP and WebSocket baseline
+These **4 November 2026** measurements used GCC 14.3 Release on an AMD EPYC 7R13
+Linux KVM VM with process affinity to CPUs 0–3. Loaded dependencies were libcurl
+8.20.0 and OpenSSL 3.6.2. Each case drained 128 warmup exchanges before timing.
+Throughput is the median sample rate; RTT percentiles pool exchanges across samples.
 
-The **4 November 2026** baseline uses 64-byte bodies, five samples of 4,096
-exchanges, and 128 fully drained warmup exchanges per case. Throughput is the
-median sample rate; RTT percentiles pool all 20,480 exchanges per case.
+RTT starts before request construction and ends at the reply observer. Wiring,
+startup, initial connections, and teardown are excluded. Connections opened during
+measurement are included.
+
+### HTTP
+
+Each case uses 64-byte bodies and five samples of 4,096 exchanges. Concurrency
+uses separate clients with one outstanding request each.
 
 | Protocol | Outstanding exchanges | Exchanges/s | RTT p50, µs | RTT p99, µs |
 | --- | ---: | ---: | ---: | ---: |
@@ -301,47 +215,30 @@ median sample rate; RTT percentiles pool all 20,480 exchanges per case.
 | HTTPS | 1 | 2,304 | 419.4 | 712.0 |
 | HTTP | 16 | 10,529 | 1,360.9 | 4,029.0 |
 | HTTPS | 16 | 282 | 64,699.0 | 125,494.9 |
-| WebSocket | 1 | 4,968 | 192.9 | 442.3 |
-| Secure WebSocket | 1 | 3,839 | 227.2 | 566.6 |
-| WebSocket | 64 | 21,665 | 2,245.0 | 6,685.9 |
-| Secure WebSocket | 64 | 16,631 | 2,633.2 | 10,479.1 |
 
-HTTP concurrency uses separate clients with one outstanding request each;
-WebSocket concurrency uses a window on one connection. RTT starts before request
-construction and ends at the reply observer. Wiring, startup, initial connections,
-and teardown are excluded. Connections opened during measurement are included.
+The engine was `be009f7b`, with a cache of eight idle HTTP connections. At
+16 clients, connection churn contributes to the measured workload. Host contention
+varied during the sweep, and four messages about closed response queues occurred
+at shutdown after reply validation.
 
-The engine was `be009f7b`, built with GCC 14.3 Release on an AMD EPYC 7R13 Linux
-KVM VM with process affinity to CPUs 0–3. Loaded dependencies were libcurl 8.20.0
-and OpenSSL 3.6.2. Host contention varied during the sweep, and four messages about
-closed response queues occurred at shutdown after reply validation.
-{download}`Raw baseline JSONL, including 4 KiB cases and HTTP controls <../../benchmarks/results/web_extension/2026-11-04/release-full.jsonl>`.
+### WebSocket
 
-### Connection and large-message follow-ups
+These measurements use `TCP_NODELAY` on both the client socket and the accepted
+server socket. The window is the maximum number of outstanding messages on one connection.
 
-Connection retention matters at higher HTTP concurrency. A follow-up at `a2f3d723`
-with 16 clients compared the normal cache of eight idle connections with an
-experimental cache of 64. For 64-byte HTTPS bodies, median throughput increased
-from 326 to 9,492 requests/s, while pooled p99 fell from 79.42 to 4.51 ms. Each
-configuration used five samples of 4,096 requests. The cache-64 variant was an
-experiment and was restored to eight; this is not a measured default configuration.
-{download}`Cache-8 JSONL <../../benchmarks/results/web_extension/2026-11-04/followup/cache8-http-https-window16.jsonl>`
-and {download}`cache-64 JSONL <../../benchmarks/results/web_extension/2026-11-04/followup/cache64-http-https-window16.jsonl>`.
+| Body | Window | Protocol | Messages/s | RTT p50, ms | RTT p99, ms |
+| --- | ---: | --- | ---: | ---: | ---: |
+| 64 KiB | 1 | WebSocket | 758 | 1.090 | 3.491 |
+| 64 KiB | 1 | Secure WebSocket | 743 | 1.195 | 3.353 |
+| 64 B | 64 | WebSocket | 23,988 | 2.258 | 6.320 |
+| 64 B | 64 | Secure WebSocket | 21,280 | 2.631 | 6.596 |
+| 64 KiB | 64 | WebSocket | 1,834 | 34.001 | 53.094 |
+| 64 KiB | 64 | Secure WebSocket | 1,671 | 41.030 | 121.858 |
 
-The WebSocket follow-up enabled `TCP_NODELAY` on both client and accepted server
-sockets. For 64 KiB messages with one outstanding exchange:
-
-| Protocol | Earlier RTT p50, ms | Follow-up RTT p50, ms | Follow-up messages/s |
-| --- | ---: | ---: | ---: |
-| WebSocket | 117.810 | 1.090 | 758 |
-| Secure WebSocket | 118.530 | 1.195 | 743 |
-
-Each case uses five samples of 64 messages. The baseline is `a2f3d723`; the follow-up
-tree is based on `0c3ad173` with the socket changes. This is a cross-revision
-comparison and does not isolate the socket option's effect. Larger-window runs
-had different host load and gave inconclusive throughput changes.
-{download}`Earlier large-message JSONL <../../benchmarks/results/web_extension/2026-11-04/followup/ws-64k-window1-64x5.jsonl>`
-and {download}`TCP_NODELAY JSONL <../../benchmarks/results/web_extension/2026-11-04/followup/nodelay-64k-window1-64x5.jsonl>`.
+The measured build is based on `0c3ad173` with the socket options enabled. Each
+case uses five samples: 64 messages per sample for window 1, and 4,096 for window
+64. Host load was high after these runs, and CPU pressure was not sampled for each
+case, so the window-64 rates should be interpreted with that variation in mind.
 
 ## Running benchmarks
 
@@ -393,33 +290,6 @@ env NO_PROXY=localhost,127.0.0.1,::1 no_proxy=localhost,127.0.0.1,::1 \
   build/benchmark/extensions/web/hg_web_extension_benchmark --quick
 ```
 
-Replacing `--quick` with `--messages 4096 --samples 5 --output results.jsonl`
-runs the recorded baseline matrix. Benchmark executable paths follow the build
-generator; multi-configuration generators also need `--config Release`.
-
-## Other benchmark coverage
-
-Smaller workloads help diagnose a particular cost. Their reports preserve the
-build configuration, source attribution, and measurement limits.
-
-| Recorded comparison | Coverage and evidence |
-| --- | --- |
-| Evaluation contexts | Child construction, context sizes, and flat/nested evaluation. The {download}`context-layout report <../../benchmarks/evaluation_context.md>` does not establish an overall evaluation improvement. |
-| Invocation-end callbacks | Flat, scalar-output, nested, and scheduling costs. The {download}`callback report <../../benchmarks/results/invocation_end_callbacks/README.md>` includes raw samples; scheduling results are preliminary. |
-| Isolated polling | Clock reads and polling strides outside graph evaluation. {download}`Raw polling samples <../../benchmarks/results/periodic_callback_overhead/gcc-14.3-linux-x86_64-2026-10-21.txt>` accompany the paired graph comparison above. |
-| HTTP header conversion | ASCII and Latin-1 conversion, including output equivalence checks. {download}`Conversion report, 29 October <../../benchmarks/http_header_bench.md>`. |
-| Frame expressions | Payload/predicate/scalar updates and row membership changes. {download}`22 October cycle CSV <../../extensions/frame/benchmarks/results/2026-10-22/expression-release-arrow-off.csv>` and {download}`23 October optimization comparison <../../extensions/frame/benchmarks/results/2026-10-23/comparison.csv>`. |
-| Compaction storage | Constructed-cell bitmap comparison. {download}`Before CSV <../../extensions/frame/benchmarks/compaction_constructed_cells_before.csv>` and {download}`after CSV <../../extensions/frame/benchmarks/compaction_constructed_cells_after.csv>`; timing changes are not causally isolated. |
-| Grouped-sum overflow recovery | Deliberately overflowing every group; only the result sweep is timed. {download}`Before CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by-overflow-before.csv>` and {download}`after CSV <../../extensions/frame/benchmarks/results/2026-11-04/group-by-overflow-after.csv>`. |
-
-Runnable suites without retained timing results cover tree reduction, custom versus
-standard hash dictionaries, scalar dictionary lookup and cursor traversal, Python
-dictionary views versus eager conversion, node input views and list access,
-selected dictionary references, membership notifications, and regular expressions.
-Core sources are under `benchmarks/`; Python sources are under
-`bindings/python/benchmarks/`. Build targets are listed in `benchmarks/CMakeLists.txt`.
-
-Archived frame foundation, schema/storage, and Arrow probe experiments remain in
-`extensions/frame/archive/`. The earliest Arrow report mixed Release extension
-code with a Debug HG library, so it should be read separately from the later
-matching-Release measurements.
+Replacing `--quick` with `--messages 4096 --samples 5` runs the full default matrix.
+Benchmark executable paths follow the build generator; multi-configuration generators
+also need `--config Release`.
