@@ -2,7 +2,7 @@
 
 This sweep checks higher-order scalar Dict mapping, collection fields projected
 from mapped bundles, and structured service replies against HG `d334ad217`.
-It adds tests and records findings for review. Production code is unchanged.
+It adds tests and corrects nested TSD invalidation sampling.
 
 ## Source patterns
 
@@ -71,26 +71,23 @@ to break the request/reply dependency cycle. Their replies arrive one cycle
 after their requests. An invalid reply removes the key when the outer map uses
 `__valid_items__ = true`.
 
-## Finding: collapsed items remain valid after their group is invalidated
+## Resolved finding: nested TSD invalidation loses sampled removals
 
-Classification: runtime correctness defect. Both direct `collapse_keys` and
-the mapped bundle projection retain two valid flattened items after the input's
-nested TSD becomes invalid. Map and bundle projection do not introduce the
-divergence.
+Classification: runtime correctness defect in the dereferenced TSD
+representation. When a nested TSD invalidated, its sampling metadata used the
+outer representation's older timestamp. The sampler therefore skipped the
+child's current-cycle removals. Both direct `collapse_keys` and mapped bundle
+projection retained valid flattened items for the invalid group.
 
-| Cycle | Nested source group | Flattened keys | Valid flattened items | Guarded sum |
-| ---: | --- | ---: | ---: | ---: |
-| 0 | `{1: 10, 2: 20}` | 2 | 2 | 30 |
-| 1 | invalid | 2 | 2 | 30 |
-| 2 | `{1: 11, 2: 22}` | 2 | 2 | 33 |
+[`notify_item_change()`](../../../src/time_series/tsd/tsd_dereferenced_representation.cpp)
+now reconstructs the child's pre-cycle validity at the current sampling time.
+The existing sampler then enumerates its removed members. The correction adds
+no nodes or storage and leaves the ordinary update path unchanged.
 
-The expected sum is `30, 0, 33`: [TSD invalidation](../design/time-series-validity.md#collections)
-removes the collection's current value and reports its prior members as removed.
-The probe checks each flattened item's validity before reading its value.
-A separate observer confirms that the input group itself becomes invalid.
-
-This minimized direct case reproduces the same result through the standard
-optional sum, without a custom observer:
+[TSD invalidation](../design/time-series-validity.md#collections) removes the
+collection's current value and reports its prior members as removed. This
+minimal graph therefore emits `30, 0, 33`; before the correction it emitted
+`30, 30, 33`:
 
 ```cpp
 const auto flattened_sum = [](wp<TSD<string, TSD<i64, TS<i64>>>> values) {
@@ -101,14 +98,14 @@ CHECK(run_graph(flattened_sum,
                 {{{"A", {{1, 10}, {2, 20}}}},
                  {{"A", literal::INVALID}},
                  {{"A", {{1, 11}, {2, 22}}}}})
-          .equals<i64>({30, 0, 33})); // Actual: 30, 30, 33.
+          .equals<i64>({30, 0, 33}));
 ```
 
-The relevant boundary is
-[`collapse_keys_tsd_impl::evaluate()`](../../../src/library/tsd_transform.cpp):
-it processes inner removals for updated groups. The precise cause of the lost
-invalidation remains unconfirmed. The failing reproducer is recorded here;
-the four added projection tests cover passing paths. No production fix was made.
+Regression coverage is in
+[`tsd_transform_test.cpp`](../../../tests/library/tsd_transform_test.cpp).
+Direct and mapped bundle-field paths check exact flattened removals and sums,
+retain a sibling group, and revalidate with different inner keys. A separate
+case verifies that invalidating a scalar leaf retains its physical key.
 
 ## Scope and adaptations
 
@@ -122,24 +119,35 @@ capture, following the [capture restriction](../testing.md#test-layout).
 
 ## Verification
 
-Focused runners use Release libraries built from `a2f3d723d`. The final branch
-is rebased onto `d334ad217`; the intervening Python binding changes leave the
-tested engine and standard library code unchanged.
-All 16 added cases pass, alongside existing tests for the affected areas:
+Focused runners use Release engine and standard library builds containing the
+invalidation correction on `d334ad217`. All 18 added cases pass, alongside
+existing tests for the affected areas:
 
 | Group | Added cases | Passing cases | Passing assertions |
 | --- | ---: | ---: | ---: |
 | Dict mapping, projections, map, nested, switch | 9 | 128 | 209 |
 | Structured services and existing service behavior | 7 | 64 | 173 |
-| Total | 16 | 192 | 382 |
+| Nested invalidation and existing library/reference behavior | 2 | 283 | 536 |
+| Total | 18 | 475 | 918 |
+
+The broader Release runtime runner also passes 460 cases and 1,215 assertions.
+The original standalone reproducer passes with `30, 0, 33`.
+
+The full Debug C++ suite passes all 3,269 CTest tests, including both invalidation
+regressions, declaration identity, and isolated logging tests. This run uses the
+correction on `d334ad217`; the 16 composition cases above are checked by the
+Release runners. The Debug build uses matching ICU 78.3 headers and libraries.
 
 Two existing switch tests used undocumented coverage tags. Their tags now use
 the documented `definition:function` value and omit the unsupported `lifetime`
-dimension. Their assertions are unchanged. The service runner's structured tags
-and the Dict runner's structured tags validate. The new sources are registered
-in `hg_library_tests`. Whitespace, new-source line widths, and report links pass
-verification. The full HG suite was not run. The failing invalidation reproducer
-above is separate from the passing regression runners.
+dimension. Their assertions are unchanged. Structured tags validate for all
+three runners. The new sources are registered in `hg_library_tests`.
+Whitespace and report links pass verification.
+
+The broader runtime runner's coverage-tag check reports two existing errors:
+the preserving TSD test uses the unsupported `invalidation` dimension, and the
+delayed-reference free-TSB test lacks a `feature` tag. Both tests pass; their
+sources are unchanged by this correction.
 
 [hgraph-05]: https://github.com/hhenson/hgraph/tree/c34dba1db8a1c873ee303796db4c8fc48c8cc5be
 [hgraph-08]: https://github.com/hhenson/hgraph/tree/d36be500ec8b6fda77ff077566f891ffcf5c84a8
