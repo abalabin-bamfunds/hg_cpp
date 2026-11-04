@@ -86,6 +86,69 @@ def test_operator_accepts_a_python_graph_overload():
     assert hg.run_graph(graph, [3, 8]) == [5, 10]
 
 
+def test_node_overloads_keyword_mixes_with_operator_overload_registration():
+    VALUE = TypeVar("VALUE")
+
+    @hg.operator
+    def classify(value: hg.TS[VALUE]) -> hg.TS[str]: ...
+
+    @classify.overload
+    @hg.compute_node
+    def integer(value: hg.TS[int]) -> hg.TS[str]:
+        return "registered"
+
+    @hg.node(overloads=classify)
+    def text(value: str) -> str:
+        return "decorator"
+
+    @hg.graph
+    def integer_graph(value: hg.TS[int]) -> hg.TS[str]:
+        return classify(value)
+
+    @hg.graph
+    def text_graph(value: hg.TS[str]) -> hg.TS[str]:
+        return classify(value)
+
+    assert hg.run_graph(integer_graph, [1]) == ["registered"]
+    assert hg.run_graph(text_graph, ["a"]) == ["decorator"]
+
+
+def test_compute_node_overloads_keyword_registers_node():
+    @hg.operator
+    def classify(value: hg.TS[int]) -> hg.TS[str]: ...
+
+    @hg.compute_node(overloads=classify)
+    def integer(value: hg.TS[int]) -> hg.TS[str]:
+        return "compute"
+
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[str]:
+        return classify(value)
+
+    assert hg.run_graph(graph, [1]) == ["compute"]
+
+
+def test_graph_overloads_keyword_registers_graph():
+    @hg.operator
+    def increment(value: hg.TS[int]) -> hg.TS[int]: ...
+
+    @hg.graph(overloads=increment)
+    def increment_graph(value: hg.TS[int]) -> hg.TS[int]:
+        return value + 2
+
+    @hg.graph
+    def graph(value: hg.TS[int]) -> hg.TS[int]:
+        return increment(value)
+
+    assert hg.run_graph(graph, [3, 8]) == [5, 10]
+
+
+@pytest.mark.parametrize("decorator", [hg.node, hg.compute_node, hg.graph])
+def test_decorators_reject_non_operator_overloads_target(decorator):
+    with pytest.raises(TypeError, match="overloads must be a Python @operator definition"):
+        decorator(overloads=object())
+
+
 def test_operator_reports_ambiguous_overloads_using_engine_diagnostics():
     @hg.operator
     def ambiguous(value: hg.TS[int]) -> hg.TS[int]: ...
